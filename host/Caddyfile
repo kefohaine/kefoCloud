@@ -3,15 +3,13 @@ jehpok.com {
 }
 
 www.jehpok.com {
-    root * /srv/static/html/www
-    file_server
-
+    root * /srv/static/www
     encode zstd gzip
+    file_server
 }
 
 code.jehpok.com {
-    root * /srv/static/html/code
-    file_server
-
+    root * /srv/static/code
     encode zstd gzip
+    file_server
 }
