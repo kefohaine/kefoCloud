@@ -1,0 +1,24 @@
+services:
+  ai:
+    build:
+      context: ../../containers/ai
+      dockerfile: Dockerfile
+
+    container_name: ai
+    restart: unless-stopped
+
+    environment:
+      MODEL_PATH: /models/qwen.gguf
+
+    volumes:
+      - /var/www/llm:/models:ro
+
+    expose:
+      - "8000"
+
+    networks:
+      - web
+
+networks:
+  web:
+    external: true
