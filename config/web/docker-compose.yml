@@ -1,0 +1,21 @@
+services:
+  web:
+    image: caddy:2
+    container_name: web
+    restart: unless-stopped
+
+    ports:
+      - "80:80"
+      - "443:443"
+
+    volumes:
+      - ../..:/srv:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/certs:ro
+
+    networks:
+      - web
+
+networks:
+  web:
+    external: true

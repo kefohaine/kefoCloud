@@ -1,0 +1,47 @@
+{
+    auto_https off
+}
+
+https://jehpok.com {
+    tls /certs/cert.pem /certs/key.pem
+    redir https://www.jehpok.com{uri}
+}
+
+https://www.jehpok.com {
+    tls /certs/cert.pem /certs/key.pem
+    root * /srv/frontend/www
+    encode zstd gzip
+    file_server
+}
+
+https://code.jehpok.com {
+    tls /certs/cert.pem /certs/key.pem
+    root * /srv/frontend/code
+    encode zstd gzip
+    file_server
+}
+
+api.jehpok.com {
+    tls /certs/cert.pem /certs/key.pem
+
+    handle /ai* {
+        reverse_proxy ai:8000
+    }
+
+}
+
+#jehpok.com {
+#    redir https://www.jehpok.com{uri} permanent
+#}
+#
+#www.jehpok.com {
+#    root * /srv/frontend/www
+#    encode zstd gzip
+#    file_server
+#}
+#
+#code.jehpok.com {
+#    root * /srv/frontend/code
+#    encode zstd gzip
+#    file_server
+#}
