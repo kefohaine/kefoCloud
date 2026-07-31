@@ -1,0 +1,17 @@
+jehpok.com {
+    redir https://www.jehpok.com{uri} permanent
+}
+
+www.jehpok.com {
+    root * /srv/static/html/www
+    file_server
+
+    encode zstd gzip
+}
+
+code.jehpok.com {
+    root * /srv/static/html/code
+    file_server
+
+    encode zstd gzip
+}
