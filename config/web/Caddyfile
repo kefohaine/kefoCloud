@@ -16,7 +16,7 @@ https://www.jehpok.com {
 
 https://code.jehpok.com {
     tls /certs/cert.pem /certs/key.pem
-    root * /srv/frontend/code
+    root * /srv/containers/web/code
     encode zstd gzip
     file_server
 }
