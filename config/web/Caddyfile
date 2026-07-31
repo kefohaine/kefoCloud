@@ -9,7 +9,7 @@ https://jehpok.com {
 
 https://www.jehpok.com {
     tls /certs/cert.pem /certs/key.pem
-    root * /srv/frontend/www
+    root * /srv/containers/web/www
     encode zstd gzip
     file_server
 }
@@ -28,6 +28,9 @@ api.jehpok.com {
         reverse_proxy ai:8000
     }
 
+    handle /status {
+        reverse_proxy ai:8000
+    }
 }
 
 #jehpok.com {
