@@ -31,6 +31,6 @@ https://api.jehpok.com {
 }
 
 http://vps.jehpok.com {
-    root * /srv/containers/dns/vps
+    root * /srv/containers/web/vps
     import serve_static
 }
