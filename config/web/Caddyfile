@@ -1,52 +1,40 @@
-{
-    auto_https off
+(tls_keys) {
+    tls /certs/cert.pem /certs/key.pem
+}
+
+(serve_static) {
+    encode zstd gzip
+    file_server
 }
 
 https://jehpok.com {
-    tls /certs/cert.pem /certs/key.pem
+    import tls_keys
     redir https://www.jehpok.com{uri}
 }
 
 https://www.jehpok.com {
-    tls /certs/cert.pem /certs/key.pem
+    import tls_keys
     root * /srv/containers/web/www
-    encode zstd gzip
-    file_server
+    import serve_static
 }
 
 https://code.jehpok.com {
-    tls /certs/cert.pem /certs/key.pem
+    import tls_keys
+
     @blocked not remote_ip 100.64.0.0/10
     respond @blocked "Access restricted to owner." 403
+
     root * /srv/containers/web/code
-    encode zstd gzip
-    file_server
+    import serve_static
 }
 
-api.jehpok.com {
-    tls /certs/cert.pem /certs/key.pem
+https://api.jehpok.com {
+    import tls_keys
 
     handle /ai* {
         reverse_proxy ai:8000
     }
-
     handle /status {
         reverse_proxy ai:8000
     }
 }
-
-#jehpok.com {
-#    redir https://www.jehpok.com{uri} permanent
-#}
-#
-#www.jehpok.com {
-#    root * /srv/frontend/www
-#    encode zstd gzip
-#    file_server
-#}
-#
-#code.jehpok.com {
-#    root * /srv/frontend/code
-#    encode zstd gzip
-#    file_server
-#}

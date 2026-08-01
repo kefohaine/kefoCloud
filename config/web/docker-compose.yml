@@ -11,7 +11,7 @@ services:
     volumes:
       - ../..:/srv:ro
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./certs:/certs:ro
+      - ../../../certs:/certs:ro
 
     networks:
       - web
