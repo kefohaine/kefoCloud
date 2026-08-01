@@ -30,7 +30,8 @@ https://api.jehpok.com {
     }
 }
 
-http://vps.jehpok.com {
+https://vps.jehpok.com {
+    import tls_keys
     root * /srv/containers/web/vps
     import serve_static
 }
