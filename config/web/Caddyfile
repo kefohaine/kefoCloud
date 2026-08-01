@@ -7,11 +7,6 @@
     file_server
 }
 
-#https://jehpok.com {
-#    import tls_keys
-#    redir https://www.jehpok.com{uri}
-#}
-
 https://www.jehpok.com {
     import tls_keys
     root * /srv/containers/web/www
@@ -33,4 +28,8 @@ https://api.jehpok.com {
     handle /status {
         reverse_proxy ai:8000
     }
+}
+
+http://vps.jehpok.com {
+    respond "Access Granted."
 }
