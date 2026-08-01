@@ -18,16 +18,6 @@ https://www.jehpok.com {
     import serve_static
 }
 
-https://code.jehpok.com {
-    import tls_keys
-
-    @blocked not remote_ip 100.64.0.0/10
-    respond @blocked "Access restricted to owner." 403
-
-    root * /srv/containers/web/code
-    import serve_static
-}
-
 https://api.jehpok.com {
     import tls_keys
 
