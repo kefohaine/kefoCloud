@@ -11,11 +11,7 @@ services:
     volumes:
       - ../..:/srv:ro
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-<<<<<<< HEAD
       - ../../../certs:/certs:ro
-=======
-      - ./certs:/certs:ro
->>>>>>> jehpok.com/main
 
     networks:
       - web
