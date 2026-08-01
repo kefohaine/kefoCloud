@@ -11,7 +11,7 @@ services:
     volumes:
       - ../..:/srv:ro
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ../../../certs:/certs:ro
+      - /var/www/github/jehpok.com/certs
 
     networks:
       - web
