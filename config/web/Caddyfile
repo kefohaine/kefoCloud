@@ -31,5 +31,6 @@ https://api.jehpok.com {
 }
 
 http://vps.jehpok.com {
-    respond "Access Granted."
+    root * /srv/containers/dns/vps
+    import serve_static
 }
