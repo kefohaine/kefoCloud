@@ -16,6 +16,8 @@ https://www.jehpok.com {
 
 https://code.jehpok.com {
     tls /certs/cert.pem /certs/key.pem
+    @blocked not remote_ip 100.64.0.0/10
+    respond @blocked "Access restricted to owner." 403
     root * /srv/containers/web/code
     encode zstd gzip
     file_server
