@@ -7,14 +7,20 @@
     file_server
 }
 
-https://jehpok.com {
-    import tls_keys
-    redir https://www.jehpok.com{uri}
-}
+#https://jehpok.com {
+#    import tls_keys
+#    redir https://www.jehpok.com{uri}
+#}
 
 https://www.jehpok.com {
     import tls_keys
     root * /srv/containers/web/www
+    import serve_static
+}
+
+https://app.jehpok.com {
+    import tls_keys
+    root * /srv/containers/web/app
     import serve_static
 }
 
