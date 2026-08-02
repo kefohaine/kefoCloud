@@ -1,8 +1,8 @@
 services:
   ai:
     build:
-      context: ../../containers/ai
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: config/ai/Dockerfile
 
     container_name: ai
     restart: unless-stopped
