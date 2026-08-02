@@ -9,19 +9,19 @@
 
 https://www.jehpok.com {
     import tls_keys
-    root * /srv/containers/web/www
+    root * /srv/content/web/www
     import serve_static
 }
 
 https://app.jehpok.com {
     import tls_keys
-    root * /srv/containers/web/app
+    root * /srv/content/web/app
     import serve_static
 }
 
 https://vps.jehpok.com {
     import tls_keys
-    root * /srv/containers/web/vps
+    root * /srv/content/web/vps
     import serve_static
 }
 
@@ -35,7 +35,7 @@ https://api.jehpok.com {
         reverse_proxy ai:8000
     }
     handle /download/* {
-        root * /srv/containers/web/download
+        root * /srv/content/web/download
         file_server
     }
 }
