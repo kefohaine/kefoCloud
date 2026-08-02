@@ -35,7 +35,7 @@ https://api.jehpok.com {
         reverse_proxy ai:8000
     }
     handle /download/* {
-        root * /srv/content/web/download
+        root * /srv/content/web/api/download
         file_server
     }
 }
