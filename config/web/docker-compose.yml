@@ -16,9 +16,9 @@ services:
     networks:
       - net
 
-  dns:
+  tailscale:
     image: coredns/coredns:latest
-    container_name: dns
+    container_name: tailscale
     restart: unless-stopped
 
     ports:
