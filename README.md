@@ -30,9 +30,9 @@ This document describes the full system: what runs where, why each piece exists,
                        directly. To resolve vps.jehpok.com they use:
 
                   ┌─────────────────────────────────────────────┐
-                  │ Tailscale MagicDNS / split DNS             │
+                  │ Tailscale MagicDNS / split DNS              │
                   │ forwards *.jehpok.com queries to the VPS    │
-                  │ resolver                                   │
+                  │ resolver                                    │
                   └──────────────┬──────────────────────────────┘
                                  │ UDP/TCP :53
                                  ▼
