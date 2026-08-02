@@ -22,17 +22,17 @@ This document describes the full system: what runs where, why each piece exists,
                   ▼              │              ▼
               ┌───────┐     static files    /srv/content/web/
               │  ai   │     (/srv/content)  api/download/
-              │ FastAPI│
-              │ llama.cpp│
+              │ FastAPI
+              │ llama.cpp
               └────────┘
 
    Tailscale network: clients also reach 100.81.245.77 (the VPS's tailnet IP)
                        directly. To resolve vps.jehpok.com they use:
 
                   ┌─────────────────────────────────────────────┐
-   Tailscale  ──►  │ Tailscale MagicDNS / split DNS              │
-   (split DNS     │ forwards *.jehpok.com queries to the VPS    │
-    for *.jehpok) │ resolver                                   │
+                  │ Tailscale MagicDNS / split DNS             │
+                  │ forwards *.jehpok.com queries to the VPS    │
+                  │ resolver                                   │
                   └──────────────┬──────────────────────────────┘
                                  │ UDP/TCP :53
                                  ▼
