@@ -8,7 +8,7 @@ This document describes the full system: what runs where, why each piece exists,
 
 ```
                   ┌─────────────────────────────────────────────┐
-   Public DNS ──► │            Cloudflare (proxy)              │
+   Public DNS ──► │            Cloudflare (proxy)               │
                   │   www / app / api       (orange cloud)      │
                   └──────────────┬──────────────────────────────┘
                                  │ HTTPS (Origin Cert)
@@ -18,16 +18,13 @@ This document describes the full system: what runs where, why each piece exists,
                           │  (web)       │
                           └──────┬───────┘
                   ┌──────────────┼──────────────┐
-                  │ /ai /status  │              │ /download/*
+                  │ /ai          │              │ /api/*
                   ▼              │              ▼
-              ┌───────┐     static files    /srv/content/web/
-              │  ai   │     (/srv/content)  api/download/
+              ┌───────┐     static files        /srv/content/web/
+              │  ai   │     (/srv/content/web)  api/
               │ FastAPI
               │ llama.cpp
               └────────┘
-
-   Tailscale network: clients also reach 100.81.245.77 (the VPS's tailnet IP)
-                       directly. To resolve vps.jehpok.com they use:
 
                   ┌─────────────────────────────────────────────┐
                   │ Tailscale MagicDNS / split DNS              │
@@ -52,7 +49,7 @@ Only one VPS, one host. Cloudflare fronts three of the four hostnames; the Tails
 |--------------------|-----------------------------|---------------------------------------------|-------------------------------------------------|
 | www.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Static site from `content/web/www`              |
 | app.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Static site from `content/web/app`              |
-| api.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | `POST /ai`, `GET /status` → LLM; `GET /download/*` → static files |
+| api.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | `POST /ai` → LLM; `GET /download/*` → files     |
 | vps.jehpok.com     | **Not in Cloudflare**       | Only devices on the Tailscale network       | Static site from `content/web/vps`              |
 
 The asymmetry on `vps.jehpok.com` is deliberate. By keeping it out of public DNS, the only way anyone can know its IP is by being inside the Tailscale network. Even a DNS leak on the user's device cannot reveal an address that public resolvers don't serve.
