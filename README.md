@@ -50,6 +50,7 @@ Only one VPS, one host. Cloudflare fronts three of the four hostnames; the Tails
 | www.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Static site from `content/web/www`              |
 | app.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Static site from `content/web/app`              |
 | api.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | `POST /ai` → LLM; `GET /download/*` → files     |
+| cloud.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Nextcloud (file sync, calendar, photos)         |
 | vps.jehpok.com     | **Not in Cloudflare**       | Only devices on the Tailscale network       | Static site from `content/web/vps`              |
 
 The asymmetry on `vps.jehpok.com` is deliberate. By keeping it out of public DNS, the only way anyone can know its IP is by being inside the Tailscale network. Even a DNS leak on the user's device cannot reveal an address that public resolvers don't serve.
@@ -102,6 +103,9 @@ config/
     Dockerfile               # python:3.12-slim + llama-cpp-python
     docker-compose.yml       # llama-cpp FastAPI service (name: ai)
     requirements.txt         # Python deps for the AI container
+  cloud/
+    docker-compose.yml       # Nextcloud (name: cloud)
+    .env                     # NEXTCLOUD_ADMIN_USER / NEXTCLOUD_ADMIN_PASSWORD (gitignored)
 content/
   ai/
     app.py                   # FastAPI: POST /ai, GET /status
@@ -153,6 +157,20 @@ The `tailnet` service is defined alongside `web` in `config/web/docker-compose.y
 - Exposes port 8000 only inside the docker network (`expose`, not `ports`), so the LLM is not directly reachable from outside the VPS — only via Caddy.
 
 `config/ai/Dockerfile` does two layered installs — base requirements first, then `llama-cpp-python` from the project's pre-built CPU wheels — so the heavy wheel isn't refetched unless `requirements.txt` changes.
+
+### cloud (Nextcloud)
+
+`config/cloud/docker-compose.yml` defines the `cloud` service. Key points:
+
+- Uses the official `nextcloud:latest` image. SQLite is auto-selected because no `MYSQL_*` / `POSTGRES_*` env vars are set — the database file lives at `db/owncloud.db` inside the data volume.
+- Data is a host bind mount at `/var/www/github/jehpok.com/cloud/data` → container `/var/www/html`. The directory must be owned by uid 33 (the in-container `www-data`) before first start: `chown -R 33:33 /var/www/github/jehpok.com/cloud/data`.
+- Admin credentials are loaded from `config/cloud/.env` (gitignored) via Compose variable substitution: `NEXTCLOUD_ADMIN_USER` and `NEXTCLOUD_ADMIN_PASSWORD`. Do NOT hardcode these.
+- `NEXTCLOUD_TRUSTED_DOMAINS=cloud.jehpok.com` so generated links resolve correctly and Nextcloud refuses requests with other Host headers.
+- `NEXTCLOUD_OVERWRITEPROTOCOL=https` so the protocol that PHP's request handling sees matches what Caddy terminates.
+- Attaches to the same external `net` network so Caddy can resolve `cloud` to its container IP. No host-side port mapping — only Caddy (and therefore Cloudflare-fronted clients) can reach it.
+- Backing up Nextcloud is `rsync` of `/var/www/github/jehpok.com/cloud/data` plus a snapshot of the SQLite file (or run `docker exec cloud occ maintenance:mode --on` before, then `--off` after, for a clean snapshot).
+
+The `https://cloud.jehpok.com` vhost in the Caddyfile reverse-proxies to `cloud:80` with `request_body { max_size 10G }`, which is Nextcloud's recommended desktop client upload ceiling. Cloudflare fronts this hostname with the existing `*.jehpok.com` Origin Certificate, so no new TLS material is needed.
 
 ## Docker network plumbing
 
@@ -226,16 +244,25 @@ On the VPS:
 ```bash
 # One-time
 docker network create net
-mkdir -p /var/www/github/jehpok.com/{llm,certs}
+mkdir -p /var/www/github/jehpok.com/{llm,certs,cloud/data}
 # Drop Cloudflare Origin cert + key at:
 #   /var/www/github/jehpok.com/certs/cert.pem
 #   /var/www/github/jehpok.com/certs/key.pem
 # Clone the repo to:
 git clone <repo-url> /var/www/github/jehpok.com/repo
 
+# Nextcloud host data dir must be owned by uid 33 (www-data inside the container)
+# BEFORE first start, otherwise the entrypoint will refuse to write.
+chown -R 33:33 /var/www/github/jehpok.com/cloud/data
+
+# Create config/cloud/.env (gitignored) with the admin credentials:
+#   NEXTCLOUD_ADMIN_USER=<your-admin>
+#   NEXTCLOUD_ADMIN_PASSWORD=<long-random>
+
 # Pull / start services
 docker compose -f /var/www/github/jehpok.com/repo/config/web/docker-compose.yml up -d --force-recreate
 docker compose -f /var/www/github/jehpok.com/repo/config/ai/docker-compose.yml up -d --build
+docker compose -f /var/www/github/jehpok.com/repo/config/cloud/docker-compose.yml up -d
 ```
 
 `--force-recreate` on the web compose is intentional: because both `web` and `tailnet` live in the same file, this guarantees a fresh container spec on each deploy.
@@ -252,6 +279,14 @@ After changing `app.py` or the AI Dockerfile:
 docker compose -f /var/www/github/jehpok.com/repo/config/ai/docker-compose.yml up -d --build
 ```
 
+After pulling a new Nextcloud image:
+
+```bash
+docker compose -f /var/www/github/jehpok.com/repo/config/cloud/docker-compose.yml pull
+docker compose -f /var/www/github/jehpok.com/repo/config/cloud/docker-compose.yml up -d
+# Nextcloud runs its own migrations on first request after an upgrade.
+```
+
 ## Operational notes and gotchas
 
 - `vps.jehpok.com` will appear "down" from non-Tailscale networks. That's by design. Don't add it to Cloudflare DNS to "fix" it — that defeats the only access control.
@@ -259,3 +294,4 @@ docker compose -f /var/www/github/jehpok.com/repo/config/ai/docker-compose.yml u
 - The `tailnet` container is the SPOF for VPN-side DNS. Two ways to harden it: (a) add a second CoreDNS instance pointed to the same Corefile, both on `net`; (b) move DNS onto the host namespace (systemd-resolved or dnsmasq) so it's independent of Docker restarts.
 - llama.cpp loads the entire GGUF into RAM at startup. The 1.5B Q4_K_M model is ~1.1 GB; the container must have at least that much headroom.
 - Cloudflare's free tier rate-limits you at 10s min window for rate-limit rules. Plan ahead if the LLM endpoint ends up attracting more traffic than expected.
+- `cloud.jehpok.com` is reached by Nextcloud desktop / mobile clients that cannot solve Cloudflare's Browser Integrity Check or Bot Fight Mode JS challenge. Disable Bot Fight Mode (or set a per-hostname WAF rule skip) for `cloud.jehpok.com` in Cloudflare, otherwise desktop sync will hang on the first request. This is the same mitigation already noted for `api.jehpok.com`.
