@@ -164,12 +164,13 @@ The `tailnet` service is defined alongside `web` in `config/web/docker-compose.y
 - Uses the official `nextcloud:latest` image. SQLite is auto-selected because no `MYSQL_*` / `POSTGRES_*` env vars are set — the database file lives at `db/owncloud.db` inside the data volume.
 - Data is a host bind mount at `/var/www/github/jehpok.com/cloud/data` → container `/var/www/html`. The directory must be owned by uid 33 (the in-container `www-data`) before first start: `chown -R 33:33 /var/www/github/jehpok.com/cloud/data`.
 - Admin credentials are loaded from `config/cloud/.env` (gitignored) via Compose variable substitution: `NEXTCLOUD_ADMIN_USER` and `NEXTCLOUD_ADMIN_PASSWORD`. Do NOT hardcode these.
-- `NEXTCLOUD_TRUSTED_DOMAINS=app.jehpok.com` so Nextcloud only serves requests with that Host header. The container has no idea it's mounted under `/cloud` — Caddy strips the prefix before forwarding.
+- `NEXTCLOUD_TRUSTED_DOMAINS=app.jehpok.com` so Nextcloud only serves requests with that Host header.
+- `NEXTCLOUD_OVERWRITEWEBROOT=/cloud` so Nextcloud generates URLs with the `/cloud` prefix. Caddy forwards the prefixed path as-is to `cloud:80`; no path rewriting on the proxy hop.
 - `NEXTCLOUD_OVERWRITEPROTOCOL=https` so the protocol that PHP's request handling sees matches what Caddy terminates.
 - Attaches to the same external `net` network so Caddy can resolve `cloud` to its container IP. No host-side port mapping — only Caddy (and therefore Cloudflare-fronted clients) can reach it.
 - Backing up Nextcloud is `rsync` of `/var/www/github/jehpok.com/cloud/data` plus a snapshot of the SQLite file (or run `docker exec cloud occ maintenance:mode --on` before, then `--off` after, for a clean snapshot).
 
-The `https://app.jehpok.com` vhost in the Caddyfile handles `/cloud/*` first (proxying to `cloud:80` with `request_body { max_size 10G }` and stripping `/cloud` from the upstream URI), then falls through to the static site served from `/srv/content/web/app`. Nextcloud's recommended desktop client upload ceiling is 10G. Cloudflare fronts `app.jehpok.com` with the existing `*.jehpok.com` Origin Certificate, so no new TLS material is needed.
+The `https://app.jehpok.com` vhost in the Caddyfile handles `/cloud/*` first (proxying to `cloud:80` with `request_body { max_size 10G }`, path forwarded as-is), then falls through to the static site served from `/srv/content/web/app`. Nextcloud's recommended desktop client upload ceiling is 10G. Cloudflare fronts `app.jehpok.com` with the existing `*.jehpok.com` Origin Certificate, so no new TLS material is needed.
 
 ## Docker network plumbing
 
