@@ -15,25 +15,6 @@ https://www.jehpok.com {
 
 https://app.jehpok.com {
     import tls_keys
-
-    # Nextcloud mounted at /cloud under the app hostname.
-    # Forward the prefixed path as-is — NEXTCLOUD_OVERWRITEWEBROOT=/cloud
-    # makes Nextcloud emit /cloud/... URLs in the HTML, and Caddy routes
-    # those /cloud/... requests here too.
-    handle /cloud/* {
-        # Nextcloud's recommended client max-body is 10G.
-        request_body {
-            max_size 10G
-        }
-
-        reverse_proxy cloud:80 {
-            header_up Host {host}
-            header_up X-Forwarded-Proto https
-            header_up X-Forwarded-For {remote_host}
-        }
-    }
-
-    # Anything that isn't /cloud stays a static site served from /srv/content/web/app.
     root * /srv/content/web/app
     import serve_static
 }
@@ -56,5 +37,22 @@ https://api.jehpok.com {
     handle /download/* {
         root * /srv/content/web/api/download
         file_server
+    }
+}
+
+# Nextcloud: standalone hostname served by the `cloud` container.
+# Trusted domains must include cloud.jehpok.com (set in the cloud container's env).
+https://cloud.jehpok.com {
+    import tls_keys
+
+    # Nextcloud's recommended client max-body is 10G.
+    request_body {
+        max_size 10G
+    }
+
+    reverse_proxy cloud:80 {
+        header_up Host {host}
+        header_up X-Forwarded-Proto https
+        header_up X-Forwarded-For {remote_host}
     }
 }
