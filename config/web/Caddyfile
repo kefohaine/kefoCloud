@@ -17,7 +17,9 @@ https://app.jehpok.com {
     import tls_keys
 
     # Nextcloud mounted at /cloud under the app hostname.
-    # Strip /cloud so the upstream sees /, /apps/..., /remote.php, etc.
+    # Forward the prefixed path as-is — NEXTCLOUD_OVERWRITEWEBROOT=/cloud
+    # makes Nextcloud emit /cloud/... URLs in the HTML, and Caddy routes
+    # those /cloud/... requests here too.
     handle /cloud/* {
         # Nextcloud's recommended client max-body is 10G.
         request_body {
