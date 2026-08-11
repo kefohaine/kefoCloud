@@ -45,12 +45,13 @@ https://api.jehpok.com {
 https://cloud.jehpok.com {
     import tls_keys
 
+    # Nextcloud's recommended client max-body is 10G.
+    # `request_body` is a site-level directive, not a `reverse_proxy` subdirective.
+    request_body {
+        max_size 10G
+    }
+
     reverse_proxy cloud:80 {
-        # Nextcloud's recommended client max-body is 10G.
-        # Caddyfile `request_body` sets the per-request limit for the proxy hop.
-        request_body {
-            max_size 10G
-        }
         # Forward the protocol so NEXTCLOUD_OVERWRITEPROTOCOL=https takes effect.
         header_up Host {host}
         header_up X-Forwarded-Proto https
