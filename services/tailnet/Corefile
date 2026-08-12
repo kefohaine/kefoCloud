@@ -1,0 +1,10 @@
+.:53 {
+    hosts {
+        100.81.245.77 vps.jehpok.com
+        fallthrough
+    }
+
+    forward . 1.1.1.1
+    log
+}
+
