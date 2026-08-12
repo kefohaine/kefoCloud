@@ -49,7 +49,7 @@ Only one VPS, one host. Cloudflare fronts three of the four hostnames; the Tails
 |--------------------|-----------------------------|---------------------------------------------|-------------------------------------------------|
 | www.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Static site from `content/web/www`              |
 | app.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Static site from `content/web/app`              |
-| api.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | `POST /ai` → LLM; `GET /download/*` → files     |
+| api.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | `POST /ai` → LLM                              |
 | cloud.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Nextcloud (file sync, calendar, photos)         |
 | vps.jehpok.com     | **Not in Cloudflare**       | Only devices on the Tailscale network       | Static site from `content/web/vps`              |
 
@@ -113,8 +113,6 @@ content/
     www/                     # static files for www.jehpok.com
     app/                     # static files for app.jehpok.com
     vps/                     # static files for vps.jehpok.com (Tailscale-only)
-    api/
-      download/              # static files served under api.jehpok.com/download/*
 ```
 
 `config/` holds everything that describes the running services. `content/` holds the data they serve. The split lets the same `config/` be checked into git while large or versioned content can live elsewhere on disk (mirrored into the repo for portability).
@@ -135,7 +133,6 @@ On the VPS, the cloned repo sits at `/var/www/github/jehpok.com/repo/`. Caddy mo
   - `https://api.jehpok.com`:
     - `handle /ai*` → reverse-proxy `ai:8000`.
     - `handle /status` → reverse-proxy `ai:8000`.
-    - `handle /download/*` → static fileserver from `/srv/content/web/api/download`.
   - `https://vps.jehpok.com` → static fileserver from `/srv/content/web/vps`.
 
 ### tailnet (CoreDNS)
@@ -216,11 +213,6 @@ Docker's embedded DNS at `127.0.0.11` resolves container names on this network. 
 
 If Cloudflare's bot challenge is active on the API hostname, a curl request will get the JS challenge page rather than the LLM response. That's expected; the API is being hit from a non-browser client. Mitigation lives in Cloudflare's WAF, not in this repo.
 
-### Browser hits `https://api.jehpok.com/download/setup.sh`
-
-1. Cloudflare → Caddy → `handle /download/*` → `file_server` rooted at `/srv/content/web/api/download`.
-2. Caddy serves whatever file matches the URL path. Listing is disabled by default; missing files return 404.
-
 ### Tailscale device hits `https://vps.jehpok.com`
 
 1. Tailscale split DNS routes the query to the VPS tailnet IP, port 53 — the `tailnet` CoreDNS container.
@@ -290,7 +282,6 @@ docker compose -f /var/www/github/jehpok.com/repo/config/cloud/docker-compose.ym
 ## Operational notes and gotchas
 
 - `vps.jehpok.com` will appear "down" from non-Tailscale networks. That's by design. Don't add it to Cloudflare DNS to "fix" it — that defeats the only access control.
-- The `api.jehpok.com/download/*` route is public. Anything dropped into `content/web/api/download/` is downloadable by anyone. Use `vps.jehpok.com` for private files (Tailscale only).
 - The `tailnet` container is the SPOF for VPN-side DNS. Two ways to harden it: (a) add a second CoreDNS instance pointed to the same Corefile, both on `net`; (b) move DNS onto the host namespace (systemd-resolved or dnsmasq) so it's independent of Docker restarts.
 - llama.cpp loads the entire GGUF into RAM at startup. The 1.5B Q4_K_M model is ~1.1 GB; the container must have at least that much headroom.
 - Cloudflare's free tier rate-limits you at 10s min window for rate-limit rules. Plan ahead if the LLM endpoint ends up attracting more traffic than expected.
