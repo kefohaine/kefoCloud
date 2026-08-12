@@ -16,23 +16,6 @@ services:
     networks:
       - net
 
-  tailnet:
-    image: coredns/coredns:latest
-    container_name: tailnet
-    restart: unless-stopped
-
-    ports:
-      - "53:53/udp"
-      - "53:53/tcp"
-
-    volumes:
-      - ./Corefile:/etc/coredns/Corefile:ro
-
-    command: -conf /etc/coredns/Corefile
-
-    networks:
-      - net
-
 networks:
   net:
     external: true
