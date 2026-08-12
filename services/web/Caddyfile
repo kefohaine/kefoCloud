@@ -1,0 +1,54 @@
+(tls_keys) {
+    tls /certs/cert.pem /certs/key.pem
+}
+
+(serve_static) {
+    encode zstd gzip
+    file_server
+}
+
+https://www.jehpok.com {
+    import tls_keys
+    root * /srv/content/web/www
+    import serve_static
+}
+
+https://app.jehpok.com {
+    import tls_keys
+    root * /srv/content/web/app
+    import serve_static
+}
+
+https://vps.jehpok.com {
+    import tls_keys
+    root * /srv/content/web/vps
+    import serve_static
+}
+
+https://api.jehpok.com {
+    import tls_keys
+
+    handle /ai* {
+        reverse_proxy ai:8000
+    }
+    handle /status {
+        reverse_proxy ai:8000
+    }
+}
+
+# Nextcloud: standalone hostname served by the `cloud` container.
+# Trusted domains must include cloud.jehpok.com (set in the cloud container's env).
+https://cloud.jehpok.com {
+    import tls_keys
+
+    # Nextcloud's recommended client max-body is 10G.
+    request_body {
+        max_size 10G
+    }
+
+    reverse_proxy cloud:80 {
+        header_up Host {host}
+        header_up X-Forwarded-Proto https
+        header_up X-Forwarded-For {remote_host}
+    }
+}
