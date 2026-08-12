@@ -94,7 +94,7 @@ The trade-off: browser traffic is bot-challenged. For an API endpoint that is hi
 ## Repository layout
 
 ```
-config/
+services/
   web/
     Caddyfile                # Caddy vhosts + reverse-proxy rules
     docker-compose.yml       # Caddy service
@@ -117,7 +117,7 @@ content/
     vps/                     # static files for vps.jehpok.com (Tailscale-only)
 ```
 
-`config/` holds everything that describes the running services. `content/` holds the data they serve. The split lets the same `config/` be checked into git while large or versioned content can live elsewhere on disk (mirrored into the repo for portability).
+`services/` holds everything that describes the running services. `content/` holds the data they serve. The split lets the same `services/` be checked into git while large or versioned content can live elsewhere on disk (mirrored into the repo for portability).
 
 On the VPS, the cloned repo sits at `/var/www/github/jehpok.com/repo/`. Caddy mounts it as `/srv`, so an `app` vhost with `root * /srv/content/web/app` resolves to `/var/www/github/jehpok.com/repo/content/web/app`.
 
@@ -125,7 +125,7 @@ On the VPS, the cloned repo sits at `/var/www/github/jehpok.com/repo/`. Caddy mo
 
 ### web (Caddy 2)
 
-`config/web/docker-compose.yml` defines the `web` service. Key points:
+`services/web/docker-compose.yml` defines the `web` service. Key points:
 
 - `web` is the only container in this compose file.
 - Caddy terminates TLS using a Cloudflare Origin Certificate loaded from `/certs/cert.pem` + `/certs/key.pem`.
@@ -139,7 +139,7 @@ On the VPS, the cloned repo sits at `/var/www/github/jehpok.com/repo/`. Caddy mo
 
 ### tailnet (CoreDNS)
 
-The `tailnet` service is defined in `config/tailnet/docker-compose.yml` and uses `config/tailnet/Corefile` for its zone data:
+The `tailnet` service is defined in `services/tailnet/docker-compose.yml` and uses `services/tailnet/Corefile` for its zone data:
 
 - On a query for `vps.jehpok.com`, CoreDNS returns the Tailscale IP from the embedded hosts file.
 - `fallthrough` means "if the host isn't in my hosts file, hand the query to the next plugin."
@@ -148,22 +148,22 @@ The `tailnet` service is defined in `config/tailnet/docker-compose.yml` and uses
 
 ### ai (llama-cpp FastAPI)
 
-`config/ai/docker-compose.yml` defines the `ai` service. Key points:
+`services/ai/docker-compose.yml` defines the `ai` service. Key points:
 
-- Builds from `config/ai/Dockerfile`, with the build context at the repo root. That gives `COPY ../../content/ai/app.py .` access to the live `content/ai/app.py` without duplicating source into the Dockerfile's directory.
+- Builds from `services/ai/Dockerfile`, with the build context at the repo root. That gives `COPY ../../content/ai/app.py .` access to the live `content/ai/app.py` without duplicating source into the Dockerfile's directory.
 - Attaches to the same external `net` network so Caddy can resolve `ai` to its container IP.
 - Reads the model from a read-only bind mount at `/models`. The model itself lives on the host at `/var/www/github/jehpok.com/llm/`.
 - Exposes port 8000 only inside the docker network (`expose`, not `ports`), so the LLM is not directly reachable from outside the VPS — only via Caddy.
 
-`config/ai/Dockerfile` does two layered installs — base requirements first, then `llama-cpp-python` from the project's pre-built CPU wheels — so the heavy wheel isn't refetched unless `requirements.txt` changes.
+`services/ai/Dockerfile` does two layered installs — base requirements first, then `llama-cpp-python` from the project's pre-built CPU wheels — so the heavy wheel isn't refetched unless `requirements.txt` changes.
 
 ### cloud (Nextcloud)
 
-`config/cloud/docker-compose.yml` defines the `cloud` service. Key points:
+`services/cloud/docker-compose.yml` defines the `cloud` service. Key points:
 
 - Uses the official `nextcloud:latest` image. SQLite is auto-selected because no `MYSQL_*` / `POSTGRES_*` env vars are set — the database file lives at `db/owncloud.db` inside the data volume.
 - Data is a host bind mount at `/var/www/github/jehpok.com/cloud/data` → container `/var/www/html`. The directory must be owned by uid 33 (the in-container `www-data`) before first start: `chown -R 33:33 /var/www/github/jehpok.com/cloud/data`.
-- Admin credentials are loaded from `config/cloud/.env` (gitignored) via Compose variable substitution: `NEXTCLOUD_ADMIN_USER` and `NEXTCLOUD_ADMIN_PASSWORD`. Do NOT hardcode these.
+- Admin credentials are loaded from `services/cloud/.env` (gitignored) via Compose variable substitution: `NEXTCLOUD_ADMIN_USER` and `NEXTCLOUD_ADMIN_PASSWORD`. Do NOT hardcode these.
 - `NEXTCLOUD_TRUSTED_DOMAINS=cloud.jehpok.com` so Nextcloud only serves requests with that Host header.
 - `NEXTCLOUD_OVERWRITEPROTOCOL=https` so the protocol that PHP's request handling sees matches what Caddy terminates.
 - Attaches to the same external `net` network so Caddy can resolve `cloud` to its container IP. No host-side port mapping — only Caddy (and therefore Cloudflare-fronted clients) can reach it.
@@ -249,44 +249,40 @@ git clone <repo-url> /var/www/github/jehpok.com/repo
 # BEFORE first start, otherwise the entrypoint will refuse to write.
 chown -R 33:33 /var/www/github/jehpok.com/cloud/data
 
-# Create config/cloud/.env (gitignored) with the admin credentials:
+# Create services/cloud/.env (gitignored) with the admin credentials:
 #   NEXTCLOUD_ADMIN_USER=<your-admin>
 #   NEXTCLOUD_ADMIN_PASSWORD=<long-random>
 
 # Pull / start services
-docker compose -f /var/www/github/jehpok.com/repo/config/web/docker-compose.yml up -d
-docker compose -f /var/www/github/jehpok.com/repo/config/tailnet/docker-compose.yml up -d
-docker compose -f /var/www/github/jehpok.com/repo/config/ai/docker-compose.yml up -d --build
-docker compose -f /var/www/github/jehpok.com/repo/config/cloud/docker-compose.yml up -d
+docker compose -f /var/www/github/jehpok.com/repo/services/web/docker-compose.yml up -d
+docker compose -f /var/www/github/jehpok.com/repo/services/tailnet/docker-compose.yml up -d
+docker compose -f /var/www/github/jehpok.com/repo/services/ai/docker-compose.yml up -d --build
+docker compose -f /var/www/github/jehpok.com/repo/services/cloud/docker-compose.yml up -d
 ```
 
 After changing the Caddyfile:
 
 ```bash
-docker compose -f /var/www/github/jehpok.com/repo/config/web/docker-compose.yml restart web
+docker compose -f /var/www/github/jehpok.com/repo/services/web/docker-compose.yml restart web
 ```
 
 After changing the Corefile:
 
 ```bash
-docker compose -f /var/www/github/jehpok.com/repo/config/tailnet/docker-compose.yml restart tailnet
-```
-
-```bash
-docker compose -f /var/www/github/jehpok.com/repo/config/web/docker-compose.yml restart web
+docker compose -f /var/www/github/jehpok.com/repo/services/tailnet/docker-compose.yml restart tailnet
 ```
 
 After changing `app.py` or the AI Dockerfile:
 
 ```bash
-docker compose -f /var/www/github/jehpok.com/repo/config/ai/docker-compose.yml up -d --build
+docker compose -f /var/www/github/jehpok.com/repo/services/ai/docker-compose.yml up -d --build
 ```
 
 After pulling a new Nextcloud image:
 
 ```bash
-docker compose -f /var/www/github/jehpok.com/repo/config/cloud/docker-compose.yml pull
-docker compose -f /var/www/github/jehpok.com/repo/config/cloud/docker-compose.yml up -d
+docker compose -f /var/www/github/jehpok.com/repo/services/cloud/docker-compose.yml pull
+docker compose -f /var/www/github/jehpok.com/repo/services/cloud/docker-compose.yml up -d
 # Nextcloud runs its own migrations on first request after an upgrade.
 ```
 
