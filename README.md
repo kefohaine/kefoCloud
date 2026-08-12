@@ -97,8 +97,10 @@ The trade-off: browser traffic is bot-challenged. For an API endpoint that is hi
 config/
   web/
     Caddyfile                # Caddy vhosts + reverse-proxy rules
+    docker-compose.yml       # Caddy service
+  tailnet/
     Corefile                 # CoreDNS hosts + forwarders
-    docker-compose.yml       # Caddy + CoreDNS ("tailnet") services
+    docker-compose.yml       # CoreDNS ("tailnet") service
   ai/
     Dockerfile               # python:3.12-slim + llama-cpp-python
     docker-compose.yml       # llama-cpp FastAPI service (name: ai)
@@ -123,9 +125,9 @@ On the VPS, the cloned repo sits at `/var/www/github/jehpok.com/repo/`. Caddy mo
 
 ### web (Caddy 2)
 
-`config/web/docker-compose.yml` defines the `web` and `tailnet` services. Key points:
+`config/web/docker-compose.yml` defines the `web` service. Key points:
 
-- `web` and `tailnet` are the only containers in this compose file.
+- `web` is the only container in this compose file.
 - Caddy terminates TLS using a Cloudflare Origin Certificate loaded from `/certs/cert.pem` + `/certs/key.pem`.
 - Caddy routes:
   - `https://www.jehpok.com` → static fileserver from `/srv/content/web/www`.
@@ -137,7 +139,7 @@ On the VPS, the cloned repo sits at `/var/www/github/jehpok.com/repo/`. Caddy mo
 
 ### tailnet (CoreDNS)
 
-The `tailnet` service is defined alongside `web` in `config/web/docker-compose.yml` and uses `config/web/Corefile` for its zone data:
+The `tailnet` service is defined in `config/tailnet/docker-compose.yml` and uses `config/tailnet/Corefile` for its zone data:
 
 - On a query for `vps.jehpok.com`, CoreDNS returns the Tailscale IP from the embedded hosts file.
 - `fallthrough` means "if the host isn't in my hosts file, hand the query to the next plugin."
@@ -252,14 +254,23 @@ chown -R 33:33 /var/www/github/jehpok.com/cloud/data
 #   NEXTCLOUD_ADMIN_PASSWORD=<long-random>
 
 # Pull / start services
-docker compose -f /var/www/github/jehpok.com/repo/config/web/docker-compose.yml up -d --force-recreate
+docker compose -f /var/www/github/jehpok.com/repo/config/web/docker-compose.yml up -d
+docker compose -f /var/www/github/jehpok.com/repo/config/tailnet/docker-compose.yml up -d
 docker compose -f /var/www/github/jehpok.com/repo/config/ai/docker-compose.yml up -d --build
 docker compose -f /var/www/github/jehpok.com/repo/config/cloud/docker-compose.yml up -d
 ```
 
-`--force-recreate` on the web compose is intentional: because both `web` and `tailnet` live in the same file, this guarantees a fresh container spec on each deploy.
+After changing the Caddyfile:
 
-After changing the Caddyfile or Corefile:
+```bash
+docker compose -f /var/www/github/jehpok.com/repo/config/web/docker-compose.yml restart web
+```
+
+After changing the Corefile:
+
+```bash
+docker compose -f /var/www/github/jehpok.com/repo/config/tailnet/docker-compose.yml restart tailnet
+```
 
 ```bash
 docker compose -f /var/www/github/jehpok.com/repo/config/web/docker-compose.yml restart web
