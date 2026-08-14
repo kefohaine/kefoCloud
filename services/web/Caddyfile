@@ -41,14 +41,15 @@ https://api.jehpok.com {
 https://cloud.jehpok.com {
     import tls_keys
 
-    # Nextcloud's recommended client max-body is 10G.
+    root * /nextcloud
+
     request_body {
         max_size 10G
     }
 
-    reverse_proxy cloud:80 {
-        header_up Host {host}
-        header_up X-Forwarded-Proto https
-        header_up X-Forwarded-For {remote_host}
+    php_fastcgi cloud:9000 {
+        root /var/www/html
     }
+
+    file_server
 }

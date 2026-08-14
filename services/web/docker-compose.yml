@@ -10,6 +10,7 @@ services:
 
     volumes:
       - ../..:/srv:ro
+      - /var/www/github/jehpok.com/cloud/data:/nextcloud:ro
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - /var/www/github/jehpok.com/certs:/certs:ro
 
