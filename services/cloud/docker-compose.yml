@@ -1,6 +1,6 @@
 services:
   cloud:
-    image: nextcloud:fpm
+    image: nextcloud:34-fpm
     container_name: cloud
     restart: unless-stopped
 
