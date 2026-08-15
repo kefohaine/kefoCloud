@@ -7,6 +7,11 @@
     file_server
 }
 
+# Redirect all plaintext HTTP to HTTPS.
+http:// {
+    redir https://{host}{uri} 308
+}
+
 https://www.jehpok.com {
     import tls_keys
     root * /srv/content/domain/www
@@ -27,13 +32,7 @@ https://vps.jehpok.com {
 
 https://api.jehpok.com {
     import tls_keys
-
-    handle /ai* {
-        reverse_proxy ai:8000
-    }
-    handle /status {
-        reverse_proxy ai:8000
-    }
+    respond "ok"
 }
 
 # Nextcloud: standalone hostname served by the `cloud` container.
@@ -48,7 +47,7 @@ https://cloud.jehpok.com {
     }
 
     # Never expose Nextcloud's data/config/internal files.
-    @blocked path /data/* /config/* /lib/* /3rdparty/* /templates/* /occ /console.php
+    @blocked path /data/* /config/* /lib/* /3rdparty/* /templates/* /occ /console.php /db/* /updater/*
     respond @blocked 404
 
     # Nextcloud's well-known endpoints
