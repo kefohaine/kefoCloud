@@ -9,19 +9,19 @@
 
 https://www.jehpok.com {
     import tls_keys
-    root * /srv/content/web/www
+    root * /srv/content/domain/www
     import serve_static
 }
 
 https://app.jehpok.com {
     import tls_keys
-    root * /srv/content/web/app
+    root * /srv/content/domain/app
     import serve_static
 }
 
 https://vps.jehpok.com {
     import tls_keys
-    root * /srv/content/web/vps
+    root * /srv/content/domain/vps
     import serve_static
 }
 
