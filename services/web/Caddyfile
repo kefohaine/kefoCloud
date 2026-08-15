@@ -41,23 +41,21 @@ https://api.jehpok.com {
 https://cloud.jehpok.com {
     import tls_keys
 
-    root * /nextcloud
+    root * /var/www/nextcloud
 
     request_body {
         max_size 10G
     }
 
-    # Nextcloud DAV discovery
-    redir /.well-known/carddav /remote.php/dav/ 301
-    redir /.well-known/caldav /remote.php/dav/ 301
-
-    # Never serve private Nextcloud directories
-    @blocked path /config/* /data/* /3rdparty/* /lib/* /templates/*
+    # Never expose Nextcloud's data/config/internal files.
+    @blocked path /data/* /config/* /lib/* /3rdparty/* /templates/* /occ /console.php
     respond @blocked 404
 
-    php_fastcgi cloud:9000 {
-        root /var/www/html
-    }
+    # Nextcloud's well-known endpoints
+    redir /.well-known/carddav /remote.php/dav 301
+    redir /.well-known/caldav /remote.php/dav 301
+
+    php_fastcgi cloud:9000
 
     file_server
 }
