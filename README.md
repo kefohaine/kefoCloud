@@ -1,6 +1,6 @@
 # jehpok.com
 
-Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker, serving four subdomains over public internet and Tailscale.
+Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker, serving four public subdomains and one Tailscale-only subdomain.
 
 This document describes the full system: what runs where, why each piece exists, how requests flow, and what to know when something breaks.
 
@@ -9,36 +9,37 @@ This document describes the full system: what runs where, why each piece exists,
 ```
                   ┌─────────────────────────────────────────────┐
    Public DNS ──► │            Cloudflare (proxy)               │
-                  │   www / app / api       (orange cloud)      │
-                  └──────────────┬──────────────────────────────┘
-                                 │ HTTPS (Origin Cert)
-                                 ▼
-                          ┌──────────────┐
-                          │    Caddy     │  port 443 (domain container)
-                          │  (domain)    │
-                          └──────┬───────┘
-                  ┌──────────────┼──────────────┐
-                  │              │              │
-                  ▼              ▼              ▼
-              static files   static files   /srv/content/domain/
-              (/srv/content/domain/www) (/srv/content/domain/app)
+                   │   www / app / api / cloud  (orange cloud)   │
+                   └──────────────┬──────────────────────────────┘
+                                  │ HTTPS (Origin Cert)
+                                  ▼
+                           ┌──────────────┐
+                           │    Caddy     │  port 80 → 308 redirect
+                           │  (domain)    │  port 443 (TLS + vhosts)
+                           └──────┬───────┘
+              ┌──────────────────┼──────────────────┐
+              │                  │                  │
+              ▼                  ▼                  ▼
+         static files       static files      php_fastcgi
+         www / app / vps    api → "ok"        cloud:9000
+         (/srv/content/)    (placeholder)     (Nextcloud FPM)
 
-                  ┌─────────────────────────────────────────────┐
-                  │ Tailscale MagicDNS / split DNS              │
-                  │ forwards *.jehpok.com queries to the VPS    │
-                  │ resolver                                    │
-                  └──────────────┬──────────────────────────────┘
-                                 │ UDP/TCP :53
-                                 ▼
-                          ┌──────────────┐
-                          │  CoreDNS     │  container "tailnet"
-                          │  (tailnet)   │
-                          │  - hosts { vps.jehpok.com → 100.81.245.77 }
-                          │  - forward . 1.1.1.1
-                          └──────────────┘
+                   ┌─────────────────────────────────────────────┐
+                   │ Tailscale MagicDNS / split DNS              │
+                   │ forwards *.jehpok.com queries to the VPS    │
+                   │ resolver (bound to Tailscale IP only)       │
+                   └──────────────┬──────────────────────────────┘
+                                  │ UDP/TCP 100.81.245.77:53
+                                  ▼
+                           ┌──────────────┐
+                           │  CoreDNS     │  container "tailnet"
+                           │  (tailnet)   │  (not on net bridge)
+                           │  - hosts { vps.jehpok.com → 100.81.245.77 }
+                           │  - forward . 1.1.1.1
+                           └──────────────┘
 ```
 
-Only one VPS, one host. Cloudflare fronts three of the four hostnames; the Tailscale-only hostname is invisible on the public internet.
+Only one VPS, one host. Cloudflare fronts four of the five hostnames; the Tailscale-only hostname is invisible on the public internet.
 
 ## Domains and access model
 
@@ -102,12 +103,16 @@ services/
     docker-compose.yml       # CoreDNS ("tailnet") service
   cloud/
     docker-compose.yml       # Nextcloud (name: cloud)
+    php-fpm.d/zz-custom.conf # PHP-FPM pool config
     .env                     # NEXTCLOUD_ADMIN_USER / NEXTCLOUD_ADMIN_PASSWORD (gitignored)
 content/
   domain/
     www/                     # static files for www.jehpok.com
     app/                     # static files for app.jehpok.com
     vps/                     # static files for vps.jehpok.com (Tailscale-only)
+.github/workflows/deploy.yml # CI/CD: path-filtered deploys on push to main
+AGENTS.md                    # Operating guide for agents
+ISSUES.md                    # Known problems and improvements
 ```
 
 `services/` holds everything that describes the running services. `content/` holds the data they serve. The split lets the same `services/` be checked into git while large or versioned content can live elsewhere on disk (mirrored into the repo for portability).
@@ -121,6 +126,7 @@ On the VPS, the cloned repo sits at `/var/www/github/jehpok.com/repo/`. Caddy mo
 `services/domain/docker-compose.yml` defines the `domain` service. Key points:
 
 - `domain` is the only container in this compose file.
+- Publishes ports 80 and 443. All HTTP traffic is redirected to HTTPS with a 308.
 - Caddy terminates TLS using a Cloudflare Origin Certificate loaded from `/certs/cert.pem` + `/certs/key.pem`.
 - Caddy routes:
   - `https://www.jehpok.com` → static fileserver from `/srv/content/domain/www`.
@@ -128,6 +134,7 @@ On the VPS, the cloned repo sits at `/var/www/github/jehpok.com/repo/`. Caddy mo
   - `https://api.jehpok.com`:
     - Currently returns a static `ok` (no backend). Reserved for a future API service.
   - `https://vps.jehpok.com` → static fileserver from `/srv/content/domain/vps`.
+  - `https://cloud.jehpok.com` → `php_fastcgi cloud:9000` + static files from read-only bind mount at `/nextcloud`. Blocks internal paths (`/data/*`, `/config/*`, `/lib/*`, `/3rdparty/*`, `/templates/*`, `/occ`, `/console.php`, `/db/*`, `/updater/*`). Redirects `.well-known/carddav` and `.well-known/caldav` to `/remote.php/dav`. Request body max 10G.
 
 ### tailnet (CoreDNS)
 
@@ -162,7 +169,7 @@ docker network create net
 
 Both compose files reference it as `external: true`. Without that, each compose would create its own private network and `domain` would not be able to resolve `cloud`.
 
-Docker's embedded DNS at `127.0.0.11` resolves container names on this network. So Caddy's `reverse_proxy cloud:9000` resolves to `cloud`'s container IP via this DNS — no explicit IP needed.
+Docker's embedded DNS at `127.0.0.11` resolves container names on this network. So Caddy's `php_fastcgi cloud:9000` resolves to `cloud`'s container IP via this DNS — no explicit IP needed.
 
 ## Tailscale + DNS behavior in detail
 
@@ -201,6 +208,16 @@ If Cloudflare's bot challenge is active on the API hostname, a curl request will
 3. The browser connects to `100.81.245.77:443`. Caddy accepts, matches `https://vps.jehpok.com`, serves static files from `/srv/content/domain/vps`.
 
 ## Deployment
+
+Deployment is automated via a self-hosted GitHub Actions runner on the VPS (`.github/workflows/deploy.yml`). On every push to `main`, the workflow detects which service directories changed and redeploys only those:
+
+- `services/domain/**` or `.github/**` changed → recreate `domain` (Caddy)
+- `services/tailnet/**` changed → recreate `tailnet` (CoreDNS)
+- `services/cloud/**` changed → recreate `cloud` (Nextcloud)
+
+The runner pulls `main` before each deploy. Do not push broken configs to `main` — they go live immediately.
+
+### Manual deployment
 
 On the VPS:
 

@@ -4,7 +4,7 @@ This file tells agents how to work in this repo. Read it before making changes.
 
 ## System overview
 
-Self-hosted infrastructure on a Debian VPS. Caddy in Docker fronts three public subdomains (`www`, `app`, `cloud`) and one Tailscale-only subdomain (`vps`). Nextcloud runs in a separate container. CoreDNS serves Tailscale split-DNS. Full architecture, request flows, and rationale are in `README.md` — read it first.
+Self-hosted infrastructure on a Debian VPS. Caddy in Docker fronts four public subdomains (`www`, `app`, `api`, `cloud`) and one Tailscale-only subdomain (`vps`). Nextcloud runs in a separate container. CoreDNS serves Tailscale split-DNS. Full architecture, request flows, and rationale are in `README.md` — read it first.
 
 ## Repository structure
 
@@ -15,7 +15,15 @@ services/          Docker compose files + configs (checked into git)
   tailnet/         CoreDNS (Tailscale split-DNS, bound to 100.81.245.77:53)
 content/domain/    Static site files served by Caddy
 .github/workflows/ CI/CD (self-hosted runner on the VPS)
-ISSUES.md          Known problems and improvements to fix (see below)
+AGENTS.md          This file
+ISSUES.md          Known problems and improvements to fix
+```
+
+Host-side paths (not in git):
+```
+/var/www/github/jehpok.com/repo/       The cloned repo (Caddy mounts it as /srv)
+/var/www/github/jehpok.com/certs/      Cloudflare Origin cert + key
+/var/www/github/jehpok.com/cloud/data/ Nextcloud data dir (bind-mounted into container)
 ```
 
 ## Running services on the VPS
@@ -60,6 +68,7 @@ git push jehpok.com main
 
 ## Conventions
 
+- **File ownership**: the repo is owned by `runner:runner` (the GitHub Actions runner user). If you edit as a different user, use `sudo` to write — do NOT `chown` the repo to your user, or the runner will lose access and CI breaks.
 - Never commit secrets. `services/cloud/.env` is gitignored and holds Nextcloud admin credentials.
 - Never hardcode the Tailscale IP (`100.81.245.77`) in logic — it's in the Corefile and compose ports only.
 - Bind services to the narrowest interface possible. CoreDNS binds to the Tailscale IP only, not `0.0.0.0`.
