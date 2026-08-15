@@ -4,18 +4,14 @@ services:
     container_name: tailnet
     restart: unless-stopped
 
+    # Bind DNS only to the Tailscale interface so the VPS is not an open
+    # resolver on the public internet. 100.81.245.77 is the host's
+    # tailscale0 IP; only tailnet devices can reach this port.
     ports:
-      - "53:53/udp"
-      - "53:53/tcp"
+      - "100.81.245.77:53:53/udp"
+      - "100.81.245.77:53:53/tcp"
 
     volumes:
       - ./Corefile:/etc/coredns/Corefile:ro
 
     command: -conf /etc/coredns/Corefile
-
-    networks:
-      - net
-
-networks:
-  net:
-    external: true
