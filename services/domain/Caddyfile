@@ -1,3 +1,5 @@
+admin off
+
 (tls_keys) {
     tls /certs/cert.pem /certs/key.pem
 }
@@ -56,7 +58,11 @@ https://cloud.jehpok.com {
 
     php_fastcgi cloud:9000 {
         root /var/www/html
+        dial_timeout 10s
+        read_timeout 300s
+        write_timeout 300s
     }
 
+    encode zstd gzip
     file_server
 }
