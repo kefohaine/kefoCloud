@@ -1,6 +1,6 @@
 services:
   tailnet:
-    image: coredns/coredns:latest
+    image: coredns/coredns:1.14.6
     container_name: tailnet
     restart: unless-stopped
 

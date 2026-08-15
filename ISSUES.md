@@ -19,6 +19,16 @@ Tracked for follow-up by other agents. Ordered by severity.
 - **Problem**: Cloudflare's free-tier proxy caps request bodies at 100 MB. Nextcloud desktop client large-file uploads through `cloud.jehpok.com` will be rejected at the edge regardless of Caddy's 10G setting. Sync clients will hang or error on files > 100 MB.
 - **Fix options**: (a) Increase Cloudflare plan for higher body limit; (b) Bypass Cloudflare proxy for `cloud.jehpok.com` (grey cloud, DNS-only) — but this exposes the VPS IP; (c) Use Nextcloud's chunked upload (clients split into < 100 MB chunks) — verify client config; (d) Accept the 100 MB limit and lower Caddy's `max_size` to match so failures are consistent.
 
+### Nextcloud `overwrite.cli.url` is HTTP, not HTTPS
+- **File**: `/var/www/github/jehpok.com/cloud/data/config/config.php` (live, not in git)
+- **Problem**: `overwrite.cli.url` is set to `http://cloud.jehpok.com`. Nextcloud uses this to generate URLs from CLI/cron/background jobs. With HTTP, cron-generated URLs and notifications point at the plaintext URL, causing mixed-content warnings and bad redirects for clients that follow them.
+- **Fix**: `docker exec cloud occ config:system:set overwrite.cli.url --value="https://cloud.jehpok.com"`. Also add `overwriteprotocol https` is already set via env, but `overwrite.cli.url` overrides for CLI context.
+
+### Caddy admin API exposed on the `net` bridge
+- **File**: `services/domain/docker-compose.yml` (Caddy listens on `:2019` by default, no `admin off` in Caddyfile)
+- **Problem**: Caddy's admin endpoint is bound to `:2019` inside the container with no auth. Since `domain` is on the `net` bridge, any container on `net` (e.g. a compromised Nextcloud) can reach `http://domain:2019/config/` and reload/reconfigure Caddy at runtime — add vhosts, change upstreams, or stop the server.
+- **Fix**: Add `admin off` (or `admin 127.0.0.1:2019`) to the top of `services/domain/Caddyfile` so the admin API is disabled or loopback-only.
+
 ## Medium
 
 ### PHP-FPM pool sizing may starve under concurrent sync
@@ -57,6 +67,11 @@ Tracked for follow-up by other agents. Ordered by severity.
 - **File**: `services/tailnet/docker-compose.yml`
 - **Problem**: Compose creates a default bridge network (`tailnet_default`) even though CoreDNS only needs host port mapping. `network_mode: none` would prevent this but also disables port mapping, so it can't be used.
 - **Fix**: This is cosmetic. The network is unused but harmless. Could suppress with `networks: { default: { driver: none } }` but that may break port mapping. Leave as-is.
+
+### CoreDNS upstream failover is sequential only
+- **File**: `services/tailnet/Corefile` (`forward . 1.1.1.1 1.0.0.1 { policy sequential }`)
+- **Problem**: Both upstreams are Cloudflare resolvers (`1.1.1.1`, `1.0.0.1`). If Cloudflare has an outage, all Tailscale DNS fails. `policy sequential` only fails over when the first upstream times out, adding latency before the second is tried.
+- **Fix**: Add a non-Cloudflare tertiary upstream (e.g. `9.9.9.9` Quad9 or `8.8.8.8` Google) and consider `policy round_robin` for load spreading.
 
 ### Empty static site directories
 - **File**: `content/domain/www/index.html`, `content/domain/app/index.html`, `content/domain/vps/index.html`, `content/domain/app/template.py`
