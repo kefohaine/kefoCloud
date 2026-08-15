@@ -12,12 +12,6 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 - **Fix**: `git remote remove origin` (or switch to SSH). Then rotate the exposed PAT on GitHub.
 - **Why approval**: the operator may want `origin` for read-only fetches with a rotated token.
 
-### Nextcloud config overrides mixed into auto-generated `config.php`
-- **File**: `/var/www/github/jehpok.com/cloud/data/config/config.php` (live, not in git)
-- **Problem**: Manual overrides (`trusted_proxies`, `overwrite.cli.url`) are inside the auto-generated config that Nextcloud rewrites on upgrades — diffs become noisy and overrides can be lost.
-- **Fix**: Move overrides into `/var/www/github/jehpok.com/cloud/data/config/jehpok.config.php` as a drop-in (Nextcloud merges `*.config.php` files). Survives upgrades cleanly.
-- **Status**: partial — overrides are currently in `config.php`; move when convenient.
-
 ### `tailnet_default` Docker network created unnecessarily
 - **File**: `services/tailnet/docker-compose.yml`
 - **Problem**: Compose creates a default bridge network even though CoreDNS only needs host port mapping.
@@ -82,14 +76,9 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 ## More comfy
 
 ### No deploy/ops helper scripts
-- **File**: (missing) `scripts/`, `Makefile` or `justfile`
-- **Problem**: The `docker compose -f /var/www/...` commands are long and easy to mistype.
-- **Fix**: Add a `Makefile` or `justfile` with recipes: `up-<service>`, `restart-<service>`, `logs-<service>`, `push`, `backup`, `status`. Optionally `alias dc=docker compose` in `~/.bashrc`.
-
-### No security-headers snippet on Nextcloud vhost
-- **File**: `services/domain/Caddyfile`
-- **Problem**: Static vhosts use the `(serve_static)` snippet; the Nextcloud vhost doesn't get consistent security headers (HSTS, `X-Content-Type-Options`).
-- **Fix**: Add a `(security_headers)` snippet and import it on all vhosts.
+- **File**: (missing) `scripts/`
+- **Problem**: Some long compose commands are now wrapped in the `Makefile`, but no shell alias for `docker compose` is set.
+- **Fix**: Optionally `alias dc=docker compose` in `~/.bashrc`. The `Makefile` covers the common recipes already.
 
 ---
 
@@ -124,4 +113,7 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 - **Nextcloud `trusted_proxies` set** — `172.22.0.0/16` (Caddy's `net` subnet) (Aug 2026).
 - **Nextcloud `overwrite.cli.url` → https** (Aug 2026).
 - **Static site placeholders** — non-blank index.html on www/app/vps (Aug 2026).
-- **Healthchecks added** to all 3 compose files (pending recreate to apply).
+- **Healthchecks deployed** — domain + cloud healthy; tailnet `NONE` (FROM scratch) (Aug 2026).
+- **Security headers** — HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy on all vhosts (Aug 2026).
+- **Makefile** — recipes for up/restart/logs/status/push/backup/clean (Aug 2026).
+- **Nextcloud overrides env-driven** — `TRUSTED_PROXIES` + `OVERWRITECLIURL` in compose; removed from `config.php` (Aug 2026).
