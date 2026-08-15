@@ -24,6 +24,7 @@ Host-side paths (not in git):
 /var/www/github/jehpok.com/repo/       The cloned repo (Caddy mounts it as /srv)
 /var/www/github/jehpok.com/certs/      Cloudflare Origin cert + key
 /var/www/github/jehpok.com/cloud/data/ Nextcloud data dir (bind-mounted into container)
+/etc/ssh/sshd_config.d/50-cloud-init.conf  SSH hardening (key-only, no root, debian only)
 ```
 
 ## Running services on the VPS

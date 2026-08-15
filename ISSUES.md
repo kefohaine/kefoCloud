@@ -48,6 +48,11 @@ Tracked for follow-up by other agents. Ordered by severity.
 
 ## Low
 
+### Tailscale `ts-input` iptables rule accepts all tailnet traffic
+- **File**: host iptables `ts-input` chain (managed by Tailscale)
+- **Problem**: Rule 2 in `ts-input` is `ACCEPT all from 0.0.0.0/0`, which accepts all traffic from the Tailscale interface before ufw rules apply. This means any tailnet device can reach any open port on the VPS (e.g. Caddy on 443, Docker ports). Ufw's SSH restriction still works because ufw rules apply to non-tailnet interfaces, but the broad Tailscale accept bypasses ufw for tailnet sources.
+- **Fix**: This is Tailscale's default behavior (tailnet devices are trusted). To restrict further, use Tailscale ACLs in the admin console to limit which devices/tags can reach the VPS, or add explicit iptables rules in `ts-input` to drop unwanted ports from tailnet sources. Do not modify the `ts-input` chain directly — Tailscale rewrites it on restart.
+
 ### `tailnet_default` Docker network created unnecessarily
 - **File**: `services/tailnet/docker-compose.yml`
 - **Problem**: Compose creates a default bridge network (`tailnet_default`) even though CoreDNS only needs host port mapping. `network_mode: none` would prevent this but also disables port mapping, so it can't be used.

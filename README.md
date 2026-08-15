@@ -265,6 +265,25 @@ docker compose -f /var/www/github/jehpok.com/repo/services/cloud/docker-compose.
 # Nextcloud runs its own migrations on first request after an upgrade.
 ```
 
+## SSH access
+
+SSH is restricted to the Tailscale network only. The public internet cannot reach port 22.
+
+| Setting | Value |
+|---------|-------|
+| Port | 22 |
+| Interface | `tailscale0` only (ufw: `22/tcp on tailscale0 ALLOW`, `22 DENY` elsewhere) |
+| Password auth | **Disabled** (key-only) |
+| Root login | **Disabled** |
+| Allowed users | `debian` only |
+| Config | `/etc/ssh/sshd_config` + `/etc/ssh/sshd_config.d/50-cloud-init.conf` |
+
+The only way to SSH into the VPS is:
+1. Be on the Tailscale network.
+2. Have the `debian` user's private key (`ed25519`, authorized in `/home/debian/.ssh/authorized_keys`).
+
+The `runner` user (GitHub Actions) has no SSH key and is not in `AllowUsers` — it cannot SSH in.
+
 ## Operational notes and gotchas
 
 - `vps.jehpok.com` will appear "down" from non-Tailscale networks. That's by design. Don't add it to Cloudflare DNS to "fix" it — that defeats the only access control.
