@@ -8,6 +8,12 @@
 
 (serve_static) {
     encode zstd gzip
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
     file_server
 }
 
@@ -36,6 +42,10 @@ https://vps.jehpok.com {
 
 https://api.jehpok.com {
     import tls_keys
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+    }
     respond "ok"
 }
 
@@ -66,5 +76,11 @@ https://cloud.jehpok.com {
     }
 
     encode zstd gzip
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
     file_server
 }
