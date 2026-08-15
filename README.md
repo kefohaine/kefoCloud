@@ -18,13 +18,10 @@ This document describes the full system: what runs where, why each piece exists,
                           │  (domain)    │
                           └──────┬───────┘
                   ┌──────────────┼──────────────┐
-                  │ /ai          │              │ /api/*
-                  ▼              │              ▼
-              ┌───────┐     static files        /srv/content/domain/
-              │  ai   │     (/srv/content/domain)  api/
-              │ FastAPI
-              │ llama.cpp
-              └────────┘
+                  │              │              │
+                  ▼              ▼              ▼
+              static files   static files   /srv/content/domain/
+              (/srv/content/domain/www) (/srv/content/domain/app)
 
                   ┌─────────────────────────────────────────────┐
                   │ Tailscale MagicDNS / split DNS              │
@@ -49,7 +46,7 @@ Only one VPS, one host. Cloudflare fronts three of the four hostnames; the Tails
 |--------------------|-----------------------------|---------------------------------------------|-------------------------------------------------|
 | www.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Static site from `content/domain/www`              |
 | app.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Static site from `content/domain/app`              |
-| api.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | `POST /ai` → LLM                              |
+| api.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Placeholder vhost (no backend currently wired)  |
 | cloud.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Nextcloud (file sync, calendar, photos)         |
 | vps.jehpok.com     | **Not in Cloudflare**       | Only devices on the Tailscale network       | Static site from `content/domain/vps`              |
 
@@ -83,13 +80,15 @@ The trade-off: browser traffic is bot-challenged. For an API endpoint that is hi
 - The Tailscale split DNS on the user side forwards queries for `*.jehpok.com` to a resolver on the VPS.
 - That resolver must return `100.81.245.77` for `vps.jehpok.com` and forward everything else.
 - A small CoreDNS container does this in one Corefile. systemd-resolved could do it too, but binding systemd-resolved to `0.0.0.0:53` from the host namespace interferes with Docker's port mapping and complicates restart logic. A container with port 53 exposed is cleaner.
+- The container binds port 53 **only to the Tailscale IP** (`100.81.245.77`), not `0.0.0.0`, so the VPS is not an open resolver on the public internet. Only tailnet devices can reach it.
 
 ### Why a docker network called `net`
 
-- All inter-container DNS (e.g. Caddy reverse-proxying to `ai:8000`) needs a user-defined bridge network.
+- All inter-container DNS (e.g. Caddy reverse-proxying to `cloud:9000`) needs a user-defined bridge network.
 - Docker's embedded DNS at `127.0.0.11` resolves container names on user-defined networks automatically — no Consul, no extra service registry.
-- One network keeps Caddy, the AI backend, and Tailscale-DNS on the same subnet.
-- Marked `external: true` so the same network is reused across `domain` and `ai` compose files (Compose would otherwise create a private one).
+- One network keeps Caddy and Nextcloud on the same subnet.
+- Marked `external: true` so the same network is reused across `domain` and `cloud` compose files (Compose would otherwise create a private one).
+- `tailnet` (CoreDNS) is intentionally **not** on `net` — it has no inter-container dependencies, only host port mapping to the Tailscale IP.
 
 ## Repository layout
 
@@ -101,16 +100,10 @@ services/
   tailnet/
     Corefile                 # CoreDNS hosts + forwarders
     docker-compose.yml       # CoreDNS ("tailnet") service
-  ai/
-    Dockerfile               # python:3.12-slim + llama-cpp-python
-    docker-compose.yml       # llama-cpp FastAPI service (name: ai)
-    requirements.txt         # Python deps for the AI container
   cloud/
     docker-compose.yml       # Nextcloud (name: cloud)
     .env                     # NEXTCLOUD_ADMIN_USER / NEXTCLOUD_ADMIN_PASSWORD (gitignored)
 content/
-  ai/
-    app.py                   # FastAPI: POST /ai, GET /status
   domain/
     www/                     # static files for www.jehpok.com
     app/                     # static files for app.jehpok.com
@@ -133,8 +126,7 @@ On the VPS, the cloned repo sits at `/var/www/github/jehpok.com/repo/`. Caddy mo
   - `https://www.jehpok.com` → static fileserver from `/srv/content/domain/www`.
   - `https://app.jehpok.com` → static fileserver from `/srv/content/domain/app`.
   - `https://api.jehpok.com`:
-    - `handle /ai*` → reverse-proxy `ai:8000`.
-    - `handle /status` → reverse-proxy `ai:8000`.
+    - Currently returns a static `ok` (no backend). Reserved for a future API service.
   - `https://vps.jehpok.com` → static fileserver from `/srv/content/domain/vps`.
 
 ### tailnet (CoreDNS)
@@ -146,22 +138,11 @@ The `tailnet` service is defined in `services/tailnet/docker-compose.yml` and us
 - `forward . 1.1.1.1` then forwards anything else to Cloudflare's public DNS.
 - `log` keeps a per-query log for debugging.
 
-### ai (llama-cpp FastAPI)
-
-`services/ai/docker-compose.yml` defines the `ai` service. Key points:
-
-- Builds from `services/ai/Dockerfile`, with the build context at the repo root. That gives `COPY ../../content/ai/app.py .` access to the live `content/ai/app.py` without duplicating source into the Dockerfile's directory.
-- Attaches to the same external `net` network so Caddy can resolve `ai` to its container IP.
-- Reads the model from a read-only bind mount at `/models`. The model itself lives on the host at `/var/www/github/jehpok.com/llm/`.
-- Exposes port 8000 only inside the docker network (`expose`, not `ports`), so the LLM is not directly reachable from outside the VPS — only via Caddy.
-
-`services/ai/Dockerfile` does two layered installs — base requirements first, then `llama-cpp-python` from the project's pre-built CPU wheels — so the heavy wheel isn't refetched unless `requirements.txt` changes.
-
 ### cloud (Nextcloud)
 
 `services/cloud/docker-compose.yml` defines the `cloud` service. Key points:
 
-- Uses the official `nextcloud:latest` image. SQLite is auto-selected because no `MYSQL_*` / `POSTGRES_*` env vars are set — the database file lives at `db/owncloud.db` inside the data volume.
+- Uses the official `nextcloud:34.0.2-fpm` image (PHP-FPM variant, not Apache). SQLite is auto-selected because no `MYSQL_*` / `POSTGRES_*` env vars are set — the database file lives at `db/owncloud.db` inside the data volume.
 - Data is a host bind mount at `/var/www/github/jehpok.com/cloud/data` → container `/var/www/html`. The directory must be owned by uid 33 (the in-container `www-data`) before first start: `chown -R 33:33 /var/www/github/jehpok.com/cloud/data`.
 - Admin credentials are loaded from `services/cloud/.env` (gitignored) via Compose variable substitution: `NEXTCLOUD_ADMIN_USER` and `NEXTCLOUD_ADMIN_PASSWORD`. Do NOT hardcode these.
 - `NEXTCLOUD_TRUSTED_DOMAINS=cloud.jehpok.com` so Nextcloud only serves requests with that Host header.
@@ -169,7 +150,7 @@ The `tailnet` service is defined in `services/tailnet/docker-compose.yml` and us
 - Attaches to the same external `net` network so Caddy can resolve `cloud` to its container IP. No host-side port mapping — only Caddy (and therefore Cloudflare-fronted clients) can reach it.
 - Backing up Nextcloud is `rsync` of `/var/www/github/jehpok.com/cloud/data` plus a snapshot of the SQLite file (or run `docker exec cloud occ maintenance:mode --on` before, then `--off` after, for a clean snapshot).
 
-The standalone `https://cloud.jehpok.com` vhost in the Caddyfile reverse-proxies to `cloud:80` with `request_body { max_size 10G }`, which is Nextcloud's recommended desktop client upload ceiling. Cloudflare fronts this hostname with the existing `*.jehpok.com` Origin Certificate, so no new TLS material is needed.
+The standalone `https://cloud.jehpok.com` vhost in the Caddyfile uses `php_fastcgi cloud:9000` to pass requests to the Nextcloud FPM container, with `request_body { max_size 10G }` for large uploads. Caddy also serves Nextcloud's static files directly from the read-only bind mount at `/nextcloud`. Cloudflare fronts this hostname with the existing `*.jehpok.com` Origin Certificate, so no new TLS material is needed.
 
 ## Docker network plumbing
 
@@ -179,9 +160,9 @@ A single user-defined bridge network named `net`:
 docker network create net
 ```
 
-Both compose files reference it as `external: true`. Without that, each compose would create its own private network and `domain` would not be able to resolve `ai`.
+Both compose files reference it as `external: true`. Without that, each compose would create its own private network and `domain` would not be able to resolve `cloud`.
 
-Docker's embedded DNS at `127.0.0.11` resolves container names on this network. So Caddy's `reverse_proxy ai:8000` resolves to `ai`'s container IP via this DNS — no explicit IP needed.
+Docker's embedded DNS at `127.0.0.11` resolves container names on this network. So Caddy's `reverse_proxy cloud:9000` resolves to `cloud`'s container IP via this DNS — no explicit IP needed.
 
 ## Tailscale + DNS behavior in detail
 
@@ -204,32 +185,20 @@ Docker's embedded DNS at `127.0.0.11` resolves container names on this network. 
 
 ## End-to-end request examples
 
-### Browser hits `https://api.jehpok.com/ai`
+### Browser hits `https://api.jehpok.com`
 
 1. Browser resolves `api.jehpok.com` via the system resolver → Cloudflare IP.
 2. TLS handshake terminates at Cloudflare. Cloudflare opens a second TLS connection to the origin (VPS :443), presenting the Origin Certificate.
 3. Caddy's `domain` container accepts the connection, matches the `https://api.jehpok.com` host block.
-4. The `handle /ai*` block proxies to `ai:8000`. Docker's embedded DNS resolves `ai` on the `net` bridge.
-5. FastAPI accepts the JSON body, runs inference via llama.cpp, returns a plain-text answer.
-6. Caddy adds `text/plain` content type and the response travels back through Cloudflare to the browser.
+4. Caddy returns the static `ok` response, which travels back through Cloudflare to the browser.
 
-If Cloudflare's bot challenge is active on the API hostname, a curl request will get the JS challenge page rather than the LLM response. That's expected; the API is being hit from a non-browser client. Mitigation lives in Cloudflare's WAF, not in this repo.
+If Cloudflare's bot challenge is active on the API hostname, a curl request will get the JS challenge page rather than the response. That's expected; the API is being hit from a non-browser client. Mitigation lives in Cloudflare's WAF, not in this repo.
 
 ### Tailscale device hits `https://vps.jehpok.com`
 
 1. Tailscale split DNS routes the query to the VPS tailnet IP, port 53 — the `tailnet` CoreDNS container.
 2. CoreDNS returns `100.81.245.77`.
 3. The browser connects to `100.81.245.77:443`. Caddy accepts, matches `https://vps.jehpok.com`, serves static files from `/srv/content/domain/vps`.
-
-### curl on the local Mac hits `https://api.jehpok.com/ai`
-
-```bash
-curl -s -X POST https://api.jehpok.com/ai \
-  -H "Content-Type: application/json" \
-  -d '{"prompt":"hello","max_tokens":128}'
-```
-
-Same path as the browser, but Cloudflare's Browser Integrity Check / Bot Fight Mode may show a JS challenge page. Either use a real User-Agent header, solve the challenge once with a cookie jar, or add a service-auth token via Cloudflare Access.
 
 ## Deployment
 
@@ -238,7 +207,7 @@ On the VPS:
 ```bash
 # One-time
 docker network create net
-mkdir -p /var/www/github/jehpok.com/{llm,certs,cloud/data}
+mkdir -p /var/www/github/jehpok.com/{certs,cloud/data}
 # Drop Cloudflare Origin cert + key at:
 #   /var/www/github/jehpok.com/certs/cert.pem
 #   /var/www/github/jehpok.com/certs/key.pem
@@ -256,7 +225,6 @@ chown -R 33:33 /var/www/github/jehpok.com/cloud/data
 # Pull / start services
 docker compose -f /var/www/github/jehpok.com/repo/services/domain/docker-compose.yml up -d
 docker compose -f /var/www/github/jehpok.com/repo/services/tailnet/docker-compose.yml up -d
-docker compose -f /var/www/github/jehpok.com/repo/services/ai/docker-compose.yml up -d --build
 docker compose -f /var/www/github/jehpok.com/repo/services/cloud/docker-compose.yml up -d
 ```
 
@@ -272,12 +240,6 @@ After changing the Corefile:
 docker compose -f /var/www/github/jehpok.com/repo/services/tailnet/docker-compose.yml restart tailnet
 ```
 
-After changing `app.py` or the AI Dockerfile:
-
-```bash
-docker compose -f /var/www/github/jehpok.com/repo/services/ai/docker-compose.yml up -d --build
-```
-
 After pulling a new Nextcloud image:
 
 ```bash
@@ -289,7 +251,6 @@ docker compose -f /var/www/github/jehpok.com/repo/services/cloud/docker-compose.
 ## Operational notes and gotchas
 
 - `vps.jehpok.com` will appear "down" from non-Tailscale networks. That's by design. Don't add it to Cloudflare DNS to "fix" it — that defeats the only access control.
-- The `tailnet` container is the SPOF for VPN-side DNS. Two ways to harden it: (a) add a second CoreDNS instance pointed to the same Corefile, both on `net`; (b) move DNS onto the host namespace (systemd-resolved or dnsmasq) so it's independent of Docker restarts.
-- llama.cpp loads the entire GGUF into RAM at startup. The 1.5B Q4_K_M model is ~1.1 GB; the container must have at least that much headroom.
-- Cloudflare's free tier rate-limits you at 10s min window for rate-limit rules. Plan ahead if the LLM endpoint ends up attracting more traffic than expected.
+- The `tailnet` container is the SPOF for VPN-side DNS. It is bound only to the Tailscale IP so it's not an open resolver, but if it stops, every `*.jehpok.com` query on Tailscale times out. Two ways to harden: (a) add a second CoreDNS instance pointed to the same Corefile; (b) move DNS onto the host namespace (dnsmasq) so it's independent of Docker restarts.
+- Cloudflare's free tier rate-limits you at 10s min window for rate-limit rules. Plan ahead if the API endpoint ends up attracting more traffic than expected.
 - `cloud.jehpok.com` is reached by Nextcloud desktop / mobile clients that cannot solve Cloudflare's Browser Integrity Check or Bot Fight Mode JS challenge. Disable Bot Fight Mode (or set a per-hostname WAF rule skip) for `cloud.jehpok.com` in Cloudflare, otherwise desktop sync will hang on the first request. This is the same mitigation already noted for `api.jehpok.com`.
