@@ -27,6 +27,12 @@ services:
       NEXTCLOUD_OVERWRITEPROTOCOL: https
       NEXTCLOUD_TRUSTED_DOMAINS: "cloud.jehpok.com"
 
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
     networks:
       - net
 

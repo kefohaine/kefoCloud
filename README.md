@@ -1,6 +1,6 @@
 # jehpok.com
 
-Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker, serving four public subdomains and one Tailscale-only subdomain.
+Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker, serving four public subdomains and one Tailscale-only subdomain. Ollama runs on the host as a systemd service for local LLM serving.
 
 This document describes the full system: what runs where, why each piece exists, how requests flow, and what to know when something breaks.
 
@@ -110,7 +110,6 @@ content/
     www/                     # static files for www.jehpok.com
     app/                     # static files for app.jehpok.com
     vps/                     # static files for vps.jehpok.com (Tailscale-only)
-.github/workflows/deploy.yml # CI/CD: path-filtered deploys on push to main
 AGENTS.md                    # Operating guide for agents
 ISSUES.md                    # Known problems and improvements
 ```
@@ -156,6 +155,25 @@ The `tailnet` service is defined in `services/tailnet/docker-compose.yml` and us
 - `NEXTCLOUD_OVERWRITEPROTOCOL=https` so the protocol that PHP's request handling sees matches what Caddy terminates.
 - Attaches to the same external `net` network so Caddy can resolve `cloud` to its container IP. No host-side port mapping — only Caddy (and therefore Cloudflare-fronted clients) can reach it.
 - Backing up Nextcloud is `rsync` of `/var/www/github/jehpok.com/cloud/data` plus a snapshot of the SQLite file (or run `docker exec cloud occ maintenance:mode --on` before, then `--off` after, for a clean snapshot).
+
+### Ollama (host systemd service)
+
+Ollama runs **on the host**, not in Docker, as a systemd unit at `/etc/systemd/system/ollama.service`:
+
+- Unit: `enabled`, `Restart=always`, runs as user `ollama`, listens on the default `:11434`.
+- Models live at `/home/ollama/.ollama/models`.
+- Started/stopped with `systemctl {start,stop,restart} ollama`. Logs via `journalctl -u ollama`.
+- **Do not delete or disable this unit.** It is protected by the safety rules in `AGENTS.md`. If a task appears to require removing it, stop and ask the user.
+
+### Log rotation
+
+All three compose files pin the `json-file` log driver with a size cap so container logs can't grow without bound on the host:
+
+- `domain` (Caddy): 10 MB × 3 files (≈30 MB cap)
+- `cloud` (Nextcloud): 10 MB × 3 files (≈30 MB cap)
+- `tailnet` (CoreDNS): 5 MB × 2 files (≈10 MB cap)
+
+Adjust in `services/<service>/docker-compose.yml` under each service's `logging:` block.
 
 The standalone `https://cloud.jehpok.com` vhost in the Caddyfile uses `php_fastcgi cloud:9000` to pass requests to the Nextcloud FPM container, with `request_body { max_size 10G }` for large uploads. Caddy also serves Nextcloud's static files directly from the read-only bind mount at `/nextcloud`. Cloudflare fronts this hostname with the existing `*.jehpok.com` Origin Certificate, so no new TLS material is needed.
 
@@ -209,15 +227,9 @@ If Cloudflare's bot challenge is active on the API hostname, a curl request will
 
 ## Deployment
 
-Deployment is automated via a self-hosted GitHub Actions runner on the VPS (`.github/workflows/deploy.yml`). On every push to `main`, the workflow detects which service directories changed and redeploys only those:
+Deployment is manual. Edit the repo on the VPS, then `docker compose ... up -d --force-recreate` (or `restart`) the affected service. There is no CI/CD — pushes to `main` do not trigger anything.
 
-- `services/domain/**` or `.github/**` changed → recreate `domain` (Caddy)
-- `services/tailnet/**` changed → recreate `tailnet` (CoreDNS)
-- `services/cloud/**` changed → recreate `cloud` (Nextcloud)
-
-The runner pulls `main` before each deploy. Do not push broken configs to `main` — they go live immediately.
-
-### Manual deployment
+### First-time setup
 
 On the VPS:
 
@@ -245,6 +257,8 @@ docker compose -f /var/www/github/jehpok.com/repo/services/tailnet/docker-compos
 docker compose -f /var/www/github/jehpok.com/repo/services/cloud/docker-compose.yml up -d
 ```
 
+### Day-to-day
+
 After changing the Caddyfile:
 
 ```bash
@@ -257,11 +271,10 @@ After changing the Corefile:
 docker compose -f /var/www/github/jehpok.com/repo/services/tailnet/docker-compose.yml restart tailnet
 ```
 
-After pulling a new Nextcloud image:
+After editing a compose file or pulling a new image:
 
 ```bash
-docker compose -f /var/www/github/jehpok.com/repo/services/cloud/docker-compose.yml pull
-docker compose -f /var/www/github/jehpok.com/repo/services/cloud/docker-compose.yml up -d
+docker compose -f /var/www/github/jehpok.com/repo/services/<service>/docker-compose.yml up -d --force-recreate
 # Nextcloud runs its own migrations on first request after an upgrade.
 ```
 
@@ -282,7 +295,7 @@ The only way to SSH into the VPS is:
 1. Be on the Tailscale network.
 2. Have the `debian` user's private key (`ed25519`, authorized in `/home/debian/.ssh/authorized_keys`).
 
-The `runner` user (GitHub Actions) has no SSH key and is not in `AllowUsers` — it cannot SSH in.
+The `runner` user (legacy GitHub Actions) has no SSH key and is not in `AllowUsers` — it cannot SSH in.
 
 ## Operational notes and gotchas
 

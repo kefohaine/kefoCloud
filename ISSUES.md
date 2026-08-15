@@ -68,7 +68,7 @@ Tracked for follow-up by other agents. Ordered by severity.
 - **Problem**: No Docker healthcheck defined. Container shows "Up" even if PHP-FPM or Nextcloud is internally broken.
 - **Fix**: Add `healthcheck: test: ["CMD-SHELL", "php-fpm-healthcheck || exit 1"]` (the FPM image includes a healthcheck script if `pm.status_path` is configured).
 
-### GitHub Actions PAT token in remote URL
+### GitHub PAT token in remote URL
 - **File**: `.git/config` — git remote `origin` contains a GitHub PAT (`github_pat_...`) embedded in the URL
 - **Problem**: The PAT is stored in `.git/config` in plaintext. If the repo is cloned elsewhere or config is exposed, the token leaks. Pushes via `origin` fail with 403 (write access not granted); pushes must go through the `jehpok.com` SSH remote.
-- **Fix**: Remove the `origin` remote or switch it to SSH: `git remote set-url origin git@github.com:friedutch/jehpok.com.git`. The self-hosted runner uses `origin` for `git fetch` in the deploy workflow — if removed, update the workflow to use `jehpok.com` instead. Rotate the exposed PAT on GitHub.
+- **Fix**: Remove the `origin` remote or switch it to SSH: `git remote set-url origin git@github.com:friedutch/jehpok.com.git`. Rotate the exposed PAT on GitHub.
