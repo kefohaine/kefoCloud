@@ -14,8 +14,8 @@ This document describes the full system: what runs where, why each piece exists,
                                  │ HTTPS (Origin Cert)
                                  ▼
                           ┌──────────────┐
-                          │    Caddy     │  port 443 (web container)
-                          │  (web)       │
+                          │    Caddy     │  port 443 (domain container)
+                          │  (domain)    │
                           └──────┬───────┘
                   ┌──────────────┼──────────────┐
                   │ /ai          │              │ /api/*
@@ -89,13 +89,13 @@ The trade-off: browser traffic is bot-challenged. For an API endpoint that is hi
 - All inter-container DNS (e.g. Caddy reverse-proxying to `ai:8000`) needs a user-defined bridge network.
 - Docker's embedded DNS at `127.0.0.11` resolves container names on user-defined networks automatically — no Consul, no extra service registry.
 - One network keeps Caddy, the AI backend, and Tailscale-DNS on the same subnet.
-- Marked `external: true` so the same network is reused across `web` and `ai` compose files (Compose would otherwise create a private one).
+- Marked `external: true` so the same network is reused across `domain` and `ai` compose files (Compose would otherwise create a private one).
 
 ## Repository layout
 
 ```
 services/
-  web/
+  domain/
     Caddyfile                # Caddy vhosts + reverse-proxy rules
     docker-compose.yml       # Caddy service
   tailnet/
@@ -111,7 +111,7 @@ services/
 content/
   ai/
     app.py                   # FastAPI: POST /ai, GET /status
-  web/
+  domain/
     www/                     # static files for www.jehpok.com
     app/                     # static files for app.jehpok.com
     vps/                     # static files for vps.jehpok.com (Tailscale-only)
@@ -123,11 +123,11 @@ On the VPS, the cloned repo sits at `/var/www/github/jehpok.com/repo/`. Caddy mo
 
 ## Service details
 
-### web (Caddy 2)
+### domain (Caddy 2)
 
-`services/web/docker-compose.yml` defines the `web` service. Key points:
+`services/domain/docker-compose.yml` defines the `domain` service. Key points:
 
-- `web` is the only container in this compose file.
+- `domain` is the only container in this compose file.
 - Caddy terminates TLS using a Cloudflare Origin Certificate loaded from `/certs/cert.pem` + `/certs/key.pem`.
 - Caddy routes:
   - `https://www.jehpok.com` → static fileserver from `/srv/content/web/www`.
@@ -179,7 +179,7 @@ A single user-defined bridge network named `net`:
 docker network create net
 ```
 
-Both compose files reference it as `external: true`. Without that, each compose would create its own private network and `web` would not be able to resolve `ai`.
+Both compose files reference it as `external: true`. Without that, each compose would create its own private network and `domain` would not be able to resolve `ai`.
 
 Docker's embedded DNS at `127.0.0.11` resolves container names on this network. So Caddy's `reverse_proxy ai:8000` resolves to `ai`'s container IP via this DNS — no explicit IP needed.
 
@@ -208,7 +208,7 @@ Docker's embedded DNS at `127.0.0.11` resolves container names on this network. 
 
 1. Browser resolves `api.jehpok.com` via the system resolver → Cloudflare IP.
 2. TLS handshake terminates at Cloudflare. Cloudflare opens a second TLS connection to the origin (VPS :443), presenting the Origin Certificate.
-3. Caddy's `web` container accepts the connection, matches the `https://api.jehpok.com` host block.
+3. Caddy's `domain` container accepts the connection, matches the `https://api.jehpok.com` host block.
 4. The `handle /ai*` block proxies to `ai:8000`. Docker's embedded DNS resolves `ai` on the `net` bridge.
 5. FastAPI accepts the JSON body, runs inference via llama.cpp, returns a plain-text answer.
 6. Caddy adds `text/plain` content type and the response travels back through Cloudflare to the browser.
@@ -254,7 +254,7 @@ chown -R 33:33 /var/www/github/jehpok.com/cloud/data
 #   NEXTCLOUD_ADMIN_PASSWORD=<long-random>
 
 # Pull / start services
-docker compose -f /var/www/github/jehpok.com/repo/services/web/docker-compose.yml up -d
+docker compose -f /var/www/github/jehpok.com/repo/services/domain/docker-compose.yml up -d
 docker compose -f /var/www/github/jehpok.com/repo/services/tailnet/docker-compose.yml up -d
 docker compose -f /var/www/github/jehpok.com/repo/services/ai/docker-compose.yml up -d --build
 docker compose -f /var/www/github/jehpok.com/repo/services/cloud/docker-compose.yml up -d
@@ -263,7 +263,7 @@ docker compose -f /var/www/github/jehpok.com/repo/services/cloud/docker-compose.
 After changing the Caddyfile:
 
 ```bash
-docker compose -f /var/www/github/jehpok.com/repo/services/web/docker-compose.yml restart web
+docker compose -f /var/www/github/jehpok.com/repo/services/domain/docker-compose.yml restart domain
 ```
 
 After changing the Corefile:

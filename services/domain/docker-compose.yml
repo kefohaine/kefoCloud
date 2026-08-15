@@ -1,0 +1,22 @@
+services:
+  domain:
+    image: caddy:2
+    container_name: domain
+    restart: unless-stopped
+
+    ports:
+      - "80:80"
+      - "443:443"
+
+    volumes:
+      - ../..:/srv:ro
+      - /var/www/github/jehpok.com/cloud/data:/nextcloud:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - /var/www/github/jehpok.com/certs:/certs:ro
+
+    networks:
+      - net
+
+networks:
+  net:
+    external: true
