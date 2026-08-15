@@ -127,13 +127,14 @@ On the VPS, the cloned repo sits at `/var/www/github/jehpok.com/repo/`. Caddy mo
 - `domain` is the only container in this compose file.
 - Publishes ports 80 and 443. All HTTP traffic is redirected to HTTPS with a 308.
 - Caddy terminates TLS using a Cloudflare Origin Certificate loaded from `/certs/cert.pem` + `/certs/key.pem`.
+- The admin API is disabled (`admin off` in a global options block) so no container on the `net` bridge can reconfigure Caddy at runtime.
 - Caddy routes:
   - `https://www.jehpok.com` → static fileserver from `/srv/content/domain/www`.
   - `https://app.jehpok.com` → static fileserver from `/srv/content/domain/app`.
   - `https://api.jehpok.com`:
     - Currently returns a static `ok` (no backend). Reserved for a future API service.
   - `https://vps.jehpok.com` → static fileserver from `/srv/content/domain/vps`.
-  - `https://cloud.jehpok.com` → `php_fastcgi cloud:9000` + static files from read-only bind mount at `/nextcloud`. Blocks internal paths (`/data/*`, `/config/*`, `/lib/*`, `/3rdparty/*`, `/templates/*`, `/occ`, `/console.php`, `/db/*`, `/updater/*`). Redirects `.well-known/carddav` and `.well-known/caldav` to `/remote.php/dav`. Request body max 10G.
+  - `https://cloud.jehpok.com` → `php_fastcgi cloud:9000` (with `dial_timeout 10s`, `read_timeout 300s`, `write_timeout 300s` aligned to PHP-FPM's 200s terminate timeout) + static files from read-only bind mount at `/nextcloud`. Blocks internal paths (`/data/*`, `/config/*`, `/lib/*`, `/3rdparty/*`, `/templates/*`, `/occ`, `/console.php`, `/db/*`, `/updater/*`). Redirects `.well-known/carddav` and `.well-known/caldav` to `/remote.php/dav`. Request body max 10G. Responses are zstd/gzip compressed.
 
 ### tailnet (CoreDNS)
 
@@ -141,8 +142,9 @@ The `tailnet` service is defined in `services/tailnet/docker-compose.yml` and us
 
 - On a query for `vps.jehpok.com`, CoreDNS returns the Tailscale IP from the embedded hosts file.
 - `fallthrough` means "if the host isn't in my hosts file, hand the query to the next plugin."
-- `forward . 1.1.1.1` then forwards anything else to Cloudflare's public DNS.
+- `forward . 1.1.1.1 1.0.0.1 9.9.9.9 { policy sequential }` forwards anything else to Cloudflare's public DNS with Quad9 as a non-Cloudflare tertiary fallback. Sequential policy tries each upstream in order on timeout.
 - `log` keeps a per-query log for debugging.
+- No in-container healthcheck is possible (CoreDNS image is `FROM scratch`, no shell); `test: ["NONE"]`. Monitor externally if needed.
 
 ### cloud (Nextcloud)
 
@@ -153,7 +155,11 @@ The `tailnet` service is defined in `services/tailnet/docker-compose.yml` and us
 - Admin credentials are loaded from `services/cloud/.env` (gitignored) via Compose variable substitution: `NEXTCLOUD_ADMIN_USER` and `NEXTCLOUD_ADMIN_PASSWORD`. Do NOT hardcode these.
 - `NEXTCLOUD_TRUSTED_DOMAINS=cloud.jehpok.com` so Nextcloud only serves requests with that Host header.
 - `NEXTCLOUD_OVERWRITEPROTOCOL=https` so the protocol that PHP's request handling sees matches what Caddy terminates.
+- `trusted_proxies` is set to `172.22.0.0/16` (the `net` bridge subnet) so Nextcloud sees the real client IP from Caddy's `X-Forwarded-For` for brute-force protection and audit logs.
+- `overwrite.cli.url` is set to `https://cloud.jehpok.com` so cron/CLI-generated URLs point to HTTPS, not HTTP.
+- PHP-FPM runs `pm = ondemand` with `pm.max_children = 8` and `process_idle_timeout = 10s` — idle workers are freed after 10s of inactivity, reducing RAM at rest.
 - Attaches to the same external `net` network so Caddy can resolve `cloud` to its container IP. No host-side port mapping — only Caddy (and therefore Cloudflare-fronted clients) can reach it.
+- Healthcheck: `php -r 'echo phpversion();'` every 30s — verifies the FPM runtime is responsive.
 - Backing up Nextcloud is `rsync` of `/var/www/github/jehpok.com/cloud/data` plus a snapshot of the SQLite file (or run `docker exec cloud occ maintenance:mode --on` before, then `--off` after, for a clean snapshot).
 
 ### Ollama (host systemd service)
@@ -165,15 +171,15 @@ Ollama runs **on the host**, not in Docker, as a systemd unit at `/etc/systemd/s
 - Started/stopped with `systemctl {start,stop,restart} ollama`. Logs via `journalctl -u ollama`.
 - **Do not delete or disable this unit.** It is protected by the safety rules in `AGENTS.md`. If a task appears to require removing it, stop and ask the user.
 
-### Log rotation
+### Log rotation and healthchecks
 
 All three compose files pin the `json-file` log driver with a size cap so container logs can't grow without bound on the host:
 
-- `domain` (Caddy): 10 MB × 3 files (≈30 MB cap)
-- `cloud` (Nextcloud): 10 MB × 3 files (≈30 MB cap)
-- `tailnet` (CoreDNS): 5 MB × 2 files (≈10 MB cap)
+- `domain` (Caddy): 10 MB × 3 files (≈30 MB cap), healthcheck `caddy version` every 30s
+- `cloud` (Nextcloud): 10 MB × 3 files (≈30 MB cap), healthcheck `php -r phpversion()` every 30s
+- `tailnet` (CoreDNS): 5 MB × 2 files (≈10 MB cap), no healthcheck (`FROM scratch` image)
 
-Adjust in `services/<service>/docker-compose.yml` under each service's `logging:` block.
+Adjust in `services/<service>/docker-compose.yml` under each service's `logging:` / `healthcheck:` block.
 
 The standalone `https://cloud.jehpok.com` vhost in the Caddyfile uses `php_fastcgi cloud:9000` to pass requests to the Nextcloud FPM container, with `request_body { max_size 10G }` for large uploads. Caddy also serves Nextcloud's static files directly from the read-only bind mount at `/nextcloud`. Cloudflare fronts this hostname with the existing `*.jehpok.com` Origin Certificate, so no new TLS material is needed.
 

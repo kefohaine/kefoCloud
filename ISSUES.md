@@ -45,9 +45,9 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 - **Fix**: (a) add a second CoreDNS instance; (b) move DNS to host `dnsmasq` on `100.81.245.77:53`; (c) add a healthcheck + watchdog auto-restart.
 
 ### Healthchecks still need deploy to take effect
-- **File**: `services/{cloud,domain,tailnet}/docker-compose.yml`
-- **Problem**: Healthcheck blocks were added to the compose files but not yet applied to running containers.
-- **Fix**: `docker compose ... up -d --force-recreate` for all three services.
+- **File**: `services/{cloud,domain}/docker-compose.yml`
+- **Problem**: Healthcheck blocks were added and applied. `domain` and `cloud` are healthy. `tailnet` (CoreDNS) is a `FROM scratch` image with no shell — no in-container healthcheck is possible; set to `test: ["NONE"]`.
+- **Fix**: For tailnet, consider an external watchdog (host-side `systemd` timer that checks `dig @100.81.245.77 vps.jehpok.com` and restarts the container on failure) if health monitoring is needed.
 
 ---
 
