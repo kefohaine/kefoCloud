@@ -1,6 +1,6 @@
 services:
   domain:
-    image: caddy:2
+    image: caddy:2.11.4
     container_name: domain
     restart: unless-stopped
 
