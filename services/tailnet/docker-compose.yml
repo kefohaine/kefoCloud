@@ -11,6 +11,12 @@ services:
       - "100.81.245.77:53:53/udp"
       - "100.81.245.77:53:53/tcp"
 
+    healthcheck:
+      test: ["CMD-SHELL", "nslookup vps.jehpok.com 127.0.0.1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
     volumes:
       - ./Corefile:/etc/coredns/Corefile:ro
 
