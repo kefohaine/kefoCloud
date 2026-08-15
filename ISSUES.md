@@ -67,8 +67,3 @@ Tracked for follow-up by other agents. Ordered by severity.
 - **File**: git remote `origin` contains a GitHub PAT (`github_pat_...`) embedded in the URL
 - **Problem**: The PAT is stored in `.git/config` in plaintext. If the repo is cloned elsewhere or config is exposed, the token leaks.
 - **Fix**: Switch the remote to SSH (`git@github.com:...`) or use a credential helper / `gh auth login`. Rotate the exposed PAT on GitHub.
-
-### AGENTS.md is empty
-- **File**: `AGENTS.md`
-- **Problem**: Contains only the literal text "AGENTS.md". Provides no guidance to agents.
-- **Fix**: Document build/lint/deploy commands, conventions, and the ISSUES.md workflow, or delete the file if not needed.
