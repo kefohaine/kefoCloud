@@ -1,4 +1,6 @@
-admin off
+{
+    admin off
+}
 
 (tls_keys) {
     tls /certs/cert.pem /certs/key.pem
