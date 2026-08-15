@@ -105,16 +105,21 @@ services/
     docker-compose.yml       # Nextcloud (name: cloud)
     php-fpm.d/zz-custom.conf # PHP-FPM pool config
     .env                     # NEXTCLOUD_ADMIN_USER / NEXTCLOUD_ADMIN_PASSWORD (gitignored)
+  ollama/
+    ollama.service           # Reference copy of the host systemd unit
+  ssh/
+    50-cloud-init.conf       # Reference copy of SSH hardening config
 content/
   domain/
     www/                     # static files for www.jehpok.com
     app/                     # static files for app.jehpok.com
     vps/                     # static files for vps.jehpok.com (Tailscale-only)
+Makefile                     # Recipes: up-all, setup-host, backup, backup-secrets, migrate, etc.
 AGENTS.md                    # Operating guide for agents
 ISSUES.md                    # Known problems and improvements
 ```
 
-`services/` holds everything that describes the running services. `content/` holds the data they serve. The split lets the same `services/` be checked into git while large or versioned content can live elsewhere on disk (mirrored into the repo for portability).
+`services/` holds everything that describes the running services (Docker) plus reference copies of host-level configs (Ollama, SSH). `content/` holds the data they serve. The split lets the same `services/` be checked into git while large or versioned content can live elsewhere on disk (mirrored into the repo for portability). Use `make setup-host` to copy the reference configs to their live paths on a fresh VPS.
 
 On the VPS, the cloned repo sits at `/var/www/github/jehpok.com/repo/`. Caddy mounts it as `/srv`, so an `app` vhost with `root * /srv/content/domain/app` resolves to `/var/www/github/jehpok.com/repo/content/domain/app`.
 
@@ -237,31 +242,51 @@ Deployment is manual. Edit the repo on the VPS, then `docker compose ... up -d -
 
 ### First-time setup
 
-On the VPS:
+The `Makefile` wraps all common operations. On a fresh VPS:
 
 ```bash
-# One-time
+# One-time: install Docker, Ollama, Tailscale
+apt update && apt install -y docker.io docker-compose-plugin git curl
+curl -fsSL https://ollama.com/install.sh | sh
+curl -fsSL https://tailscale.com/install.sh | sh
+tailscale up
+
+# Restore secrets (certs, SSH keys, Tailscale state) from your offline backup:
+sudo tar xzf secrets-*.tar.gz -C /
+sudo chown -R debian:debian /home/debian/.ssh
+sudo chmod 600 /home/debian/.ssh/github_key
+
+# Restore Nextcloud data from your offline backup:
+sudo mkdir -p /var/www/github/jehpok.com/cloud
+sudo cp -a cloud-backup-*/data /var/www/github/jehpok.com/cloud/data
+sudo chown -R 33:33 /var/www/github/jehpok.com/cloud/data
+
+# Clone the repo and bootstrap:
+git clone git@github.com:friedutch/jehpok.com.git /var/www/github/jehpok.com/repo
+cp <your-.env> /var/www/github/jehpok.com/repo/services/cloud/.env
 docker network create net
-mkdir -p /var/www/github/jehpok.com/{certs,cloud/data}
-# Drop Cloudflare Origin cert + key at:
-#   /var/www/github/jehpok.com/certs/cert.pem
-#   /var/www/github/jehpok.com/certs/key.pem
-# Clone the repo to:
-git clone <repo-url> /var/www/github/jehpok.com/repo
+make -C /var/www/github/jehpok.com/repo setup-host
+make -C /var/www/github/jehpok.com/repo up-all
 
-# Nextcloud host data dir must be owned by uid 33 (www-data inside the container)
-# BEFORE first start, otherwise the entrypoint will refuse to write.
-chown -R 33:33 /var/www/github/jehpok.com/cloud/data
-
-# Create services/cloud/.env (gitignored) with the admin credentials:
-#   NEXTCLOUD_ADMIN_USER=<your-admin>
-#   NEXTCLOUD_ADMIN_PASSWORD=<long-random>
-
-# Pull / start services
-docker compose -f /var/www/github/jehpok.com/repo/services/domain/docker-compose.yml up -d
-docker compose -f /var/www/github/jehpok.com/repo/services/tailnet/docker-compose.yml up -d
-docker compose -f /var/www/github/jehpok.com/repo/services/cloud/docker-compose.yml up -d
+# Update Cloudflare DNS to point to the new VPS IP.
 ```
+
+Or run `make -C /var/www/github/jehpok.com/repo migrate` for a printed step-by-step guide.
+
+### Backing up for migration
+
+On the **old** VPS, before migrating:
+
+```bash
+make backup          # snapshots Nextcloud data dir (maintenance mode on/off)
+make backup-secrets  # bundles certs, SSH keys, Ollama unit, SSH config, Tailscale state
+```
+
+Download **both** files off the VPS:
+- `/var/www/github/jehpok.com/cloud-backup-<date>`
+- `/var/www/github/jehpok.com/secrets-backup/secrets-<date>.tar.gz`
+
+The secrets bundle contains private keys and Tailscale identity — keep it offline and secure.
 
 ### Day-to-day
 
