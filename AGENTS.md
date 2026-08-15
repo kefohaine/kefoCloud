@@ -17,6 +17,7 @@ These are non-negotiable. Follow them on every task.
    - After reaching a meaningful milestone (a working feature, a resolved issue, a doc sync), commit and push.
    - This is in addition to the normal commit step — pushing is now **required**, not optional, at these points. If a push fails (network/auth), fix the push before proceeding with the critical task.
 4. **Minimize token usage.** Be extremely efficient: short, accurate, and understanding. No filler, no preamble, no restating the question, no recaps of what you just did. Batch tool calls that can run in parallel. Read only the file regions you need. Prefer one precise edit over rewriting whole sections. Answer in as few words as the task allows without sacrificing correctness.
+5. **After completing a big sequence of tasks, update every `.md` file (`README.md`, `AGENTS.md`, `ISSUES.md`) to reflect the current system state, then commit and `git push jehpok.com main`.** This is a milestone — see rule 3.
 
 ## Repository structure
 
