@@ -14,6 +14,12 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - /var/www/github/jehpok.com/certs:/certs:ro
 
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
     networks:
       - net
 
