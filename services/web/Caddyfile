@@ -41,7 +41,7 @@ https://api.jehpok.com {
 https://cloud.jehpok.com {
     import tls_keys
 
-    root * /var/www/nextcloud
+    root * /nextcloud
 
     request_body {
         max_size 10G
