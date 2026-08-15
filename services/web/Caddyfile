@@ -55,7 +55,9 @@ https://cloud.jehpok.com {
     redir /.well-known/carddav /remote.php/dav 301
     redir /.well-known/caldav /remote.php/dav 301
 
-    php_fastcgi cloud:9000
+    php_fastcgi cloud:9000 {
+        root /var/www/html
+    }
 
     file_server
 }
