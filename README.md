@@ -20,8 +20,8 @@ This document describes the full system: what runs where, why each piece exists,
                   ┌──────────────┼──────────────┐
                   │ /ai          │              │ /api/*
                   ▼              │              ▼
-              ┌───────┐     static files        /srv/content/web/
-              │  ai   │     (/srv/content/web)  api/
+              ┌───────┐     static files        /srv/content/domain/
+              │  ai   │     (/srv/content/domain)  api/
               │ FastAPI
               │ llama.cpp
               └────────┘
@@ -47,11 +47,11 @@ Only one VPS, one host. Cloudflare fronts three of the four hostnames; the Tails
 
 | Domain             | Where DNS points            | Who can reach it                            | What is served                                  |
 |--------------------|-----------------------------|---------------------------------------------|-------------------------------------------------|
-| www.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Static site from `content/web/www`              |
-| app.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Static site from `content/web/app`              |
+| www.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Static site from `content/domain/www`              |
+| app.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Static site from `content/domain/app`              |
 | api.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | `POST /ai` → LLM                              |
 | cloud.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Nextcloud (file sync, calendar, photos)         |
-| vps.jehpok.com     | **Not in Cloudflare**       | Only devices on the Tailscale network       | Static site from `content/web/vps`              |
+| vps.jehpok.com     | **Not in Cloudflare**       | Only devices on the Tailscale network       | Static site from `content/domain/vps`              |
 
 The asymmetry on `vps.jehpok.com` is deliberate. By keeping it out of public DNS, the only way anyone can know its IP is by being inside the Tailscale network. Even a DNS leak on the user's device cannot reveal an address that public resolvers don't serve.
 
@@ -119,7 +119,7 @@ content/
 
 `services/` holds everything that describes the running services. `content/` holds the data they serve. The split lets the same `services/` be checked into git while large or versioned content can live elsewhere on disk (mirrored into the repo for portability).
 
-On the VPS, the cloned repo sits at `/var/www/github/jehpok.com/repo/`. Caddy mounts it as `/srv`, so an `app` vhost with `root * /srv/content/web/app` resolves to `/var/www/github/jehpok.com/repo/content/web/app`.
+On the VPS, the cloned repo sits at `/var/www/github/jehpok.com/repo/`. Caddy mounts it as `/srv`, so an `app` vhost with `root * /srv/content/domain/app` resolves to `/var/www/github/jehpok.com/repo/content/domain/app`.
 
 ## Service details
 
@@ -130,12 +130,12 @@ On the VPS, the cloned repo sits at `/var/www/github/jehpok.com/repo/`. Caddy mo
 - `domain` is the only container in this compose file.
 - Caddy terminates TLS using a Cloudflare Origin Certificate loaded from `/certs/cert.pem` + `/certs/key.pem`.
 - Caddy routes:
-  - `https://www.jehpok.com` → static fileserver from `/srv/content/web/www`.
-  - `https://app.jehpok.com` → static fileserver from `/srv/content/web/app`.
+  - `https://www.jehpok.com` → static fileserver from `/srv/content/domain/www`.
+  - `https://app.jehpok.com` → static fileserver from `/srv/content/domain/app`.
   - `https://api.jehpok.com`:
     - `handle /ai*` → reverse-proxy `ai:8000`.
     - `handle /status` → reverse-proxy `ai:8000`.
-  - `https://vps.jehpok.com` → static fileserver from `/srv/content/web/vps`.
+  - `https://vps.jehpok.com` → static fileserver from `/srv/content/domain/vps`.
 
 ### tailnet (CoreDNS)
 
@@ -219,7 +219,7 @@ If Cloudflare's bot challenge is active on the API hostname, a curl request will
 
 1. Tailscale split DNS routes the query to the VPS tailnet IP, port 53 — the `tailnet` CoreDNS container.
 2. CoreDNS returns `100.81.245.77`.
-3. The browser connects to `100.81.245.77:443`. Caddy accepts, matches `https://vps.jehpok.com`, serves static files from `/srv/content/web/vps`.
+3. The browser connects to `100.81.245.77:443`. Caddy accepts, matches `https://vps.jehpok.com`, serves static files from `/srv/content/domain/vps`.
 
 ### curl on the local Mac hits `https://api.jehpok.com/ai`
 
