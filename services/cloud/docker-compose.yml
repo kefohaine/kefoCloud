@@ -33,6 +33,8 @@ services:
       NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD}
       NEXTCLOUD_OVERWRITEPROTOCOL: https
       NEXTCLOUD_TRUSTED_DOMAINS: "cloud.jehpok.com"
+      TRUSTED_PROXIES: "172.22.0.0/16"
+      OVERWRITECLIURL: "https://cloud.jehpok.com"
 
     logging:
       driver: json-file
