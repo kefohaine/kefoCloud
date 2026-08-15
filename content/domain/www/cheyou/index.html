@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cheyenne — 29 Août 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400;1,500&family=Dancing+Script:wght@400;600;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --rose: #e8b4b8;
+    --rose-deep: #d49aa0;
+    --gold: #e6c87a;
+    --gold-deep: #d4a847;
+    --cream: #fdf8f3;
+    --ink: #4a3f3a;
+    --blush: #f5e6e8;
+    --lavender: #e0d4f0;
+    --sage: #d5e3d8;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Cormorant Garamond', serif;
+    background: var(--cream);
+    color: var(--ink);
+    line-height: 1.8;
+    overflow-x: hidden;
+  }
+
+  /* floating hearts */
+  .float-hearts {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 0;
+    overflow: hidden;
+  }
+  .float-hearts span {
+    position: absolute;
+    font-size: 1.5rem;
+    opacity: 0;
+    animation: floatUp 12s linear infinite;
+  }
+  @keyframes floatUp {
+    0% { transform: translateY(100vh) rotate(0deg); opacity: 0; }
+    10% { opacity: 0.6; }
+    90% { opacity: 0.4; }
+    100% { transform: translateY(-10vh) rotate(360deg); opacity: 0; }
+  }
+
+  /* hero */
+  .hero {
+    position: relative;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    background: linear-gradient(135deg, var(--blush) 0%, var(--cream) 40%, var(--lavender) 100%);
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -50%; left: -50%;
+    width: 200%; height: 200%;
+    background: radial-gradient(circle, rgba(232,180,184,0.15) 0%, transparent 50%);
+    animation: shimmer 8s ease-in-out infinite alternate;
+  }
+  @keyframes shimmer {
+    0% { transform: rotate(0deg) scale(1); }
+    100% { transform: rotate(180deg) scale(1.2); }
+  }
+  .hero-content { position: relative; z-index: 2; padding: 24px; }
+  .hero .ornament {
+    font-size: 2rem;
+    color: var(--gold-deep);
+    letter-spacing: 12px;
+    margin-bottom: 20px;
+  }
+  .hero h1 {
+    font-family: 'Dancing Script', cursive;
+    font-size: clamp(3rem, 10vw, 6rem);
+    font-weight: 700;
+    color: var(--rose-deep);
+    text-shadow: 0 2px 20px rgba(212,154,160,0.3);
+  }
+  .hero .subtitle {
+    font-family: 'Playfair Display', serif;
+    font-size: 1rem;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    color: var(--ink);
+    margin-top: 24px;
+    opacity: 0.7;
+  }
+  .hero .date-badge {
+    display: inline-block;
+    margin-top: 32px;
+    padding: 12px 32px;
+    border: 1px solid var(--gold-deep);
+    border-radius: 50px;
+    font-family: 'Playfair Display', serif;
+    font-size: 1.1rem;
+    color: var(--gold-deep);
+    letter-spacing: 2px;
+    background: rgba(255,255,255,0.4);
+    backdrop-filter: blur(4px);
+  }
+  .hero .scroll-hint {
+    position: absolute;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 1.5rem;
+    color: var(--rose-deep);
+    animation: bounce 2s ease-in-out infinite;
+  }
+  @keyframes bounce {
+    0%,100% { transform: translateX(-50%) translateY(0); }
+    50% { transform: translateX(-50%) translateY(10px); }
+  }
+
+  /* sections */
+  .wrap {
+    max-width: 700px;
+    margin: 0 auto;
+    padding: 0 24px;
+    position: relative;
+    z-index: 1;
+  }
+  section {
+    padding: 80px 0;
+    position: relative;
+  }
+  .section-divider {
+    text-align: center;
+    padding: 20px 0;
+    color: var(--gold-deep);
+    font-size: 1.5rem;
+    letter-spacing: 8px;
+  }
+  section h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: 0.75rem;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    color: var(--rose-deep);
+    margin-bottom: 32px;
+    text-align: center;
+  }
+  section h2::after {
+    content: ' ✦ ';
+    color: var(--gold);
+  }
+  section h2::before {
+    content: ' ✦ ';
+    color: var(--gold);
+  }
+  section p {
+    font-size: 1.25rem;
+    text-align: center;
+    color: var(--ink);
+    font-weight: 300;
+  }
+
+  /* why you */
+  .why p {
+    font-family: 'Cormorant Garamond', serif;
+    font-style: italic;
+    font-size: 1.4rem;
+    max-width: 520px;
+    margin: 0 auto;
+  }
+
+  /* things list */
+  .things-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    margin-top: 32px;
+  }
+  .thing-card {
+    background: rgba(255,255,255,0.6);
+    border: 1px solid var(--line, #e8e0dd);
+    border-radius: 16px;
+    padding: 24px;
+    text-align: center;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    backdrop-filter: blur(6px);
+  }
+  .thing-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 30px rgba(212,154,160,0.15);
+  }
+  .thing-card .emoji {
+    font-size: 2rem;
+    margin-bottom: 12px;
+    display: block;
+  }
+  .thing-card .label {
+    font-size: 1.05rem;
+    color: var(--ink);
+  }
+
+  /* timeline */
+  .timeline {
+    position: relative;
+    max-width: 560px;
+    margin: 0 auto;
+  }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 80px;
+    top: 0; bottom: 0;
+    width: 2px;
+    background: linear-gradient(var(--rose), var(--gold), var(--lavender));
+  }
+  .tl-item {
+    display: flex;
+    gap: 24px;
+    padding: 20px 0;
+    position: relative;
+  }
+  .tl-item .dot {
+    flex: 0 0 16px;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--rose-deep);
+    margin-left: 72px;
+    margin-top: 6px;
+    border: 3px solid var(--cream);
+    box-shadow: 0 0 0 2px var(--rose);
+    z-index: 1;
+  }
+  .tl-item .content { flex: 1; }
+  .tl-item .when {
+    font-family: 'Playfair Display', serif;
+    font-size: 0.8rem;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--gold-deep);
+    margin-bottom: 4px;
+  }
+  .tl-item .what {
+    font-size: 1.15rem;
+    color: var(--ink);
+  }
+
+  /* spotify */
+  .spotify-section {
+    background: linear-gradient(180deg, var(--cream) 0%, var(--blush) 100%);
+    padding: 80px 24px;
+    text-align: center;
+  }
+  .spotify-section h2 {
+    font-family: 'Dancing Script', cursive;
+    font-size: 2rem;
+    color: var(--rose-deep);
+    text-transform: none;
+    letter-spacing: 0;
+    margin-bottom: 8px;
+  }
+  .spotify-section h2::before,
+  .spotify-section h2::after { content: ''; }
+  .spotify-section .sub {
+    color: var(--ink);
+    opacity: 0.6;
+    font-size: 1rem;
+    margin-bottom: 32px;
+    font-style: italic;
+  }
+  .spotify-embed {
+    max-width: 600px;
+    margin: 0 auto;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 8px 40px rgba(212,154,160,0.2);
+  }
+  .spotify-embed iframe {
+    display: block;
+    width: 100%;
+    height: 352px;
+    border: none;
+  }
+
+  /* quote */
+  .quote-section {
+    text-align: center;
+    padding: 100px 24px;
+    background: var(--lavender;
+    background: linear-gradient(135deg, var(--lavender), var(--blush));
+  }
+  .quote-section blockquote {
+    font-family: 'Dancing Script', cursive;
+    font-size: clamp(1.8rem, 5vw, 2.8rem);
+    color: var(--rose-deep);
+    max-width: 560px;
+    margin: 0 auto;
+    line-height: 1.4;
+  }
+  .quote-section .attr {
+    margin-top: 20px;
+    font-family: 'Playfair Display', serif;
+    font-size: 0.9rem;
+    letter-spacing: 3px;
+    color: var(--ink);
+    opacity: 0.6;
+  }
+
+  /* countdown */
+  .countdown-section {
+    text-align: center;
+    padding: 80px 24px;
+  }
+  .countdown-section h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1rem;
+    letter-spacing: 4px;
+    margin-bottom: 32px;
+  }
+  .countdown-section h2::before,
+  .countdown-section h2::after { content: ' ✦ '; color: var(--gold); }
+  #countdown {
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  .cd-unit {
+    background: rgba(255,255,255,0.6);
+    border: 1px solid var(--rose);
+    border-radius: 16px;
+    padding: 20px 28px;
+    min-width: 100px;
+    backdrop-filter: blur(4px);
+  }
+  .cd-unit .num {
+    font-family: 'Playfair Display', serif;
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--rose-deep);
+    display: block;
+  }
+  .cd-unit .lbl {
+    font-size: 0.75rem;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--ink);
+    opacity: 0.6;
+  }
+
+  /* letter */
+  .letter-section {
+    padding: 100px 24px;
+    background: linear-gradient(180deg, var(--blush) 0%, var(--cream) 100%);
+  }
+  .letter {
+    max-width: 560px;
+    margin: 0 auto;
+    background: rgba(255,255,255,0.7);
+    padding: 48px 40px;
+    border-radius: 8px;
+    border-left: 3px solid var(--rose-deep);
+    box-shadow: 0 4px 30px rgba(212,154,160,0.1);
+  }
+  .letter p {
+    text-align: left;
+    font-size: 1.15rem;
+    margin-bottom: 20px;
+    font-style: italic;
+  }
+  .letter .sign {
+    text-align: right;
+    font-family: 'Dancing Script', cursive;
+    font-size: 1.8rem;
+    color: var(--rose-deep);
+    margin-top: 24px;
+  }
+
+  /* footer */
+  footer {
+    text-align: center;
+    padding: 80px 24px 60px;
+    background: var(--cream);
+  }
+  footer .hearts {
+    font-size: 2rem;
+    color: var(--rose-deep);
+    letter-spacing: 8px;
+  }
+  footer p {
+    margin-top: 16px;
+    font-family: 'Playfair Display', serif;
+    font-size: 0.85rem;
+    letter-spacing: 3px;
+    color: var(--ink);
+    opacity: 0.5;
+  }
+
+  @media (max-width: 600px) {
+    .tl-item .dot { margin-left: 64px; }
+    .timeline::before { left: 72px; }
+    .cd-unit { min-width: 80px; padding: 16px 20px; }
+    .cd-unit .num { font-size: 2rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="float-hearts">
+  <span style="left:5%;animation-delay:0s">❤</span>
+  <span style="left:15%;animation-delay:3s">♥</span>
+  <span style="left:30%;animation-delay:6s">❤</span>
+  <span style="left:45%;animation-delay:2s">✦</span>
+  <span style="left:60%;animation-delay:5s">♥</span>
+  <span style="left:75%;animation-delay:8s">❤</span>
+  <span style="left:90%;animation-delay:1s">✦</span>
+  <span style="left:20%;animation-delay:9s">♥</span>
+  <span style="left:50%;animation-delay:10s">❤</span>
+  <span style="left:85%;animation-delay:4s">♥</span>
+</div>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-content">
+    <div class="ornament">✦ ❀ ✦</div>
+    <h1>Cheyenne</h1>
+    <p class="subtitle">Notre premier anniversaire</p>
+    <div class="date-badge">29 Août 2026</div>
+  </div>
+  <div class="scroll-hint">↓</div>
+</div>
+
+<div class="section-divider">❀ ✦ ❀ ✦ ❀</div>
+
+<!-- POURQUOI TOI -->
+<div class="wrap">
+  <section class="why">
+    <h2>Pourquoi toi</h2>
+    <p>Tu rends les jours ordinaires mémorables. Un an déjà, et je souris encore quand ton nom s'allume sur mon écran. Voici un petit coin d'internet pour te dire ce que je ne dis pas assez souvent.</p>
+  </section>
+</div>
+
+<div class="section-divider">✦ ❀ ✦</div>
+
+<!-- CE QUE J'AIME -->
+<div class="wrap">
+  <section>
+    <h2>Ce que j'aime chez toi</h2>
+    <div class="things-grid">
+      <div class="thing-card">
+        <span class="emoji">😂</span>
+        <span class="label">Ton rire — le vrai, pas le poli</span>
+      </div>
+      <div class="thing-card">
+        <span class="emoji">🧠</span>
+        <span class="label">Ta mémoire des petits détails que j'oublie</span>
+      </div>
+      <div class="thing-card">
+        <span class="emoji">📱</span>
+        <span class="label">Tes messages quand quelque chose de drôle arrive</span>
+      </div>
+      <div class="thing-card">
+        <span class="emoji">🫖</span>
+        <span class="label">Ton café fait exactement comme j'aime</span>
+      </div>
+      <div class="thing-card">
+        <span class="emoji">🌙</span>
+        <span class="label">Nos soirées qui finissent trop tard</span>
+      </div>
+      <div class="thing-card">
+        <span class="emoji">✨</span>
+        <span class="label">Ta façon d'être toi, simplement</span>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="section-divider">❀ ✦ ❀ ✦ ❀</div>
+
+<!-- TIMELINE -->
+<div class="wrap">
+  <section>
+    <h2>Nos moments</h2>
+    <div class="timeline">
+      <div class="tl-item">
+        <div class="dot"></div>
+        <div class="content">
+          <div class="when">Jour 1</div>
+          <div class="what">Notre première discussion. Je ne voulais pas que ça s'arrête.</div>
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="dot"></div>
+        <div class="content">
+          <div class="when">Mois 1</div>
+          <div class="what">On apprenait le rythme l'un de l'autre — tes habitudes, ton humour, ton cœur.</div>
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="dot"></div>
+        <div class="content">
+          <div class="when">Mois 6</div>
+          <div class="what">Ça a cessé d'être nouveau. Ça est devenu maison.</div>
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="dot"></div>
+        <div class="content">
+          <div class="when">An 1</div>
+          <div class="what">Ici. Je te choisis encore. Merci de m'avoir choisi en retour.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="section-divider">✦ ❀ ✦</div>
+
+<!-- COUNTDOWN -->
+<div class="countdown-section">
+  <h2>Le grand jour arrive dans</h2>
+  <div id="countdown">
+    <div class="cd-unit"><span class="num" id="cd-d">—</span><span class="lbl">Jours</span></div>
+    <div class="cd-unit"><span class="num" id="cd-h">—</span><span class="lbl">Heures</span></div>
+    <div class="cd-unit"><span class="num" id="cd-m">—</span><span class="lbl">Minutes</span></div>
+    <div class="cd-unit"><span class="num" id="cd-s">—</span><span class="lbl">Secondes</span></div>
+  </div>
+</div>
+
+<div class="section-divider">❀ ✦ ❀ ✦ ❀</div>
+
+<!-- QUOTE -->
+<div class="quote-section">
+  <blockquote>« Toi, c'est la seule personne avec qui je veux rire de tout et pour rien. »</blockquote>
+  <div class="attr">— Pour Cheyenne</div>
+</div>
+
+<div class="section-divider">✦ ❀ ✦</div>
+
+<!-- SPOTIFY -->
+<div class="spotify-section">
+  <h2>Notre playlist</h2>
+  <p class="sub">Les chansons qui nous appartiennent — mets le son 🎶</p>
+  <div class="spotify-embed">
+    <iframe src="https://open.spotify.com/embed/playlist/42PqqeFMjQU1YSvVleMfTV?utm_source=generator&theme=0" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
+  </div>
+</div>
+
+<div class="section-divider">❀ ✦ ❀ ✦ ❀</div>
+
+<!-- LETTER -->
+<div class="letter-section">
+  <div class="letter">
+    <p>Ma Cheyenne,</p>
+    <p>Un an. 365 jours où tu as été la première pensée du matin et la dernière du soir. Chaque message, chaque rire partagé, chaque silence confortable — tout m'a mené ici, à cette page, à ce moment.</p>
+    <p>Tu es ma personne. Celle qui rend le monde plus doux, les couleurs plus vives, les chansons plus belles. Merci d'être là, d'être toi, d'être à moi.</p>
+    <p>Voici pour l'an prochain : plus de nuits tardives, plus de blagues internes, plus de matins où personne ne veut se lever le premier. Quoi qu'arrive, je le veux avec toi.</p>
+    <p>Je t'aime.</p>
+    <div class="sign">— moi</div>
+  </div>
+</div>
+
+<div class="section-divider">✦ ❀ ✦</div>
+
+<!-- NEXT YEAR -->
+<div class="wrap">
+  <section>
+    <h2>Vers la deuxième année</h2>
+    <p>Plus de rires, plus de danses idiotes, plus de regards volés. Le meilleur est encore à venir. 🥂</p>
+  </section>
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <div class="hearts">♥ ❤ ♥</div>
+  <p>Pour Cheyenne — 29 Août 2026 — Joyeux premier anniversaire</p>
+</footer>
+
+<script>
+  const target = new Date('2026-08-29T00:00:00');
+  function tick() {
+    const now = new Date();
+    let diff = target - now;
+    if (diff < 0) {
+      document.getElementById('cd-d').textContent = '🎉';
+      document.getElementById('cd-h').textContent = '🎉';
+      document.getElementById('cd-m').textContent = '🎉';
+      document.getElementById('cd-s').textContent = '🎉';
+      return;
+    }
+    const d = Math.floor(diff / 86400000); diff %= 86400000;
+    const h = Math.floor(diff / 3600000); diff %= 3600000;
+    const m = Math.floor(diff / 60000); diff %= 60000;
+    const s = Math.floor(diff / 1000);
+    document.getElementById('cd-d').textContent = d;
+    document.getElementById('cd-h').textContent = String(h).padStart(2,'0');
+    document.getElementById('cd-m').textContent = String(m).padStart(2,'0');
+    document.getElementById('cd-s').textContent = String(s).padStart(2,'0');
+  }
+  tick();
+  setInterval(tick, 1000);
+</script>
+
+</body>
+</html>
