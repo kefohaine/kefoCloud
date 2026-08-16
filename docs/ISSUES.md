@@ -4,7 +4,7 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 
 ---
 
-## Cleaner
+## Hygiene
 
 ### GitHub PAT token in remote URL  **[needs human approval]**
 - **File**: `.git/config` — git remote `origin` contains a GitHub PAT embedded in the URL
@@ -19,7 +19,7 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 
 ---
 
-## More robust
+## Robustness
 
 ### Migrate SQLite → MariaDB  **[needs human approval]**
 - **File**: `services/cloud/docker-compose.yml`
@@ -40,7 +40,7 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 
 ---
 
-## More secure
+## Security
 
 ### `vps.jehpok.com` has no auth beyond Tailscale membership  **[needs human approval]**
 - **File**: `services/domain/Caddyfile` (`https://vps.jehpok.com`)
@@ -68,7 +68,7 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 
 ---
 
-## More efficient
+## Efficiency
 
 ### PHP-FPM pool sizing under concurrent sync
 - **File**: `services/cloud/php-fpm.d/zz-custom.conf`
@@ -88,7 +88,7 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 
 ---
 
-## Resolved (kept for history)
+## Solved (kept for history)
 
 - **Log rotation deployed** — all 3 containers running with `json-file` size caps (Aug 2026).
 - **Image tags pinned** — `caddy:2.11.4`, `coredns:1.14.6`, `nextcloud:34.0.2-fpm` (Aug 2026).
