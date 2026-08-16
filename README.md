@@ -113,7 +113,7 @@ content/
     www/                     # static files for www.jehpok.com
     app/                     # static files for app.jehpok.com
     vps/                     # static files for vps.jehpok.com (Tailscale-only)
-Makefile                     # Recipes: up-all, setup-host, backup, backup-secrets, migrate, etc.
+Makefile                     # Recipes: up-all, setup-host, backup-cloud, backup-secrets, migrate, etc.
 docs/AGENTS.md                    # Operating guide for agents
 docs/ISSUES.md                    # Known problems and improvements
 ```

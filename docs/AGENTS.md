@@ -41,7 +41,7 @@ Host-side paths (not in git):
 
 ## Running services on the VPS
 
-Prefer the `Makefile` recipes (canonical entrypoints) over raw `docker compose`. The full recipe list with comments lives in `README.md` under "Day-to-day"; the Makefile is the source of truth. The `net` bridge network is `external: true` — create once with `docker network create net` on a fresh host. Deployment is manual (no CI/CD): `make restart-<service>` for a mounted config edit, `make up-<service>` when the compose file or image changed (force-recreate).
+Prefer the `Makefile` recipes (canonical entrypoints) over raw `docker compose`. The full recipe list with comments lives in `README.md` under "CMD Sheet"; the Makefile is the source of truth. The `net` bridge network is `external: true` — create once with `docker network create net` on a fresh host. Deployment is manual (no CI/CD): `make restart-<service>` for a mounted config edit, `make up-<service>` when the compose file or image changed (force-recreate).
 
 ## Service details
 
