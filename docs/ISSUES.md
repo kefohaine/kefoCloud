@@ -6,12 +6,6 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 
 ## Hygiene
 
-### GitHub PAT token in remote URL  **[needs human approval]**
-- **File**: `.git/config` — git remote `origin` contains a GitHub PAT embedded in the URL
-- **Problem**: The PAT is stored in plaintext. If the repo is cloned elsewhere or config is exposed, the token leaks. Pushes via `origin` fail with 403; pushes must go through the `jehpok.com` SSH remote.
-- **Fix**: `git remote remove origin` (or switch to SSH). Then rotate the exposed PAT on GitHub.
-- **Why approval**: the operator may want `origin` for read-only fetches with a rotated token.
-
 ### `tailnet_default` Docker network created unnecessarily
 - **File**: `services/tailnet/docker-compose.yml`
 - **Problem**: Compose creates a default bridge network even though CoreDNS only needs host port mapping.
@@ -62,8 +56,8 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 
 ### Rotate the exposed GitHub PAT  **[needs human approval]**
 - **File**: GitHub account settings (outside repo)
-- **Problem**: The PAT in `.git/config` `origin` is already exposed. Even if `origin` is removed, the token is compromised.
-- **Fix**: Revoke the PAT at https://github.com/settings/tokens and issue a new one (or drop PAT usage entirely in favor of SSH).
+- **Problem**: The PAT that was in `.git/config` `origin` is compromised — it lived in git history before the purge. Even though the remote and the history are gone, the token value was exposed.
+- **Fix**: Revoke the PAT at https://github.com/settings/tokens (or confirm it's already expired). Drop PAT usage entirely in favor of SSH.
 - **Why approval**: operator action on GitHub.
 
 ---
@@ -123,6 +117,6 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 - **Reference configs in repo** — Ollama unit + SSH hardening copied under `services/`.
 - **Cheyenne anniversary page** — FR, Spotify embed, countdown, styled.
 - **Nextcloud bind mount split** — `cloud/html` (root) + `cloud/users` (datadirectory).
-- **`.md` writing rules** — 9 rules added to AGENTS.md; README deduped (328→271 lines).
+- **`.md` writing rules** — 10 rules added to AGENTS.md; README deduped (328→271 lines).
 - **Docs reorganized** — AGENTS.md + ISSUES.md moved to `docs/`; README stays at root.
-- **Sensitive files purged from git history** — `config/web/certs/key.pem`, `cert.pem`, `.github/workflows/deploy.yml`, `install.sh`, `app.py` removed via `git filter-repo`; history rewritten, force-pushed.
+- **Sensitive files purged from git history** — `config/web/certs/key.pem`, `cert.pem`, `.github/workflows/deploy.yml`, `install.sh`, `app.py` removed via `git filter-repo`; `origin` remote (PAT-embedded) removed; history rewritten, force-pushed.

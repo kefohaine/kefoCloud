@@ -64,8 +64,7 @@ Containers: `domain` (Caddy), `cloud` (Nextcloud FPM), `tailnet` (CoreDNS). The 
 
 ## Git remotes
 
-- `jehpok.com` — SSH remote (`git@github.com:friedutch/jehpok.com.git`). Use this for pushes and pulls.
-- `origin` — HTTPS remote with a PAT embedded in the URL. Do not use for pushes (403). See docs/ISSUES.md for rotating this token.
+- `jehpok.com` — SSH remote (`git@github.com:friedutch/jehpok.com.git`). The only remote; use for pushes and pulls.
 
 ```bash
 git push jehpok.com main
