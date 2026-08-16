@@ -80,6 +80,7 @@ git push jehpok.com main
 - Use `expose` (not `ports`) for inter-container services. Only `domain` (80/443) and `tailnet` (53 on Tailscale IP) publish host ports.
 - The `net` Docker network is `external: true`. Do not let compose files create their own private networks for inter-service communication.
 - Do not add comments to code unless asked.
+- A sentence ending in "?" is a question, not an order. Answer it (yes/no/how) before doing anything. Only act when the operator explicitly tells you to. If the question is ambiguous, rephrase it back and ask for confirmation.
 
 ## Before finishing a task
 
