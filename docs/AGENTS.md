@@ -17,8 +17,8 @@ These are non-negotiable. Follow them on every task.
    - After reaching a meaningful milestone (a working feature, a resolved issue, a doc sync), commit and push.
    - This is in addition to the normal commit step — pushing is now **required**, not optional, at these points. If a push fails (network/auth), fix the push before proceeding with the critical task.
 4. **Minimize token usage.** Be extremely efficient: short, accurate, and understanding. No filler, no preamble, no restating the question, no recaps of what you just did. Batch tool calls that can run in parallel. Read only the file regions you need. Prefer one precise edit over rewriting whole sections. Answer in as few words as the task allows without sacrificing correctness.
-5. **After completing a big sequence of tasks, update every `.md` file (`README.md`, `AGENTS.md`, `ISSUES.md`) to reflect the current system state, then commit and `git push jehpok.com main`.** This is a milestone — see rule 3.
-6. **When an issue is explicitly intended by the operator or documented in `README.md` as a deliberate feature/design choice, document it in `README.md` (if not already there) instead of treating it as a bug in `ISSUES.md`.** Do not fix intended behavior; record the rationale so future agents don't "correct" it.
+5. **After completing a big sequence of tasks, update every `.md` file (`README.md`, `docs/AGENTS.md`, `docs/ISSUES.md`) to reflect the current system state, then commit and `git push jehpok.com main`.** This is a milestone — see rule 3.
+6. **When an issue is explicitly intended by the operator or documented in `README.md` as a deliberate feature/design choice, document it in `README.md` (if not already there) instead of treating it as a bug in `docs/ISSUES.md`.** Do not fix intended behavior; record the rationale so future agents don't "correct" it.
 7. **When every task from a prompt is completed and no issues are left to currently fix, commit and `git push jehpok.com main`.** Do not wait for the operator to ask — pushing at the end of a completed prompt is mandatory.
 
 ## Repository structure
@@ -29,8 +29,8 @@ services/          Docker compose files + configs (checked into git)
   cloud/           Nextcloud (PHP-FPM, SQLite)
   tailnet/         CoreDNS (Tailscale split-DNS, bound to 100.81.245.77:53)
 content/domain/    Static site files served by Caddy
-AGENTS.md          This file
-ISSUES.md          Known problems and improvements to fix
+docs/AGENTS.md          This file
+docs/ISSUES.md          Known problems and improvements to fix
 ```
 
 Host-side paths (not in git):
@@ -65,7 +65,7 @@ Containers: `domain` (Caddy), `cloud` (Nextcloud FPM), `tailnet` (CoreDNS). The 
 ## Git remotes
 
 - `jehpok.com` — SSH remote (`git@github.com:friedutch/jehpok.com.git`). Use this for pushes and pulls.
-- `origin` — HTTPS remote with a PAT embedded in the URL. Do not use for pushes (403). See ISSUES.md for rotating this token.
+- `origin` — HTTPS remote with a PAT embedded in the URL. Do not use for pushes (403). See docs/ISSUES.md for rotating this token.
 
 ```bash
 git push jehpok.com main
@@ -89,8 +89,8 @@ Follow these on every edit to any `.md` file in this repo.
 
 1. **No duplicated content across files.** State each fact once, in the most appropriate file:
    - `README.md` — system architecture, rationale, request flows, operational gotchas, setup/migration runbooks. The "what and why".
-   - `AGENTS.md` — how to work in the repo: commands, conventions, safety rules, task workflow. The "how to act".
-   - `ISSUES.md` — only open problems and improvements, plus a Resolved section for history. Nothing else.
+   - `docs/AGENTS.md` — how to work in the repo: commands, conventions, safety rules, task workflow. The "how to act".
+   - `docs/ISSUES.md` — only open problems and improvements, plus a Resolved section for history. Nothing else.
 2. **No pasting repo file contents.** Don't copy Caddyfile/Corefile/compose/Makefile blocks into docs. Describe in prose; link to the file path. Command snippets (`make ...`, shell one-liners) are fine.
 3. **No duplicated prose within a file.** If a paragraph repeats what another section already said, delete one.
 4. **Prose over code blocks.** Use a code block only for commands the reader will run, or a structure that genuinely needs monospace (the architecture diagram, the directory tree). Everything else is prose.
@@ -104,21 +104,21 @@ Follow these on every edit to any `.md` file in this repo.
 
 1. Verify the change works: `make up-<service>` (or `make restart-<service>` for a mounted config edit) and `make logs-<service>` / `make status`.
 2. Update `README.md` if the architecture, request flow, or service details changed.
-3. Update or resolve items in `ISSUES.md` if you fixed something listed there.
-4. Add new issues you discovered to `ISSUES.md`.
+3. Update or resolve items in `docs/ISSUES.md` if you fixed something listed there.
+4. Add new issues you discovered to `docs/ISSUES.md`.
 5. Commit and `git push jehpok.com main` (required at milestones and before critical tasks — see Safety rules).
 
-## ISSUES.md workflow
+## docs/ISSUES.md workflow
 
-`ISSUES.md` is the task tracker. When you pick up an issue:
+`docs/ISSUES.md` is the task tracker. When you pick up an issue:
 
 1. Move it under a `## In progress` heading (or just start working).
 2. Follow the **Fix** steps in the issue entry.
 3. Verify the fix.
-4. Remove the entry from `ISSUES.md` when fully resolved, or update it with notes if partially done.
+4. Remove the entry from `docs/ISSUES.md` when fully resolved, or update it with notes if partially done.
 5. Commit with a message referencing what was fixed.
 
-When you discover a new problem, append it to `ISSUES.md` under the appropriate severity heading (`High` / `Medium` / `Low`) with the same format:
+When you discover a new problem, append it to `docs/ISSUES.md` under the appropriate severity heading (`High` / `Medium` / `Low`) with the same format:
 ```
 ### Short title
 - **File**: path/to/file

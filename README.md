@@ -115,8 +115,8 @@ content/
     app/                     # static files for app.jehpok.com
     vps/                     # static files for vps.jehpok.com (Tailscale-only)
 Makefile                     # Recipes: up-all, setup-host, backup, backup-secrets, migrate, etc.
-AGENTS.md                    # Operating guide for agents
-ISSUES.md                    # Known problems and improvements
+docs/AGENTS.md                    # Operating guide for agents
+docs/ISSUES.md                    # Known problems and improvements
 ```
 
 `services/` holds everything that describes the running services (Docker) plus reference copies of host-level configs (Ollama, SSH). `content/` holds the data they serve. The split lets the same `services/` be checked into git while large or versioned content can live elsewhere on disk (mirrored into the repo for portability). Use `make setup-host` to copy the reference configs to their live paths on a fresh VPS.
@@ -175,7 +175,7 @@ Ollama runs **on the host**, not in Docker, as a systemd unit at `/etc/systemd/s
 - Unit: `enabled`, `Restart=always`, runs as user `ollama`, listens on the default `:11434`.
 - Models live at `/home/ollama/.ollama/models`.
 - Started/stopped with `systemctl {start,stop,restart} ollama`. Logs via `journalctl -u ollama`.
-- **Do not delete or disable this unit.** It is protected by the safety rules in `AGENTS.md`. If a task appears to require removing it, stop and ask the user.
+- **Do not delete or disable this unit.** It is protected by the safety rules in `docs/AGENTS.md`. If a task appears to require removing it, stop and ask the user.
 
 ### Log rotation and healthchecks
 

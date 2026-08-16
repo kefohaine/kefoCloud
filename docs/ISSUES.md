@@ -82,7 +82,7 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 
 ### Stop Ollama when idle  **[needs human approval]**
 - **File**: `/etc/systemd/system/ollama.service`
-- **Problem**: Ollama holds ~44 MB RSS idle with no models loaded. Protected by AGENTS.md safety rules (must not delete), but temporary `systemctl stop` between sessions would free RAM.
+- **Problem**: Ollama holds ~44 MB RSS idle with no models loaded. Protected by docs/AGENTS.md safety rules (must not delete), but temporary `systemctl stop` between sessions would free RAM.
 - **Fix**: `systemctl stop ollama` when not in use; `systemctl start ollama` before use.
 - **Why approval**: operator convenience trade-off (cold start latency vs. idle RAM).
 
