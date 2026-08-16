@@ -90,21 +90,21 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 
 ## Solved (kept for history)
 
-### Early system build (before Aug 2026)
-- **Initial site + Docker** — `index.html`, first `docker-compose.yml` (dfa87df).
-- **Caddy setup** — first vhost config (f3970e3).
-- **GitHub Actions deploy** — `.github/workflows/deploy.yml` with SSH-key deploys (eba1685); later retired (8a12a65).
-- **AI/LLM API service** — `containers/ai/app.py` on a separate network, Ollama-backed (af7d56a); later removed (f960051).
-- **TLS certificates** — valid Cloudflare Origin cert provided (f9e74cc); dummy certs deleted (8d712b7).
-- **Nextcloud integration** — first hosted on the VPS (173920f), migrated to `app.jehpok.com/cloud` (a1e70b0), reverted (78adb5f), then linked via PHP-FPM (9d6b864).
-- **Nextcloud backend upgrade** — image bump (0791597).
-- **CoreDNS isolated** — split into its own directory (f7beb77); config renamed (9caf96e).
-- **FPM worker regulation** — `zz-custom.conf` added, pool tuning (09c2011).
-- **Container renames** — `domain`, `cloud`, `tailnet` names pinned (e7ab862).
-- **Local LLM hosting removed, open resolver fixed, Caddy hardened** (f960051).
-- **SSH hardened** — password auth + root login disabled, `AllowUsers debian` (e43ade1).
+### Jul 2026 — early system build
+- **Initial site + Docker** — `index.html`, first `docker-compose.yml`.
+- **Caddy setup** — first vhost config.
+- **GitHub Actions deploy** — `.github/workflows/deploy.yml` with SSH-key deploys; later retired.
+- **AI/LLM API service** — `containers/ai/app.py` on a separate network, Ollama-backed; later removed.
 
-### Aug 2026 hardening + ops
+### Aug 2026 — Nextcloud, TLS, hardening, ops
+- **TLS certificates** — valid Cloudflare Origin cert provided; dummy certs deleted.
+- **Nextcloud integration** — first hosted on the VPS, migrated to `app.jehpok.com/cloud`, reverted, then linked via PHP-FPM.
+- **Nextcloud backend upgrade** — image bump.
+- **CoreDNS isolated** — split into its own directory; config renamed.
+- **FPM worker regulation** — `zz-custom.conf` added, pool tuning.
+- **Container renames** — `domain`, `cloud`, `tailnet` names pinned.
+- **Local LLM hosting removed, open resolver fixed, Caddy hardened.**
+- **SSH hardened** — password auth + root login disabled, `AllowUsers debian`.
 - **Log rotation deployed** — all 3 containers with `json-file` size caps.
 - **Image tags pinned** — `caddy:2.11.4`, `coredns:1.14.6`, `nextcloud:34.0.2-fpm`.
 - **PHP-FPM `ondemand`** — idle workers freed after 10s.

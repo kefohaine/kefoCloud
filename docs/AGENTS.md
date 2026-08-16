@@ -99,6 +99,7 @@ Follow these on every edit to any `.md` file in this repo.
 7. **Keep it short.** Every line should answer "would an agent miss this without help?" If not, cut it. No filler, no restating the obvious, no generic advice.
 8. **Verify before writing.** Don't describe a path, port, or behavior you haven't checked in the actual file. Stale docs are worse than missing docs.
 9. **Preserve verified useful guidance.** When editing an existing `.md`, keep what's accurate and high-signal; only delete fluff, duplicates, or stale claims. Don't rewrite blindly.
+10. **Categorize `Solved` history by month.** In `docs/ISSUES.md`, group resolved items under `### Mon YYYY — short label` headings (e.g. `### Jul 2026 — early system build`). Add a new heading when the month changes, not per item.
 
 ## Before finishing a task
 
