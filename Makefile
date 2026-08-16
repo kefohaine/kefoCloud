@@ -46,7 +46,7 @@ push:
 
 backup:
 >docker exec -w /var/www/html cloud php occ maintenance:mode --on
->cp -a /var/www/github/jehpok.com/cloud/data /var/www/github/jehpok.com/cloud-backup-$$(date +%Y%m%d)
+>cp -a /var/www/github/jehpok.com/cloud/users /var/www/github/jehpok.com/cloud-backup-$$(date +%Y%m%d)
 >docker exec -w /var/www/html cloud php occ maintenance:mode --off
 >@echo "Backup at /var/www/github/jehpok.com/cloud-backup-$$(date +%Y%m%d)"
 
@@ -99,9 +99,11 @@ migrate:
 >@echo "   sudo chmod 600 /home/debian/.ssh/github_key"
 >@echo ""
 >@echo "   # restore Nextcloud data:"
->@echo "   sudo mkdir -p /var/www/github/jehpok.com/cloud"
->@echo "   sudo cp -a cloud-backup-*/data /var/www/github/jehpok.com/cloud/data"
->@echo "   sudo chown -R 33:33 /var/www/github/jehpok.com/cloud/data"
+>@echo "   sudo mkdir -p /var/www/github/jehpok.com/cloud/html /var/www/github/jehpok.com/cloud/users"
+>@echo "   sudo cp -a cloud-backup-*/html/* /var/www/github/jehpok.com/cloud/html/"
+>@echo "   sudo cp -a cloud-backup-*/users/* /var/www/github/jehpok.com/cloud/users/"
+>@echo "   echo '# Nextcloud data directory' | sudo tee /var/www/github/jehpok.com/cloud/users/.ncdata"
+>@echo "   sudo chown -R 33:33 /var/www/github/jehpok.com/cloud/html /var/www/github/jehpok.com/cloud/users"
 >@echo ""
 >@echo "   # clone and bootstrap:"
 >@echo "   git clone git@github.com:friedutch/jehpok.com.git /var/www/github/jehpok.com/repo"

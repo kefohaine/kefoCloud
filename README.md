@@ -156,7 +156,9 @@ The `tailnet` service is defined in `services/tailnet/docker-compose.yml` and us
 `services/cloud/docker-compose.yml` defines the `cloud` service. Key points:
 
 - Uses the official `nextcloud:34.0.2-fpm` image (PHP-FPM variant, not Apache). SQLite is auto-selected because no `MYSQL_*` / `POSTGRES_*` env vars are set — the database file lives at `db/owncloud.db` inside the data volume.
-- Data is a host bind mount at `/var/www/github/jehpok.com/cloud/data` → container `/var/www/html`. The directory must be owned by uid 33 (the in-container `www-data`) before first start: `chown -R 33:33 /var/www/github/jehpok.com/cloud/data`.
+- Nextcloud is split across two host bind mounts:
+  - `/var/www/github/jehpok.com/cloud/html` → container `/var/www/html` — the Nextcloud install (3rdparty, core, apps, config, occ). Must be owned by uid 33 (the in-container `www-data`) before first start: `chown -R 33:33 /var/www/github/jehpok.com/cloud/html`.
+  - `/var/www/github/jehpok.com/cloud/users` → container `/var/www/html/data` — the datadirectory (`appdata_*`, per-user files, `owncloud.db` SQLite, `nextcloud.log`). Matches `'datadirectory' => '/var/www/html/data'` in `config.php`. Must also be owned by uid 33, and contain a `.ncdata` marker file (Nextcloud refuses to start without it).
 - Admin credentials are loaded from `services/cloud/.env` (gitignored) via Compose variable substitution: `NEXTCLOUD_ADMIN_USER` and `NEXTCLOUD_ADMIN_PASSWORD`. Do NOT hardcode these.
 - `NEXTCLOUD_TRUSTED_DOMAINS=cloud.jehpok.com` so Nextcloud only serves requests with that Host header.
 - `NEXTCLOUD_OVERWRITEPROTOCOL=https` so the protocol that PHP's request handling sees matches what Caddy terminates.
@@ -165,7 +167,7 @@ The `tailnet` service is defined in `services/tailnet/docker-compose.yml` and us
 - PHP-FPM runs `pm = ondemand` with `pm.max_children = 8` and `process_idle_timeout = 10s` — idle workers are freed after 10s of inactivity, reducing RAM at rest.
 - Attaches to the same external `net` network so Caddy can resolve `cloud` to its container IP. No host-side port mapping — only Caddy (and therefore Cloudflare-fronted clients) can reach it.
 - Healthcheck: `php -r 'echo phpversion();'` every 30s — verifies the FPM runtime is responsive.
-- Backing up Nextcloud is `rsync` of `/var/www/github/jehpok.com/cloud/data` plus a snapshot of the SQLite file (or run `docker exec cloud occ maintenance:mode --on` before, then `--off` after, for a clean snapshot).
+- Backing up Nextcloud is `rsync` of `/var/www/github/jehpok.com/cloud/users` plus a snapshot of the SQLite file (or run `docker exec cloud occ maintenance:mode --on` before, then `--off` after, for a clean snapshot).
 
 ### Ollama (host systemd service)
 
@@ -257,9 +259,11 @@ sudo chown -R debian:debian /home/debian/.ssh
 sudo chmod 600 /home/debian/.ssh/github_key
 
 # Restore Nextcloud data from your offline backup:
-sudo mkdir -p /var/www/github/jehpok.com/cloud
-sudo cp -a cloud-backup-*/data /var/www/github/jehpok.com/cloud/data
-sudo chown -R 33:33 /var/www/github/jehpok.com/cloud/data
+sudo mkdir -p /var/www/github/jehpok.com/cloud/html /var/www/github/jehpok.com/cloud/users
+sudo cp -a cloud-backup-*/html/* /var/www/github/jehpok.com/cloud/html/
+sudo cp -a cloud-backup-*/users/* /var/www/github/jehpok.com/cloud/users/
+echo "# Nextcloud data directory" | sudo tee /var/www/github/jehpok.com/cloud/users/.ncdata
+sudo chown -R 33:33 /var/www/github/jehpok.com/cloud/html /var/www/github/jehpok.com/cloud/users
 
 # Clone the repo and bootstrap:
 git clone git@github.com:friedutch/jehpok.com.git /var/www/github/jehpok.com/repo

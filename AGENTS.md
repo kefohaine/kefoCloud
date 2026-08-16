@@ -37,7 +37,8 @@ Host-side paths (not in git):
 ```
 /var/www/github/jehpok.com/repo/       The cloned repo (Caddy mounts it as /srv)
 /var/www/github/jehpok.com/certs/      Cloudflare Origin cert + key
-/var/www/github/jehpok.com/cloud/data/ Nextcloud data dir (bind-mounted into container)
+/var/www/github/jehpok.com/cloud/html/    Nextcloud html root (3rdparty, core, apps, config, occ)
+/var/www/github/jehpok.com/cloud/users/   Nextcloud datadirectory (user files, owncloud.db, nextcloud.log)
 /etc/ssh/sshd_config.d/50-cloud-init.conf  SSH hardening (key-only, no root, debian only)
 /etc/systemd/system/ollama.service     Ollama systemd unit (DO NOT DELETE — see Safety rules)
 ```
