@@ -44,36 +44,22 @@ Host-side paths (not in git):
 
 ## Running services on the VPS
 
+Prefer the `Makefile` recipes (canonical entrypoints) over raw `docker compose` invocations:
+
 ```bash
-# All compose files use the external 'net' bridge network (except tailnet)
-docker network create net  # one-time
-
-# Start / recreate a service
-docker compose -f /var/www/github/jehpok.com/repo/services/<service>/docker-compose.yml up -d --force-recreate
-
-# Restart without recreating (after editing a mounted config)
-docker compose -f /var/www/github/jehpok.com/repo/services/<service>/docker-compose.yml restart
-
-# View logs
-docker logs <container_name> --tail 50 -f
-
-# Check status
-docker ps
+make up-all                          # start/recreate tailnet, domain, cloud (in that order)
+make up-<service>                    # up-domain | up-cloud | up-tailnet (force-recreate)
+make restart-<service>               # restart without recreating (after editing a mounted config)
+make logs-<service>                  # docker logs <name> --tail 50 -f
+make status                          # docker ps table
+make push MSG="message"              # git add -A && commit && git push jehpok.com main
+make backup                          # Nextcloud maintenance mode on → rsync data → off
+make backup-secrets                  # bundle certs, SSH keys, Ollama unit, Tailscale state
+make setup-host                      # copy reference configs to /etc and enable Ollama+sshd
+make migrate                         # print full VPS-to-VPS migration runbook
 ```
 
-Containers: `domain` (Caddy), `cloud` (Nextcloud FPM), `tailnet` (CoreDNS). All three currently running with log rotation applied.
-
-## Log rotation
-
-All three services pin json-file logging in their compose files with a size cap
-to prevent unbounded growth on the host:
-
-- `domain`: `max-size: 10m`, `max-file: 3` (≈30 MB cap)
-- `cloud`:  `max-size: 10m`, `max-file: 3` (≈30 MB cap)
-- `tailnet`: `max-size: 5m`,  `max-file: 2` (≈10 MB cap)
-
-Tweak these in `services/<service>/docker-compose.yml`. The defaults assume a
-small-volume personal VPS; raise them if you need longer log history.
+Containers: `domain` (Caddy), `cloud` (Nextcloud FPM), `tailnet` (CoreDNS). The `net` bridge network is `external: true` — create once with `docker network create net` on a fresh host. Log rotation (json-file with size caps) and healthchecks are pinned in each compose file; see README for the per-service values.
 
 ## Deployment
 
@@ -100,11 +86,11 @@ git push jehpok.com main
 
 ## Before finishing a task
 
-1. Verify the change works: `docker compose ... up -d --force-recreate` and check `docker logs`.
+1. Verify the change works: `make up-<service>` (or `make restart-<service>` for a mounted config edit) and `make logs-<service>` / `make status`.
 2. Update `README.md` if the architecture, request flow, or service details changed.
 3. Update or resolve items in `ISSUES.md` if you fixed something listed there.
 4. Add new issues you discovered to `ISSUES.md`.
-5. Commit with a clear message and push to `jehpok.com/main` (required at milestones and before critical tasks — see Safety rules).
+5. Commit and `git push jehpok.com main` (required at milestones and before critical tasks — see Safety rules).
 
 ## ISSUES.md workflow
 
