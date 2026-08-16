@@ -12,14 +12,10 @@ These are non-negotiable. Follow them on every task.
 
 1. **Never delete or disable the Ollama systemd service.** The unit at `/etc/systemd/system/ollama.service` is enabled and running (`ollama serve`). Do not `systemctl stop/disable ollama`, do not remove the unit file, do not `systemctl daemon-reload` after editing it, and do not replace it with a container. If a task seems to require removing Ollama, stop and ask the user instead of proceeding. If you need to restart it after a legit config change, use `systemctl restart ollama`.
 2. **Stay silent while doing tasks.** Do not narrate progress, do not print status updates, do not summarize what you just did. Run commands, edit files, and only emit text when you need a decision from the user or are reporting a blocker. Output should be minimal — the work product speaks for itself.
-3. **Back up with `git push` at milestones and before critical tasks.**
-   - Before any destructive or hard-to-reverse operation (deleting files, force-recreating containers, `systemctl` changes, DB/schema changes, firewall edits), first commit pending work and run `git push jehpok.com main`.
-   - After reaching a meaningful milestone (a working feature, a resolved issue, a doc sync), commit and push.
-   - This is in addition to the normal commit step — pushing is now **required**, not optional, at these points. If a push fails (network/auth), fix the push before proceeding with the critical task.
+3. **Push at milestones, before destructive ops, and when the prompt is done.** Before any hard-to-reverse operation (deleting files, force-recreating containers, `systemctl` changes, DB/schema changes, firewall edits), first commit and `git push jehpok.com main`. After reaching a milestone (feature, resolved issue, doc sync) or completing the prompt, also commit and push. Don't wait for the operator to ask. If a push fails, fix it before proceeding.
 4. **Minimize token usage.** Be extremely efficient: short, accurate, and understanding. No filler, no preamble, no restating the question, no recaps of what you just did. Batch tool calls that can run in parallel. Read only the file regions you need. Prefer one precise edit over rewriting whole sections. Answer in as few words as the task allows without sacrificing correctness.
-5. **After completing a big sequence of tasks, update every `.md` file (`README.md`, `docs/AGENTS.md`, `docs/ISSUES.md`) to reflect the current system state, then commit and `git push jehpok.com main`.** This is a milestone — see rule 3.
+5. **After completing a big sequence of tasks, update every `.md` file (`README.md`, `docs/AGENTS.md`, `docs/ISSUES.md`) to reflect the current system state, then commit and push.** This is a milestone — see rule 3.
 6. **When an issue is explicitly intended by the operator or documented in `README.md` as a deliberate feature/design choice, document it in `README.md` (if not already there) instead of treating it as a bug in `docs/ISSUES.md`.** Do not fix intended behavior; record the rationale so future agents don't "correct" it.
-7. **When every task from a prompt is completed and no issues are left to currently fix, commit and `git push jehpok.com main`.** Do not wait for the operator to ask — pushing at the end of a completed prompt is mandatory.
 
 ## Repository structure
 
