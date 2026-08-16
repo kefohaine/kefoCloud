@@ -88,7 +88,7 @@ migrate:
 >@echo "   /var/www/github/jehpok.com/cloud-backup-*"
 >@echo ""
 >@echo "3. On the NEW VPS (Debian), as root then debian:"
->@echo "   apt update && apt install -y docker.io docker-compose-plugin git curl"
+>@echo "   apt update && apt install -y docker.io docker-compose-plugin git curl make sudo"
 >@echo "   curl -fsSL https://ollama.com/install.sh | sh"
 >@echo "   curl -fsSL https://tailscale.com/install.sh | sh"
 >@echo "   tailscale up"

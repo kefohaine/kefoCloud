@@ -196,7 +196,7 @@ The `Makefile` wraps all common operations. On a fresh VPS:
 
 ```bash
 # One-time: install Docker, Ollama, Tailscale
-apt update && apt install -y docker.io docker-compose-plugin git curl
+apt update && apt install -y docker.io docker-compose-plugin git curl make sudo
 curl -fsSL https://ollama.com/install.sh | sh
 curl -fsSL https://tailscale.com/install.sh | sh
 tailscale up
