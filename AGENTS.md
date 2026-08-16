@@ -83,6 +83,23 @@ git push jehpok.com main
 - A sentence ending in "?" is a question, not an order. Answer it (yes/no/how) before doing anything. Only act when the operator explicitly tells you to. If the question is ambiguous, rephrase it back and ask for confirmation.
 - Do not paste entire file contents (Caddyfile, Corefile, compose files, Makefile) into `README.md` or other docs. Describe what they do in prose; the files are the source of truth. Command snippets (`make ...`, shell one-liners) are fine.
 
+## `.md` writing rules
+
+Follow these on every edit to any `.md` file in this repo.
+
+1. **No duplicated content across files.** State each fact once, in the most appropriate file:
+   - `README.md` — system architecture, rationale, request flows, operational gotchas, setup/migration runbooks. The "what and why".
+   - `AGENTS.md` — how to work in the repo: commands, conventions, safety rules, task workflow. The "how to act".
+   - `ISSUES.md` — only open problems and improvements, plus a Resolved section for history. Nothing else.
+2. **No pasting repo file contents.** Don't copy Caddyfile/Corefile/compose/Makefile blocks into docs. Describe in prose; link to the file path. Command snippets (`make ...`, shell one-liners) are fine.
+3. **No duplicated prose within a file.** If a paragraph repeats what another section already said, delete one.
+4. **Prose over code blocks.** Use a code block only for commands the reader will run, or a structure that genuinely needs monospace (the architecture diagram, the directory tree). Everything else is prose.
+5. **One source of truth.** If a detail appears in two files, pick one and delete the other. Prefer the executable source (compose file, Makefile) as truth; docs summarize it.
+6. **No runtime snapshots.** Don't write "all three currently running" or "healthy" — it drifts the moment a container stops. Describe the steady-state config, not the current transient state.
+7. **Keep it short.** Every line should answer "would an agent miss this without help?" If not, cut it. No filler, no restating the obvious, no generic advice.
+8. **Verify before writing.** Don't describe a path, port, or behavior you haven't checked in the actual file. Stale docs are worse than missing docs.
+9. **Preserve verified useful guidance.** When editing an existing `.md`, keep what's accurate and high-signal; only delete fluff, duplicates, or stale claims. Don't rewrite blindly.
+
 ## Before finishing a task
 
 1. Verify the change works: `make up-<service>` (or `make restart-<service>` for a mounted config edit) and `make logs-<service>` / `make status`.

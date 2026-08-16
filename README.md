@@ -167,7 +167,6 @@ The `tailnet` service is defined in `services/tailnet/docker-compose.yml` and us
 - PHP-FPM runs `pm = ondemand` with `pm.max_children = 8` and `process_idle_timeout = 10s` — idle workers are freed after 10s of inactivity, reducing RAM at rest.
 - Attaches to the same external `net` network so Caddy can resolve `cloud` to its container IP. No host-side port mapping — only Caddy (and therefore Cloudflare-fronted clients) can reach it.
 - Healthcheck: `php -r 'echo phpversion();'` every 30s — verifies the FPM runtime is responsive.
-- Backing up Nextcloud is `rsync` of `/var/www/github/jehpok.com/cloud/users` plus a snapshot of the SQLite file (or run `docker exec cloud occ maintenance:mode --on` before, then `--off` after, for a clean snapshot).
 
 ### Ollama (host systemd service)
 
@@ -187,54 +186,6 @@ All three compose files pin the `json-file` log driver with a size cap so contai
 - `tailnet` (CoreDNS): 5 MB × 2 files (≈10 MB cap), no healthcheck (`FROM scratch` image)
 
 Adjust in `services/<service>/docker-compose.yml` under each service's `logging:` / `healthcheck:` block.
-
-## Docker network plumbing
-
-A single user-defined bridge network named `net`:
-
-```
-docker network create net
-```
-
-Both compose files reference it as `external: true`. Without that, each compose would create its own private network and `domain` would not be able to resolve `cloud`.
-
-Docker's embedded DNS at `127.0.0.11` resolves container names on this network. So Caddy's `php_fastcgi cloud:9000` resolves to `cloud`'s container IP via this DNS — no explicit IP needed.
-
-## Tailscale + DNS behavior in detail
-
-### Without Tailscale (any device)
-
-- `www`, `app`, `api` resolve to Cloudflare IPs, then to the VPS via Cloudflare's proxy.
-- `vps.jehpok.com` doesn't resolve at all — there's no public DNS record for it.
-
-### With Tailscale + `tailnet` container up
-
-- Tailscale's MagicDNS knows `vps.jehpok.com` only by the global DNS state. By default it asks public resolvers, which don't have the record. To make the split DNS behave correctly, Tailscale's admin console has a "DNS" setting that forwards queries for `*.jehpok.com` to a custom resolver. That resolver is the VPS's CoreDNS container (`100.x.x.x:53` on the tailnet).
-- The CoreDNS `hosts` block then returns `100.81.245.77` for `vps.jehpok.com`. The connection goes device → Tailnet → VPS on its tailnet IP.
-
-### With Tailscale + `tailnet` container down
-
-- Tailscale's split DNS now forwards to an unresponsive resolver.
-- The client surfaces this as `dns_forward_failing` errors.
-- Every `jehpok.com` query fails because Tailscale is treating `*.jehpok.com` as "ask the split-DNS server." Even `www.jehpok.com` (which would normally fall through to public DNS) is held hostage because the resolver never returns NXDOMAIN, it just times out.
-- Fix: keep the `tailnet` container running. `restart: unless-stopped` already handles crashes; the only way to take it down is a deliberate `docker stop` while editing it.
-
-## End-to-end request examples
-
-### Browser hits `https://api.jehpok.com`
-
-1. Browser resolves `api.jehpok.com` via the system resolver → Cloudflare IP.
-2. TLS handshake terminates at Cloudflare. Cloudflare opens a second TLS connection to the origin (VPS :443), presenting the Origin Certificate.
-3. Caddy's `domain` container accepts the connection, matches the `https://api.jehpok.com` host block.
-4. Caddy returns the static `ok` response, which travels back through Cloudflare to the browser.
-
-If Cloudflare's bot challenge is active on the API hostname, a curl request will get the JS challenge page rather than the response. That's expected; the API is being hit from a non-browser client. Mitigation lives in Cloudflare's WAF, not in this repo.
-
-### Tailscale device hits `https://vps.jehpok.com`
-
-1. Tailscale split DNS routes the query to the VPS tailnet IP, port 53 — the `tailnet` CoreDNS container.
-2. CoreDNS returns `100.81.245.77`.
-3. The browser connects to `100.81.245.77:443`. Caddy accepts, matches `https://vps.jehpok.com`, serves static files from `/srv/content/domain/vps`.
 
 ## Deployment
 
@@ -277,18 +228,10 @@ Or run `make -C /var/www/github/jehpok.com/repo migrate` for a printed step-by-s
 
 ### Backing up for migration
 
-On the **old** VPS, before migrating:
+`make backup` snapshots Nextcloud data; `make backup-secrets` bundles certs, SSH keys, the Ollama unit, and Tailscale state. Download both files off the VPS — the secrets bundle contains private keys and Tailscale identity.
 
-```bash
-make backup          # snapshots Nextcloud data dir (maintenance mode on/off)
-make backup-secrets  # bundles certs, SSH keys, Ollama unit, SSH config, Tailscale state
-```
-
-Download **both** files off the VPS:
 - `/var/www/github/jehpok.com/cloud-backup-<date>`
 - `/var/www/github/jehpok.com/secrets-backup/secrets-<date>.tar.gz`
-
-The secrets bundle contains private keys and Tailscale identity — keep it offline and secure.
 
 ### Day-to-day
 

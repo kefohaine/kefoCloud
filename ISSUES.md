@@ -68,12 +68,6 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 
 ---
 
-## More comfy
-
-_(The `Makefile` now covers common deploy/ops recipes — `up-*`, `restart-*`, `logs-*`, `status`, `push`, `backup`, `backup-secrets`, `setup-host`, `migrate`. No separate `scripts/` dir needed.)_
-
----
-
 ## More efficient
 
 ### PHP-FPM pool sizing under concurrent sync
