@@ -17,10 +17,12 @@ services:
       start_period: 30s
 
     volumes:
-      # Host bind mount keeps data visible at /var/www/github/jehpok.com/cloud/data
-      # so backups and rsync see it as a normal directory.
-      # chown -R 33:33 /var/www/github/jehpok.com/cloud/data BEFORE first start.
-      - /var/www/github/jehpok.com/cloud/data:/var/www/html:rw
+      # Nextcloud html root (3rdparty, core, apps, config, occ).
+      # chown -R 33:33 /var/www/github/jehpok.com/cloud/html BEFORE first start.
+      - /var/www/github/jehpok.com/cloud/html:/var/www/html:rw
+      # User files datadirectory (appdata_*, <user>/, owncloud.db, nextcloud.log).
+      # Matches 'datadirectory' => '/var/www/html/data' in config.php.
+      - /var/www/github/jehpok.com/cloud/users:/var/www/html/data:rw
       # Persistent PHP-FPM pool configuration
       - ./php-fpm.d/zz-custom.conf:/usr/local/etc/php-fpm.d/zz-custom.conf:ro
 
