@@ -7,7 +7,7 @@ COMPOSE := docker compose -f
 .PHONY: up-domain up-cloud up-tailnet up-all
 .PHONY: restart-domain restart-cloud restart-tailnet
 .PHONY: logs-domain logs-cloud logs-tailnet
-.PHONY: status push backup clean setup-host
+.PHONY: status push backup-cloud clean setup-host
 
 up-domain:
 >$(COMPOSE) $(REPO)/services/domain/docker-compose.yml up -d --force-recreate
@@ -44,7 +44,7 @@ status:
 push:
 >cd $(REPO) && git add -A && git commit -m "$(MSG)" && git push jehpok.com main
 
-backup:
+backup-cloud:
 >docker exec -w /var/www/html cloud php occ maintenance:mode --on
 >cp -a /var/www/github/jehpok.com/cloud/users /var/www/github/jehpok.com/cloud-backup-$$(date +%Y%m%d)
 >docker exec -w /var/www/html cloud php occ maintenance:mode --off
@@ -80,7 +80,7 @@ migrate:
 >@echo "=== Full migration to a new VPS ==="
 >@echo ""
 >@echo "1. On the OLD VPS:"
->@echo "   make backup          # snapshot Nextcloud data"
+>@echo "   make backup-cloud    # snapshot Nextcloud data"
 >@echo "   make backup-secrets  # bundle certs, keys, Tailscale state"
 >@echo ""
 >@echo "2. Download these OFF the old VPS:"

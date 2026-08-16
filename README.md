@@ -188,49 +188,15 @@ Adjust in `services/<service>/docker-compose.yml` under each service's `logging:
 
 ## Deployment
 
-Deployment is manual. Edit files on the VPS, then run `make up-<service>` (recreate) or `make restart-<service>` (reload mounted config). There is no CI/CD — pushes to `main` do not trigger anything.
+Deployment is manual — no CI/CD, pushes to `main` trigger nothing. Edit files on the VPS, then `make up-<service>` to recreate (after a compose or image change) or `make restart-<service>` to reload a mounted config edit.
 
-### First-time setup
+### First-time setup and migration
 
-The `Makefile` wraps all common operations. On a fresh VPS:
+Run `make migrate` for the full step-by-step runbook (install deps, restore secrets and Nextcloud data, `make setup-host`, `make up-all`, repoint Cloudflare DNS). It assumes: the `net` bridge exists (`docker network create net`), the Cloudflare Origin cert/key are at `/var/www/github/jehpok.com/certs/`, and Nextcloud's two bind mounts (`cloud/html`, `cloud/users`) are owned by uid 33 with a `.ncdata` marker in `cloud/users` before first start.
 
-```bash
-# One-time: install Docker, Ollama, Tailscale
-apt update && apt install -y docker.io docker-compose-plugin git curl make sudo
-curl -fsSL https://ollama.com/install.sh | sh
-curl -fsSL https://tailscale.com/install.sh | sh
-tailscale up
+### Backups
 
-# Restore secrets (certs, SSH keys, Tailscale state) from your offline backup:
-sudo tar xzf secrets-*.tar.gz -C /
-sudo chown -R debian:debian /home/debian/.ssh
-sudo chmod 600 /home/debian/.ssh/github_key
-
-# Restore Nextcloud data from your offline backup:
-sudo mkdir -p /var/www/github/jehpok.com/cloud/html /var/www/github/jehpok.com/cloud/users
-sudo cp -a cloud-backup-*/html/* /var/www/github/jehpok.com/cloud/html/
-sudo cp -a cloud-backup-*/users/* /var/www/github/jehpok.com/cloud/users/
-echo "# Nextcloud data directory" | sudo tee /var/www/github/jehpok.com/cloud/users/.ncdata
-sudo chown -R 33:33 /var/www/github/jehpok.com/cloud/html /var/www/github/jehpok.com/cloud/users
-
-# Clone the repo and bootstrap:
-git clone git@github.com:friedutch/jehpok.com.git /var/www/github/jehpok.com/repo
-cp <your-.env> /var/www/github/jehpok.com/repo/services/cloud/.env
-docker network create net
-make -C /var/www/github/jehpok.com/repo setup-host
-make -C /var/www/github/jehpok.com/repo up-all
-
-# Update Cloudflare DNS to point to the new VPS IP.
-```
-
-Or run `make -C /var/www/github/jehpok.com/repo migrate` for a printed step-by-step guide.
-
-### Backing up for migration
-
-`make backup` snapshots Nextcloud data; `make backup-secrets` bundles certs, SSH keys, the Ollama unit, and Tailscale state. Download both files off the VPS — the secrets bundle contains private keys and Tailscale identity.
-
-- `/var/www/github/jehpok.com/cloud-backup-<date>`
-- `/var/www/github/jehpok.com/secrets-backup/secrets-<date>.tar.gz`
+`make backup-cloud` snapshots Nextcloud data (maintenance mode on during the copy) to `/var/www/github/jehpok.com/cloud-backup-<date>`. `make backup-secrets` bundles certs, SSH keys, the Ollama unit, and Tailscale state to `/var/www/github/jehpok.com/secrets-backup/secrets-<date>.tar.gz`. Download both off the VPS — the secrets bundle contains private keys and Tailscale identity.
 
 ### Day-to-day
 
@@ -238,18 +204,12 @@ Use the `Makefile` recipes (canonical) rather than raw `docker compose`:
 
 ```bash
 make up-all            # start/recreate all three containers in order (tailnet, domain, cloud)
-make up-domain         # force-recreate Caddy — after editing its compose file or pulling a new image
-make up-cloud          # force-recreate Nextcloud — after editing its compose file or pulling a new image
-make up-tailnet        # force-recreate CoreDNS — after editing its compose file or pulling a new image
-make restart-domain    # reload Caddy without recreating — after editing the mounted Caddyfile
-make restart-cloud     # reload Nextcloud without recreating
-make restart-tailnet   # reload CoreDNS without recreating — after editing the mounted Corefile
-make logs-domain       # follow Caddy logs
-make logs-cloud        # follow Nextcloud logs
-make logs-tailnet      # follow CoreDNS logs
+make up-<service>      # force-recreate one container — up-domain | up-cloud | up-tailnet
+make restart-<service> # reload one container without recreating — after editing a mounted config
+make logs-<service>    # follow one container's logs — logs-domain | logs-cloud | logs-tailnet
 make status            # show a table of all running containers
 make push MSG="..."    # stage, commit, and push to the jehpok.com remote
-make backup            # snapshot Nextcloud data (maintenance mode on during the copy)
+make backup-cloud      # snapshot Nextcloud data (maintenance mode on during the copy)
 make backup-secrets    # bundle certs, SSH keys, Ollama unit, and Tailscale state for off-VPS storage
 make setup-host        # install reference configs to live paths and enable Ollama + sshd
 make migrate           # print the full VPS-to-VPS migration runbook
