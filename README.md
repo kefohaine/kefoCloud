@@ -198,7 +198,7 @@ Run `make migrate` for the full step-by-step runbook. It assumes: the `net` brid
 
 `make backup-cloud` snapshots Nextcloud data (maintenance mode on during the copy) to `/var/www/github/jehpok.com/cloud-backup-<date>`. `make backup-secrets` bundles certs, SSH keys, the Ollama unit, and Tailscale state to `/var/www/github/jehpok.com/secrets-backup/secrets-<date>.tar.gz`. Download both off the VPS — the secrets bundle contains private keys and Tailscale identity.
 
-### Day-to-day
+### CMD Sheet
 
 Use the `Makefile` recipes (canonical) rather than raw `docker compose`:
 
