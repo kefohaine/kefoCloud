@@ -188,11 +188,11 @@ Adjust in `services/<service>/docker-compose.yml` under each service's `logging:
 
 ## Deployment
 
-Deployment is manual — no CI/CD, pushes to `main` trigger nothing. Edit files on the VPS, then `make up-<service>` to recreate (after a compose or image change) or `make restart-<service>` to reload a mounted config edit.
+Deployment is manual — no CI/CD, pushes to `main` trigger nothing. Besides editing files on the VPS, use 'make' commands to control your workflow effortlessly.
 
 ### First-time setup and migration
 
-Run `make migrate` for the full step-by-step runbook (install deps, restore secrets and Nextcloud data, `make setup-host`, `make up-all`, repoint Cloudflare DNS). It assumes: the `net` bridge exists (`docker network create net`), the Cloudflare Origin cert/key are at `/var/www/github/jehpok.com/certs/`, and Nextcloud's two bind mounts (`cloud/html`, `cloud/users`) are owned by uid 33 with a `.ncdata` marker in `cloud/users` before first start.
+Run `make migrate` for the full step-by-step runbook. It assumes: the `net` bridge exists (`docker network create net`), the Cloudflare Origin cert/key are at `/var/www/github/jehpok.com/certs/`, and Nextcloud's two bind mounts (`cloud/html`, `cloud/users`) are owned by uid 33 with a `.ncdata` marker in `cloud/users` before first start.
 
 ### Backups
 
