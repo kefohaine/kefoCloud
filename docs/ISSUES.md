@@ -114,7 +114,7 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 - **Nextcloud overrides env-driven** — `TRUSTED_PROXIES` + `OVERWRITECLIURL` in compose; removed from `config.php`.
 - **Deploy/ops helper scripts** — covered by the Makefile recipes.
 - **System made fully recoverable** — `backup-secrets` + `migrate` recipes, README runbook.
-- **Reference configs in repo** — Ollama unit + SSH hardening copied under `services/`.
+- **Reference configs in repo** — Ollama unit + SSH hardening copied under `setup/`.
 - **Cheyenne anniversary page** — FR, Spotify embed, countdown, styled.
 - **Nextcloud bind mount split** — `cloud/html` (root) + `cloud/users` (datadirectory).
 - **`.md` writing rules** — 10 rules added to AGENTS.md; README deduped (328→271 lines).

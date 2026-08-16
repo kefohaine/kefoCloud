@@ -105,10 +105,9 @@ services/
     docker-compose.yml       # Nextcloud (name: cloud)
     php-fpm.d/zz-custom.conf # PHP-FPM pool config
     .env                     # NEXTCLOUD_ADMIN_USER / NEXTCLOUD_ADMIN_PASSWORD (gitignored)
-  ollama/
-    ollama.service           # Reference copy of the host systemd unit
-  ssh/
-    50-cloud-init.conf       # Reference copy of SSH hardening config
+setup/
+  ollama/ollama.service      # Reference copy of the host systemd unit
+  ssh/50-cloud-init.conf     # Reference copy of SSH hardening config
 content/
   domain/
     www/                     # static files for www.jehpok.com
@@ -119,7 +118,7 @@ docs/AGENTS.md                    # Operating guide for agents
 docs/ISSUES.md                    # Known problems and improvements
 ```
 
-`services/` holds everything that describes the running services (Docker) plus reference copies of host-level configs (Ollama, SSH). `content/` holds the data they serve. The split lets the same `services/` be checked into git while large or versioned content can live elsewhere on disk (mirrored into the repo for portability). Use `make setup-host` to copy the reference configs to their live paths on a fresh VPS.
+`services/` holds everything that describes the running services (Docker). `setup/` holds reference copies of host-level configs (Ollama, SSH) — used by `make setup-host` to restore them to live paths on a fresh VPS. `content/` holds the data the services serve. The split lets `services/` and `setup/` be checked into git while large or versioned content can live elsewhere on disk (mirrored into the repo for portability).
 
 On the VPS, the cloned repo sits at `/var/www/github/jehpok.com/repo/`. Caddy mounts it as `/srv`, so an `app` vhost with `root * /srv/content/domain/app` resolves to `/var/www/github/jehpok.com/repo/content/domain/app`.
 

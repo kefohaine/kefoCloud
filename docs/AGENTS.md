@@ -23,6 +23,7 @@ services/          Docker compose files + configs (checked into git)
   domain/          Caddy (TLS termination, reverse proxy, static files)
   cloud/           Nextcloud (PHP-FPM, SQLite)
   tailnet/         CoreDNS (Tailscale split-DNS, bound to 100.81.245.77:53)
+setup/             Reference copies of host-level configs (Ollama unit, SSH hardening)
 content/domain/    Static site files served by Caddy
 docs/AGENTS.md          This file
 docs/ISSUES.md          Known problems and improvements to fix

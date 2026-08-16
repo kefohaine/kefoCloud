@@ -55,8 +55,8 @@ clean:
 >sudo apt-get clean
 
 setup-host:
->sudo cp $(REPO)/services/ollama/ollama.service /etc/systemd/system/ollama.service
->sudo cp $(REPO)/services/ssh/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf
+>sudo cp $(REPO)/setup/ollama/ollama.service /etc/systemd/system/ollama.service
+>sudo cp $(REPO)/setup/ssh/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf
 >sudo systemctl daemon-reload
 >sudo systemctl enable --now ollama
 >sudo systemctl restart sshd
