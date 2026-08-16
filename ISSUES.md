@@ -30,7 +30,7 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 ### No automated backup script
 - **File**: (missing) `scripts/backup.sh`
 - **Problem**: Backups are manual `rsync`. No cron, no consistency guarantee for the DB.
-- **Fix**: Add `scripts/backup.sh`: `occ maintenance:mode --on` → DB snapshot (`sqlite3 .backup` now, `mariabackup` post-migration) + `rsync` of `cloud/data` → `--off`. Cron it.
+- **Fix**: Add `scripts/backup.sh`: `occ maintenance:mode --on` → DB snapshot (`sqlite3 .backup` now, `mariabackup` post-migration) + `rsync` of `cloud/users` → `--off`. Cron it.
 - **Why approval**: operator must choose a backup target (local path / remote / S3) and schedule.
 
 ### CoreDNS single point of failure for Tailscale DNS
