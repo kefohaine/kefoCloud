@@ -120,71 +120,7 @@ docs/ISSUES.md                    # Known problems and improvements
 
 `services/` holds everything that describes the running services (Docker). `setup/` holds reference copies of host-level configs (Ollama, SSH) — used by `make setup-host` to restore them to live paths on a fresh VPS. `content/` holds the data the services serve. The split lets `services/` and `setup/` be checked into git while large or versioned content can live elsewhere on disk (mirrored into the repo for portability).
 
-On the VPS, the cloned repo sits at `/var/www/github/jehpok.com/repo/`. Caddy mounts it as `/srv`, so an `app` vhost with `root * /srv/content/domain/app` resolves to `/var/www/github/jehpok.com/repo/content/domain/app`.
-
-## Service details
-
-### domain (Caddy 2)
-
-`services/domain/docker-compose.yml` defines the `domain` service. Key points:
-
-- `domain` is the only container in this compose file.
-- Publishes ports 80 and 443. All HTTP traffic is redirected to HTTPS with a 308.
-- Caddy terminates TLS using a Cloudflare Origin Certificate loaded from `/certs/cert.pem` + `/certs/key.pem`.
-- The admin API is disabled (`admin off` in a global options block) so no container on the `net` bridge can reconfigure Caddy at runtime.
-- Caddy routes:
-  - `https://www.jehpok.com` → static fileserver from `/srv/content/domain/www`.
-  - `https://app.jehpok.com` → static fileserver from `/srv/content/domain/app`.
-  - `https://api.jehpok.com`:
-    - Currently returns a static `ok` (no backend). Reserved for a future API service.
-  - `https://vps.jehpok.com` → static fileserver from `/srv/content/domain/vps`.
-  - `https://cloud.jehpok.com` → `php_fastcgi cloud:9000` (with `dial_timeout 10s`, `read_timeout 300s`, `write_timeout 300s` aligned to PHP-FPM's 200s terminate timeout) + static files from read-only bind mount at `/nextcloud`. Blocks internal paths (`/data/*`, `/config/*`, `/lib/*`, `/3rdparty/*`, `/templates/*`, `/occ`, `/console.php`, `/db/*`, `/updater/*`). Redirects `.well-known/carddav` and `.well-known/caldav` to `/remote.php/dav`. Request body max 10G. Responses are zstd/gzip compressed.
-
-### tailnet (CoreDNS)
-
-The `tailnet` service is defined in `services/tailnet/docker-compose.yml` and uses `services/tailnet/Corefile` for its zone data:
-
-- On a query for `vps.jehpok.com`, CoreDNS returns the Tailscale IP from the embedded hosts file.
-- `fallthrough` means "if the host isn't in my hosts file, hand the query to the next plugin."
-- `forward . 1.1.1.1 1.0.0.1 9.9.9.9 { policy sequential }` forwards anything else to Cloudflare's public DNS with Quad9 as a non-Cloudflare tertiary fallback. Sequential policy tries each upstream in order on timeout.
-- `log` keeps a per-query log for debugging.
-- No in-container healthcheck is possible (CoreDNS image is `FROM scratch`, no shell); `test: ["NONE"]`. Monitor externally if needed.
-
-### cloud (Nextcloud)
-
-`services/cloud/docker-compose.yml` defines the `cloud` service. Key points:
-
-- Uses the official `nextcloud:34.0.2-fpm` image (PHP-FPM variant, not Apache). SQLite is auto-selected because no `MYSQL_*` / `POSTGRES_*` env vars are set — the database file lives at `owncloud.db` inside the datadirectory bind mount (`cloud/users/owncloud.db`).
-- Nextcloud is split across two host bind mounts:
-  - `/var/www/github/jehpok.com/cloud/html` → container `/var/www/html` — the Nextcloud install (3rdparty, core, apps, config, occ). Must be owned by uid 33 (the in-container `www-data`) before first start: `chown -R 33:33 /var/www/github/jehpok.com/cloud/html`.
-  - `/var/www/github/jehpok.com/cloud/users` → container `/var/www/html/data` — the datadirectory (`appdata_*`, per-user files, `owncloud.db` SQLite, `nextcloud.log`). Matches `'datadirectory' => '/var/www/html/data'` in `config.php`. Must also be owned by uid 33, and contain a `.ncdata` marker file (Nextcloud refuses to start without it).
-- Admin credentials are loaded from `services/cloud/.env` (gitignored) via Compose variable substitution: `NEXTCLOUD_ADMIN_USER` and `NEXTCLOUD_ADMIN_PASSWORD`. Do NOT hardcode these.
-- `NEXTCLOUD_TRUSTED_DOMAINS=cloud.jehpok.com` so Nextcloud only serves requests with that Host header.
-- `NEXTCLOUD_OVERWRITEPROTOCOL=https` so the protocol that PHP's request handling sees matches what Caddy terminates.
-- `trusted_proxies` is set to `172.22.0.0/16` (the `net` bridge subnet) so Nextcloud sees the real client IP from Caddy's `X-Forwarded-For` for brute-force protection and audit logs.
-- `overwrite.cli.url` is set to `https://cloud.jehpok.com` so cron/CLI-generated URLs point to HTTPS, not HTTP.
-- PHP-FPM runs `pm = ondemand` with `pm.max_children = 8` and `process_idle_timeout = 10s` — idle workers are freed after 10s of inactivity, reducing RAM at rest.
-- Attaches to the same external `net` network so Caddy can resolve `cloud` to its container IP. No host-side port mapping — only Caddy (and therefore Cloudflare-fronted clients) can reach it.
-- Healthcheck: `php -r 'echo phpversion();'` every 30s — verifies the FPM runtime is responsive.
-
-### Ollama (host systemd service)
-
-Ollama runs **on the host**, not in Docker, as a systemd unit at `/etc/systemd/system/ollama.service`:
-
-- Unit: `enabled`, `Restart=always`, runs as user `ollama`, listens on the default `:11434`.
-- Models live at `/home/ollama/.ollama/models`.
-- Started/stopped with `systemctl {start,stop,restart} ollama`. Logs via `journalctl -u ollama`.
-- **Do not delete or disable this unit.** It is protected by the safety rules in `docs/AGENTS.md`. If a task appears to require removing it, stop and ask the user.
-
-### Log rotation and healthchecks
-
-All three compose files pin the `json-file` log driver with a size cap so container logs can't grow without bound on the host:
-
-- `domain` (Caddy): 10 MB × 3 files (≈30 MB cap), healthcheck `caddy version` every 30s
-- `cloud` (Nextcloud): 10 MB × 3 files (≈30 MB cap), healthcheck `php -r phpversion()` every 30s
-- `tailnet` (CoreDNS): 5 MB × 2 files (≈10 MB cap), no healthcheck (`FROM scratch` image)
-
-Adjust in `services/<service>/docker-compose.yml` under each service's `logging:` / `healthcheck:` block.
+On the VPS, the cloned repo sits at `/var/www/github/jehpok.com/repo/`. Caddy mounts it as `/srv`, so an `app` vhost with `root * /srv/content/domain/app` resolves to `/var/www/github/jehpok.com/repo/content/domain/app`. Per-service configuration details (images, ports, env, timeouts, gotchas) live in `docs/AGENTS.md` under "Service details".
 
 ## Deployment
 

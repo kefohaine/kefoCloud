@@ -41,9 +41,51 @@ Host-side paths (not in git):
 
 ## Running services on the VPS
 
-Prefer the `Makefile` recipes (canonical entrypoints) over raw `docker compose` invocations. The full recipe list with comments lives in `README.md` under "Day-to-day"; the Makefile is the source of truth.
+Prefer the `Makefile` recipes (canonical entrypoints) over raw `docker compose`. The full recipe list with comments lives in `README.md` under "Day-to-day"; the Makefile is the source of truth. The `net` bridge network is `external: true` — create once with `docker network create net` on a fresh host. Deployment is manual (no CI/CD): `make restart-<service>` for a mounted config edit, `make up-<service>` when the compose file or image changed (force-recreate).
 
-Containers: `domain` (Caddy), `cloud` (Nextcloud FPM), `tailnet` (CoreDNS). The `net` bridge network is `external: true` — create once with `docker network create net` on a fresh host. Log rotation (json-file with size caps) and healthchecks are pinned in each compose file; see README for the per-service values. Deployment is manual (no CI/CD): `make restart-<service>` for a mounted config edit, `make up-<service>` when the compose file or image changed (force-recreate).
+## Service details
+
+Per-service facts needed to edit safely. The compose files and Caddyfile/Corefile are the source of truth; this is a quick reference. Architecture and rationale are in `README.md`.
+
+### domain (Caddy 2) — `services/domain/`
+
+- Image `caddy:2.11.4`, container `domain`. Publishes 80 (→ 308 redirect to HTTPS) and 443.
+- TLS: Cloudflare Origin cert from `/certs/cert.pem` + `/certs/key.pem` (read-only bind mount of `/var/www/github/jehpok.com/certs/`).
+- `admin off` globally — no runtime reconfiguration from the `net` bridge.
+- Repo mounted read-only at `/srv`; static files served from `/srv/content/domain/{www,app,vps}`. Nextcloud html root mounted read-only at `/nextcloud` for static fallback.
+- Vhosts: `www`/`app`/`vps` → static fileserver; `api` → responds `ok` (no backend, reserved); `cloud` → `php_fastcgi cloud:9000` (dial 10s, read/write 300s, aligned to PHP-FPM's 200s terminate timeout), blocks internal paths (`/data/*`, `/config/*`, `/lib/*`, `/3rdparty/*`, `/templates/*`, `/occ`, `/console.php`, `/db/*`, `/updater/*`), redirects carddav/caldav to `/remote.php/dav`, 10G body max, zstd/gzip.
+- Security headers (HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy) on all vhosts.
+- Edit the Caddyfile then `make restart-domain` (mounted, no recreate); `make up-domain` only if the compose file or image changed.
+
+### tailnet (CoreDNS) — `services/tailnet/`
+
+- Image `coredns/coredns:1.14.6`, container `tailnet`. Binds `100.81.245.77:53` (tcp+udp) — the Tailscale IP only, not `0.0.0.0` (not an open resolver). Not on `net`; host port mapping only.
+- Corefile: hosts entry maps `vps.jehpok.com → 100.81.245.77` with `fallthrough`; forwards everything else to `1.1.1.1 1.0.0.1 9.9.9.9` (sequential). `log` per query.
+- No healthcheck (`FROM scratch`, no shell) — `test: ["NONE"]`. Monitor externally.
+- SPOF for Tailscale-side DNS: if it stops, all `*.jehpok.com` queries on tailnet time out. `restart: unless-stopped` covers crashes, not `docker stop`.
+- Edit the Corefile then `make restart-tailnet`.
+
+### cloud (Nextcloud) — `services/cloud/`
+
+- Image `nextcloud:34.0.2-fpm` (PHP-FPM, not Apache), container `cloud`. SQLite (no `MYSQL_*`/`POSTGRES_*` vars) → `cloud/users/owncloud.db`.
+- No published ports — `expose: 9000` on `net` only; Caddy is the sole entry point.
+- Two host bind mounts, both owned by uid 33 (`www-data`) before first start:
+  - `/var/www/github/jehpok.com/cloud/html` → `/var/www/html` (install: 3rdparty, core, apps, config, occ).
+  - `/var/www/github/jehpok.com/cloud/users` → `/var/www/html/data` (datadirectory; must contain a `.ncdata` marker or Nextcloud won't start).
+- Admin creds from `services/cloud/.env` (gitignored): `NEXTCLOUD_ADMIN_USER`, `NEXTCLOUD_ADMIN_PASSWORD`. Never hardcode.
+- Env: `NEXTCLOUD_TRUSTED_DOMAINS=cloud.jehpok.com`, `NEXTCLOUD_OVERWRITEPROTOCOL=https`, `TRUSTED_PROXIES=172.22.0.0/16` (the `net` subnet), `OVERWRITECLIURL=https://cloud.jehpok.com`.
+- PHP-FPM pool in `php-fpm.d/zz-custom.conf`: `ondemand`, `max_children=8`, `process_idle_timeout=10s`, `request_terminate_timeout=200s`.
+- After editing the compose file or pulling a new image: `make up-cloud` (force-recreate). Nextcloud runs its own DB migrations on first request after an upgrade — no manual migration step.
+
+### Ollama (host systemd) — `setup/ollama/`
+
+- Runs on the host, not Docker. Unit at `/etc/systemd/system/ollama.service`: `enabled`, `Restart=always`, user `ollama`, listens `:11434`, models at `/home/ollama/.ollama/models`.
+- Manage with `systemctl {start,stop,restart} ollama`; logs via `journalctl -u ollama`.
+- **Protected by Safety rule 1 — never delete or disable.** If a task seems to require removing it, stop and ask. A legit config change uses `systemctl restart ollama`.
+
+### Log rotation and healthchecks
+
+All three compose files pin `json-file` with size caps: `domain` 10m×3, `cloud` 10m×3, `tailnet` 5m×2. Healthchecks: `domain` `caddy version` /30s, `cloud` `php -r phpversion()` /30s, `tailnet` none. Adjust under each service's `logging:` / `healthcheck:` block.
 
 ## Git remotes
 
