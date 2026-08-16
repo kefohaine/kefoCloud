@@ -81,6 +81,7 @@ git push jehpok.com main
 - The `net` Docker network is `external: true`. Do not let compose files create their own private networks for inter-service communication.
 - Do not add comments to code unless asked.
 - A sentence ending in "?" is a question, not an order. Answer it (yes/no/how) before doing anything. Only act when the operator explicitly tells you to. If the question is ambiguous, rephrase it back and ask for confirmation.
+- Do not paste entire file contents (Caddyfile, Corefile, compose files, Makefile) into `README.md` or other docs. Describe what they do in prose; the files are the source of truth. Command snippets (`make ...`, shell one-liners) are fine.
 
 ## Before finishing a task
 
