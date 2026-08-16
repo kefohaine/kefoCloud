@@ -237,11 +237,26 @@ Or run `make -C /var/www/github/jehpok.com/repo migrate` for a printed step-by-s
 Use the `Makefile` recipes (canonical) rather than raw `docker compose`:
 
 ```bash
-make restart-domain    # after editing the Caddyfile (mounted, no recreate needed)
-make restart-tailnet   # after editing the Corefile
-make up-<service>      # after editing a compose file or pulling a new image (force-recreate)
-# Nextcloud runs its own migrations on first request after an upgrade.
+make up-all            # start/recreate all three containers in order (tailnet, domain, cloud)
+make up-domain         # force-recreate Caddy — after editing its compose file or pulling a new image
+make up-cloud          # force-recreate Nextcloud — after editing its compose file or pulling a new image
+make up-tailnet        # force-recreate CoreDNS — after editing its compose file or pulling a new image
+make restart-domain    # reload Caddy without recreating — after editing the mounted Caddyfile
+make restart-cloud     # reload Nextcloud without recreating
+make restart-tailnet   # reload CoreDNS without recreating — after editing the mounted Corefile
+make logs-domain       # follow Caddy logs
+make logs-cloud        # follow Nextcloud logs
+make logs-tailnet      # follow CoreDNS logs
+make status            # show a table of all running containers
+make push MSG="..."    # stage, commit, and push to the jehpok.com remote
+make backup            # snapshot Nextcloud data (maintenance mode on during the copy)
+make backup-secrets    # bundle certs, SSH keys, Ollama unit, and Tailscale state for off-VPS storage
+make setup-host        # install reference configs to live paths and enable Ollama + sshd
+make migrate           # print the full VPS-to-VPS migration runbook
+make clean             # free disk: prune the Docker build cache and clear the apt cache
 ```
+
+Nextcloud runs its own database migrations on first request after an upgrade, so no manual migration step is needed after `make up-cloud`.
 
 ## SSH access
 

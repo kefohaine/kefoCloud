@@ -41,20 +41,7 @@ Host-side paths (not in git):
 
 ## Running services on the VPS
 
-Prefer the `Makefile` recipes (canonical entrypoints) over raw `docker compose` invocations:
-
-```bash
-make up-all                          # start/recreate tailnet, domain, cloud (in that order)
-make up-<service>                    # up-domain | up-cloud | up-tailnet (force-recreate)
-make restart-<service>               # restart without recreating (after editing a mounted config)
-make logs-<service>                  # docker logs <name> --tail 50 -f
-make status                          # docker ps table
-make push MSG="message"              # git add -A && commit && git push jehpok.com main
-make backup                          # Nextcloud maintenance mode on → rsync data → off
-make backup-secrets                  # bundle certs, SSH keys, Ollama unit, Tailscale state
-make setup-host                      # copy reference configs to /etc and enable Ollama+sshd
-make migrate                         # print full VPS-to-VPS migration runbook
-```
+Prefer the `Makefile` recipes (canonical entrypoints) over raw `docker compose` invocations. The full recipe list with comments lives in `README.md` under "Day-to-day"; the Makefile is the source of truth.
 
 Containers: `domain` (Caddy), `cloud` (Nextcloud FPM), `tailnet` (CoreDNS). The `net` bridge network is `external: true` — create once with `docker network create net` on a fresh host. Log rotation (json-file with size caps) and healthchecks are pinned in each compose file; see README for the per-service values. Deployment is manual (no CI/CD): `make restart-<service>` for a mounted config edit, `make up-<service>` when the compose file or image changed (force-recreate).
 
