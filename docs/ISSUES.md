@@ -90,17 +90,39 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 
 ## Solved (kept for history)
 
-- **Log rotation deployed** — all 3 containers running with `json-file` size caps (Aug 2026).
-- **Image tags pinned** — `caddy:2.11.4`, `coredns:1.14.6`, `nextcloud:34.0.2-fpm` (Aug 2026).
-- **PHP-FPM `ondemand`** — idle workers freed after 10s (Aug 2026).
-- **CoreDNS multi-upstream** — `1.1.1.1 1.0.0.1 9.9.9.9` sequential (Aug 2026).
-- **Caddy admin API closed** — `admin off` in Caddyfile (Aug 2026).
-- **Caddy FastCGI timeouts** — `dial_timeout 10s read_timeout 300s write_timeout 300s` (Aug 2026).
-- **Nextcloud `trusted_proxies` set** — `172.22.0.0/16` (Caddy's `net` subnet) (Aug 2026).
-- **Nextcloud `overwrite.cli.url` → https** (Aug 2026).
-- **Static site placeholders** — non-blank index.html on www/app/vps (Aug 2026).
-- **Healthchecks deployed** — domain + cloud healthy; tailnet `NONE` (FROM scratch) (Aug 2026).
-- **Security headers** — HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy on all vhosts (Aug 2026).
-- **Makefile** — recipes for up/restart/logs/status/push/backup/clean (Aug 2026).
-- **Nextcloud overrides env-driven** — `TRUSTED_PROXIES` + `OVERWRITECLIURL` in compose; removed from `config.php` (Aug 2026).
-- **Deploy/ops helper scripts** — covered by the `Makefile` recipes (`up-*`, `restart-*`, `logs-*`, `status`, `push`, `backup`, `backup-secrets`, `setup-host`, `migrate`) (Aug 2026).
+### Early system build (before Aug 2026)
+- **Initial site + Docker** — `index.html`, first `docker-compose.yml` (dfa87df).
+- **Caddy setup** — first vhost config (f3970e3).
+- **GitHub Actions deploy** — `.github/workflows/deploy.yml` with SSH-key deploys (eba1685); later retired (8a12a65).
+- **AI/LLM API service** — `containers/ai/app.py` on a separate network, Ollama-backed (af7d56a); later removed (f960051).
+- **TLS certificates** — valid Cloudflare Origin cert provided (f9e74cc); dummy certs deleted (8d712b7).
+- **Nextcloud integration** — first hosted on the VPS (173920f), migrated to `app.jehpok.com/cloud` (a1e70b0), reverted (78adb5f), then linked via PHP-FPM (9d6b864).
+- **Nextcloud backend upgrade** — image bump (0791597).
+- **CoreDNS isolated** — split into its own directory (f7beb77); config renamed (9caf96e).
+- **FPM worker regulation** — `zz-custom.conf` added, pool tuning (09c2011).
+- **Container renames** — `domain`, `cloud`, `tailnet` names pinned (e7ab862).
+- **Local LLM hosting removed, open resolver fixed, Caddy hardened** (f960051).
+- **SSH hardened** — password auth + root login disabled, `AllowUsers debian` (e43ade1).
+
+### Aug 2026 hardening + ops
+- **Log rotation deployed** — all 3 containers with `json-file` size caps.
+- **Image tags pinned** — `caddy:2.11.4`, `coredns:1.14.6`, `nextcloud:34.0.2-fpm`.
+- **PHP-FPM `ondemand`** — idle workers freed after 10s.
+- **CoreDNS multi-upstream** — `1.1.1.1 1.0.0.1 9.9.9.9` sequential.
+- **Caddy admin API closed** — `admin off` in global options block.
+- **Caddy FastCGI timeouts** — `dial_timeout 10s read_timeout 300s write_timeout 300s`.
+- **Nextcloud `trusted_proxies`** — `172.22.0.0/16` (Caddy's `net` subnet).
+- **Nextcloud `overwrite.cli.url` → https**.
+- **Static site placeholders** — non-blank `index.html` on www/app/vps.
+- **Healthchecks** — domain + cloud healthy; tailnet `NONE` (`FROM scratch`).
+- **Security headers** — HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy on all vhosts.
+- **Makefile** — recipes for up/restart/logs/status/push/backup/clean.
+- **Nextcloud overrides env-driven** — `TRUSTED_PROXIES` + `OVERWRITECLIURL` in compose; removed from `config.php`.
+- **Deploy/ops helper scripts** — covered by the Makefile recipes.
+- **System made fully recoverable** — `backup-secrets` + `migrate` recipes, README runbook.
+- **Reference configs in repo** — Ollama unit + SSH hardening copied under `services/`.
+- **Cheyenne anniversary page** — FR, Spotify embed, countdown, styled.
+- **Nextcloud bind mount split** — `cloud/html` (root) + `cloud/users` (datadirectory).
+- **`.md` writing rules** — 9 rules added to AGENTS.md; README deduped (328→271 lines).
+- **Docs reorganized** — AGENTS.md + ISSUES.md moved to `docs/`; README stays at root.
+- **Sensitive files purged from git history** — `config/web/certs/key.pem`, `cert.pem`, `.github/workflows/deploy.yml`, `install.sh`, `app.py` removed via `git filter-repo`; history rewritten, force-pushed.
