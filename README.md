@@ -155,7 +155,7 @@ The `tailnet` service is defined in `services/tailnet/docker-compose.yml` and us
 
 `services/cloud/docker-compose.yml` defines the `cloud` service. Key points:
 
-- Uses the official `nextcloud:34.0.2-fpm` image (PHP-FPM variant, not Apache). SQLite is auto-selected because no `MYSQL_*` / `POSTGRES_*` env vars are set — the database file lives at `db/owncloud.db` inside the data volume.
+- Uses the official `nextcloud:34.0.2-fpm` image (PHP-FPM variant, not Apache). SQLite is auto-selected because no `MYSQL_*` / `POSTGRES_*` env vars are set — the database file lives at `owncloud.db` inside the datadirectory bind mount (`cloud/users/owncloud.db`).
 - Nextcloud is split across two host bind mounts:
   - `/var/www/github/jehpok.com/cloud/html` → container `/var/www/html` — the Nextcloud install (3rdparty, core, apps, config, occ). Must be owned by uid 33 (the in-container `www-data`) before first start: `chown -R 33:33 /var/www/github/jehpok.com/cloud/html`.
   - `/var/www/github/jehpok.com/cloud/users` → container `/var/www/html/data` — the datadirectory (`appdata_*`, per-user files, `owncloud.db` SQLite, `nextcloud.log`). Matches `'datadirectory' => '/var/www/html/data'` in `config.php`. Must also be owned by uid 33, and contain a `.ncdata` marker file (Nextcloud refuses to start without it).
@@ -187,8 +187,6 @@ All three compose files pin the `json-file` log driver with a size cap so contai
 - `tailnet` (CoreDNS): 5 MB × 2 files (≈10 MB cap), no healthcheck (`FROM scratch` image)
 
 Adjust in `services/<service>/docker-compose.yml` under each service's `logging:` / `healthcheck:` block.
-
-The standalone `https://cloud.jehpok.com` vhost in the Caddyfile uses `php_fastcgi cloud:9000` to pass requests to the Nextcloud FPM container, with `request_body { max_size 10G }` for large uploads. Caddy also serves Nextcloud's static files directly from the read-only bind mount at `/nextcloud`. Cloudflare fronts this hostname with the existing `*.jehpok.com` Origin Certificate, so no new TLS material is needed.
 
 ## Docker network plumbing
 
@@ -240,7 +238,7 @@ If Cloudflare's bot challenge is active on the API hostname, a curl request will
 
 ## Deployment
 
-Deployment is manual. Edit the repo on the VPS, then `docker compose ... up -d --force-recreate` (or `restart`) the affected service. There is no CI/CD — pushes to `main` do not trigger anything.
+Deployment is manual. Edit files on the VPS, then run `make up-<service>` (recreate) or `make restart-<service>` (reload mounted config). There is no CI/CD — pushes to `main` do not trigger anything.
 
 ### First-time setup
 
@@ -294,22 +292,12 @@ The secrets bundle contains private keys and Tailscale identity — keep it offl
 
 ### Day-to-day
 
-After changing the Caddyfile:
+Use the `Makefile` recipes (canonical) rather than raw `docker compose`:
 
 ```bash
-docker compose -f /var/www/github/jehpok.com/repo/services/domain/docker-compose.yml restart domain
-```
-
-After changing the Corefile:
-
-```bash
-docker compose -f /var/www/github/jehpok.com/repo/services/tailnet/docker-compose.yml restart tailnet
-```
-
-After editing a compose file or pulling a new image:
-
-```bash
-docker compose -f /var/www/github/jehpok.com/repo/services/<service>/docker-compose.yml up -d --force-recreate
+make restart-domain    # after editing the Caddyfile (mounted, no recreate needed)
+make restart-tailnet   # after editing the Corefile
+make up-<service>      # after editing a compose file or pulling a new image (force-recreate)
 # Nextcloud runs its own migrations on first request after an upgrade.
 ```
 

@@ -60,11 +60,7 @@ make setup-host                      # copy reference configs to /etc and enable
 make migrate                         # print full VPS-to-VPS migration runbook
 ```
 
-Containers: `domain` (Caddy), `cloud` (Nextcloud FPM), `tailnet` (CoreDNS). The `net` bridge network is `external: true` — create once with `docker network create net` on a fresh host. Log rotation (json-file with size caps) and healthchecks are pinned in each compose file; see README for the per-service values.
-
-## Deployment
-
-Deployment is manual. There is no CI/CD. Edit files on the VPS, then recreate or restart the affected service with `docker compose`.
+Containers: `domain` (Caddy), `cloud` (Nextcloud FPM), `tailnet` (CoreDNS). The `net` bridge network is `external: true` — create once with `docker network create net` on a fresh host. Log rotation (json-file with size caps) and healthchecks are pinned in each compose file; see README for the per-service values. Deployment is manual (no CI/CD): `make restart-<service>` for a mounted config edit, `make up-<service>` when the compose file or image changed (force-recreate).
 
 ## Git remotes
 

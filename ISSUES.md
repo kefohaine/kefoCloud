@@ -35,13 +35,8 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 
 ### CoreDNS single point of failure for Tailscale DNS
 - **File**: `services/tailnet/docker-compose.yml`
-- **Problem**: If `tailnet` stops, every `*.jehpok.com` query on Tailscale times out. `restart: unless-stopped` handles crashes, not deliberate `docker stop`.
-- **Fix**: (a) add a second CoreDNS instance; (b) move DNS to host `dnsmasq` on `100.81.245.77:53`; (c) add a healthcheck + watchdog auto-restart.
-
-### Healthchecks still need deploy to take effect
-- **File**: `services/{cloud,domain}/docker-compose.yml`
-- **Problem**: Healthcheck blocks were added and applied. `domain` and `cloud` are healthy. `tailnet` (CoreDNS) is a `FROM scratch` image with no shell — no in-container healthcheck is possible; set to `test: ["NONE"]`.
-- **Fix**: For tailnet, consider an external watchdog (host-side `systemd` timer that checks `dig @100.81.245.77 vps.jehpok.com` and restarts the container on failure) if health monitoring is needed.
+- **Problem**: If `tailnet` stops, every `*.jehpok.com` query on Tailscale times out. `restart: unless-stopped` handles crashes, not deliberate `docker stop`. (Also noted in README "Operational notes and gotchas".)
+- **Fix**: (a) add a second CoreDNS instance; (b) move DNS to host `dnsmasq` on `100.81.245.77:53`; (c) add an external watchdog (host `systemd` timer running `dig @100.81.245.77 vps.jehpok.com`, restarting the container on failure).
 
 ---
 
@@ -75,10 +70,7 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 
 ## More comfy
 
-### No deploy/ops helper scripts
-- **File**: (missing) `scripts/`
-- **Problem**: Some long compose commands are now wrapped in the `Makefile`, but no shell alias for `docker compose` is set.
-- **Fix**: Optionally `alias dc=docker compose` in `~/.bashrc`. The `Makefile` covers the common recipes already.
+_(The `Makefile` now covers common deploy/ops recipes — `up-*`, `restart-*`, `logs-*`, `status`, `push`, `backup`, `backup-secrets`, `setup-host`, `migrate`. No separate `scripts/` dir needed.)_
 
 ---
 
@@ -117,3 +109,4 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 - **Security headers** — HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy on all vhosts (Aug 2026).
 - **Makefile** — recipes for up/restart/logs/status/push/backup/clean (Aug 2026).
 - **Nextcloud overrides env-driven** — `TRUSTED_PROXIES` + `OVERWRITECLIURL` in compose; removed from `config.php` (Aug 2026).
+- **Deploy/ops helper scripts** — covered by the `Makefile` recipes (`up-*`, `restart-*`, `logs-*`, `status`, `push`, `backup`, `backup-secrets`, `setup-host`, `migrate`) (Aug 2026).
