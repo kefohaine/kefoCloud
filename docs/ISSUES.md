@@ -106,17 +106,7 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 - **`.md` writing rules** — 10 rules added to AGENTS.md; README deduped (328→271 lines).
 - **Docs reorganized** — AGENTS.md + ISSUES.md moved to `docs/`; README stays at root.
 - **Sensitive files purged from git history** — `config/web/certs/key.pem`, `cert.pem`, `.github/workflows/deploy.yml`, `install.sh`, `app.py` removed via `git filter-repo`; `origin` remote (PAT-embedded) removed; history rewritten, force-pushed.
-
-### Aug 2026 — CoreDNS SPOF resolved, dnsmasq on host
-- **CoreDNS container removed** — `services/tailnet/` deleted; replaced with host dnsmasq (`/etc/dnsmasq.d/10-tailnet.conf`) bound to `100.81.245.77:53`, `Restart=always`, ordered `After=tailscaled`.
-- **`tailnet_default` network gone** — the spare Compose bridge disappeared with the `tailnet` service.
-- **DNS no longer a Docker SPOF** — survives `docker stop` / image pulls / `systemctl restart docker`; only a deliberate `systemctl stop dnsmasq` takes it down.
-- **Recovery covered** — `setup-host` installs dnsmasq config + drop-in; `backup-secrets` bundles them; `migrate` adds `dnsmasq` to apt; Makefile gets `restart-dns`/`logs-dns`, drops the tailnet targets.
-
-### Aug 2026 — URL shortener
-- **`services/link/`** — Flask + SQLite shortener (`jehpok/link:1`); public 301-redirects at `link.jehpok.com`, admin UI at `vps.jehpok.com/link` (Tailscale-only, no app auth).
-- **Source in `content/link/`** — bind-mounted read-only at `/app/src`; `make restart-link` picks up code edits without rebuild.
-- **Backups + migration** — `make backup-link` copies the SQLite DB; `make migrate` restores it; `up-all` runs `up-link` first so Caddy can resolve it.
-
-### Aug 2026 — Nextcloud nested bind mount fix
-- **Nested bind mount detached** — `nextcloud:34.0.2-fpm` declares `VOLUME ["/var/www/html"]`; binding `cloud/users` at `/var/www/html/data` (nested inside) silently vanished after long uptimes, causing HTTP 500 "unable to open database file" with no Docker/kernel error logged. Fix: `datadirectory` moved to `/data` (standalone path, no nesting); `config.php` + compose updated. Diagnostic: `docker exec cloud ls /data` — if missing, `make up-cloud`.
+- **CoreDNS SPOF resolved** — `services/tailnet/` deleted; replaced with host dnsmasq (`/etc/dnsmasq.d/10-tailnet.conf`) bound to `100.81.245.77:53`, `Restart=always`, `After=tailscaled`; `tailnet_default` spare bridge gone; DNS now survives `docker stop` / image pulls / `systemctl restart docker`.
+- **dnsmasq recovery covered** — `setup-host` installs config + drop-in; `backup-secrets` bundles them; `migrate` adds `dnsmasq` to apt; Makefile gets `restart-dns`/`logs-dns`, drops tailnet targets.
+- **URL shortener** — Flask + SQLite at `services/link/` (`jehpok/link:1`); public 301-redirects at `link.jehpok.com`, admin UI at `vps.jehpok.com/link` (Tailscale-only); source in `content/link/` bind-mounted at `/app/src` so `restart-link` picks up edits without rebuild; `backup-link` + `migrate` cover the DB; `up-all` runs `up-link` first.
+- **Nextcloud nested bind mount fixed** — `nextcloud:34.0.2-fpm` declares `VOLUME ["/var/www/html"]`; nesting `cloud/users` at `/var/www/html/data` silently vanished after long uptimes causing HTTP 500 "unable to open database file"; `datadirectory` moved to `/data` (standalone path, no nesting); diagnostic: `docker exec cloud ls /data` — if missing, `make up-cloud`.
