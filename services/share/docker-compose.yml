@@ -17,6 +17,7 @@ services:
 
     volumes:
       - /var/www/github/jehpok.com/share/db:/data
+      - /var/www/github/jehpok.com/share/files:/data/files
       - ../../content/share:/app/src:ro
 
     logging:
