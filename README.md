@@ -1,45 +1,45 @@
 # jehpok.com
 
-Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker, serving four public subdomains and one Tailscale-only subdomain. Ollama runs on the host as a systemd service for local LLM serving.
+Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker, serving five public subdomains and one Tailscale-only subdomain. Ollama runs on the host as a systemd service for local LLM serving.
 
 This document describes the full system: what runs where, why each piece exists, how requests flow, and what to know when something breaks.
 
 ## High-level overview
 
 ```
-                  ┌─────────────────────────────────────────────┐
-   Public DNS ──► │            Cloudflare (proxy)               │
-                   │   www / app / api / cloud  (orange cloud)   │
-                   └──────────────┬──────────────────────────────┘
-                                  │ HTTPS (Origin Cert)
-                                  ▼
-                           ┌──────────────┐
-                           │    Caddy     │  port 80 → 308 redirect
-                           │  (domain)    │  port 443 (TLS + vhosts)
-                           └──────┬───────┘
-              ┌──────────────────┼──────────────────┐
-              │                  │                  │
-              ▼                  ▼                  ▼
-         static files       static files      php_fastcgi
-         www / app / vps    api → "ok"        cloud:9000
-         (/srv/content/)    (placeholder)     (Nextcloud FPM)
-
-                    ┌─────────────────────────────────────────────┐
-                    │ Tailscale MagicDNS / split DNS              │
-                    │ forwards *.jehpok.com queries to the VPS    │
-                    │ resolver (bound to Tailscale IP only)       │
+                   ┌─────────────────────────────────────────────┐
+    Public DNS ──► │            Cloudflare (proxy)               │
+                    │  www / share / api / vault / cloud         │
                     └──────────────┬──────────────────────────────┘
-                                   │ UDP/TCP 100.81.245.77:53
+                                   │ HTTPS (Origin Cert)
                                    ▼
                             ┌──────────────┐
-                            │   dnsmasq    │  host systemd service
-                            │  (host)      │  (not a container)
-                            │  - address=/vps.jehpok.com/100.81.245.77
-                            │  - forward . 1.1.1.1 1.0.0.1 9.9.9.9
-                            └──────────────┘
+                            │    Caddy     │  port 80 → 308 redirect
+                            │  (domain)    │  port 443 (TLS + vhosts)
+                            └──────┬───────┘
+               ┌──────────────────┼──────────────────┐
+               │                  │                  │
+               ▼                  ▼                  ▼
+          static files       reverse_proxy      php_fastcgi
+          www / vps          share / vault      cloud:9000
+          (/srv/content/)    / api → "ok"       (Nextcloud FPM)
+
+                     ┌─────────────────────────────────────────────┐
+                     │ Tailscale MagicDNS / split DNS              │
+                     │ forwards *.jehpok.com queries to the VPS    │
+                     │ resolver (bound to Tailscale IP only)       │
+                     └──────────────┬──────────────────────────────┘
+                                    │ UDP/TCP 100.81.245.77:53
+                                    ▼
+                             ┌──────────────┐
+                             │   dnsmasq    │  host systemd service
+                             │  (host)      │  (not a container)
+                             │  - address=/vps.jehpok.com/100.81.245.77
+                             │  - forward . 1.1.1.1 1.0.0.1 9.9.9.9
+                             └──────────────┘
 ```
 
-Only one VPS, one host. Cloudflare fronts four of the five hostnames; the Tailscale-only hostname is invisible on the public internet.
+Only one VPS, one host. Cloudflare fronts five of the six hostnames; the Tailscale-only hostname is invisible on the public internet.
 
 ## Domains and access model
 
@@ -147,17 +147,17 @@ Run `make migrate` for the full step-by-step runbook. It assumes: the `net` brid
 Use the `Makefile` recipes (canonical) rather than raw `docker compose`:
 
 ```bash
-make up-all            # start/recreate all three containers in order (link, domain, cloud)
-make up-<service>      # force-recreate one container — up-domain | up-cloud | up-link
+make up-all            # start/recreate all four containers in order (share, domain, cloud, vault)
+make up-<service>      # force-recreate one container — up-domain | up-cloud | up-share | up-vault
 make restart-<service> # reload one container without recreating — after editing a mounted config
 make restart-dns       # restart the host dnsmasq resolver — after editing setup/dnsmasq/10-tailnet.conf
-make logs-<service>    # follow one container's logs — logs-domain | logs-cloud | logs-link
+make logs-<service>    # follow one container's logs — logs-domain | logs-cloud | logs-share | logs-vault
 make logs-dns          # follow the dnsmasq journal
 make status            # show a table of all running containers
 make push MSG="..."    # stage, commit, and push to the jehpok.com remote
 make backup-cloud      # snapshot Nextcloud data (maintenance mode on during the copy)
-make backup-share       # copy the shortener SQLite DB to /var/www/github/jehpok.com/share-backup-<date>.db
-make backup-vault       # tar the Vaultwarden data dir to /var/www/github/jehpok.com/vault-backup-<date>.tar.gz
+make backup-share      # copy the shortener SQLite DB to /var/www/github/jehpok.com/share-backup-<date>.db
+make backup-vault      # tar the Vaultwarden data dir to /var/www/github/jehpok.com/vault-backup-<date>.tar.gz
 make backup-secrets    # bundle certs, SSH keys, Ollama unit, dnsmasq config, and Tailscale state for off-VPS storage
 make setup-host        # install reference configs to live paths and enable Ollama + sshd + dnsmasq
 make migrate           # print the full VPS-to-VPS migration runbook

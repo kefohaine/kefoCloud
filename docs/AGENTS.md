@@ -4,7 +4,7 @@ This file tells agents how to work in this repo. Read it before making changes.
 
 ## System overview
 
-Self-hosted infrastructure on a Debian VPS. Caddy in Docker fronts four public subdomains (`www`, `app`, `api`, `cloud`) and one Tailscale-only subdomain (`vps`). Nextcloud runs in a separate container. dnsmasq runs as a host systemd service serving Tailscale split-DNS. Ollama runs as a host systemd service (`/etc/systemd/system/ollama.service`, enabled, see **Safety rules** below). Full architecture, request flows, and rationale are in `README.md` — read it first.
+Self-hosted infrastructure on a Debian VPS. Caddy in Docker fronts five public subdomains (`www`, `share`, `api`, `vault`, `cloud`) and one Tailscale-only subdomain (`vps`). Nextcloud, the URL shortener/file-sharer, and Vaultwarden run in separate containers. dnsmasq runs as a host systemd service serving Tailscale split-DNS. Ollama runs as a host systemd service (`/etc/systemd/system/ollama.service`, enabled, see **Safety rules** below). Full architecture, request flows, and rationale are in `README.md` — read it first.
 
 ## Safety rules
 
@@ -60,7 +60,7 @@ Per-service facts needed to edit safely. The compose files, Caddyfile, and `setu
 - TLS: Cloudflare Origin cert from `/certs/cert.pem` + `/certs/key.pem` (read-only bind mount of `/var/www/github/jehpok.com/certs/`).
 - `admin off` globally — no runtime reconfiguration from the `net` bridge.
 - Repo mounted read-only at `/srv`; static files served from `/srv/content/domain/{www,vps}`. `/var/www/github/jehpok.com/share/files` is bind-mounted read-only into `domain` at `/files` and read-write into `share` at `/data/files` — served as `share.jehpok.com/files` (Caddy browse) and written to by the upload route. Nextcloud html root mounted read-only at `/nextcloud` for static fallback.
-- Vhosts: `www`/`vps` → static fileserver; `share` → URL shortener + file sharing; `vault` → reverse_proxy to `vault:80` (Vaultwarden); `api` → responds `ok` (no backend, reserved); `cloud` → `php_fastcgi cloud:9000` (dial 10s, read/write 300s, aligned to PHP-FPM's 200s terminate timeout), blocks internal paths (`/data/*`, `/config/*`, `/lib/*`, `/3rdparty/*`, `/templates/*`, `/occ`, `/console.php`, `/db/*`, `/updater/*`), redirects carddav/caldav to `/remote.php/dav`, 10G body max, zstd/gzip. The `vps` vhost enforces Tailscale-only at the edge: a `@not_tailnet` matcher (`not remote_ip 100.64.0.0/10`) returns 403 for any non-tailnet source IP, on top of the DNS split.
+- Vhosts: `www`/`vps` → static fileserver; `share` → URL shortener + file sharing; `vault` → reverse_proxy to `vault:80` (Vaultwarden); `api` → responds `ok` (no backend, reserved); `cloud` → `php_fastcgi cloud:9000` (dial 10s, read/write 300s, aligned to PHP-FPM's 200s terminate timeout), blocks internal paths (`/data/*`, `/config/*`, `/lib/*`, `/3rdparty/*`, `/templates/*`, `/occ`, `/console.php`, `/db/*`, `/updater/*`), redirects carddav/caldav to `/remote.php/dav`, 100m body max (matches Cloudflare free-tier cap), zstd/gzip. The `vps` vhost enforces Tailscale-only at the edge: a `@not_tailnet` matcher (`not remote_ip 100.64.0.0/10`) returns 403 for any non-tailnet source IP, on top of the DNS split.
 - Security headers (HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy) on all vhosts.
 - Edit the Caddyfile then `make restart-domain` (mounted, no recreate); `make up-domain` only if the compose file or image changed.
 
@@ -108,7 +108,7 @@ Per-service facts needed to edit safely. The compose files, Caddyfile, and `setu
 
 ### Log rotation and healthchecks
 
-All three compose files pin `json-file` with size caps: `domain` 10m×3, `cloud` 10m×3, `link` 5m×2. Healthchecks: `domain` `caddy version` /30s, `cloud` `php -r phpversion()` /30s, `link` fetches `/healthz` /30s. dnsmasq logs to journald (no log cap beyond the default `journalctl` rotation). Adjust under each service's `logging:` / `healthcheck:` block, or the systemd unit drop-in for dnsmasq.
+All four compose files pin `json-file` with size caps: `domain` 10m×3, `cloud` 10m×3, `share` 5m×2, `vault` 10m×3. Healthchecks: `domain` `caddy version` /30s, `cloud` `php -r phpversion()` /30s, `share` fetches `/healthz` /30s, `vault` `wget --spider /health` /30s. dnsmasq logs to journald (no log cap beyond the default `journalctl` rotation). Adjust under each service's `logging:` / `healthcheck:` block, or the systemd unit drop-in for dnsmasq.
 
 ## Git remotes
 
@@ -126,7 +126,7 @@ git push jehpok.com main
 - Bind services to the narrowest interface possible. dnsmasq binds to the Tailscale IP only, not `0.0.0.0`.
 - Use `expose` (not `ports`) for inter-container services. Only `domain` (80/443) publishes host ports; dnsmasq is on the host, not Docker.
 - The `net` Docker network is `external: true`. Do not let compose files create their own private networks for inter-service communication.
-- **Container app sources live under `content/<container>/`**, not `services/<container>/`. `services/` holds only Dockerfile + compose + service-level configs; `content/` holds the code/static files the container runs or serves. Mount `content/<container>/` read-only into the container so edits take effect with `make restart-<container>` and the image only carries the runtime. Static-site vhosts (`www`/`app`/`vps`) follow the same pattern under `content/domain/`.
+- **Container app sources live under `content/<container>/`**, not `services/<container>/`. `services/` holds only Dockerfile + compose + service-level configs; `content/` holds the code/static files the container runs or serves. Mount `content/<container>/` read-only into the container so edits take effect with `make restart-<container>` and the image only carries the runtime. Static-site vhosts (`www`/`vps`) follow the same pattern under `content/domain/`.
 - Do not add comments to code unless asked.
 - A sentence ending in "?" is a question, not an order. Answer it (yes/no/how) before doing anything. Only act when the operator explicitly tells you to. If the question is ambiguous, rephrase it back and ask for confirmation.
 - Do not paste entire file contents (Caddyfile, dnsmasq config, compose files, Makefile) into `README.md` or other docs. Describe what they do in prose; the files are the source of truth. Command snippets (`make ...`, shell one-liners) are fine.
