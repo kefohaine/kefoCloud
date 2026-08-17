@@ -106,7 +106,7 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 - **`.md` writing rules** — 10 rules added to AGENTS.md; README deduped (328→271 lines).
 - **Docs reorganized** — AGENTS.md + ISSUES.md moved to `docs/`; README stays at root.
 - **Sensitive files purged from git history** — `config/web/certs/key.pem`, `cert.pem`, `.github/workflows/deploy.yml`, `install.sh`, `app.py` removed via `git filter-repo`; `origin` remote (PAT-embedded) removed; history rewritten, force-pushed.
-- **CoreDNS SPOF resolved** — replaced with host dnsmasq bound to `100.81.245.77:53`, `Restart=always`; `tailnet_default` bridge gone; DNS survives Docker restarts.
-- **dnsmasq recovery covered** — `setup-host` installs config; `backup-secrets` bundles it; `migrate` adds `dnsmasq` to apt; Makefile gets `restart-dns`/`logs-dns`.
-- **URL shortener** — Flask + SQLite at `services/link/`; public redirects at `link.jehpok.com`, admin at `vps.jehpok.com/link`; source in `content/link/` mounted read-only; `backup-link` covers the DB.
-- **Nextcloud nested bind mount fixed** — `datadirectory` moved from `/var/www/html/data` to `/data` to avoid nesting inside the image's `VOLUME`; silent mount detachment caused HTTP 500.
+- **CoreDNS → dnsmasq** — container removed; host dnsmasq on `100.81.245.77:53`.
+- **`tailnet_default` gone** — spare bridge removed with the container.
+- **URL shortener** — Flask + SQLite; `link.jehpok.com` public, `vps.jehpok.com/link` admin.
+- **Nextcloud bind mount fixed** — `datadirectory` moved to `/data`, no nesting.
