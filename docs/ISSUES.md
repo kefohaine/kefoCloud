@@ -24,7 +24,7 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 
 ### `vps.jehpok.com` has no auth beyond Tailscale membership  **[needs human approval]**
 - **File**: `services/domain/Caddyfile` (`https://vps.jehpok.com`)
-- **Problem**: Any tailnet device can reach `vps.jehpok.com` with no authentication. DNS-obscurity is the only access control. This now also exposes the link shortener admin UI at `/link` — anyone on tailnet can create or delete redirects.
+- **Problem**: Any tailnet device can reach `vps.jehpok.com` with no authentication. DNS-obscurity is the only access control, including the link shortener admin UI at `/link`.
 - **Fix**: Add Caddy `basic_auth` on the `/link*` matcher (needs a username + bcrypt hash from the operator), or apply Tailscale ACLs in the admin console to restrict who can reach the VPS at all.
 - **Why approval**: requires a password / ACL policy from the operator.
 
@@ -110,3 +110,4 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 - **`tailnet_default` gone** — spare bridge removed with the container.
 - **URL shortener** — Flask + SQLite; `link.jehpok.com` public, `vps.jehpok.com/link` admin.
 - **Nextcloud bind mount fixed** — `datadirectory` moved to `/data`, no nesting.
+- **`link.jehpok.com` admin leak closed** — Caddy `@admin` matcher returns 404 for `/link`, `/api/*`, `/healthz`, `/` on public vhost; admin still reachable via `vps.jehpok.com/link`.

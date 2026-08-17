@@ -46,8 +46,8 @@ https://vps.jehpok.com {
     import serve_static
 }
 
-# Public URL shortener. All requests reverse-proxy to the link
-# container, which 301-redirects known slugs and 404s unknown ones.
+# Public URL shortener. Only slug routes (GET /<slug>) are proxied;
+# admin UI, API, and healthz are Tailscale-only via vps.jehpok.com/link.
 https://link.jehpok.com {
     import tls_keys
     header {
@@ -55,6 +55,8 @@ https://link.jehpok.com {
         X-Content-Type-Options "nosniff"
         Referrer-Policy "no-referrer"
     }
+    @admin path / /link /link/* /api /api/* /healthz
+    respond @admin 404
     reverse_proxy link:5000
     respond "ok"
 }
