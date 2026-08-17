@@ -37,8 +37,12 @@ https://app.jehpok.com {
 https://vps.jehpok.com {
     import tls_keys
 
-    # Admin UI for link.jehpok.com (Tailscale-only, same access model
-    # as the rest of vps.jehpok.com). Reverse-proxy to the link container.
+    # Tailscale-only: reject any client whose source IP is not on the
+    # tailnet (100.64.0.0/10 CGNAT range). Defense-in-depth on top of
+    # the DNS split — blocks anyone reaching the vhost via the public IP.
+    @not_tailnet not remote_ip 100.64.0.0/10
+    respond @not_tailnet 403
+
     @link path /link /link/*
     reverse_proxy @link link:5000
 

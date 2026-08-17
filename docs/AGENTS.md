@@ -56,7 +56,7 @@ Per-service facts needed to edit safely. The compose files, Caddyfile, and `setu
 - TLS: Cloudflare Origin cert from `/certs/cert.pem` + `/certs/key.pem` (read-only bind mount of `/var/www/github/jehpok.com/certs/`).
 - `admin off` globally — no runtime reconfiguration from the `net` bridge.
 - Repo mounted read-only at `/srv`; static files served from `/srv/content/domain/{www,app,vps}`. Nextcloud html root mounted read-only at `/nextcloud` for static fallback.
-- Vhosts: `www`/`app`/`vps` → static fileserver; `api` → responds `ok` (no backend, reserved); `cloud` → `php_fastcgi cloud:9000` (dial 10s, read/write 300s, aligned to PHP-FPM's 200s terminate timeout), blocks internal paths (`/data/*`, `/config/*`, `/lib/*`, `/3rdparty/*`, `/templates/*`, `/occ`, `/console.php`, `/db/*`, `/updater/*`), redirects carddav/caldav to `/remote.php/dav`, 10G body max, zstd/gzip.
+- Vhosts: `www`/`app`/`vps` → static fileserver; `api` → responds `ok` (no backend, reserved); `cloud` → `php_fastcgi cloud:9000` (dial 10s, read/write 300s, aligned to PHP-FPM's 200s terminate timeout), blocks internal paths (`/data/*`, `/config/*`, `/lib/*`, `/3rdparty/*`, `/templates/*`, `/occ`, `/console.php`, `/db/*`, `/updater/*`), redirects carddav/caldav to `/remote.php/dav`, 10G body max, zstd/gzip. The `vps` vhost enforces Tailscale-only at the edge: a `@not_tailnet` matcher (`not remote_ip 100.64.0.0/10`) returns 403 for any non-tailnet source IP, on top of the DNS split.
 - Security headers (HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy) on all vhosts.
 - Edit the Caddyfile then `make restart-domain` (mounted, no recreate); `make up-domain` only if the compose file or image changed.
 

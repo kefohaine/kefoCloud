@@ -52,7 +52,7 @@ Only one VPS, one host. Cloudflare fronts four of the five hostnames; the Tailsc
 | cloud.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Nextcloud (file sync, calendar, photos)         |
 | vps.jehpok.com     | **Not in Cloudflare**       | Only devices on the Tailscale network       | Static site from `content/domain/vps`; admin UI for the shortener at `/link` |
 
-The asymmetry on `vps.jehpok.com` is deliberate. By keeping it out of public DNS, the only way anyone can know its IP is by being inside the Tailscale network. Even a DNS leak on the user's device cannot reveal an address that public resolvers don't serve.
+The asymmetry on `vps.jehpok.com` is deliberate. By keeping it out of public DNS, the only way anyone can know its IP is by being inside the Tailscale network. Even a DNS leak on the user's device cannot reveal an address that public resolvers don't serve. As defense-in-depth, Caddy also rejects any request to the vhost whose source IP is not on the tailnet (`100.64.0.0/10`), so reaching it via the public IP with a forged Host header returns 403 on every path.
 
 ## Why this layout exists
 
@@ -184,7 +184,7 @@ The `runner` user (legacy GitHub Actions) has no SSH key and is not in `AllowUse
 
 ## Operational notes and gotchas
 
-- `vps.jehpok.com` will appear "down" from non-Tailscale networks. That's by design. Don't add it to Cloudflare DNS to "fix" it — that defeats the only access control.
+- `vps.jehpok.com` will appear "down" from non-Tailscale networks. That's by design. Don't add it to Cloudflare DNS to "fix" it — that defeats the only access control. Caddy also enforces it at the edge: any request to the vhost from a source IP outside `100.64.0.0/10` (the tailnet CGNAT range) returns 403, so even a forged Host header against the public IP cannot reach any path under it.
 - DNS for `*.jehpok.com` on tailnet depends on the host `dnsmasq` service (`100.81.245.77:53`). It is bound only to the Tailscale IP so it's not an open resolver, and `Restart=always` covers crashes, but a deliberate `systemctl stop dnsmasq` takes all tailnet-side `*.jehpok.com` resolution down. Restart with `make restart-dns`.
 - Cloudflare's free tier rate-limits you at 10s min window for rate-limit rules. Plan ahead if the API endpoint ends up attracting more traffic than expected.
 - `cloud.jehpok.com` is reached by Nextcloud desktop / mobile clients that cannot solve Cloudflare's Browser Integrity Check or Bot Fight Mode JS challenge. Disable Bot Fight Mode (or set a per-hostname WAF rule skip) for `cloud.jehpok.com` in Cloudflare, otherwise desktop sync will hang on the first request. This is the same mitigation already noted for `api.jehpok.com`.
