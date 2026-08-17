@@ -218,7 +218,7 @@ def resolve(slug):
     abort(404)
 
 
-@app.route("/api/links")
+@app.route("/api/links", methods=["POST"])
 def api_list():
     conn = db()
     rows = conn.execute(
