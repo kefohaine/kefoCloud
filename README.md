@@ -48,6 +48,7 @@ Only one VPS, one host. Cloudflare fronts four of the five hostnames; the Tailsc
 | www.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Static site from `content/domain/www`              |
 | app.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Static site from `content/domain/app`              |
 | link.jehpok.com    | Cloudflare → VPS IP         | Anyone on the internet                      | URL shortener: 307-redirects `/<slug>` to its target; `/` and blocked paths render `ok` |
+| files.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Public file workshop: directory browse over `content/domain/files` — drop files in to publish |
 | api.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Placeholder vhost (no backend currently wired)  |
 | cloud.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Nextcloud (file sync, calendar, photos)         |
 | vps.jehpok.com     | **Not in Cloudflare**       | Only devices on the Tailscale network       | Static site from `content/domain/vps`; admin UI for the shortener at `/link` |
@@ -119,6 +120,7 @@ content/
     www/                     # static files for www.jehpok.com
     app/                     # static files for app.jehpok.com
     vps/                     # static files for vps.jehpok.com (Tailscale-only)
+    files/                   # files.jehpok.com public workshop (browse-enabled static fileserver)
 Makefile                     # Recipes: up-all, setup-host, backup-cloud, backup-secrets, migrate, etc.
 docs/AGENTS.md                    # Operating guide for agents
 docs/ISSUES.md                    # Known problems and improvements
