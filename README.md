@@ -48,6 +48,7 @@ Only one VPS, one host. Cloudflare fronts four of the five hostnames; the Tailsc
 | www.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Static site from `content/domain/www`              |
 | share.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | URL shortener + file sharing: `GET /` public shorten/upload form (auto-slug); `GET /<slug>` 307-redirects; `GET /files/` Caddy directory browse; blocked paths render `not found` |
 | api.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Placeholder vhost (no backend currently wired)  |
+| vault.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Vaultwarden (self-hosted Bitwarden-compatible password manager) |
 | cloud.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Nextcloud (file sync, calendar, photos)         |
 | vps.jehpok.com     | **Not in Cloudflare**       | Only devices on the Tailscale network       | Static site from `content/domain/vps`; admin UI for the shortener at `/share` |
 
@@ -107,6 +108,8 @@ services/
     app.py                   # URL shortener (SQLite, slug → target)
     templates/admin.html     # Admin UI served at vps.jehpok.com/share
     docker-compose.yml       # share service (expose 5000 on net)
+  vault/
+    docker-compose.yml       # Vaultwarden (Bitwarden-compatible, SQLite)
 setup/
   ollama/ollama.service      # Reference copy of the host systemd unit
   ssh/50-cloud-init.conf     # Reference copy of SSH hardening config
@@ -154,6 +157,7 @@ make status            # show a table of all running containers
 make push MSG="..."    # stage, commit, and push to the jehpok.com remote
 make backup-cloud      # snapshot Nextcloud data (maintenance mode on during the copy)
 make backup-share       # copy the shortener SQLite DB to /var/www/github/jehpok.com/share-backup-<date>.db
+make backup-vault       # tar the Vaultwarden data dir to /var/www/github/jehpok.com/vault-backup-<date>.tar.gz
 make backup-secrets    # bundle certs, SSH keys, Ollama unit, dnsmasq config, and Tailscale state for off-VPS storage
 make setup-host        # install reference configs to live paths and enable Ollama + sshd + dnsmasq
 make migrate           # print the full VPS-to-VPS migration runbook

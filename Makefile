@@ -4,10 +4,10 @@
 REPO := /var/www/github/jehpok.com/repo
 COMPOSE := docker compose -f
 
-.PHONY: up-domain up-cloud up-share up-all
-.PHONY: restart-domain restart-cloud restart-share restart-dns
-.PHONY: logs-domain logs-cloud logs-share logs-dns
-.PHONY: status push backup-cloud backup-share clean setup-host
+.PHONY: up-domain up-cloud up-share up-vault up-all
+.PHONY: restart-domain restart-cloud restart-share restart-vault restart-dns
+.PHONY: logs-domain logs-cloud logs-share logs-vault logs-dns
+.PHONY: status push backup-cloud backup-share backup-vault clean setup-host
 
 up-domain:
 >$(COMPOSE) $(REPO)/services/domain/docker-compose.yml up -d --force-recreate
@@ -18,7 +18,10 @@ up-cloud:
 up-share:
 >$(COMPOSE) $(REPO)/services/share/docker-compose.yml up -d --force-recreate --build
 
-up-all: up-share up-domain up-cloud
+up-vault:
+>$(COMPOSE) $(REPO)/services/vault/docker-compose.yml up -d --force-recreate
+
+up-all: up-share up-domain up-cloud up-vault
 
 restart-domain:
 >$(COMPOSE) $(REPO)/services/domain/docker-compose.yml restart domain
@@ -28,6 +31,9 @@ restart-cloud:
 
 restart-share:
 >$(COMPOSE) $(REPO)/services/share/docker-compose.yml restart share
+
+restart-vault:
+>$(COMPOSE) $(REPO)/services/vault/docker-compose.yml restart vault
 
 restart-dns:
 >sudo systemctl restart dnsmasq
@@ -40,6 +46,9 @@ logs-cloud:
 
 logs-share:
 >docker logs share --tail 50 -f
+
+logs-vault:
+>docker logs vault --tail 50 -f
 
 logs-dns:
 >sudo journalctl -u dnsmasq -n 50 -f
@@ -59,6 +68,10 @@ backup-cloud:
 backup-share:
 >cp /var/www/github/jehpok.com/share/db/links.db /var/www/github/jehpok.com/share-backup-$$(date +%Y%m%d).db
 >@echo "Backup at /var/www/github/jehpok.com/share-backup-$$(date +%Y%m%d).db"
+
+backup-vault:
+>tar czf /var/www/github/jehpok.com/vault-backup-$$(date +%Y%m%d).tar.gz -C /var/www/github/jehpok.com/vault data
+>@echo "Backup at /var/www/github/jehpok.com/vault-backup-$$(date +%Y%m%d).tar.gz"
 
 clean:
 >docker builder prune -af

@@ -24,6 +24,7 @@ services/          Docker compose files + configs (checked into git)
   domain/          Caddy (TLS termination, reverse proxy, static files)
   cloud/           Nextcloud (PHP-FPM, SQLite)
   share/           URL shortener (Flask, SQLite, admin UI at vps.jehpok.com/share)
+  vault/           Vaultwarden (Bitwarden-compatible password manager, SQLite)
 setup/             Reference copies of host-level configs (Ollama unit, SSH hardening, dnsmasq)
 content/domain/    Static site files served by Caddy
 docs/AGENTS.md          This file
@@ -38,6 +39,7 @@ Host-side paths (not in git):
 /var/www/github/jehpok.com/cloud/users/   Nextcloud datadirectory (user files, owncloud.db, nextcloud.log)
 /var/www/github/jehpok.com/share/db/links.db  Shortener SQLite DB (bind-mounted into the share container as /data)
 /var/www/github/jehpok.com/share/files/       Uploaded files (bind-mounted ro into domain at /files, rw into share at /data/files; served at share.jehpok.com/files)
+/var/www/github/jehpok.com/vault/data/        Vaultwarden data dir (SQLite DB, attachments, icons; bind-mounted into vault at /data)
 /etc/ssh/sshd_config.d/50-cloud-init.conf  SSH hardening (key-only, no root, debian only)
 /etc/dnsmasq.d/10-tailnet.conf         dnsmasq Tailscale split-DNS (DO NOT DELETE — see Safety rules)
 /etc/systemd/system/dnsmasq.service.d/override.conf  systemd drop-in (Restart=always, After=tailscaled)
@@ -58,7 +60,7 @@ Per-service facts needed to edit safely. The compose files, Caddyfile, and `setu
 - TLS: Cloudflare Origin cert from `/certs/cert.pem` + `/certs/key.pem` (read-only bind mount of `/var/www/github/jehpok.com/certs/`).
 - `admin off` globally — no runtime reconfiguration from the `net` bridge.
 - Repo mounted read-only at `/srv`; static files served from `/srv/content/domain/{www,vps}`. `/var/www/github/jehpok.com/share/files` is bind-mounted read-only into `domain` at `/files` and read-write into `share` at `/data/files` — served as `share.jehpok.com/files` (Caddy browse) and written to by the upload route. Nextcloud html root mounted read-only at `/nextcloud` for static fallback.
-- Vhosts: `www`/`vps` → static fileserver; `share` → URL shortener + file sharing (`GET /` public form, `POST /` shorten, `POST /upload` file upload → auto-short link, `GET /files/` Caddy browse over uploaded files, `GET /<slug>` 307-redirect); `api` → responds `ok` (no backend, reserved); `cloud` → `php_fastcgi cloud:9000` (dial 10s, read/write 300s, aligned to PHP-FPM's 200s terminate timeout), blocks internal paths (`/data/*`, `/config/*`, `/lib/*`, `/3rdparty/*`, `/templates/*`, `/occ`, `/console.php`, `/db/*`, `/updater/*`), redirects carddav/caldav to `/remote.php/dav`, 10G body max, zstd/gzip. The `vps` vhost enforces Tailscale-only at the edge: a `@not_tailnet` matcher (`not remote_ip 100.64.0.0/10`) returns 403 for any non-tailnet source IP, on top of the DNS split.
+- Vhosts: `www`/`vps` → static fileserver; `share` → URL shortener + file sharing; `vault` → reverse_proxy to `vault:80` (Vaultwarden); `api` → responds `ok` (no backend, reserved); `cloud` → `php_fastcgi cloud:9000` (dial 10s, read/write 300s, aligned to PHP-FPM's 200s terminate timeout), blocks internal paths (`/data/*`, `/config/*`, `/lib/*`, `/3rdparty/*`, `/templates/*`, `/occ`, `/console.php`, `/db/*`, `/updater/*`), redirects carddav/caldav to `/remote.php/dav`, 10G body max, zstd/gzip. The `vps` vhost enforces Tailscale-only at the edge: a `@not_tailnet` matcher (`not remote_ip 100.64.0.0/10`) returns 403 for any non-tailnet source IP, on top of the DNS split.
 - Security headers (HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy) on all vhosts.
 - Edit the Caddyfile then `make restart-domain` (mounted, no recreate); `make up-domain` only if the compose file or image changed.
 
@@ -88,7 +90,15 @@ Per-service facts needed to edit safely. The compose files, Caddyfile, and `setu
 - SQLite DB at `/var/www/github/jehpok.com/share/db/links.db`, bind-mounted into the container as `/data`. Table `links(slug TEXT PK, target TEXT, created_at INTEGER, hits INTEGER)`. Back up with `make backup-share`.
 - Two Caddy vhosts route to it: `share.jehpok.com` (public — `GET /` renders the public form (URL shorten + file upload); `POST /` creates a short link (auto-slug); `POST /upload` saves a file to `/data/files/` and creates a short link to `https://share.jehpok.com/files/<name>`; `GET /files/` Caddy directory browse over uploaded files; `GET /<slug>` 307-redirects; `/share`, `/api/*`, `/healthz` return `not found` 404 via the `@admin` matcher) and `vps.jehpok.com/share*` (Tailscale-only admin UI with list + delete + custom-slug create). Admin has no app-level auth — access is gated by `vps.jehpok.com` being unresolvable off tailnet plus the `@not_tailnet` source-IP check. If you ever want app-level auth, add Caddy `basic_auth` on the `/share*` matcher.
 - `app.py` is a single Flask file: `GET /` renders the public form, `POST /` creates a short link (auto-slug only), `POST /upload` saves an uploaded file (sanitized lowercase name, collision-suffixed) to `/data/files/` and creates a short link to its `/files/<name>` URL, `GET /<slug>` redirects (307), `GET /share` renders admin, `POST /share` creates (auto-slug if blank), `POST /share/<slug>` with `_method=DELETE` deletes, `GET /api/links` returns JSON, `GET /healthz` for the healthcheck. The source lives in `content/share/` (mounted read-only at `/app/src`) so edits take effect with `make restart-share` — no image rebuild needed. The image only holds the Python runtime + Flask.
-- `up-all` runs `up-share` before `up-domain` so Caddy can resolve `share` on start.
+- `up-all` runs `up-share` before `up-domain` so Caddy can resolve `share` on start. `up-vault` is independent.
+
+### vault (Vaultwarden) — `services/vault/`
+
+- Image `vaultwarden/server:latest`, container `vault`. SQLite (no separate DB container). Data at `/var/www/github/jehpok.com/vault/data` bind-mounted at `/data`.
+- No published ports — `expose: 80` on `net` only; Caddy is the sole entry point.
+- Env: `DOMAIN=https://vault.jehpok.com`, `SIGNUPS_ALLOWED=false`, `INVITATIONS_ALLOWED=false`, `SHOW_PASSWORD_HINT=false`. The first user to register becomes admin; further signups are blocked. Admin actions via the `/admin` path use a token set by the `ADMIN_TOKEN` env var (currently unset — set it in a gitignored `.env` if you want admin-panel access).
+- After editing the compose file or pulling a new image: `make up-vault` (force-recreate). Back up with `make backup-vault`.
+- Caddy vhost: `vault.jehpok.com` → `reverse_proxy vault:80`, 100M body max (attachment uploads), security headers. No `file_server` — Vaultwarden serves its own static assets.
 
 ### Ollama (host systemd) — `setup/ollama/`
 
