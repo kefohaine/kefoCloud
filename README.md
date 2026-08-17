@@ -46,8 +46,7 @@ Only one VPS, one host. Cloudflare fronts four of the five hostnames; the Tailsc
 | Domain             | Where DNS points            | Who can reach it                            | What is served                                  |
 |--------------------|-----------------------------|---------------------------------------------|-------------------------------------------------|
 | www.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Static site from `content/domain/www`              |
-| app.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Static site from `content/domain/app`              |
-| link.jehpok.com    | Cloudflare → VPS IP         | Anyone on the internet                      | URL shortener: 307-redirects `/<slug>` to its target; `/` and blocked paths render `ok` |
+| share.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | URL shortener: 307-redirects `/<slug>` to its target; `/` and blocked paths render `ok` |
 | files.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Public file workshop: directory browse over `/var/www/github/jehpok.com/files` (outside the repo) — drop files in to publish |
 | api.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Placeholder vhost (no backend currently wired)  |
 | cloud.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Nextcloud (file sync, calendar, photos)         |
@@ -104,11 +103,11 @@ services/
     docker-compose.yml       # Nextcloud (name: cloud)
     php-fpm.d/zz-custom.conf # PHP-FPM pool config
     .env                     # NEXTCLOUD_ADMIN_USER / NEXTCLOUD_ADMIN_PASSWORD (gitignored)
-  link/
+  share/
     Dockerfile               # Flask + python:3.12-slim
     app.py                   # URL shortener (SQLite, slug → target)
     templates/admin.html     # Admin UI served at vps.jehpok.com/link
-    docker-compose.yml       # link service (expose 5000 on net)
+    docker-compose.yml       # share service (expose 5000 on net)
 setup/
   ollama/ollama.service      # Reference copy of the host systemd unit
   ssh/50-cloud-init.conf     # Reference copy of SSH hardening config
@@ -118,9 +117,9 @@ setup/
 content/
   domain/
     www/                     # static files for www.jehpok.com
-    app/                     # static files for app.jehpok.com
     vps/                     # static files for vps.jehpok.com (Tailscale-only)
                               # files.jehpok.com root lives outside the repo at /var/www/github/jehpok.com/files/ (bind-mounted into Caddy at /files)
+  share/                     # share.jehpok.com app source (Flask app.py + templates), mounted into the share container
 Makefile                     # Recipes: up-all, setup-host, backup-cloud, backup-secrets, migrate, etc.
 docs/AGENTS.md                    # Operating guide for agents
 docs/ISSUES.md                    # Known problems and improvements
@@ -128,7 +127,7 @@ docs/ISSUES.md                    # Known problems and improvements
 
 `services/` holds everything that describes the running services (Docker). `setup/` holds reference copies of host-level configs (Ollama, SSH) — used by `make setup-host` to restore them to live paths on a fresh VPS. `content/` holds the data the services serve. The split lets `services/` and `setup/` be checked into git while large or versioned content can live elsewhere on disk (mirrored into the repo for portability).
 
-On the VPS, the cloned repo sits at `/var/www/github/jehpok.com/repo/`. Caddy mounts it as `/srv`, so an `app` vhost with `root * /srv/content/domain/app` resolves to `/var/www/github/jehpok.com/repo/content/domain/app`. Per-service configuration details (images, ports, env, timeouts, gotchas) live in `docs/AGENTS.md` under "Service details".
+On the VPS, the cloned repo sits at `/var/www/github/jehpok.com/repo/`. Caddy mounts it as `/srv`, so a `www` vhost with `root * /srv/content/domain/www` resolves to `/var/www/github/jehpok.com/repo/content/domain/www`. Per-service configuration details (images, ports, env, timeouts, gotchas) live in `docs/AGENTS.md` under "Service details".
 
 ## Deployment
 
@@ -156,7 +155,7 @@ make logs-dns          # follow the dnsmasq journal
 make status            # show a table of all running containers
 make push MSG="..."    # stage, commit, and push to the jehpok.com remote
 make backup-cloud      # snapshot Nextcloud data (maintenance mode on during the copy)
-make backup-link       # copy the shortener SQLite DB to /var/www/github/jehpok.com/link-backup-<date>.db
+make backup-share       # copy the shortener SQLite DB to /var/www/github/jehpok.com/share-backup-<date>.db
 make backup-secrets    # bundle certs, SSH keys, Ollama unit, dnsmasq config, and Tailscale state for off-VPS storage
 make setup-host        # install reference configs to live paths and enable Ollama + sshd + dnsmasq
 make migrate           # print the full VPS-to-VPS migration runbook
