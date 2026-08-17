@@ -4,15 +4,6 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 
 ---
 
-## Hygiene
-
-### `tailnet_default` Docker network created unnecessarily
-- **File**: `services/tailnet/docker-compose.yml`
-- **Problem**: Compose creates a default bridge network even though CoreDNS only needs host port mapping.
-- **Fix**: Cosmetic; harmless. Leave as-is.
-
----
-
 ## Robustness
 
 ### Migrate SQLite → MariaDB  **[needs human approval]**
@@ -26,11 +17,6 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 - **Problem**: Backups are manual `rsync`. No cron, no consistency guarantee for the DB.
 - **Fix**: Add `scripts/backup.sh`: `occ maintenance:mode --on` → DB snapshot (`sqlite3 .backup` now, `mariabackup` post-migration) + `rsync` of `cloud/users` → `--off`. Cron it.
 - **Why approval**: operator must choose a backup target (local path / remote / S3) and schedule.
-
-### CoreDNS single point of failure for Tailscale DNS
-- **File**: `services/tailnet/docker-compose.yml`
-- **Problem**: If `tailnet` stops, every `*.jehpok.com` query on Tailscale times out. `restart: unless-stopped` handles crashes, not deliberate `docker stop`. (Also noted in README "Operational notes and gotchas".)
-- **Fix**: (a) add a second CoreDNS instance; (b) move DNS to host `dnsmasq` on `100.81.245.77:53`; (c) add an external watchdog (host `systemd` timer running `dig @100.81.245.77 vps.jehpok.com`, restarting the container on failure).
 
 ---
 
@@ -120,3 +106,11 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 - **`.md` writing rules** — 10 rules added to AGENTS.md; README deduped (328→271 lines).
 - **Docs reorganized** — AGENTS.md + ISSUES.md moved to `docs/`; README stays at root.
 - **Sensitive files purged from git history** — `config/web/certs/key.pem`, `cert.pem`, `.github/workflows/deploy.yml`, `install.sh`, `app.py` removed via `git filter-repo`; `origin` remote (PAT-embedded) removed; history rewritten, force-pushed.
+
+### Aug 2026 — CoreDNS SPOF resolved, dnsmasq on host
+- **CoreDNS container removed** — `services/tailnet/` deleted; `tailnet` container stopped and removed.
+- **dnsmasq on host** — `/etc/dnsmasq.d/10-tailnet.conf` binds `100.81.245.77:53`, overrides `vps.jehpok.com`, forwards the rest to `1.1.1.1 1.0.0.1 9.9.9.9` (sequential). systemd drop-in orders it `After=tailscaled` with `Restart=always`.
+- **`tailnet_default` network gone** — Compose no longer creates a spare bridge (the `tailnet` service that caused it is removed).
+- **DNS no longer a Docker SPOF** — survives `docker stop`, image pulls, `systemctl restart docker`; only a deliberate `systemctl stop dnsmasq` takes it down.
+- **Recovery covered** — `setup-host` installs the dnsmasq config + drop-in; `backup-secrets` bundles both files; `migrate` runbook adds `dnsmasq` to the apt install line.
+- **Makefile** — `up-tailnet`/`restart-tailnet`/`logs-tailnet` removed; `restart-dns`/`logs-dns` added; `up-all` is now `up-domain up-cloud`.

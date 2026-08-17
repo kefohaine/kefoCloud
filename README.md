@@ -24,19 +24,19 @@ This document describes the full system: what runs where, why each piece exists,
          www / app / vps    api → "ok"        cloud:9000
          (/srv/content/)    (placeholder)     (Nextcloud FPM)
 
-                   ┌─────────────────────────────────────────────┐
-                   │ Tailscale MagicDNS / split DNS              │
-                   │ forwards *.jehpok.com queries to the VPS    │
-                   │ resolver (bound to Tailscale IP only)       │
-                   └──────────────┬──────────────────────────────┘
-                                  │ UDP/TCP 100.81.245.77:53
-                                  ▼
-                           ┌──────────────┐
-                           │  CoreDNS     │  container "tailnet"
-                           │  (tailnet)   │  (not on net bridge)
-                           │  - hosts { vps.jehpok.com → 100.81.245.77 }
-                           │  - forward . 1.1.1.1
-                           └──────────────┘
+                    ┌─────────────────────────────────────────────┐
+                    │ Tailscale MagicDNS / split DNS              │
+                    │ forwards *.jehpok.com queries to the VPS    │
+                    │ resolver (bound to Tailscale IP only)       │
+                    └──────────────┬──────────────────────────────┘
+                                   │ UDP/TCP 100.81.245.77:53
+                                   ▼
+                            ┌──────────────┐
+                            │   dnsmasq    │  host systemd service
+                            │  (host)      │  (not a container)
+                            │  - address=/vps.jehpok.com/100.81.245.77
+                            │  - forward . 1.1.1.1 1.0.0.1 9.9.9.9
+                            └──────────────┘
 ```
 
 Only one VPS, one host. Cloudflare fronts four of the five hostnames; the Tailscale-only hostname is invisible on the public internet.
@@ -76,12 +76,13 @@ The trade-off: browser traffic is bot-challenged. For an API endpoint that is hi
 - Public DNS would let any bot or attacker hit a port that isn't supposed to be public.
 - Tailscale's split-DNS means the moment a Tailscale client joins the network, the hostname is reachable AND the resolver knows it. No port forwarding, no firewall holes.
 
-### Why CoreDNS in a container
+### Why dnsmasq on the host and not CoreDNS in a container
 
 - The Tailscale split DNS on the user side forwards queries for `*.jehpok.com` to a resolver on the VPS.
 - That resolver must return `100.81.245.77` for `vps.jehpok.com` and forward everything else.
-- A small CoreDNS container does this in one Corefile. systemd-resolved could do it too, but binding systemd-resolved to `0.0.0.0:53` from the host namespace interferes with Docker's port mapping and complicates restart logic. A container with port 53 exposed is cleaner.
-- The container binds port 53 **only to the Tailscale IP** (`100.81.245.77`), not `0.0.0.0`, so the VPS is not an open resolver on the public internet. Only tailnet devices can reach it.
+- A small host `dnsmasq` instance does this in one config file. systemd-resolved could do it too, but binding systemd-resolved to `0.0.0.0:53` from the host namespace interferes with Docker's port mapping and complicates restart logic.
+- Running it on the host (not in Docker) makes DNS independent of `docker stop`, image pulls, and `systemctl restart docker` — the failure modes a container `restart: unless-stopped` policy cannot cover. A `Restart=always` systemd unit is the only supervisor involved.
+- dnsmasq binds port 53 **only to the Tailscale IP** (`100.81.245.77`), not `0.0.0.0`, so the VPS is not an open resolver on the public internet. Only tailnet devices can reach it.
 
 ### Why a docker network called `net`
 
@@ -89,7 +90,6 @@ The trade-off: browser traffic is bot-challenged. For an API endpoint that is hi
 - Docker's embedded DNS at `127.0.0.11` resolves container names on user-defined networks automatically — no Consul, no extra service registry.
 - One network keeps Caddy and Nextcloud on the same subnet.
 - Marked `external: true` so the same network is reused across `domain` and `cloud` compose files (Compose would otherwise create a private one).
-- `tailnet` (CoreDNS) is intentionally **not** on `net` — it has no inter-container dependencies, only host port mapping to the Tailscale IP.
 
 ## Repository layout
 
@@ -98,9 +98,6 @@ services/
   domain/
     Caddyfile                # Caddy vhosts + reverse-proxy rules
     docker-compose.yml       # Caddy service
-  tailnet/
-    Corefile                 # CoreDNS hosts + forwarders
-    docker-compose.yml       # CoreDNS ("tailnet") service
   cloud/
     docker-compose.yml       # Nextcloud (name: cloud)
     php-fpm.d/zz-custom.conf # PHP-FPM pool config
@@ -108,6 +105,9 @@ services/
 setup/
   ollama/ollama.service      # Reference copy of the host systemd unit
   ssh/50-cloud-init.conf     # Reference copy of SSH hardening config
+  dnsmasq/                   # Reference copies of host DNS resolver config
+    10-tailnet.conf          # dnsmasq: bind Tailscale IP, override vps.jehpok.com, forwarders
+    dnsmasq.service.conf     # systemd drop-in: order after tailscaled, Restart=always
 content/
   domain/
     www/                     # static files for www.jehpok.com
@@ -132,22 +132,24 @@ Run `make migrate` for the full step-by-step runbook. It assumes: the `net` brid
 
 ### Backups
 
-`make backup-cloud` snapshots Nextcloud data (maintenance mode on during the copy) to `/var/www/github/jehpok.com/cloud-backup-<date>`. `make backup-secrets` bundles certs, SSH keys, the Ollama unit, and Tailscale state to `/var/www/github/jehpok.com/secrets-backup/secrets-<date>.tar.gz`. Download both off the VPS — the secrets bundle contains private keys and Tailscale identity.
+`make backup-cloud` snapshots Nextcloud data (maintenance mode on during the copy) to `/var/www/github/jehpok.com/cloud-backup-<date>`. `make backup-secrets` bundles certs, SSH keys, the Ollama unit, the dnsmasq config + systemd drop-in, and Tailscale state to `/var/www/github/jehpok.com/secrets-backup/secrets-<date>.tar.gz`. Download both off the VPS — the secrets bundle contains private keys and Tailscale identity.
 
 ### CMD Sheet
 
 Use the `Makefile` recipes (canonical) rather than raw `docker compose`:
 
 ```bash
-make up-all            # start/recreate all three containers in order (tailnet, domain, cloud)
-make up-<service>      # force-recreate one container — up-domain | up-cloud | up-tailnet
+make up-all            # start/recreate both containers in order (domain, cloud)
+make up-<service>      # force-recreate one container — up-domain | up-cloud
 make restart-<service> # reload one container without recreating — after editing a mounted config
-make logs-<service>    # follow one container's logs — logs-domain | logs-cloud | logs-tailnet
+make restart-dns       # restart the host dnsmasq resolver — after editing setup/dnsmasq/10-tailnet.conf
+make logs-<service>    # follow one container's logs — logs-domain | logs-cloud
+make logs-dns          # follow the dnsmasq journal
 make status            # show a table of all running containers
 make push MSG="..."    # stage, commit, and push to the jehpok.com remote
 make backup-cloud      # snapshot Nextcloud data (maintenance mode on during the copy)
 make backup-secrets    # bundle certs, SSH keys, Ollama unit, and Tailscale state for off-VPS storage
-make setup-host        # install reference configs to live paths and enable Ollama + sshd
+make setup-host        # install reference configs to live paths and enable Ollama + sshd + dnsmasq
 make migrate           # print the full VPS-to-VPS migration runbook
 make clean             # free disk: prune the Docker build cache and clear the apt cache
 ```
@@ -176,6 +178,6 @@ The `runner` user (legacy GitHub Actions) has no SSH key and is not in `AllowUse
 ## Operational notes and gotchas
 
 - `vps.jehpok.com` will appear "down" from non-Tailscale networks. That's by design. Don't add it to Cloudflare DNS to "fix" it — that defeats the only access control.
-- The `tailnet` container is the SPOF for VPN-side DNS. It is bound only to the Tailscale IP so it's not an open resolver, but if it stops, every `*.jehpok.com` query on Tailscale times out. Two ways to harden: (a) add a second CoreDNS instance pointed to the same Corefile; (b) move DNS onto the host namespace (dnsmasq) so it's independent of Docker restarts.
+- DNS for `*.jehpok.com` on tailnet depends on the host `dnsmasq` service (`100.81.245.77:53`). It is bound only to the Tailscale IP so it's not an open resolver, and `Restart=always` covers crashes, but a deliberate `systemctl stop dnsmasq` takes all tailnet-side `*.jehpok.com` resolution down. Restart with `make restart-dns`.
 - Cloudflare's free tier rate-limits you at 10s min window for rate-limit rules. Plan ahead if the API endpoint ends up attracting more traffic than expected.
 - `cloud.jehpok.com` is reached by Nextcloud desktop / mobile clients that cannot solve Cloudflare's Browser Integrity Check or Bot Fight Mode JS challenge. Disable Bot Fight Mode (or set a per-hostname WAF rule skip) for `cloud.jehpok.com` in Cloudflare, otherwise desktop sync will hang on the first request. This is the same mitigation already noted for `api.jehpok.com`.
