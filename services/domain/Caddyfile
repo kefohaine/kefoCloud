@@ -36,8 +36,26 @@ https://app.jehpok.com {
 
 https://vps.jehpok.com {
     import tls_keys
+
+    # Admin UI for link.jehpok.com (Tailscale-only, same access model
+    # as the rest of vps.jehpok.com). Reverse-proxy to the link container.
+    @link path /link /link/*
+    reverse_proxy @link link:5000
+
     root * /srv/content/domain/vps
     import serve_static
+}
+
+# Public URL shortener. All requests reverse-proxy to the link
+# container, which 301-redirects known slugs and 404s unknown ones.
+https://link.jehpok.com {
+    import tls_keys
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+    }
+    reverse_proxy link:5000
 }
 
 https://api.jehpok.com {
