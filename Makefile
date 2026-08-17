@@ -4,9 +4,9 @@
 REPO := /var/www/github/jehpok.com/repo
 COMPOSE := docker compose -f
 
-.PHONY: up-domain up-cloud up-tailnet up-all
-.PHONY: restart-domain restart-cloud restart-tailnet
-.PHONY: logs-domain logs-cloud logs-tailnet
+.PHONY: up-domain up-cloud up-all
+.PHONY: restart-domain restart-cloud restart-dns
+.PHONY: logs-domain logs-cloud logs-dns
 .PHONY: status push backup-cloud clean setup-host
 
 up-domain:
@@ -15,10 +15,7 @@ up-domain:
 up-cloud:
 >$(COMPOSE) $(REPO)/services/cloud/docker-compose.yml up -d --force-recreate
 
-up-tailnet:
->$(COMPOSE) $(REPO)/services/tailnet/docker-compose.yml up -d --force-recreate
-
-up-all: up-tailnet up-domain up-cloud
+up-all: up-domain up-cloud
 
 restart-domain:
 >$(COMPOSE) $(REPO)/services/domain/docker-compose.yml restart domain
@@ -26,8 +23,8 @@ restart-domain:
 restart-cloud:
 >$(COMPOSE) $(REPO)/services/cloud/docker-compose.yml restart cloud
 
-restart-tailnet:
->$(COMPOSE) $(REPO)/services/tailnet/docker-compose.yml restart tailnet
+restart-dns:
+>sudo systemctl restart dnsmasq
 
 logs-domain:
 >docker logs domain --tail 50 -f
@@ -35,8 +32,8 @@ logs-domain:
 logs-cloud:
 >docker logs cloud --tail 50 -f
 
-logs-tailnet:
->docker logs tailnet --tail 50 -f
+logs-dns:
+>sudo journalctl -u dnsmasq -n 50 -f
 
 status:
 >docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
@@ -57,10 +54,13 @@ clean:
 setup-host:
 >sudo cp $(REPO)/setup/ollama/ollama.service /etc/systemd/system/ollama.service
 >sudo cp $(REPO)/setup/ssh/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf
+>sudo cp $(REPO)/setup/dnsmasq/10-tailnet.conf /etc/dnsmasq.d/10-tailnet.conf
+>sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
+>sudo cp $(REPO)/setup/dnsmasq/dnsmasq.service.conf /etc/systemd/system/dnsmasq.service.d/override.conf
 >sudo systemctl daemon-reload
 >sudo systemctl enable --now ollama
->sudo systemctl restart sshd
->@echo "Host setup complete: Ollama enabled, SSH hardened."
+>sudo systemctl restart sshd dnsmasq
+>@echo "Host setup complete: Ollama enabled, SSH hardened, dnsmasq resolver installed."
 
 backup-secrets:
 >mkdir -p /var/www/github/jehpok.com/secrets-backup
@@ -72,6 +72,8 @@ backup-secrets:
   /home/debian/.ssh/authorized_keys \
   /etc/systemd/system/ollama.service \
   /etc/ssh/sshd_config.d/50-cloud-init.conf \
+  /etc/dnsmasq.d/10-tailnet.conf \
+  /etc/systemd/system/dnsmasq.service.d/override.conf \
   /var/lib/tailscale
 >@echo "Secrets bundle at /var/www/github/jehpok.com/secrets-backup/secrets-$$(date +%Y%m%d).tar.gz"
 >@echo "Download this file OFF the VPS. It contains private keys and Tailscale identity."
@@ -88,7 +90,7 @@ migrate:
 >@echo "   /var/www/github/jehpok.com/cloud-backup-*"
 >@echo ""
 >@echo "3. On the NEW VPS (Debian), as root then debian:"
->@echo "   apt update && apt install -y docker.io docker-compose-plugin git curl make sudo"
+>@echo "   apt update && apt install -y docker.io docker-compose-plugin git curl make sudo dnsmasq"
 >@echo "   curl -fsSL https://ollama.com/install.sh | sh"
 >@echo "   curl -fsSL https://tailscale.com/install.sh | sh"
 >@echo "   tailscale up"
