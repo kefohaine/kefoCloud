@@ -21,8 +21,12 @@ services:
       # chown -R 33:33 /var/www/github/jehpok.com/cloud/html BEFORE first start.
       - /var/www/github/jehpok.com/cloud/html:/var/www/html:rw
       # User files datadirectory (appdata_*, <user>/, owncloud.db, nextcloud.log).
-      # Matches 'datadirectory' => '/var/www/html/data' in config.php.
-      - /var/www/github/jehpok.com/cloud/users:/var/www/html/data:rw
+      # Mounted at /data (not /var/www/html/data) to avoid a nested bind mount
+      # inside the /var/www/html volume — the Nextcloud image declares
+      # VOLUME ["/var/www/html"], which makes nested bind mounts fragile and
+      # can silently detach after long uptimes or daemon events.
+      # 'datadirectory' in config.php must point to /data.
+      - /var/www/github/jehpok.com/cloud/users:/data:rw
       # Persistent PHP-FPM pool configuration
       - ./php-fpm.d/zz-custom.conf:/usr/local/etc/php-fpm.d/zz-custom.conf:ro
 
