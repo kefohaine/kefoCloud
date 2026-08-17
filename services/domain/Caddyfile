@@ -28,12 +28,6 @@ https://www.jehpok.com {
     import serve_static
 }
 
-https://app.jehpok.com {
-    import tls_keys
-    root * /srv/content/domain/app
-    import serve_static
-}
-
 https://vps.jehpok.com {
     import tls_keys
 
@@ -44,7 +38,7 @@ https://vps.jehpok.com {
     respond @not_tailnet 403
 
     @link path /link /link/*
-    reverse_proxy @link link:5000
+    reverse_proxy @link share:5000
 
     root * /srv/content/domain/vps
     import serve_static
@@ -52,7 +46,7 @@ https://vps.jehpok.com {
 
 # Public URL shortener. Only slug routes (GET /<slug>) are proxied;
 # admin UI, API, and healthz are Tailscale-only via vps.jehpok.com/link.
-https://link.jehpok.com {
+https://share.jehpok.com {
     import tls_keys
     header {
         Strict-Transport-Security "max-age=31536000"
@@ -62,7 +56,7 @@ https://link.jehpok.com {
     @admin path /link /link/* /api /api/* /healthz
     respond @admin "not found"
 
-    reverse_proxy link:5000 {
+    reverse_proxy share:5000 {
         @notfound status 404
         handle_response @notfound {
             respond "not found"
