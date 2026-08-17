@@ -37,6 +37,7 @@ Host-side paths (not in git):
 /var/www/github/jehpok.com/cloud/html/    Nextcloud html root (3rdparty, core, apps, config, occ)
 /var/www/github/jehpok.com/cloud/users/   Nextcloud datadirectory (user files, owncloud.db, nextcloud.log)
 /var/www/github/jehpok.com/link/db/links.db  Shortener SQLite DB (bind-mounted into the link container as /data)
+/var/www/github/jehpok.com/files/          Public file workshop root (bind-mounted into domain as /files, served at files.jehpok.com)
 /etc/ssh/sshd_config.d/50-cloud-init.conf  SSH hardening (key-only, no root, debian only)
 /etc/dnsmasq.d/10-tailnet.conf         dnsmasq Tailscale split-DNS (DO NOT DELETE — see Safety rules)
 /etc/systemd/system/dnsmasq.service.d/override.conf  systemd drop-in (Restart=always, After=tailscaled)
@@ -56,8 +57,8 @@ Per-service facts needed to edit safely. The compose files, Caddyfile, and `setu
 - Image `caddy:2.11.4`, container `domain`. Publishes 80 (→ 308 redirect to HTTPS) and 443.
 - TLS: Cloudflare Origin cert from `/certs/cert.pem` + `/certs/key.pem` (read-only bind mount of `/var/www/github/jehpok.com/certs/`).
 - `admin off` globally — no runtime reconfiguration from the `net` bridge.
-- Repo mounted read-only at `/srv`; static files served from `/srv/content/domain/{www,app,vps,files}`. Nextcloud html root mounted read-only at `/nextcloud` for static fallback.
-- Vhosts: `www`/`app`/`vps` → static fileserver; `files` → static fileserver with `browse` (directory listing over `content/domain/files` — public workshop, drop files in to publish); `api` → responds `ok` (no backend, reserved); `cloud` → `php_fastcgi cloud:9000` (dial 10s, read/write 300s, aligned to PHP-FPM's 200s terminate timeout), blocks internal paths (`/data/*`, `/config/*`, `/lib/*`, `/3rdparty/*`, `/templates/*`, `/occ`, `/console.php`, `/db/*`, `/updater/*`), redirects carddav/caldav to `/remote.php/dav`, 10G body max, zstd/gzip. The `vps` vhost enforces Tailscale-only at the edge: a `@not_tailnet` matcher (`not remote_ip 100.64.0.0/10`) returns 403 for any non-tailnet source IP, on top of the DNS split.
+- Repo mounted read-only at `/srv`; static files served from `/srv/content/domain/{www,app,vps}`. `/var/www/github/jehpok.com/files` is bind-mounted read-only at `/files` and served as `files.jehpok.com` (public workshop, browse-enabled) — kept outside the repo to host large files without bloating git. Nextcloud html root mounted read-only at `/nextcloud` for static fallback.
+- Vhosts: `www`/`app`/`vps` → static fileserver; `files` → static fileserver with `browse` over `/files` (bind-mount of `/var/www/github/jehpok.com/files`, outside the repo to host large files without git bloat — drop files in to publish); `api` → responds `ok` (no backend, reserved); `cloud` → `php_fastcgi cloud:9000` (dial 10s, read/write 300s, aligned to PHP-FPM's 200s terminate timeout), blocks internal paths (`/data/*`, `/config/*`, `/lib/*`, `/3rdparty/*`, `/templates/*`, `/occ`, `/console.php`, `/db/*`, `/updater/*`), redirects carddav/caldav to `/remote.php/dav`, 10G body max, zstd/gzip. The `vps` vhost enforces Tailscale-only at the edge: a `@not_tailnet` matcher (`not remote_ip 100.64.0.0/10`) returns 403 for any non-tailnet source IP, on top of the DNS split.
 - Security headers (HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy) on all vhosts.
 - Edit the Caddyfile then `make restart-domain` (mounted, no recreate); `make up-domain` only if the compose file or image changed.
 

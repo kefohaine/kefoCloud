@@ -74,7 +74,7 @@ https://link.jehpok.com {
 # Drop files into content/domain/files/ and they are listed publicly.
 https://files.jehpok.com {
     import tls_keys
-    root * /srv/content/domain/files
+    root * /files
     encode zstd gzip
     header {
         Strict-Transport-Security "max-age=31536000"
