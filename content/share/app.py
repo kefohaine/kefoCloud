@@ -39,7 +39,7 @@ def valid_slug(s):
 
 @app.errorhandler(404)
 def not_found(e):
-    if request.path.startswith("/api/") or request.path.startswith("/link/"):
+    if request.path.startswith("/api/") or request.path.startswith("/share/"):
         return jsonify(error="not found"), 404
     return e
 
@@ -49,7 +49,7 @@ def index():
     return "ok", 200
 
 
-@app.route("/link", methods=["GET"])
+@app.route("/share", methods=["GET"])
 def admin_page():
     conn = db()
     rows = conn.execute(
@@ -59,7 +59,7 @@ def admin_page():
     return render_template("admin.html", links=rows)
 
 
-@app.route("/link", methods=["POST"])
+@app.route("/share", methods=["POST"])
 def admin_create():
     data = request.form
     slug = (data.get("slug") or "").strip()
@@ -82,10 +82,10 @@ def admin_create():
         conn.close()
         return render_template("admin.html", links=all_rows(), error=f"'{slug}' already exists"), 400
     conn.close()
-    return redirect("/link", code=303)
+    return redirect("/share", code=303)
 
 
-@app.route("/link/<slug>", methods=["DELETE", "POST"])
+@app.route("/share/<slug>", methods=["DELETE", "POST"])
 def admin_delete(slug):
     if request.method == "POST" and request.form.get("_method") != "DELETE":
         abort(405)
@@ -95,7 +95,7 @@ def admin_delete(slug):
     conn.close()
     if request.headers.get("Accept") == "application/json":
         return jsonify(ok=True)
-    return redirect("/link", code=303)
+    return redirect("/share", code=303)
 
 
 def all_rows():

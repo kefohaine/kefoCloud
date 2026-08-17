@@ -36,7 +36,7 @@
 <h1>share.jehpok.com</h1>
 <p class="sub">admin — Tailscale-only</p>
 
-<form class="create" method="POST" action="/link">
+<form class="create" method="POST" action="/share">
   <input name="slug" placeholder="slug (blank=random)" autocomplete="off">
   <input name="target" placeholder="https://destination.url" autocomplete="off" required>
   <button type="submit">Add</button>
@@ -54,7 +54,7 @@
       <td class="target" title="{{ l.target }}">{{ l.target }}</td>
       <td class="hits">{{ l.hits }}</td>
       <td>
-        <form method="POST" action="/link/{{ l.slug }}">
+        <form method="POST" action="/share/{{ l.slug }}">
           <input type="hidden" name="_method" value="DELETE">
           <button type="submit" onclick="return confirm('Delete {{ l.slug }}?')">del</button>
         </form>

@@ -50,7 +50,7 @@ Only one VPS, one host. Cloudflare fronts four of the five hostnames; the Tailsc
 | files.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Public file workshop: directory browse over `/var/www/github/jehpok.com/files` (outside the repo) — drop files in to publish |
 | api.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Placeholder vhost (no backend currently wired)  |
 | cloud.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Nextcloud (file sync, calendar, photos)         |
-| vps.jehpok.com     | **Not in Cloudflare**       | Only devices on the Tailscale network       | Static site from `content/domain/vps`; admin UI for the shortener at `/link` |
+| vps.jehpok.com     | **Not in Cloudflare**       | Only devices on the Tailscale network       | Static site from `content/domain/vps`; admin UI for the shortener at `/share` |
 
 The asymmetry on `vps.jehpok.com` is deliberate. By keeping it out of public DNS, the only way anyone can know its IP is by being inside the Tailscale network. Even a DNS leak on the user's device cannot reveal an address that public resolvers don't serve. As defense-in-depth, Caddy also rejects any request to the vhost whose source IP is not on the tailnet (`100.64.0.0/10`), so reaching it via the public IP with a forged Host header returns 403 on every path.
 
@@ -106,7 +106,7 @@ services/
   share/
     Dockerfile               # Flask + python:3.12-slim
     app.py                   # URL shortener (SQLite, slug → target)
-    templates/admin.html     # Admin UI served at vps.jehpok.com/link
+    templates/admin.html     # Admin UI served at vps.jehpok.com/share
     docker-compose.yml       # share service (expose 5000 on net)
 setup/
   ollama/ollama.service      # Reference copy of the host systemd unit

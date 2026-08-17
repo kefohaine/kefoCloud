@@ -23,7 +23,7 @@ These are non-negotiable. Follow them on every task.
 services/          Docker compose files + configs (checked into git)
   domain/          Caddy (TLS termination, reverse proxy, static files)
   cloud/           Nextcloud (PHP-FPM, SQLite)
-  share/           URL shortener (Flask, SQLite, admin UI at vps.jehpok.com/link)
+  share/           URL shortener (Flask, SQLite, admin UI at vps.jehpok.com/share)
 setup/             Reference copies of host-level configs (Ollama unit, SSH hardening, dnsmasq)
 content/domain/    Static site files served by Caddy
 docs/AGENTS.md          This file
@@ -86,8 +86,8 @@ Per-service facts needed to edit safely. The compose files, Caddyfile, and `setu
 
 - Image `jehpok/share:1` (built locally from `Dockerfile`, `python:3.12-slim` + Flask 3.0.3), container `share`. No published ports — `expose: 5000` on `net` only; Caddy is the sole entry point.
 - SQLite DB at `/var/www/github/jehpok.com/share/db/links.db`, bind-mounted into the container as `/data`. Table `links(slug TEXT PK, target TEXT, created_at INTEGER, hits INTEGER)`. Back up with `make backup-share`.
-- Two Caddy vhosts route to it: `share.jehpok.com` (public — only slug routes `GET /<slug>` and `/` are proxied; `/link`, `/api/*`, `/healthz` return `200 ok` via the `@admin` matcher so admin endpoints aren't distinguishable from empty pages; unknown slugs get `200 ok` via `handle_response` on upstream 404) and `vps.jehpok.com/link*` (Tailscale-only admin UI). Admin has no app-level auth — access is gated by `vps.jehpok.com` being unresolvable off tailnet plus the `@not_tailnet` source-IP check, same model as the rest of that vhost. If you ever want app-level auth, add Caddy `basic_auth` on the `/link*` matcher.
-- `app.py` is a single Flask file: `GET /` returns `ok`, `GET /<slug>` redirects (307 — temporary, so delete/recreate isn't shadowed by a browser-cached 301), `GET /link` renders admin, `POST /link` creates (auto-generates a 4-char slug if blank), `POST /link/<slug>` with `_method=DELETE` deletes, `GET /api/links` returns JSON, `GET /healthz` for the healthcheck. The source lives in `content/share/` (mounted read-only at `/app/src`) so edits take effect with `make restart-share` — no image rebuild needed. The image only holds the Python runtime + Flask.
+- Two Caddy vhosts route to it: `share.jehpok.com` (public — only slug routes `GET /<slug>` and `/` are proxied; `/share`, `/api/*`, `/healthz` return `200 ok` via the `@admin` matcher so admin endpoints aren't distinguishable from empty pages; unknown slugs get `200 ok` via `handle_response` on upstream 404) and `vps.jehpok.com/share*` (Tailscale-only admin UI). Admin has no app-level auth — access is gated by `vps.jehpok.com` being unresolvable off tailnet plus the `@not_tailnet` source-IP check, same model as the rest of that vhost. If you ever want app-level auth, add Caddy `basic_auth` on the `/share*` matcher.
+- `app.py` is a single Flask file: `GET /` returns `ok`, `GET /<slug>` redirects (307 — temporary, so delete/recreate isn't shadowed by a browser-cached 301), `GET /share` renders admin, `POST /share` creates (auto-generates a 4-char slug if blank), `POST /share/<slug>` with `_method=DELETE` deletes, `GET /api/links` returns JSON, `GET /healthz` for the healthcheck. The source lives in `content/share/` (mounted read-only at `/app/src`) so edits take effect with `make restart-share` — no image rebuild needed. The image only holds the Python runtime + Flask.
 - `up-all` runs `up-share` before `up-domain` so Caddy can resolve `share` on start.
 
 ### Ollama (host systemd) — `setup/ollama/`
