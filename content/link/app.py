@@ -118,7 +118,7 @@ def resolve(slug):
         conn.commit()
         target = row["target"]
         conn.close()
-        return redirect(target, code=301)
+        return redirect(target, code=307)
     conn.close()
     abort(404)
 
