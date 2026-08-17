@@ -16,6 +16,7 @@ These are non-negotiable. Follow them on every task.
 4. **Minimize token usage.** Be extremely efficient: short, accurate, and understanding. No filler, no preamble, no restating the question, no recaps of what you just did. Batch tool calls that can run in parallel. Read only the file regions you need. Prefer one precise edit over rewriting whole sections. Answer in as few words as the task allows without sacrificing correctness.
 5. **When an issue is explicitly intended by the operator or documented in `README.md` as a deliberate feature/design choice, document it in `README.md` (if not already there) instead of treating it as a bug in `docs/ISSUES.md`.** Do not fix intended behavior; record the rationale so future agents don't "correct" it.
 6. **Minimize web searches.** Only fetch a URL when the answer is not already in the repo or the agent's own knowledge. Prefer reading local files and reasoning over network fetches.
+7. **Never use user-facing data services for agent purposes.** The shortener (`share.jehpok.com`), file upload (`/upload`), file browser (`/files/`), Vaultwarden (`vault.jehpok.com`), and Nextcloud (`cloud.jehpok.com`) are **user-only**. Do not create short links, upload files, write to databases, or store any data through these services for testing, debugging, development, or any agent-side reason. Verify changes with read-only checks (`curl`, `docker logs`, `make status`) and roll back any test artifacts immediately if created by mistake.
 
 ## Repository structure
 
