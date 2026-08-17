@@ -1,10 +1,14 @@
 import os
 import sqlite3
 import secrets
+import string
 from flask import Flask, request, redirect, abort, render_template, jsonify, url_for
 
 BASE_DIR = os.environ.get("LINK_DB_DIR", "/data")
 DB_PATH = os.path.join(BASE_DIR, "links.db")
+FILES_DIR = os.path.join(BASE_DIR, "files")
+os.makedirs(FILES_DIR, exist_ok=True)
+ALLOWED_CHARS = string.ascii_lowercase + string.digits + "-_."
 
 app = Flask(__name__)
 
@@ -64,6 +68,40 @@ def index():
         return render_template("public.html", short=None, error="slug collision, retry"), 503
     conn.close()
     host = request.host
+    return render_template("public.html", short=f"https://{host}/{slug}", error=None)
+
+
+@app.route("/upload", methods=["POST"])
+def upload_file():
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return render_template("public.html", short=None, error="no file provided"), 400
+    # Sanitize filename: lowercase, drop anything not in ALLOWED_CHARS, avoid traversal.
+    safe = "".join(c for c in f.filename.lower() if c in ALLOWED_CHARS).lstrip(".")
+    if not safe:
+        safe = "file"
+    # Avoid clobbering existing files: append a short suffix if needed.
+    name, ext = os.path.splitext(safe)
+    dest = os.path.join(FILES_DIR, safe)
+    suffix = ""
+    while os.path.exists(dest):
+        suffix = secrets.token_hex(2)
+        dest = os.path.join(FILES_DIR, f"{name}-{suffix}{ext}")
+    safe = os.path.basename(dest)
+    f.save(dest)
+    # Auto-short link to the file URL.
+    host = request.host
+    target = f"https://{host}/files/{safe}"
+    slug = secrets.token_urlsafe(4)
+    conn = db()
+    try:
+        conn.execute("INSERT INTO links (slug, target) VALUES (?, ?)", (slug, target))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        os.remove(dest)
+        return render_template("public.html", short=None, error="slug collision, retry"), 503
+    conn.close()
     return render_template("public.html", short=f"https://{host}/{slug}", error=None)
 
 

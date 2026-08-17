@@ -46,8 +46,7 @@ Only one VPS, one host. Cloudflare fronts four of the five hostnames; the Tailsc
 | Domain             | Where DNS points            | Who can reach it                            | What is served                                  |
 |--------------------|-----------------------------|---------------------------------------------|-------------------------------------------------|
 | www.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Static site from `content/domain/www`              |
-| share.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | URL shortener: `GET /` public shorten form (auto-slug); `GET /<slug>` 307-redirects to its target; blocked paths render `not found` |
-| files.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Public file workshop: directory browse over `/var/www/github/jehpok.com/files` (outside the repo) — drop files in to publish |
+| share.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | URL shortener + file sharing: `GET /` public shorten/upload form (auto-slug); `GET /<slug>` 307-redirects; `GET /files/` Caddy directory browse; blocked paths render `not found` |
 | api.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Placeholder vhost (no backend currently wired)  |
 | cloud.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Nextcloud (file sync, calendar, photos)         |
 | vps.jehpok.com     | **Not in Cloudflare**       | Only devices on the Tailscale network       | Static site from `content/domain/vps`; admin UI for the shortener at `/share` |
@@ -118,7 +117,6 @@ content/
   domain/
     www/                     # static files for www.jehpok.com
     vps/                     # static files for vps.jehpok.com (Tailscale-only)
-                              # files.jehpok.com root lives outside the repo at /var/www/github/jehpok.com/files/ (bind-mounted into Caddy at /files)
   share/                     # share.jehpok.com app source (Flask app.py + templates), mounted into the share container
 Makefile                     # Recipes: up-all, setup-host, backup-cloud, backup-secrets, migrate, etc.
 docs/AGENTS.md                    # Operating guide for agents
