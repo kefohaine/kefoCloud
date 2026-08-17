@@ -118,7 +118,7 @@ https://cloud.jehpok.com {
     root * /nextcloud
 
     request_body {
-        max_size 10G
+        max_size 100m
     }
 
     # Never expose Nextcloud's data/config/internal files.
