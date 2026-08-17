@@ -56,6 +56,7 @@ https://link.jehpok.com {
         Referrer-Policy "no-referrer"
     }
     reverse_proxy link:5000
+    respond "ok"
 }
 
 https://api.jehpok.com {
