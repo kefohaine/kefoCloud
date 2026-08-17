@@ -17,6 +17,7 @@ services:
 
     volumes:
       - /var/www/github/jehpok.com/link/db:/data
+      - ../../content/link:/app/src:ro
 
     logging:
       driver: json-file

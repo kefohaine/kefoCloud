@@ -74,7 +74,7 @@ Per-service facts needed to edit safely. The compose files, Caddyfile, and `setu
 - No published ports — `expose: 9000` on `net` only; Caddy is the sole entry point.
 - Two host bind mounts, both owned by uid 33 (`www-data`) before first start:
   - `/var/www/github/jehpok.com/cloud/html` → `/var/www/html` (install: 3rdparty, core, apps, config, occ).
-  - `/var/www/github/jehpok.com/cloud/users` → `/var/www/html/data` (datadirectory; must contain a `.ncdata` marker or Nextcloud won't start).
+  - `/var/www/github/jehpok.com/cloud/users` → `/data` (datadirectory, set to `/data` in `config.php`; must contain a `.ncdata` marker or Nextcloud won't start). Mounted at a standalone path, **not** inside `/var/www/html`, to avoid a nested bind mount — the Nextcloud image declares `VOLUME ["/var/www/html"]` which makes nested mounts silently detach after long uptimes.
 - Admin creds from `services/cloud/.env` (gitignored): `NEXTCLOUD_ADMIN_USER`, `NEXTCLOUD_ADMIN_PASSWORD`. Never hardcode.
 - Env: `NEXTCLOUD_TRUSTED_DOMAINS=cloud.jehpok.com`, `NEXTCLOUD_OVERWRITEPROTOCOL=https`, `TRUSTED_PROXIES=172.22.0.0/16` (the `net` subnet), `OVERWRITECLIURL=https://cloud.jehpok.com`.
 - PHP-FPM pool in `php-fpm.d/zz-custom.conf`: `ondemand`, `max_children=8`, `process_idle_timeout=10s`, `request_terminate_timeout=200s`.
@@ -85,7 +85,7 @@ Per-service facts needed to edit safely. The compose files, Caddyfile, and `setu
 - Image `jehpok/link:1` (built locally from `Dockerfile`, `python:3.12-slim` + Flask 3.0.3), container `link`. No published ports — `expose: 5000` on `net` only; Caddy is the sole entry point.
 - SQLite DB at `/var/www/github/jehpok.com/link/db/links.db`, bind-mounted into the container as `/data`. Table `links(slug TEXT PK, target TEXT, created_at INTEGER, hits INTEGER)`. Back up with `make backup-link`.
 - Two Caddy vhosts route to it: `link.jehpok.com` (public — all requests reverse-proxy to `link:5000`, which 301-redirects known slugs and 404s unknown) and `vps.jehpok.com/link*` (Tailscale-only admin UI). Admin has no app-level auth — access is gated by `vps.jehpok.com` being unresolvable off tailnet, same model as the rest of that vhost. If you ever want app-level auth, add Caddy `basic_auth` on the `/link*` matcher.
-- `app.py` is a single Flask file: `GET /<slug>` redirects, `GET /link` renders admin, `POST /link` creates (auto-generates a 4-char slug if blank), `POST /link/<slug>` with `_method=DELETE` deletes, `GET /api/links` returns JSON, `GET /healthz` for the healthcheck. Edit `app.py` then `make up-link` (rebuilds the image); `make restart-link` won't pick up code changes since the app is baked into the image, not mounted.
+- `app.py` is a single Flask file: `GET /<slug>` redirects, `GET /link` renders admin, `POST /link` creates (auto-generates a 4-char slug if blank), `POST /link/<slug>` with `_method=DELETE` deletes, `GET /api/links` returns JSON, `GET /healthz` for the healthcheck. The source lives in `content/link/` (mounted read-only at `/app/src`) so edits take effect with `make restart-link` — no image rebuild needed. The image only holds the Python runtime + Flask.
 - `up-all` runs `up-link` before `up-domain` so Caddy can resolve `link` on start.
 
 ### Ollama (host systemd) — `setup/ollama/`
@@ -114,6 +114,7 @@ git push jehpok.com main
 - Bind services to the narrowest interface possible. dnsmasq binds to the Tailscale IP only, not `0.0.0.0`.
 - Use `expose` (not `ports`) for inter-container services. Only `domain` (80/443) publishes host ports; dnsmasq is on the host, not Docker.
 - The `net` Docker network is `external: true`. Do not let compose files create their own private networks for inter-service communication.
+- **Container app sources live under `content/<container>/`**, not `services/<container>/`. `services/` holds only Dockerfile + compose + service-level configs; `content/` holds the code/static files the container runs or serves. Mount `content/<container>/` read-only into the container so edits take effect with `make restart-<container>` and the image only carries the runtime. Static-site vhosts (`www`/`app`/`vps`) follow the same pattern under `content/domain/`.
 - Do not add comments to code unless asked.
 - A sentence ending in "?" is a question, not an order. Answer it (yes/no/how) before doing anything. Only act when the operator explicitly tells you to. If the question is ambiguous, rephrase it back and ask for confirmation.
 - Do not paste entire file contents (Caddyfile, dnsmasq config, compose files, Makefile) into `README.md` or other docs. Describe what they do in prose; the files are the source of truth. Command snippets (`make ...`, shell one-liners) are fine.
