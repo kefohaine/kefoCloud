@@ -11,7 +11,7 @@ os.makedirs(FILES_DIR, exist_ok=True)
 ALLOWED_CHARS = string.ascii_lowercase + string.digits + "-_."
 # Unambiguous alphabet for auto-generated slugs: excludes visually similar pairs
 # 0/O, 1/I/l, 2/Z, 5/S, 8/B, 6/G, U/V.
-SLUG_ALPHABET = "acdefhjkmnpqrtwxyACDEFHJKMNPQRTWXY3479"
+SLUG_ALPHABET = "acdefhjkmnpqrtwxy3479"
 
 
 def gen_slug(length=6):
