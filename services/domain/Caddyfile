@@ -70,6 +70,23 @@ https://link.jehpok.com {
     }
 }
 
+# Public file workshop: directory browse over a static root.
+# Drop files into content/domain/files/ and they are listed publicly.
+https://files.jehpok.com {
+    import tls_keys
+    root * /srv/content/domain/files
+    encode zstd gzip
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+    file_server browse {
+        precompressed zstd gzip
+    }
+}
+
 https://api.jehpok.com {
     import tls_keys
     header {
