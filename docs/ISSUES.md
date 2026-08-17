@@ -24,8 +24,8 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 
 ### `vps.jehpok.com` has no auth beyond Tailscale membership  **[needs human approval]**
 - **File**: `services/domain/Caddyfile` (`https://vps.jehpok.com`)
-- **Problem**: Any tailnet device can reach `vps.jehpok.com` with no authentication. DNS-obscurity is the only access control.
-- **Fix**: Add Caddy `basic_auth` (needs a username + bcrypt hash from the operator) or Tailscale ACLs in the admin console.
+- **Problem**: Any tailnet device can reach `vps.jehpok.com` with no authentication. DNS-obscurity is the only access control. This now also exposes the link shortener admin UI at `/link` — anyone on tailnet can create or delete redirects.
+- **Fix**: Add Caddy `basic_auth` on the `/link*` matcher (needs a username + bcrypt hash from the operator), or apply Tailscale ACLs in the admin console to restrict who can reach the VPS at all.
 - **Why approval**: requires a password / ACL policy from the operator.
 
 ### Tailscale ACLs not configured  **[needs human approval]**
@@ -114,3 +114,9 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 - **DNS no longer a Docker SPOF** — survives `docker stop`, image pulls, `systemctl restart docker`; only a deliberate `systemctl stop dnsmasq` takes it down.
 - **Recovery covered** — `setup-host` installs the dnsmasq config + drop-in; `backup-secrets` bundles both files; `migrate` runbook adds `dnsmasq` to the apt install line.
 - **Makefile** — `up-tailnet`/`restart-tailnet`/`logs-tailnet` removed; `restart-dns`/`logs-dns` added; `up-all` is now `up-domain up-cloud`.
+
+### Aug 2026 — URL shortener
+- **`services/link/`** — Flask + SQLite shortener (`jehpok/link:1` image, built locally). Public redirects at `link.jehpok.com` (Cloudflare-fronted), admin UI at `vps.jehpok.com/link` (Tailscale-only, no app auth — same access model as the rest of `vps.jehpok.com`).
+- **Caddy vhosts** — `link.jehpok.com` reverse-proxies all requests to `link:5000`; `vps.jehpok.com` matches `/link*` to the link container and falls through to static files otherwise.
+- **DB + backups** — SQLite at `/var/www/github/jehpok.com/link/db/links.db`; `make backup-link` copies it; `make migrate` runbook restores it.
+- **Makefile** — `up-link`/`restart-link`/`logs-link`/`backup-link` added; `up-all` is now `up-link up-domain up-cloud` (link first so Caddy can resolve it).

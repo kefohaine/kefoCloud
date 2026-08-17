@@ -47,9 +47,10 @@ Only one VPS, one host. Cloudflare fronts four of the five hostnames; the Tailsc
 |--------------------|-----------------------------|---------------------------------------------|-------------------------------------------------|
 | www.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Static site from `content/domain/www`              |
 | app.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Static site from `content/domain/app`              |
+| link.jehpok.com    | Cloudflare → VPS IP         | Anyone on the internet                      | URL shortener: 301-redirects `/<slug>` to its target |
 | api.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Placeholder vhost (no backend currently wired)  |
 | cloud.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Nextcloud (file sync, calendar, photos)         |
-| vps.jehpok.com     | **Not in Cloudflare**       | Only devices on the Tailscale network       | Static site from `content/domain/vps`              |
+| vps.jehpok.com     | **Not in Cloudflare**       | Only devices on the Tailscale network       | Static site from `content/domain/vps`; admin UI for the shortener at `/link` |
 
 The asymmetry on `vps.jehpok.com` is deliberate. By keeping it out of public DNS, the only way anyone can know its IP is by being inside the Tailscale network. Even a DNS leak on the user's device cannot reveal an address that public resolvers don't serve.
 
@@ -102,6 +103,11 @@ services/
     docker-compose.yml       # Nextcloud (name: cloud)
     php-fpm.d/zz-custom.conf # PHP-FPM pool config
     .env                     # NEXTCLOUD_ADMIN_USER / NEXTCLOUD_ADMIN_PASSWORD (gitignored)
+  link/
+    Dockerfile               # Flask + python:3.12-slim
+    app.py                   # URL shortener (SQLite, slug → target)
+    templates/admin.html     # Admin UI served at vps.jehpok.com/link
+    docker-compose.yml       # link service (expose 5000 on net)
 setup/
   ollama/ollama.service      # Reference copy of the host systemd unit
   ssh/50-cloud-init.conf     # Reference copy of SSH hardening config
@@ -139,16 +145,17 @@ Run `make migrate` for the full step-by-step runbook. It assumes: the `net` brid
 Use the `Makefile` recipes (canonical) rather than raw `docker compose`:
 
 ```bash
-make up-all            # start/recreate both containers in order (domain, cloud)
-make up-<service>      # force-recreate one container — up-domain | up-cloud
+make up-all            # start/recreate all three containers in order (link, domain, cloud)
+make up-<service>      # force-recreate one container — up-domain | up-cloud | up-link
 make restart-<service> # reload one container without recreating — after editing a mounted config
 make restart-dns       # restart the host dnsmasq resolver — after editing setup/dnsmasq/10-tailnet.conf
-make logs-<service>    # follow one container's logs — logs-domain | logs-cloud
+make logs-<service>    # follow one container's logs — logs-domain | logs-cloud | logs-link
 make logs-dns          # follow the dnsmasq journal
 make status            # show a table of all running containers
 make push MSG="..."    # stage, commit, and push to the jehpok.com remote
 make backup-cloud      # snapshot Nextcloud data (maintenance mode on during the copy)
-make backup-secrets    # bundle certs, SSH keys, Ollama unit, and Tailscale state for off-VPS storage
+make backup-link       # copy the shortener SQLite DB to /var/www/github/jehpok.com/link-backup-<date>.db
+make backup-secrets    # bundle certs, SSH keys, Ollama unit, dnsmasq config, and Tailscale state for off-VPS storage
 make setup-host        # install reference configs to live paths and enable Ollama + sshd + dnsmasq
 make migrate           # print the full VPS-to-VPS migration runbook
 make clean             # free disk: prune the Docker build cache and clear the apt cache
