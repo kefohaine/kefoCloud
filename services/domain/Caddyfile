@@ -2,17 +2,23 @@
     admin off
 }
 
+# ── snippets ────────────────────────────────────────────────────────────────
+
 (tls_keys) {
     tls /certs/cert.pem /certs/key.pem
+}
+
+(security_headers) {
+    Strict-Transport-Security "max-age=31536000"
+    X-Content-Type-Options "nosniff"
+    X-Frame-Options "SAMEORIGIN"
+    Referrer-Policy "strict-origin-when-cross-origin"
 }
 
 (serve_static) {
     encode zstd gzip
     header {
-        Strict-Transport-Security "max-age=31536000"
-        X-Content-Type-Options "nosniff"
-        X-Frame-Options "SAMEORIGIN"
-        Referrer-Policy "strict-origin-when-cross-origin"
+        import security_headers
     }
     request_body {
         max_size 100m
@@ -23,10 +29,13 @@
     }
 }
 
-# Redirect all plaintext HTTP to HTTPS.
+# ── HTTP → HTTPS ────────────────────────────────────────────────────────────
+
 http:// {
     redir https://{host}{uri} 308
 }
+
+# ── static sites ────────────────────────────────────────────────────────────
 
 https://www.jehpok.com {
     import tls_keys
@@ -36,22 +45,16 @@ https://www.jehpok.com {
 
 https://vps.jehpok.com {
     import tls_keys
-
-    # Tailscale-only: reject any client whose source IP is not on the
-    # tailnet (100.64.0.0/10 CGNAT range). Defense-in-depth on top of
-    # the DNS split — blocks anyone reaching the vhost via the public IP.
     @not_tailnet not remote_ip 100.64.0.0/10
     respond @not_tailnet 403
-
     @share path /share /share/*
     reverse_proxy @share share:5000
-
     root * /srv/content/domain/vps
     import serve_static
 }
 
-# Public URL shortener. Only slug routes (GET /<slug>) are proxied;
-# admin UI, API, and healthz are Tailscale-only via vps.jehpok.com/share.
+# ── URL shortener + file sharing ───────────────────────────────────────────
+
 https://share.jehpok.com {
     import tls_keys
     request_body {
@@ -64,7 +67,6 @@ https://share.jehpok.com {
     }
     @admin path /share /share/* /api /api/* /healthz
     respond @admin "not found" 404
-
     @browse path /files /files/*
     handle @browse {
         root * /files
@@ -76,7 +78,6 @@ https://share.jehpok.com {
     handle_errors 404 {
         respond "not found"
     }
-
     reverse_proxy share:5000 {
         @notfound status 404
         handle_response @notfound {
@@ -84,6 +85,8 @@ https://share.jehpok.com {
         }
     }
 }
+
+# ── API placeholder ────────────────────────────────────────────────────────
 
 https://api.jehpok.com {
     import tls_keys
@@ -99,55 +102,40 @@ https://api.jehpok.com {
     respond "not found" 404
 }
 
+# ── Vaultwarden (password manager) ─────────────────────────────────────────
+
 https://vault.jehpok.com {
     import tls_keys
-
     request_body {
         max_size 100m
     }
-
-    reverse_proxy vault:80
-
     header {
-        Strict-Transport-Security "max-age=31536000"
-        X-Content-Type-Options "nosniff"
-        X-Frame-Options "SAMEORIGIN"
-        Referrer-Policy "strict-origin-when-cross-origin"
+        import security_headers
     }
+    reverse_proxy vault:80
 }
 
-# Nextcloud: standalone hostname served by the `cloud` container.
-# Trusted domains must include cloud.jehpok.com (set in the cloud container's env).
+# ── Nextcloud (PHP-FPM) ────────────────────────────────────────────────────
+
 https://cloud.jehpok.com {
     import tls_keys
-
     root * /nextcloud
-
     request_body {
         max_size 100m
     }
-
-    # Never expose Nextcloud's data/config/internal files.
     @blocked path /data/* /config/* /lib/* /3rdparty/* /templates/* /occ /console.php /db/* /updater/*
     respond @blocked 404
-
-    # Nextcloud's well-known endpoints
     redir /.well-known/carddav /remote.php/dav 301
     redir /.well-known/caldav /remote.php/dav 301
-
     php_fastcgi cloud:9000 {
         root /var/www/html
         dial_timeout 10s
         read_timeout 300s
         write_timeout 300s
     }
-
     encode zstd gzip
     header {
-        Strict-Transport-Security "max-age=31536000"
-        X-Content-Type-Options "nosniff"
-        X-Frame-Options "SAMEORIGIN"
-        Referrer-Policy "strict-origin-when-cross-origin"
+        import security_headers
     }
     file_server
 }
