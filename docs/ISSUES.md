@@ -108,22 +108,15 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 - **Sensitive files purged from git history** — `config/web/certs/key.pem`, `cert.pem`, `.github/workflows/deploy.yml`, `install.sh`, `app.py` removed via `git filter-repo`; `origin` remote (PAT-embedded) removed; history rewritten, force-pushed.
 
 ### Aug 2026 — CoreDNS SPOF resolved, dnsmasq on host
-- **CoreDNS container removed** — `services/tailnet/` deleted; `tailnet` container stopped and removed.
-- **dnsmasq on host** — `/etc/dnsmasq.d/10-tailnet.conf` binds `100.81.245.77:53`, overrides `vps.jehpok.com`, forwards the rest to `1.1.1.1 1.0.0.1 9.9.9.9` (sequential). systemd drop-in orders it `After=tailscaled` with `Restart=always`.
-- **`tailnet_default` network gone** — Compose no longer creates a spare bridge (the `tailnet` service that caused it is removed).
-- **DNS no longer a Docker SPOF** — survives `docker stop`, image pulls, `systemctl restart docker`; only a deliberate `systemctl stop dnsmasq` takes it down.
-- **Recovery covered** — `setup-host` installs the dnsmasq config + drop-in; `backup-secrets` bundles both files; `migrate` runbook adds `dnsmasq` to the apt install line.
-- **Makefile** — `up-tailnet`/`restart-tailnet`/`logs-tailnet` removed; `restart-dns`/`logs-dns` added; `up-all` is now `up-domain up-cloud`.
+- **CoreDNS container removed** — `services/tailnet/` deleted; replaced with host dnsmasq (`/etc/dnsmasq.d/10-tailnet.conf`) bound to `100.81.245.77:53`, `Restart=always`, ordered `After=tailscaled`.
+- **`tailnet_default` network gone** — the spare Compose bridge disappeared with the `tailnet` service.
+- **DNS no longer a Docker SPOF** — survives `docker stop` / image pulls / `systemctl restart docker`; only a deliberate `systemctl stop dnsmasq` takes it down.
+- **Recovery covered** — `setup-host` installs dnsmasq config + drop-in; `backup-secrets` bundles them; `migrate` adds `dnsmasq` to apt; Makefile gets `restart-dns`/`logs-dns`, drops the tailnet targets.
 
 ### Aug 2026 — URL shortener
-- **`services/link/`** — Flask + SQLite shortener (`jehpok/link:1` image, built locally). Public redirects at `link.jehpok.com` (Cloudflare-fronted), admin UI at `vps.jehpok.com/link` (Tailscale-only, no app auth — same access model as the rest of `vps.jehpok.com`).
-- **Caddy vhosts** — `link.jehpok.com` reverse-proxies all requests to `link:5000`; `vps.jehpok.com` matches `/link*` to the link container and falls through to static files otherwise.
-- **DB + backups** — SQLite at `/var/www/github/jehpok.com/link/db/links.db`; `make backup-link` copies it; `make migrate` runbook restores it.
-- **Makefile** — `up-link`/`restart-link`/`logs-link`/`backup-link` added; `up-all` is now `up-link up-domain up-cloud` (link first so Caddy can resolve it).
+- **`services/link/`** — Flask + SQLite shortener (`jehpok/link:1`); public 301-redirects at `link.jehpok.com`, admin UI at `vps.jehpok.com/link` (Tailscale-only, no app auth).
+- **Source in `content/link/`** — bind-mounted read-only at `/app/src`; `make restart-link` picks up code edits without rebuild.
+- **Backups + migration** — `make backup-link` copies the SQLite DB; `make migrate` restores it; `up-all` runs `up-link` first so Caddy can resolve it.
 
 ### Aug 2026 — Nextcloud nested bind mount fix
-- **Root cause**: the `nextcloud:34.0.2-fpm` image declares `VOLUME ["/var/www/html"]`. The compose file bound `cloud/html` → `/var/www/html` and `cloud/users` → `/var/www/html/data` (a nested bind mount inside the volume). Docker's mount-namespace lifecycle for declared volumes can silently detach nested bind mounts after long uptimes or daemon events — `docker inspect` still reports the mount but `/var/www/html/data` disappears inside the container, and Nextcloud 500s with `SQLSTATE[HY000] [14] unable to open database file`. No error is logged by Docker or the kernel; the mount just vanishes.
-- **Symptom**: `cloud.jehpok.com` returns HTTP 500 "Internal Server Error"; `docker logs cloud` shows `Doctrine\DBAL\Exception\ConnectionException` / `unable to open database file`; `docker exec cloud ls /var/www/html/data` → `No such file or directory` despite `docker inspect` listing the mount.
-- **Fix**: moved `datadirectory` from `/var/www/html/data` to `/data` (a standalone path outside the `VOLUME`-declared `/var/www/html`). `config.php` now has `'datadirectory' => '/data'`; the compose file mounts `cloud/users` → `/data`. No nesting → no silent detachment.
-- **Diagnostic shortcut**: if Nextcloud 500s with "unable to open database file", run `docker exec cloud ls /var/www/html/data` (or `/data` post-fix). If missing, `make up-cloud` (force-recreate) re-establishes the mounts. This is a workaround; the real fix is the non-nested layout, now in place.
-- **Recovery**: `make up-cloud` after the compose + `config.php` change. No data loss — the DB and user files were never corrupted, just unreachable.
+- **Nested bind mount detached** — `nextcloud:34.0.2-fpm` declares `VOLUME ["/var/www/html"]`; binding `cloud/users` at `/var/www/html/data` (nested inside) silently vanished after long uptimes, causing HTTP 500 "unable to open database file" with no Docker/kernel error logged. Fix: `datadirectory` moved to `/data` (standalone path, no nesting); `config.php` + compose updated. Diagnostic: `docker exec cloud ls /data` — if missing, `make up-cloud`.
