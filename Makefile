@@ -4,10 +4,10 @@
 REPO := /var/www/github/jehpok.com/repo
 COMPOSE := docker compose -f
 
-.PHONY: up-domain up-cloud up-link up-all
-.PHONY: restart-domain restart-cloud restart-link restart-dns
-.PHONY: logs-domain logs-cloud logs-link logs-dns
-.PHONY: status push backup-cloud backup-link clean setup-host
+.PHONY: up-domain up-cloud up-share up-all
+.PHONY: restart-domain restart-cloud restart-share restart-dns
+.PHONY: logs-domain logs-cloud logs-share logs-dns
+.PHONY: status push backup-cloud backup-share clean setup-host
 
 up-domain:
 >$(COMPOSE) $(REPO)/services/domain/docker-compose.yml up -d --force-recreate
@@ -15,10 +15,10 @@ up-domain:
 up-cloud:
 >$(COMPOSE) $(REPO)/services/cloud/docker-compose.yml up -d --force-recreate
 
-up-link:
->$(COMPOSE) $(REPO)/services/link/docker-compose.yml up -d --force-recreate --build
+up-share:
+>$(COMPOSE) $(REPO)/services/share/docker-compose.yml up -d --force-recreate --build
 
-up-all: up-link up-domain up-cloud
+up-all: up-share up-domain up-cloud
 
 restart-domain:
 >$(COMPOSE) $(REPO)/services/domain/docker-compose.yml restart domain
@@ -26,8 +26,8 @@ restart-domain:
 restart-cloud:
 >$(COMPOSE) $(REPO)/services/cloud/docker-compose.yml restart cloud
 
-restart-link:
->$(COMPOSE) $(REPO)/services/link/docker-compose.yml restart link
+restart-share:
+>$(COMPOSE) $(REPO)/services/share/docker-compose.yml restart share
 
 restart-dns:
 >sudo systemctl restart dnsmasq
@@ -38,8 +38,8 @@ logs-domain:
 logs-cloud:
 >docker logs cloud --tail 50 -f
 
-logs-link:
->docker logs link --tail 50 -f
+logs-share:
+>docker logs share --tail 50 -f
 
 logs-dns:
 >sudo journalctl -u dnsmasq -n 50 -f
@@ -56,9 +56,9 @@ backup-cloud:
 >docker exec -w /var/www/html cloud php occ maintenance:mode --off
 >@echo "Backup at /var/www/github/jehpok.com/cloud-backup-$$(date +%Y%m%d)"
 
-backup-link:
->cp /var/www/github/jehpok.com/link/db/links.db /var/www/github/jehpok.com/link-backup-$$(date +%Y%m%d).db
->@echo "Backup at /var/www/github/jehpok.com/link-backup-$$(date +%Y%m%d).db"
+backup-share:
+>cp /var/www/github/jehpok.com/share/db/links.db /var/www/github/jehpok.com/share-backup-$$(date +%Y%m%d).db
+>@echo "Backup at /var/www/github/jehpok.com/share-backup-$$(date +%Y%m%d).db"
 
 clean:
 >docker builder prune -af
@@ -101,7 +101,7 @@ migrate:
 >@echo "2. Download these OFF the old VPS:"
 >@echo "   /var/www/github/jehpok.com/secrets-backup/secrets-*.tar.gz"
 >@echo "   /var/www/github/jehpok.com/cloud-backup-*"
->@echo "   /var/www/github/jehpok.com/link-backup-*.db"
+>@echo "   /var/www/github/jehpok.com/share-backup-*.db"
 >@echo ""
 >@echo "3. On the NEW VPS (Debian), as root then debian:"
 >@echo "   apt update && apt install -y docker.io docker-compose-plugin git curl make sudo dnsmasq"
@@ -121,9 +121,9 @@ migrate:
 >@echo "   echo '# Nextcloud data directory' | sudo tee /var/www/github/jehpok.com/cloud/users/.ncdata"
 >@echo "   sudo chown -R 33:33 /var/www/github/jehpok.com/cloud/html /var/www/github/jehpok.com/cloud/users"
 >@echo ""
->@echo "   # restore link DB:"
->@echo "   sudo mkdir -p /var/www/github/jehpok.com/link/db"
->@echo "   sudo cp link-backup-*.db /var/www/github/jehpok.com/link/db/links.db"
+>@echo "   # restore share DB:"
+>@echo "   sudo mkdir -p /var/www/github/jehpok.com/share/db"
+>@echo "   sudo cp share-backup-*.db /var/www/github/jehpok.com/share/db/links.db"
 >@echo ""
 >@echo "   # clone and bootstrap:"
 >@echo "   git clone git@github.com:friedutch/jehpok.com.git /var/www/github/jehpok.com/repo"
