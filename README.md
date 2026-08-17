@@ -47,7 +47,7 @@ Only one VPS, one host. Cloudflare fronts four of the five hostnames; the Tailsc
 |--------------------|-----------------------------|---------------------------------------------|-------------------------------------------------|
 | www.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Static site from `content/domain/www`              |
 | app.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Static site from `content/domain/app`              |
-| link.jehpok.com    | Cloudflare → VPS IP         | Anyone on the internet                      | URL shortener: 301-redirects `/<slug>` to its target |
+| link.jehpok.com    | Cloudflare → VPS IP         | Anyone on the internet                      | URL shortener: 301-redirects `/<slug>` to its target; `/` and unknown slugs render `ok` |
 | api.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Placeholder vhost (no backend currently wired)  |
 | cloud.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Nextcloud (file sync, calendar, photos)         |
 | vps.jehpok.com     | **Not in Cloudflare**       | Only devices on the Tailscale network       | Static site from `content/domain/vps`; admin UI for the shortener at `/link` |
