@@ -136,9 +136,9 @@ git push jehpok.com main
 Follow these on every edit to any `.md` file in this repo.
 
 1. **No duplicated content across files.** State each fact once, in the most appropriate file:
-   - `README.md` — system architecture, rationale, request flows, operational gotchas, setup/migration runbooks. The "what and why".
-   - `docs/AGENTS.md` — how to work in the repo: commands, conventions, safety rules, task workflow. The "how to act".
-   - `docs/ISSUES.md` — only open problems and improvements, plus a Resolved section for history. Nothing else.
+   - `README.md` — system architecture, rationale, request flows, operational gotchas, setup/migration runbooks, the domain/access table, the repository layout, the CMD sheet. The "what and why". New services, renamed hosts, deleted vhosts, and feature additions go here — never in `docs/ISSUES.md`.
+   - `docs/AGENTS.md` — how to work in the repo: commands, conventions, safety rules, task workflow, per-service edit-safe facts. The "how to act".
+   - `docs/ISSUES.md` — **only** open problems (bugs, security gaps, efficiency losses, robustness risks) and a `Solved` section for problems that were listed under those categories and have since been fixed. Routine changes — adding a service, renaming a host, deleting a vhost, UI tweaks, new features — are **not** issues and must not be logged here. If a change didn't fix a problem that was tracked under Robustness / Security / Efficiency, it doesn't belong in `docs/ISSUES.md` at all.
 2. **No pasting repo file contents.** Don't copy Caddyfile/dnsmasq config/compose/Makefile blocks into docs. Describe in prose; link to the file path. Command snippets (`make ...`, shell one-liners) are fine.
 3. **No duplicated prose within a file.** If a paragraph repeats what another section already said, delete one.
 4. **Prose over code blocks.** Use a code block only for commands the reader will run, or a structure that genuinely needs monospace (the architecture diagram, the directory tree). Everything else is prose.
