@@ -105,11 +105,4 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 - **URL shortener** — Flask + SQLite; `link.jehpok.com` public, `vps.jehpok.com/link` admin.
 - **Nextcloud bind mount fixed** — `datadirectory` moved to `/data`, no nesting.
 - **`link.jehpok.com` admin leak closed** — Caddy `@admin` matcher returns 404 for `/link`, `/api/*`, `/healthz`, `/` on public vhost; admin still reachable via `vps.jehpok.com/link`.
-- **`app.jehpok.com` removed** — vhost + `content/domain/app/` deleted; no longer in DNS.
-- **`link.jehpok.com` → `share.jehpok.com`** — service, container, host paths, DB, admin path (`/link`→`/share`) renamed across repo.
-- **`files.jehpok.com` merged into `share.jehpok.com/files`** — file workshop vhost removed; Caddy browse serves `/var/www/github/jehpok.com/share/files` at `/files`; upload route auto-creates short links to uploaded files.
-- **Public shorten form** — `share.jehpok.com/` now renders a public URL-shorten + file-upload form (auto-slug, no custom slug); admin list stays at `vps.jehpok.com/share`.
-- **Unambiguous slug alphabet** — auto-slugs drawn from 23-char lowercase set (`acdefhjkmnpqrtwxy3479`), excludes visually similar chars.
-- **Vaultwarden** — added at `vault.jehpok.com` (Bitwarden-compatible, SQLite, signups disabled).
-- **Body cap harmonized** — all vhosts `max_size 100m` to match Cloudflare free-tier; Caddyfile reformatted with `security_headers` snippet.
-- **`del-all` button** — admin UI can wipe all links in one action; single/del-all also delete linked files from disk.
+- **Cloudflare 100 MB body cap aligned** — all vhosts `max_size 100m` to match CF free-tier; inconsistent 10G on cloud vhost removed.
