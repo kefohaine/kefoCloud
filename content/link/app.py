@@ -46,9 +46,7 @@ def not_found(e):
 
 @app.route("/")
 def index():
-    if request.host.startswith("link."):
-        return "ok", 200
-    return redirect("/link", code=308)
+    return "ok", 200
 
 
 @app.route("/link", methods=["GET"])
