@@ -9,6 +9,13 @@ DB_PATH = os.path.join(BASE_DIR, "links.db")
 FILES_DIR = os.path.join(BASE_DIR, "files")
 os.makedirs(FILES_DIR, exist_ok=True)
 ALLOWED_CHARS = string.ascii_lowercase + string.digits + "-_."
+# Unambiguous alphabet for auto-generated slugs: excludes visually similar pairs
+# 0/O, 1/I/l, 2/Z, 5/S, 8/B, 6/G, U/V.
+SLUG_ALPHABET = "acdefhjkmnpqrtwxyACDEFHJKMNPQRTWXY3479"
+
+
+def gen_slug(length=6):
+    return "".join(secrets.choice(SLUG_ALPHABET) for _ in range(length))
 
 app = Flask(__name__)
 
@@ -58,7 +65,7 @@ def index():
         return render_template("public.html", short=None, error="target is required"), 400
     if not target.startswith(("http://", "https://")):
         target = "https://" + target
-    slug = secrets.token_urlsafe(4)
+    slug = gen_slug()
     conn = db()
     try:
         conn.execute("INSERT INTO links (slug, target) VALUES (?, ?)", (slug, target))
@@ -92,7 +99,7 @@ def upload_file():
     # Auto-short link to the file URL.
     host = request.host
     target = f"https://{host}/files/{safe}"
-    slug = secrets.token_urlsafe(4)
+    slug = gen_slug()
     conn = db()
     try:
         conn.execute("INSERT INTO links (slug, target) VALUES (?, ?)", (slug, target))
@@ -122,7 +129,7 @@ def admin_create():
     target = (data.get("target") or "").strip()
 
     if not slug:
-        slug = secrets.token_urlsafe(4)
+        slug = gen_slug()
     if not valid_slug(slug):
         return render_template("admin.html", links=all_rows(), error="slug must be 1-64 alnum/-/_"), 400
     if not target:
