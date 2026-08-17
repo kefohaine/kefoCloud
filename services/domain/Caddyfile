@@ -60,12 +60,12 @@ https://link.jehpok.com {
         Referrer-Policy "no-referrer"
     }
     @admin path /link /link/* /api /api/* /healthz
-    respond @admin "ok"
+    respond @admin "not found"
 
     reverse_proxy link:5000 {
         @notfound status 404
         handle_response @notfound {
-            respond "ok"
+            respond "not found"
         }
     }
 }
