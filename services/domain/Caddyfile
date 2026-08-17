@@ -51,6 +51,9 @@ https://vps.jehpok.com {
 # admin UI, API, and healthz are Tailscale-only via vps.jehpok.com/share.
 https://share.jehpok.com {
     import tls_keys
+    request_body {
+        max_size 100m
+    }
     header {
         Strict-Transport-Security "max-age=31536000"
         X-Content-Type-Options "nosniff"
@@ -59,31 +62,23 @@ https://share.jehpok.com {
     @admin path /share /share/* /api /api/* /healthz
     respond @admin "not found" 404
 
+    @browse path /files /files/*
+    handle @browse {
+        root * /files
+        uri strip_prefix /files
+        file_server browse {
+            precompressed zstd gzip
+        }
+    }
+    handle_errors 404 {
+        respond "not found"
+    }
+
     reverse_proxy share:5000 {
         @notfound status 404
         handle_response @notfound {
             respond "not found" 404
         }
-    }
-}
-
-# Public file workshop: directory browse over a static root.
-# Drop files into content/domain/files/ and they are listed publicly.
-https://files.jehpok.com {
-    import tls_keys
-    root * /files
-    encode zstd gzip
-    header {
-        Strict-Transport-Security "max-age=31536000"
-        X-Content-Type-Options "nosniff"
-        X-Frame-Options "SAMEORIGIN"
-        Referrer-Policy "strict-origin-when-cross-origin"
-    }
-    file_server browse {
-        precompressed zstd gzip
-    }
-    handle_errors 404 {
-        respond "not found"
     }
 }
 
