@@ -59,10 +59,15 @@ https://link.jehpok.com {
         X-Content-Type-Options "nosniff"
         Referrer-Policy "no-referrer"
     }
-    @admin path / /link /link/* /api /api/* /healthz
+    @admin path /link /link/* /api /api/* /healthz
     respond @admin 404
-    reverse_proxy link:5000
-    respond "ok"
+
+    reverse_proxy link:5000 {
+        @notfound status 404
+        handle_response @notfound {
+            respond "ok"
+        }
+    }
 }
 
 https://api.jehpok.com {
