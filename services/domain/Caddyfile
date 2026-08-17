@@ -37,15 +37,15 @@ https://vps.jehpok.com {
     @not_tailnet not remote_ip 100.64.0.0/10
     respond @not_tailnet 403
 
-    @link path /link /link/*
-    reverse_proxy @link share:5000
+    @share path /share /share/*
+    reverse_proxy @share share:5000
 
     root * /srv/content/domain/vps
     import serve_static
 }
 
 # Public URL shortener. Only slug routes (GET /<slug>) are proxied;
-# admin UI, API, and healthz are Tailscale-only via vps.jehpok.com/link.
+# admin UI, API, and healthz are Tailscale-only via vps.jehpok.com/share.
 https://share.jehpok.com {
     import tls_keys
     header {
@@ -53,7 +53,7 @@ https://share.jehpok.com {
         X-Content-Type-Options "nosniff"
         Referrer-Policy "no-referrer"
     }
-    @admin path /link /link/* /api /api/* /healthz
+    @admin path /share /share/* /api /api/* /healthz
     respond @admin "not found"
 
     reverse_proxy share:5000 {
