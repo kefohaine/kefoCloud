@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>share.jehpok.com</title>
+<style>
+  :root { --ink:#4a3f3a; --rose:#d49aa0; --gold:#d4a847; --cream:#fdf8f3; --blush:#f5e6e8; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:system-ui,Segoe,Roboto,sans-serif; background:var(--cream); color:var(--ink); padding:24px; max-width:560px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column; justify-content:center; }
+  h1 { font-size:1.4rem; margin-bottom:4px; }
+  .sub { color:var(--rose); font-size:.85rem; margin-bottom:24px; }
+  form { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
+  form input { padding:12px 14px; border:1px solid var(--blush); border-radius:8px; font:inherit; background:#fff; }
+  form input[name=target] { flex:1; min-width:240px; }
+  form button { padding:12px 22px; border:0; border-radius:8px; background:var(--rose); color:#fff; font:inherit; font-weight:600; cursor:pointer; }
+  form button:hover { background:var(--gold); }
+  .err { color:#b8787f; margin:-4px 0 16px; font-size:.9rem; }
+  .result { background:#fff; border:1px solid var(--blush); border-radius:10px; padding:16px 18px; margin-top:16px; }
+  .result label { color:var(--gold); font-size:.75rem; text-transform:uppercase; letter-spacing:1px; display:block; margin-bottom:6px; }
+  .result a { color:var(--rose); font-family:monospace; font-size:1.05rem; text-decoration:none; word-break:break-all; }
+  .result a:hover { text-decoration:underline; }
+  .copy { background:var(--blush); border:0; border-radius:6px; padding:6px 10px; margin-top:10px; font:inherit; cursor:pointer; color:var(--ink); }
+  .copy:hover { background:var(--rose); color:#fff; }
+  footer { margin-top:32px; color:#a99; font-size:.8rem; text-align:center; }
+</style>
+</head>
+<body>
+  <h1>share.jehpok.com</h1>
+  <p class="sub">paste a URL, get a short redirect</p>
+
+  <form method="POST" action="/">
+    <input name="target" placeholder="https://destination.url" autocomplete="off" required>
+    <button type="submit">Shorten</button>
+  </form>
+
+  {% if error %}<p class="err">{{ error }}</p>{% endif %}
+
+  {% if short %}
+  <div class="result">
+    <label>Short link</label>
+    <a href="{{ short }}" target="_blank">{{ short }}</a>
+    <br>
+    <button class="copy" type="button" onclick="navigator.clipboard.writeText('{{ short }}').then(()=>this.textContent='copied')">copy</button>
+  </div>
+  {% endif %}
+
+  <footer>public URL shortener — jehpok.com</footer>
+</body>
+</html>

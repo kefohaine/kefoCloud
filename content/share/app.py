@@ -44,9 +44,27 @@ def not_found(e):
     return e
 
 
-@app.route("/")
+@app.route("/", methods=["GET", "POST"])
 def index():
-    return "ok", 200
+    if request.method == "GET":
+        return render_template("public.html", short=None, error=None)
+    # POST — create a short link from the public form (auto-slug only).
+    target = (request.form.get("target") or "").strip()
+    if not target:
+        return render_template("public.html", short=None, error="target is required"), 400
+    if not target.startswith(("http://", "https://")):
+        target = "https://" + target
+    slug = secrets.token_urlsafe(4)
+    conn = db()
+    try:
+        conn.execute("INSERT INTO links (slug, target) VALUES (?, ?)", (slug, target))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        return render_template("public.html", short=None, error="slug collision, retry"), 503
+    conn.close()
+    host = request.host
+    return render_template("public.html", short=f"https://{host}/{slug}", error=None)
 
 
 @app.route("/share", methods=["GET"])

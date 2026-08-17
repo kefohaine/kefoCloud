@@ -46,7 +46,7 @@ Only one VPS, one host. Cloudflare fronts four of the five hostnames; the Tailsc
 | Domain             | Where DNS points            | Who can reach it                            | What is served                                  |
 |--------------------|-----------------------------|---------------------------------------------|-------------------------------------------------|
 | www.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Static site from `content/domain/www`              |
-| share.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | URL shortener: 307-redirects `/<slug>` to its target; `/` and blocked paths render `ok` |
+| share.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | URL shortener: `GET /` public shorten form (auto-slug); `GET /<slug>` 307-redirects to its target; blocked paths render `not found` |
 | files.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Public file workshop: directory browse over `/var/www/github/jehpok.com/files` (outside the repo) — drop files in to publish |
 | api.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Placeholder vhost (no backend currently wired)  |
 | cloud.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Nextcloud (file sync, calendar, photos)         |
