@@ -15,6 +15,9 @@
         Referrer-Policy "strict-origin-when-cross-origin"
     }
     file_server
+    handle_errors 404 {
+        respond "not found"
+    }
 }
 
 # Redirect all plaintext HTTP to HTTPS.
@@ -54,12 +57,12 @@ https://share.jehpok.com {
         Referrer-Policy "no-referrer"
     }
     @admin path /share /share/* /api /api/* /healthz
-    respond @admin "not found"
+    respond @admin "not found" 404
 
     reverse_proxy share:5000 {
         @notfound status 404
         handle_response @notfound {
-            respond "not found"
+            respond "not found" 404
         }
     }
 }
@@ -79,6 +82,9 @@ https://files.jehpok.com {
     file_server browse {
         precompressed zstd gzip
     }
+    handle_errors 404 {
+        respond "not found"
+    }
 }
 
 https://api.jehpok.com {
@@ -87,7 +93,9 @@ https://api.jehpok.com {
         Strict-Transport-Security "max-age=31536000"
         X-Content-Type-Options "nosniff"
     }
-    respond "ok"
+    @root path /
+    respond @root "ok"
+    respond "not found" 404
 }
 
 # Nextcloud: standalone hostname served by the `cloud` container.
