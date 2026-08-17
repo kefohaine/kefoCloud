@@ -46,9 +46,107 @@ Host-side paths (not in git):
 /etc/systemd/system/ollama.service     Ollama systemd unit (DO NOT DELETE — see Safety rules)
 ```
 
+## Repository layout
+
+```
+services/
+  domain/
+    Caddyfile                # Caddy vhosts + reverse-proxy rules
+    docker-compose.yml       # Caddy service
+  cloud/
+    docker-compose.yml       # Nextcloud (name: cloud)
+    php-fpm.d/zz-custom.conf # PHP-FPM pool config
+    .env                     # NEXTCLOUD_ADMIN_USER / NEXTCLOUD_ADMIN_PASSWORD (gitignored)
+  share/
+    Dockerfile               # Flask + python:3.12-slim
+    app.py                   # URL shortener (SQLite, slug → target)
+    templates/admin.html     # Admin UI served at vps.jehpok.com/share
+    docker-compose.yml       # share service (expose 5000 on net)
+  vault/
+    docker-compose.yml       # Vaultwarden (Bitwarden-compatible, SQLite)
+setup/
+  ollama/ollama.service      # Reference copy of the host systemd unit
+  ssh/50-cloud-init.conf     # Reference copy of SSH hardening config
+  dnsmasq/                   # Reference copies of host DNS resolver config
+    10-tailnet.conf          # dnsmasq: bind Tailscale IP, override vps.jehpok.com, forwarders
+    dnsmasq.service.conf     # systemd drop-in: order after tailscaled, Restart=always
+content/
+  domain/
+    www/                     # static files for www.jehpok.com
+    vps/                     # static files for vps.jehpok.com (Tailscale-only)
+  share/                     # share.jehpok.com app source (Flask app.py + templates), mounted into the share container
+Makefile                     # Recipes: up-all, setup-host, backup-cloud, backup-secrets, migrate, etc.
+docs/AGENTS.md                    # Operating guide for agents
+docs/ISSUES.md                    # Known problems and improvements
+```
+
+`services/` holds everything that describes the running services (Docker). `setup/` holds reference copies of host-level configs (Ollama, SSH) — used by `make setup-host` to restore them to live paths on a fresh VPS. `content/` holds the data the services serve. The split lets `services/` and `setup/` be checked into git while large or versioned content can live elsewhere on disk (mirrored into the repo for portability).
+
+On the VPS, the cloned repo sits at `/var/www/github/jehpok.com/repo/`. Caddy mounts it as `/srv`, so a `www` vhost with `root * /srv/content/domain/www` resolves to `/var/www/github/jehpok.com/repo/content/domain/www`. Per-service configuration details (images, ports, env, timeouts, gotchas) live in this file under "Service details".
+
+## Deployment
+
+Deployment is manual — no CI/CD, pushes to `main` trigger nothing. Besides editing files on the VPS, use `make` commands to control the workflow.
+
+### First-time setup and migration
+
+Run `make migrate` for the full step-by-step runbook. It assumes: the `net` bridge exists (`docker network create net`), the Cloudflare Origin cert/key are at `/var/www/github/jehpok.com/certs/`, and Nextcloud's two bind mounts (`cloud/html`, `cloud/users`) are owned by uid 33 with a `.ncdata` marker in `cloud/users` before first start.
+
+### Backups
+
+`make backup-cloud` snapshots Nextcloud data (maintenance mode on during the copy) to `/var/www/github/jehpok.com/cloud-backup-<date>`. `make backup-secrets` bundles certs, SSH keys, the Ollama unit, the dnsmasq config + systemd drop-in, and Tailscale state to `/var/www/github/jehpok.com/secrets-backup/secrets-<date>.tar.gz`. Download both off the VPS — the secrets bundle contains private keys and Tailscale identity.
+
+### CMD Sheet
+
+Use the `Makefile` recipes (canonical) rather than raw `docker compose`:
+
+```bash
+make up-all            # start/recreate all four containers in order (share, domain, cloud, vault)
+make up-<service>      # force-recreate one container — up-domain | up-cloud | up-share | up-vault
+make restart-<service> # reload one container without recreating — after editing a mounted config
+make restart-dns       # restart the host dnsmasq resolver — after editing setup/dnsmasq/10-tailnet.conf
+make logs-<service>    # follow one container's logs — logs-domain | logs-cloud | logs-share | logs-vault
+make logs-dns          # follow the dnsmasq journal
+make status            # show a table of all running containers
+make push MSG="..."    # stage, commit, and push to the jehpok.com remote
+make backup-cloud      # snapshot Nextcloud data (maintenance mode on during the copy)
+make backup-share      # copy the shortener SQLite DB to /var/www/github/jehpok.com/share-backup-<date>.db
+make backup-vault      # tar the Vaultwarden data dir to /var/www/github/jehpok.com/vault-backup-<date>.tar.gz
+make backup-secrets    # bundle certs, SSH keys, Ollama unit, dnsmasq config, and Tailscale state for off-VPS storage
+make setup-host        # install reference configs to live paths and enable Ollama + sshd + dnsmasq
+make migrate           # print the full VPS-to-VPS migration runbook
+make clean             # free disk: prune the Docker build cache and clear the apt cache
+```
+
+Nextcloud runs its own database migrations on first request after an upgrade, so no manual migration step is needed after `make up-cloud`.
+
+## SSH access
+
+SSH is restricted to the Tailscale network only. The public internet cannot reach port 22.
+
+| Setting | Value |
+|---------|-------|
+| Port | 22 |
+| Interface | `tailscale0` only (ufw: `22/tcp on tailscale0 ALLOW`, `22 DENY` elsewhere) |
+| Password auth | **Disabled** (key-only) |
+| Root login | **Disabled** |
+| Allowed users | `debian` only |
+| Config | `/etc/ssh/sshd_config` + `/etc/ssh/sshd_config.d/50-cloud-init.conf` |
+
+The only way to SSH into the VPS is:
+1. Be on the Tailscale network.
+2. Have the `debian` user's private key (`ed25519`, authorized in `/home/debian/.ssh/authorized_keys`).
+
+The `runner` user (legacy GitHub Actions) has no SSH key and is not in `AllowUsers` — it cannot SSH in.
+
+## Operational notes and gotchas
+
+- DNS for `*.jehpok.com` on tailnet depends on the host `dnsmasq` service (`100.81.245.77:53`). It is bound only to the Tailscale IP so it's not an open resolver, and `Restart=always` covers crashes, but a deliberate `systemctl stop dnsmasq` takes all tailnet-side `*.jehpok.com` resolution down. Restart with `make restart-dns`.
+- Cloudflare's free tier rate-limits you at 10s min window for rate-limit rules. Plan ahead if the API endpoint ends up attracting more traffic than expected.
+
 ## Running services on the VPS
 
-Prefer the `Makefile` recipes (canonical entrypoints) over raw `docker compose`. The full recipe list with comments lives in `README.md` under "CMD Sheet"; the Makefile is the source of truth. The `net` bridge network is `external: true` — create once with `docker network create net` on a fresh host. Deployment is manual (no CI/CD): `make restart-<service>` for a mounted config edit, `make up-<service>` when the compose file or image changed (force-recreate).
+Prefer the `Makefile` recipes (canonical entrypoints) over raw `docker compose`. The `net` bridge network is `external: true` — create once with `docker network create net` on a fresh host. Deployment is manual (no CI/CD): `make restart-<service>` for a mounted config edit, `make up-<service>` when the compose file or image changed (force-recreate).
 
 ## Service details
 
@@ -136,8 +234,8 @@ git push jehpok.com main
 Follow these on every edit to any `.md` file in this repo.
 
 1. **No duplicated content across files.** State each fact once, in the most appropriate file:
-   - `README.md` — system architecture, rationale, request flows, operational gotchas, setup/migration runbooks, the domain/access table, the repository layout, the CMD sheet. The "what and why". New services, renamed hosts, deleted vhosts, and feature additions go here — never in `docs/ISSUES.md`.
-   - `docs/AGENTS.md` — how to work in the repo: commands, conventions, safety rules, task workflow, per-service edit-safe facts. The "how to act".
+   - `README.md` — **visitor-facing**: system architecture, rationale, request flows, the domain/access table, design choices. The "what and why" for a human checking how things work. No operational details, no command sheets, no SSH/host-path internals.
+   - `docs/AGENTS.md` — **agent-facing**: repository layout, deployment, CMD sheet, SSH access, backups, migration runbook, operational gotchas, per-service edit-safe facts, safety rules, conventions, task workflow. The "how to act". Anything an agent needs to work in the repo but a visitor would find boring.
    - `docs/ISSUES.md` — **only** open problems (bugs, security gaps, efficiency losses, robustness risks) and a `Solved` section for problems that were listed under those categories and have since been fixed. Routine changes — adding a service, renaming a host, deleting a vhost, UI tweaks, new features — are **not** issues and must not be logged here. If a change didn't fix a problem that was tracked under Robustness / Security / Efficiency, it doesn't belong in `docs/ISSUES.md` at all.
 2. **No pasting repo file contents.** Don't copy Caddyfile/dnsmasq config/compose/Makefile blocks into docs. Describe in prose; link to the file path. Command snippets (`make ...`, shell one-liners) are fine.
 3. **No duplicated prose within a file.** If a paragraph repeats what another section already said, delete one.
