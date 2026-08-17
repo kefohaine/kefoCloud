@@ -148,6 +148,17 @@ def admin_create():
     return redirect("/share", code=303)
 
 
+@app.route("/share/all", methods=["DELETE", "POST"])
+def admin_delete_all():
+    if request.method == "POST" and request.form.get("_method") != "DELETE":
+        abort(405)
+    conn = db()
+    conn.execute("DELETE FROM links")
+    conn.commit()
+    conn.close()
+    return redirect("/share", code=303)
+
+
 @app.route("/share/<slug>", methods=["DELETE", "POST"])
 def admin_delete(slug):
     if request.method == "POST" and request.form.get("_method") != "DELETE":

@@ -28,6 +28,8 @@
   td form { margin:0; }
   td form button { background:none; border:0; color:#b8787f; cursor:pointer; font:inherit; padding:2px 6px; }
   td form button:hover { text-decoration:underline; }
+  .delall { background:var(--blush); border:1px solid var(--blush); border-radius:6px; color:#b8787f; font-size:.75rem; padding:3px 8px; cursor:pointer; font-weight:600; }
+  .delall:hover { background:var(--rose); color:#fff; }
   .empty { color:#8a7d75; padding:24px 0; text-align:center; }
   .pub { font-family:monospace; color:#8a7d75; font-size:.8rem; }
 </style>
@@ -46,7 +48,7 @@
 
 {% if links %}
 <table>
-  <thead><tr><th>Slug</th><th>Target</th><th>Hits</th><th></th></tr></thead>
+  <thead><tr><th>Slug</th><th>Target</th><th>Hits</th><th><form method="POST" action="/share/all" style="display:inline"><input type="hidden" name="_method" value="DELETE"><button type="submit" class="delall" onclick="return confirm('Delete ALL links?')">del-all</button></form></th></tr></thead>
   <tbody>
   {% for l in links %}
     <tr>
