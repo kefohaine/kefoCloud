@@ -17,6 +17,21 @@ SLUG_ALPHABET = "acdefhjkmnpqrtwxy3479"
 def gen_slug(length=6):
     return "".join(secrets.choice(SLUG_ALPHABET) for _ in range(length))
 
+
+def delete_file_if_linked(target):
+    """If target is a /files/<name> URL on this host, remove the file from disk."""
+    if "/files/" not in target:
+        return
+    name = target.split("/files/", 1)[1]
+    if not name or "/" in name or ".." in name:
+        return
+    path = os.path.join(FILES_DIR, name)
+    if os.path.isfile(path):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
 app = Flask(__name__)
 
 
@@ -153,9 +168,12 @@ def admin_delete_all():
     if request.method == "POST" and request.form.get("_method") != "DELETE":
         abort(405)
     conn = db()
+    rows = conn.execute("SELECT target FROM links").fetchall()
     conn.execute("DELETE FROM links")
     conn.commit()
     conn.close()
+    for r in rows:
+        delete_file_if_linked(r["target"])
     return redirect("/share", code=303)
 
 
@@ -164,9 +182,12 @@ def admin_delete(slug):
     if request.method == "POST" and request.form.get("_method") != "DELETE":
         abort(405)
     conn = db()
+    row = conn.execute("SELECT target FROM links WHERE slug = ?", (slug,)).fetchone()
     conn.execute("DELETE FROM links WHERE slug = ?", (slug,))
     conn.commit()
     conn.close()
+    if row:
+        delete_file_if_linked(row["target"])
     if request.headers.get("Accept") == "application/json":
         return jsonify(ok=True)
     return redirect("/share", code=303)
