@@ -49,8 +49,7 @@ https://vps.jehpok.com {
     respond @not_tailnet 403
     @share path /share /share/*
     reverse_proxy @share share:5000
-    root * /srv/content/domain/vps
-    import serve_static
+    respond "ok"
 }
 
 # ── URL shortener + file sharing ───────────────────────────────────────────
