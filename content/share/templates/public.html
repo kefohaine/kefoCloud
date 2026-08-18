@@ -25,28 +25,33 @@
   .copy:hover { background:var(--rose); color:#fff; }
   .browse { display:block; width:100%; padding:12px 22px; border:0; border-radius:8px; background:var(--gold); color:#fff; font:inherit; font-weight:600; cursor:pointer; text-align:center; text-decoration:none; margin-top:20px; }
   .browse:hover { background:var(--rose); }
-  .warn { background:#fff; border:1px solid var(--blush); border-radius:8px; padding:10px 14px; margin:12px 0; font-size:.8rem; color:#8a7d75; }
   footer { margin-top:32px; color:#a99; font-size:.8rem; text-align:center; }
+  .overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:100; align-items:center; justify-content:center; padding:20px; }
+  .overlay.show { display:flex; }
+  .modal { background:var(--cream); border:1px solid var(--blush); border-radius:14px; padding:28px 24px; max-width:420px; width:100%; box-shadow:0 8px 30px rgba(0,0,0,.15); }
+  .modal .icon { font-size:2rem; text-align:center; margin-bottom:12px; }
+  .modal h2 { font-size:1.1rem; text-align:center; margin-bottom:18px; }
+  .modal ol { margin:0 0 22px 18px; font-size:.9rem; line-height:1.6; color:var(--ink); }
+  .modal ol li { margin-bottom:8px; }
+  .modal .ok { display:block; width:100%; padding:12px; border:0; border-radius:8px; background:var(--rose); color:#fff; font:inherit; font-weight:600; cursor:pointer; }
+  .modal .ok:hover { background:var(--gold); }
 </style>
 </head>
 <body>
   <h1>share.jehpok.com</h1>
   <p class="sub">paste a URL, get a short redirect</p>
 
-  <form method="POST" action="/" enctype="application/x-www-form-urlencoded">
+  <form id="shortenForm" method="POST" action="/" enctype="application/x-www-form-urlencoded">
     <input name="target" placeholder="https://destination.url" autocomplete="off" required>
-    <button type="submit">Shorten</button>
+    <button type="button" onclick="showWarn()">Shorten</button>
   </form>
 
   <hr style="border:0;border-top:1px solid var(--blush);margin:20px 0">
   <p class="sub">or upload a file</p>
-  <form method="POST" action="/upload" enctype="multipart/form-data">
+  <form id="uploadForm" method="POST" action="/upload" enctype="multipart/form-data">
     <input type="file" name="file" required>
-    <button type="submit">Upload & Shorten</button>
+    <button type="button" onclick="showWarn()">Upload & Shorten</button>
   </form>
-
-  <div class="warn">Short links and uploaded files expire after 1 year and are then automatically deleted.</div>
-  <div class="warn">Uploaded files are public — anyone with the link can download them. Do not upload sensitive data.</div>
 
   {% if error %}<p class="err">{{ error }}</p>{% endif %}
 
@@ -62,5 +67,31 @@
   <a class="browse" href="/files/">Browse Files</a>
 
   <footer>public URL shortener — jehpok.com</footer>
+
+  <div class="overlay" id="warnOverlay">
+    <div class="modal">
+      <div class="icon">⚠️</div>
+      <h2>Before you continue</h2>
+      <ol>
+        <li>Short links and uploaded files expire after 1 year and are then automatically deleted.</li>
+        <li>Uploaded files are public — anyone with the link can download them. Do not upload sensitive data.</li>
+        <li>To delete a short link or uploaded file, contact the owner at hello@jehpok.com.</li>
+      </ol>
+      <button class="ok" onclick="confirmWarn()">I understand</button>
+    </div>
+  </div>
+
+<script>
+function showWarn(){ document.getElementById('warnOverlay').classList.add('show'); }
+function confirmWarn(){
+  document.getElementById('warnOverlay').classList.remove('show');
+  var sf=document.getElementById('shortenForm');
+  var uf=document.getElementById('uploadForm');
+  if(sf.dataset.confirmed){ sf.submit(); }
+  else if(uf.dataset.confirmed){ uf.submit(); }
+}
+document.getElementById('shortenForm').querySelector('button').onclick=function(){ showWarn(); document.getElementById('shortenForm').dataset.confirmed='1'; document.getElementById('uploadForm').dataset.confirmed=''; };
+document.getElementById('uploadForm').querySelector('button').onclick=function(){ showWarn(); document.getElementById('uploadForm').dataset.confirmed='1'; document.getElementById('shortenForm').dataset.confirmed=''; };
+</script>
 </body>
 </html>
