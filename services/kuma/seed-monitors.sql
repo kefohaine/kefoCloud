@@ -76,10 +76,8 @@ SELECT 'docker: homer', 'docker', 3600, 60, 0, 1, 1, d.id, 'homer', 'Homer dashb
 FROM docker_host d WHERE d.name = 'local'
   AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: homer');
 
-INSERT INTO monitor (name, type, interval, retry_interval, maxretries, active, user_id, docker_host, docker_container, description)
-SELECT 'docker: kuma', 'docker', 3600, 60, 0, 1, 1, d.id, 'kuma', 'Uptime Kuma self'
-FROM docker_host d WHERE d.name = 'local'
-  AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: kuma');
+-- docker: kuma omitted — Kuma's own container; self-check is noise (the
+-- dashboard is the result you care about).
 
 -- ── Groups ──────────────────────────────────────────────────────────────
 
