@@ -113,14 +113,8 @@ def index():
     return render_template("public.html", short=f"https://{host}/{slug}", error=None)
 
 
-MAX_FILE_SIZE = 100 * 1024 * 1024
-
-
 @app.route("/upload", methods=["POST"])
 def upload_file():
-    cl = request.content_length or 0
-    if cl > MAX_FILE_SIZE:
-        return redirect("/?error=size", code=302)
     f = request.files.get("file")
     if not f or not f.filename:
         return render_template("public.html", short=None, error="no file provided"), 400
