@@ -37,6 +37,12 @@ def delete_file_if_linked(target):
 app = Flask(__name__)
 
 
+@app.template_filter("expires")
+def expires_filter(ts):
+    import datetime
+    return datetime.date.fromtimestamp(ts).isoformat()
+
+
 def db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -188,7 +194,7 @@ def upload_file():
 def admin_page():
     conn = db()
     rows = conn.execute(
-        "SELECT slug, target, created_at, hits FROM links ORDER BY created_at DESC"
+        "SELECT slug, target, created_at, expires_at, hits FROM links ORDER BY created_at DESC"
     ).fetchall()
     conn.close()
     return render_template("admin.html", links=rows)
@@ -257,7 +263,7 @@ def admin_delete(slug):
 def all_rows():
     conn = db()
     rows = conn.execute(
-        "SELECT slug, target, created_at, hits FROM links ORDER BY created_at DESC"
+        "SELECT slug, target, created_at, expires_at, hits FROM links ORDER BY created_at DESC"
     ).fetchall()
     conn.close()
     return rows
@@ -284,7 +290,7 @@ def resolve(slug):
 def api_list():
     conn = db()
     rows = conn.execute(
-        "SELECT slug, target, created_at, hits FROM links ORDER BY created_at DESC"
+        "SELECT slug, target, created_at, expires_at, hits FROM links ORDER BY created_at DESC"
     ).fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])

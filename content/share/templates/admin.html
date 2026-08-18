@@ -25,6 +25,7 @@
   td.slug a:hover { text-decoration:underline; }
   td.target { max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#8a7d75; }
   td.hits { text-align:right; color:#8a7d75; }
+  td.expires { color:#8a7d75; font-size:.85rem; white-space:nowrap; }
   td form { margin:0; }
   td form button { background:none; border:0; color:#b8787f; cursor:pointer; font:inherit; padding:2px 6px; }
   td form button:hover { text-decoration:underline; }
@@ -48,13 +49,14 @@
 
 {% if links %}
 <table>
-  <thead><tr><th>Slug</th><th>Target</th><th>Hits</th><th><form method="POST" action="/share/all" style="display:inline"><input type="hidden" name="_method" value="DELETE"><button type="submit" class="delall" onclick="return confirm('Delete ALL links?')">del-all</button></form></th></tr></thead>
+  <thead><tr><th>Slug</th><th>Target</th><th>Hits</th><th>Expires</th><th><form method="POST" action="/share/all" style="display:inline"><input type="hidden" name="_method" value="DELETE"><button type="submit" class="delall" onclick="return confirm('Delete ALL links?')">del-all</button></form></th></tr></thead>
   <tbody>
   {% for l in links %}
     <tr>
       <td class="slug"><a href="https://share.jehpok.com/{{ l.slug }}" target="_blank">{{ l.slug }}</a></td>
       <td class="target" title="{{ l.target }}">{{ l.target }}</td>
       <td class="hits">{{ l.hits }}</td>
+      <td class="expires">{{ l.expires_at | expires }}</td>
       <td>
         <form method="POST" action="/share/{{ l.slug }}">
           <input type="hidden" name="_method" value="DELETE">
