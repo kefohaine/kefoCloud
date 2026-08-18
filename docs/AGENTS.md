@@ -207,7 +207,7 @@ Per-service facts needed to edit safely. The compose files, Caddyfile, and `setu
 
 ### Log rotation and healthchecks
 
-All four compose files pin `json-file` with size caps: `domain` 10m×3, `cloud` 10m×3, `share` 5m×2, `vault` 10m×3. Healthchecks: `domain` `caddy version` /30s, `cloud` `php -r phpversion()` /30s, `share` fetches `/healthz` /30s, `vault` `wget --spider /health` /30s. dnsmasq logs to journald (no log cap beyond the default `journalctl` rotation). Adjust under each service's `logging:` / `healthcheck:` block, or the systemd unit drop-in for dnsmasq.
+All four compose files pin `json-file` with size caps: `domain` 10m×3, `cloud` 10m×3, `share` 5m×2, `vault` 10m×3. Healthchecks: `domain` `caddy version` /30s, `cloud` `php -r phpversion()` /30s, `share` fetches `/healthz` /30s, `vault` `curl -sf /alive` /30s. dnsmasq logs to journald (no log cap beyond the default `journalctl` rotation). Adjust under each service's `logging:` / `healthcheck:` block, or the systemd unit drop-in for dnsmasq.
 
 ## Git remotes
 
