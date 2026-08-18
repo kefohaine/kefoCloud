@@ -138,3 +138,4 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Nextcloud `TRUSTED_PROXIES` expanded** — added all 15 Cloudflare edge ranges so real client IPs reach Nextcloud.
 - **Homer + Uptime Kuma added** — `www.jehpok.com` now serves Homer (cheyou retired to `temp/cheyou/`); `status.jehpok.com` serves Uptime Kuma; both reverse-proxied via Caddy, no published ports.
 - **Docs split into four** — `README.md` (visitor), `docs/AGENTS.md` (portable agent rules), `docs/GUIDE.md` (project operator guide), `docs/ISSUES.md` (task tracker + Intended section).
+- **Log tightening** — Caddy global `log -> /dev/null` (no per-request access logs); dnsmasq `log-queries` removed; `share` container cap raised to 10m×3 to match the other 5.
