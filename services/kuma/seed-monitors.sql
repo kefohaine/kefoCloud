@@ -36,22 +36,18 @@ INSERT INTO monitor (name, type, url, interval, retry_interval, maxretries, acti
 SELECT 'http: cloud', 'http', 'https://cloud.jehpok.com', 60, 60, 0, 1, 1, 'Nextcloud'
 WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'http: cloud');
 
-INSERT INTO monitor (name, type, url, interval, retry_interval, maxretries, active, user_id, description)
-SELECT 'http: status', 'http', 'https://status.jehpok.com', 60, 60, 0, 1, 1, 'Uptime Kuma self-check'
-WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'http: status');
+-- http: status omitted — Kuma's own status page is the dashboard; self-check is noise.
 
 -- ── TCP / ping monitors (tailnet-only reachability) ──────────────────────
-
-INSERT INTO monitor (name, type, interval, retry_interval, maxretries, active, user_id, description)
-SELECT 'tcp: vps 443', 'tcp_port', 60, 60, 0, 1, 1, 'vps.jehpok.com:443 from tailnet'
-WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'tcp: vps 443');
+-- NOTE: tcp: vps 443 was removed. From inside the kuma container, the host's
+-- Tailscale IP is unreachable (no Tailscale in the container). The docker socket
+-- + ping: vps cover the same surface area.
 
 INSERT INTO monitor (name, type, interval, retry_interval, maxretries, active, user_id, description)
 SELECT 'ping: vps', 'ping', 60, 60, 0, 1, 1, 'VPS Tailscale IP reachability'
 WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'ping: vps');
 
-UPDATE monitor SET hostname = '100.81.245.77', port = 443 WHERE name = 'tcp: vps 443' AND hostname IS NULL;
-UPDATE monitor SET hostname = '100.81.245.77'              WHERE name = 'ping: vps' AND hostname IS NULL;
+UPDATE monitor SET hostname = '100.81.245.77' WHERE name = 'ping: vps' AND hostname IS NULL;
 
 -- ── Docker container monitors ───────────────────────────────────────────
 
@@ -94,7 +90,7 @@ INSERT INTO monitor_group (monitor_id, group_id)
 SELECT m.id, g.id
 FROM monitor m, "group" g
 WHERE g.name = 'Public'
-  AND m.name IN ('http: www','http: share','http: api','http: vault','http: cloud','http: status','tcp: vps 443','ping: vps')
+  AND m.name IN ('http: www','http: share','http: api','http: vault','http: cloud','ping: vps')
   AND NOT EXISTS (SELECT 1 FROM monitor_group mg WHERE mg.monitor_id = m.id AND mg.group_id = g.id);
 
 INSERT INTO monitor_group (monitor_id, group_id)
