@@ -6,6 +6,21 @@ logo: "https://www.jehpok.com/favicon.ico"
 header: true
 footer: true
 
+# Background — null = theme default. Set to "https://..." or leave null.
+background:
+
+# Color theme: auto | light | dark
+color: auto
+
+# Tabular layout when there's enough horizontal space
+layout: columns
+
+columns: 3
+
+# Bookmark widget on the left
+bookmarks:
+  enabled: false
+
 links:
   - name: "Status"
     icon: "fas fa-heartbeat"
@@ -23,12 +38,9 @@ links:
     icon: "fas fa-cloud"
     url: "https://cloud.jehpok.com"
     target: "_blank"
-  - name: "API"
-    icon: "fas fa-plug"
-    url: "https://api.jehpok.com"
-    target: "_blank"
 
-groups:
+services:
+
   - name: "Public"
     icon: "fas fa-globe"
     items:
@@ -36,38 +48,67 @@ groups:
         icon: "fas fa-heartbeat"
         url: "https://status.jehpok.com"
         target: "_blank"
-        description: "Uptime monitor"
+        subtitle: "Uptime monitor"
+        description: "Uptime Kuma — monitor health of every public service."
       - name: "Share"
         icon: "fas fa-share-nodes"
         url: "https://share.jehpok.com"
         target: "_blank"
-        description: "URL shortener + file sharing"
+        subtitle: "URL shortener"
+        description: "Flask app — short links and ad-hoc file sharing."
       - name: "Vault"
         icon: "fas fa-vault"
         url: "https://vault.jehpok.com"
         target: "_blank"
-        description: "Password manager"
+        subtitle: "Password manager"
+        description: "Vaultwarden — self-hosted Bitwarden-compatible."
       - name: "Cloud"
         icon: "fas fa-cloud"
         url: "https://cloud.jehpok.com"
         target: "_blank"
-        description: "Files, calendar, photos"
+        subtitle: "Files, calendar, photos"
+        description: "Nextcloud — sync, share, contacts, calendars."
       - name: "API"
         icon: "fas fa-plug"
         url: "https://api.jehpok.com"
         target: "_blank"
-        description: "Placeholder"
+        subtitle: "Placeholder vhost"
+        description: "Reserved for future API. Returns 'ok' on / today."
 
   - name: "Tailnet only"
     icon: "fas fa-lock"
     items:
-      - name: "VPS admin"
+      - name: "VPS root"
         icon: "fas fa-terminal"
         url: "https://vps.jehpok.com"
         target: "_blank"
-        description: "Tailscale-only"
+        subtitle: "Tailscale-only"
+        description: "Reachable only when joined to the Tailscale network."
       - name: "Link admin"
         icon: "fas fa-link"
         url: "https://vps.jehpok.com/share"
         target: "_blank"
-        description: "URL shortener admin"
+        subtitle: "Shortener admin"
+        description: "Manage short links at vps.jehpok.com/share."
+
+  - name: "About"
+    icon: "fas fa-circle-info"
+    items:
+      - name: "Repository"
+        icon: "fab fa-github"
+        url: "https://github.com/friedutch/jehpok.com"
+        target: "_blank"
+        subtitle: "Source + docs"
+        description: "Docker Compose, Caddyfile, dnsmasq — all in one repo."
+      - name: "Tailscale"
+        icon: "fas fa-shield-halved"
+        url: "https://tailscale.com"
+        target: "_blank"
+        subtitle: "Mesh VPN"
+        description: "Client needed to reach vps.jehpok.com."
+      - name: "Cloudflare"
+        icon: "fas fa-cloud"
+        url: "https://dash.cloudflare.com"
+        target: "_blank"
+        subtitle: "Edge proxy"
+        description: "DNS + Origin TLS + DDoS protection."
