@@ -81,7 +81,7 @@ Looks like: DNS lookup fails for `vps.jehpok.com` outside Tailscale. Reality: th
 ### Cloudflare Bot Fight Mode blocks `curl` against `api.jehpok.com`
 Looks like: Cloudflare rejects `curl`/scripts hitting `api.jehpok.com` with a 403 / challenge. Reality: terminal traffic cannot solve the Browser Integrity Check. The intended fix is a per-hostname WAF rule skip on `api.jehpok.com` (and the same mitigation is required for `cloud.jehpok.com` desktop sync); the goal is to keep Cloudflare's full protection on everywhere else.
 
-### `share.jehpok.com/admin`-style paths return `not found` instead of redirecting to `vps.jehpok.com/share`
+### `share.jehpok.com/share`-style paths return `not found` instead of redirecting to `vps.jehpok.com/share`
 Looks like: the link shortener admin UI is unreachable from `share.jehpok.com/share`. Reality: the public vhost hides `/share`, `/api/*`, and `/healthz` via a Caddy `@admin` matcher returning 404, because admin has no app-level auth and the public side shouldn't leak its existence. Admin lives at `vps.jehpok.com/share`, which is tailnet-only.
 
 ### `www.jehpok.com` shows a dashboard, not the previous cheyou anniversary page
@@ -145,3 +145,8 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Homer + Uptime Kuma added** — `www.jehpok.com` now serves Homer (cheyou retired to `temp/cheyou/`); `status.jehpok.com` serves Uptime Kuma; both reverse-proxied via Caddy, no published ports.
 - **Docs split into four** — `README.md` (visitor), `docs/AGENTS.md` (portable agent rules), `docs/GUIDE.md` (project operator guide), `docs/ISSUES.md` (task tracker + Intended section).
 - **Log tightening** — Caddy global `log -> /dev/null` (no per-request access logs); dnsmasq `log-queries` removed; `share` container cap raised to 10m×3 to match the other 5.
+- **`vps.jehpok.com/terminal`** — ttyd-backed host shell; bind-mounts `/` rw + Docker socket; container `privileged`, runs as the host path-aware bash from `/var/www/github/jehpok.com/repo`.
+- **`status.jehpok.com` → `kuma.jehpok.com`** — hostname rename to match the container name; Cloudflare + Caddy + Homer YAML updated.
+- **Kuma monitor set trimmed** — `tcp: vps 443` (unreachable from Kuma's netns), `ping: vps` (redundant), `docker: kuma` (self-check) dropped; `docker: *` monitors moved to 3600s; HTTP monitors stay at 60s.
+- **Kuma `seed-monitors.sql`** — idempotent SQL for the 9 monitors + 2 groups; applied once via `docker exec -i kuma sqlite3 ... < seed-monitors.sql`.
+- **Homer config bind tightened** — bind only `services/homer/config/config.yml` → `/www/assets/config.yml` so the bundled icons/themes/manifest stay intact.

@@ -35,11 +35,11 @@ Manual — no CI/CD, pushes to `main` trigger nothing. Use the `Makefile` recipe
 ### CMD Sheet
 
 ```bash
-make up-all            # start/recreate all six containers in order (share, domain, cloud, vault, kuma, homer)
-make up-<service>      # force-recreate one container — up-domain | up-cloud | up-share | up-vault | up-kuma | up-homer
+make up-all            # start/recreate all seven containers in order (share, domain, cloud, vault, kuma, homer, terminal)
+make up-<service>      # force-recreate one container — up-domain | up-cloud | up-share | up-vault | up-kuma | up-homer | up-terminal
 make restart-<service> # reload one container without recreating — after editing a mounted config
 make restart-dns       # restart the host dnsmasq resolver — after editing setup/dnsmasq/10-tailnet.conf
-make logs-<service>    # follow one container's logs — logs-domain | logs-cloud | logs-share | logs-vault | logs-kuma | logs-homer
+make logs-<service>    # follow one container's logs — logs-domain | logs-cloud | logs-share | logs-vault | logs-kuma | logs-homer | logs-terminal
 make logs-dns          # follow the dnsmasq journal
 make status            # show a table of all running containers
 make push MSG="..."    # stage, commit, and push to the jehpok.com remote
