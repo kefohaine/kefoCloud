@@ -48,8 +48,14 @@ https://vps.jehpok.com {
     @not_tailnet not remote_ip 100.64.0.0/10
     respond @not_tailnet 403
     @share path /share /share/*
-    reverse_proxy @share share:5000
-    respond "ok"
+    handle @share {
+        reverse_proxy share:5000
+    }
+    handle {
+        @root path /
+        respond @root "ok"
+        respond "not found" 404
+    }
 }
 
 # ── URL shortener + file sharing ───────────────────────────────────────────
