@@ -90,6 +90,22 @@
     </div>
   </div>
 
+  {% if short %}
+  <div class="overlay show" id="successOverlay">
+    <div class="modal">
+      <div class="icon" style="font-size:2.5rem">✅</div>
+      <h2>Done!</h2>
+      <p style="font-size:.9rem;line-height:1.6;margin-bottom:16px;">Your short link is ready:</p>
+      <div class="result" style="margin:0 0 20px;">
+        <a href="{{ short }}" target="_blank" style="font-size:1rem;">{{ short }}</a>
+        <br>
+        <button class="copy" type="button" onclick="navigator.clipboard.writeText('{{ short }}').then(()=>this.textContent='copied')">copy</button>
+      </div>
+      <button class="ok" onclick="document.getElementById('successOverlay').classList.remove('show')">OK</button>
+    </div>
+  </div>
+  {% endif %}
+
 <script>
 function tryShorten(){
   var f=document.getElementById('shortenForm');
