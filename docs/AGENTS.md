@@ -152,7 +152,7 @@ Prefer the `Makefile` recipes (canonical entrypoints) over raw `docker compose`.
 
 ## Daily maintenance
 
-A systemd timer (`jehpok-daily.timer`, enabled) runs `jehpok-daily.service` once per day (midnight). The script (`scripts/daily.sh`, installed to `/usr/local/bin/`) does: `apt update + upgrade -y + autoremove`, `docker builder/image/container prune`, pulls latest images for all services, and `make up-all` to recreate containers with new images. Logs to `/var/log/jehpok-daily.log`. Timer/service/timer unit files are in `setup/`. Run manually with `sudo systemctl start jehpok-daily.service`.
+A systemd timer (`jehpok-daily.timer`, enabled) runs `jehpok-daily.service` once per day (midnight). The script (`setup/maintenance/daily.sh`, installed to `/usr/local/bin/`) does: `apt update + upgrade -y + autoremove`, `docker builder/image/container prune`, pulls latest images for all services, and `make up-all` to recreate containers with new images. Logs to `/var/log/jehpok-daily.log`. Unit files are in `setup/maintenance/`. Run manually with `sudo systemctl start jehpok-daily.service`.
 
 ## Service details
 
