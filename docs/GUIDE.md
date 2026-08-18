@@ -79,6 +79,7 @@ The compose files are the source of truth. This table is the one-line reference 
 | vault    | `services/vault/docker-compose.yml`     | `vault`   | `make restart-vault`         | `make up-vault`              |
 | kuma     | `services/kuma/docker-compose.yml`      | `kuma`    | `make restart-kuma`          | `make up-kuma`               |
 | homer    | `services/homer/docker-compose.yml`     | `homer`   | `make restart-homer`         | `make up-homer`              |
+| terminal | `services/terminal/docker-compose.yml`  | `terminal`| `make restart-terminal`      | `make up-terminal`           |
 | dnsmasq  | n/a (host systemd)                      | n/a       | `make restart-dns`           | n/a                          |
 | ollama   | n/a (host systemd; see Protected host resources) | n/a | `systemctl restart ollama`   | n/a                          |
 
@@ -94,6 +95,7 @@ When you need to know "what does X do / where do I edit Y", read the file at the
 - **`vault`** — env, bind mount, admin token: `services/vault/docker-compose.yml`.
 - **`kuma`** — image, bind mount, healthcheck: `services/kuma/docker-compose.yml`. Monitor definitions live in Kuma's SQLite, edited via the UI on first run.
 - **`homer`** — dashboard YAML: `services/homer/config/config.yml` (in-repo, bind-mounted live).
+- **`terminal`** — ttyd at `vps.jehpok.com/terminal`; compose + Dockerfile: `services/terminal/`. The container bind-mounts `/` (host root) as `/host` and the Docker socket, runs `bash -lc` with the host `PATH` and cwd `…/repo`. No sshd change, no auth — Tailscale-only like the rest of `vps.jehpok.com`.
 - **dnsmasq** — config: `setup/dnsmasq/10-tailnet.conf` (live path: `/etc/dnsmasq.d/10-tailnet.conf`). systemd drop-in: `setup/dnsmasq/dnsmasq.service.conf` (live path: `/etc/systemd/system/dnsmasq.service.d/override.conf`).
 - **ollama** — unit: `setup/ollama/ollama.service` (live path: `/etc/systemd/system/ollama.service`).
 

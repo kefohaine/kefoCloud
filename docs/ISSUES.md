@@ -24,8 +24,14 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 #### `vps.jehpok.com` has no auth beyond Tailscale membership  **[needs human approval]**
 - **File**: `services/domain/Caddyfile` (`https://vps.jehpok.com`)
-- **Problem**: Any tailnet device can reach `vps.jehpok.com` with no authentication. DNS-obscurity is the only access control, including the link shortener admin UI at `/share`.
-- **Fix**: Add Caddy `basic_auth` on the `/share*` matcher (needs a username + bcrypt hash from the operator), or apply Tailscale ACLs in the admin console to restrict who can reach the VPS at all.
+- **Problem**: Any tailnet device can reach `vps.jehpok.com` with no authentication. DNS-obscurity is the only access control — the link shortener admin UI at `/share` and, since the `/terminal` route was added, a host root shell via ttyd both sit behind `@not_tailnet` and nothing else.
+- **Fix**: Add Caddy `basic_auth` on the `/share*` and `/terminal*` matchers (needs a username + bcrypt hash from the operator), or apply Tailscale ACLs in the admin console to restrict who can reach the VPS at all.
+- **Why approval**: requires a password / ACL policy from the operator.
+
+#### `vps.jehpok.com/terminal` grants a root shell to any tailnet device  **[needs human approval]**
+- **File**: `services/domain/Caddyfile` (`https://vps.jehpok.com`)
+- **Problem**: `/terminal` runs `ttyd → bash` in a container that bind-mounts the host root (`/`) read-write and the Docker socket. Tailscale membership alone gates it. Anyone on the tailnet effectively has root on the host.
+- **Fix**: Add Caddy `basic_auth` on the `/terminal*` matcher (needs a username + bcrypt hash), or apply Tailscale ACLs to restrict which devices can reach the VPS, or restrict the container with `cap_drop` + a read-only root mount + a write whitelist.
 - **Why approval**: requires a password / ACL policy from the operator.
 
 #### Tailscale ACLs not configured  **[needs human approval]**

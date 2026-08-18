@@ -1,0 +1,46 @@
+services:
+  terminal:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: jehpok/terminal:1
+    container_name: terminal
+    restart: unless-stopped
+    privileged: true
+
+    expose:
+      - "7681"
+
+    command:
+      - ttyd
+      - -W
+      - -t
+      - fontSize=14
+      - -t
+      - theme={"background":"#1e1e1e","foreground":"#d4d4d4"}
+      - bash
+      - -lc
+      - 'export PATH=/host/usr/local/sbin:/host/usr/local/bin:/host/usr/sbin:/host/usr/bin:/host/sbin:/host/bin:/host/root/.local/bin:$PATH && cd /host/var/www/github/jehpok.com/repo && exec bash'
+
+    volumes:
+      - /:/host:rw
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7681 | grep -qi ttyd || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      - net
+
+networks:
+  net:
+    external: true
