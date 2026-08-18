@@ -21,7 +21,7 @@
   .result label { color:var(--gold); font-size:.75rem; text-transform:uppercase; letter-spacing:1px; display:block; margin-bottom:6px; }
   .result a { color:var(--rose); font-family:monospace; font-size:1.05rem; text-decoration:none; word-break:break-all; }
   .result a:hover { text-decoration:underline; }
-  .copy { background:var(--blush); border:0; border-radius:6px; padding:6px 10px; margin-top:10px; font:inherit; cursor:pointer; color:var(--ink); }
+  .copy { display:block; width:100%; background:var(--blush); border:0; border-radius:6px; padding:10px; margin-top:10px; font:inherit; cursor:pointer; color:var(--ink); }
   .copy:hover { background:var(--rose); color:#fff; }
   .browse { display:block; width:100%; padding:12px 22px; border:0; border-radius:8px; background:var(--rose); color:#fff; font:inherit; font-weight:600; cursor:pointer; text-align:center; text-decoration:none; margin-top:20px; }
   .browse:hover { background:var(--gold); }
@@ -54,15 +54,6 @@
   </form>
 
   {% if error %}<p class="err">{{ error }}</p>{% endif %}
-
-  {% if short %}
-  <div class="result">
-    <label>Short link</label>
-    <a href="{{ short }}" target="_blank">{{ short }}</a>
-    <br>
-    <button class="copy" type="button" onclick="navigator.clipboard.writeText('{{ short }}').then(()=>this.textContent='copied')">copy</button>
-  </div>
-  {% endif %}
 
   <a class="browse" href="/files/">Browse Files</a>
 
