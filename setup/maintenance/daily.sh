@@ -17,7 +17,7 @@ docker container prune -f >> "$LOG" 2>&1
 echo "--- pull + recreate containers ---" >> "$LOG"
 cd /var/www/github/jehpok.com/repo
 
-for svc in domain cloud share vault; do
+for svc in domain cloud share vault kuma homer; do
   compose="services/$svc/docker-compose.yml"
   image=$(grep -m1 'image:' "$compose" | awk '{print $2}')
   if [ -n "$image" ]; then
