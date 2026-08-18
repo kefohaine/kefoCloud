@@ -39,15 +39,8 @@ WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'http: cloud');
 -- http: status omitted — Kuma's own status page is the dashboard; self-check is noise.
 
 -- ── TCP / ping monitors (tailnet-only reachability) ──────────────────────
--- NOTE: tcp: vps 443 was removed. From inside the kuma container, the host's
--- Tailscale IP is unreachable (no Tailscale in the container). The docker socket
--- + ping: vps cover the same surface area.
-
-INSERT INTO monitor (name, type, interval, retry_interval, maxretries, active, user_id, description)
-SELECT 'ping: vps', 'ping', 60, 60, 0, 1, 1, 'VPS Tailscale IP reachability'
-WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'ping: vps');
-
-UPDATE monitor SET hostname = '100.81.245.77' WHERE name = 'ping: vps' AND hostname IS NULL;
+-- NOTE: tcp: vps 443 and ping: vps removed. tcp was unreachable (kuma container
+-- has no Tailscale); ping was redundant once we trust the docker socket.
 
 -- ── Docker container monitors ───────────────────────────────────────────
 
@@ -88,7 +81,7 @@ INSERT INTO monitor_group (monitor_id, group_id)
 SELECT m.id, g.id
 FROM monitor m, "group" g
 WHERE g.name = 'Public'
-  AND m.name IN ('http: www','http: share','http: api','http: vault','http: cloud','ping: vps')
+  AND m.name IN ('http: www','http: share','http: api','http: vault','http: cloud')
   AND NOT EXISTS (SELECT 1 FROM monitor_group mg WHERE mg.monitor_id = m.id AND mg.group_id = g.id);
 
 INSERT INTO monitor_group (monitor_id, group_id)
