@@ -1,0 +1,31 @@
+services:
+  kuma:
+    image: louislam/uptime-kuma:1
+    container_name: kuma
+    restart: unless-stopped
+
+    expose:
+      - "3001"
+
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3001/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+    volumes:
+      - /var/www/github/jehpok.com/kuma/data:/app/data:rw
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      - net
+
+networks:
+  net:
+    external: true
