@@ -4,7 +4,7 @@ This file tells agents how to work in this repo. Read it before making changes.
 
 ## System overview
 
-Self-hosted infrastructure on a Debian VPS. Caddy in Docker fronts five public subdomains (`www`, `share`, `api`, `vault`, `cloud`) and one Tailscale-only subdomain (`vps`). Nextcloud, the URL shortener/file-sharer, and Vaultwarden run in separate containers. dnsmasq runs as a host systemd service serving Tailscale split-DNS. Ollama runs as a host systemd service (`/etc/systemd/system/ollama.service`, enabled, see **Safety rules** below). Full architecture, request flows, and rationale are in `README.md` — read it first.
+Self-hosted infrastructure on a Debian VPS. Caddy in Docker fronts six public subdomains (`www` Homer, `share`, `api`, `vault`, `cloud`, `status` Uptime Kuma) and one Tailscale-only subdomain (`vps`). Nextcloud, the URL shortener/file-sharer, Vaultwarden, Uptime Kuma, and Homer run in separate containers. dnsmasq runs as a host systemd service serving Tailscale split-DNS. Ollama runs as a host systemd service (`/etc/systemd/system/ollama.service`, enabled, see **Safety rules** below). Full architecture, request flows, and rationale are in `README.md` — read it first.
 
 ## Safety rules
 
@@ -23,12 +23,14 @@ These are non-negotiable. Follow them on every task.
 
 ```
 services/          Docker compose files + configs (checked into git)
-  domain/          Caddy (TLS termination, reverse proxy, static files)
+  domain/          Caddy (TLS termination, reverse proxy)
   cloud/           Nextcloud (PHP-FPM, SQLite)
   share/           URL shortener (Flask, SQLite, admin UI at vps.jehpok.com/share)
   vault/           Vaultwarden (Bitwarden-compatible password manager, SQLite)
+  kuma/            Uptime Kuma (status monitor; serves status.jehpok.com)
+  homer/           Homer dashboard (services landing page; serves www.jehpok.com)
 setup/             Reference copies of host-level configs (Ollama unit, SSH hardening, dnsmasq, maintenance timer + script under setup/maintenance/)
-content/domain/    Static site files served by Caddy
+content/domain/    Static site files served by Caddy (currently only vps/; www/ retired and replaced by Homer)
 docs/AGENTS.md          This file
 docs/ISSUES.md          Known problems and improvements to fix
 ```
@@ -42,6 +44,10 @@ Host-side paths (not in git):
 /var/www/github/jehpok.com/share/db/links.db  Shortener SQLite DB (bind-mounted into the share container as /data)
 /var/www/github/jehpok.com/share/files/       Uploaded files (bind-mounted ro into domain at /files, rw into share at /data/files; served at share.jehpok.com/files)
 /var/www/github/jehpok.com/vault/data/        Vaultwarden data dir (SQLite DB, attachments, icons; bind-mounted into vault at /data)
+/var/www/github/jehpok.com/kuma/data/         Uptime Kuma state dir (SQLite, monitor definitions; bind-mounted into kuma at /app/data)
+/var/www/github/jehpok.com/homer/config/      Homer dashboard config.yml (bind-mounted into homer at /www/config)
+/var/www/github/jehpok.com/homer/assets/      Homer custom assets (logos, backgrounds; bind-mounted into homer at /www/assets)
+/var/www/github/jehpok.com/repo/temp/cheyou/  One-time backup of the retired static www/index.html (cheyou anniversary page); not web-served
 /etc/ssh/sshd_config.d/50-cloud-init.conf  SSH hardening (key-only, no root, debian only)
 /etc/dnsmasq.d/10-tailnet.conf         dnsmasq Tailscale split-DNS (DO NOT DELETE — see Safety rules)
 /etc/systemd/system/dnsmasq.service.d/override.conf  systemd drop-in (Restart=always, After=tailscaled)
@@ -66,6 +72,11 @@ services/
     docker-compose.yml       # share service (expose 5000 on net)
   vault/
     docker-compose.yml       # Vaultwarden (Bitwarden-compatible, SQLite)
+  kuma/
+    docker-compose.yml       # Uptime Kuma (status monitor, name: kuma)
+  homer/
+    docker-compose.yml       # Homer dashboard (services landing page, name: homer)
+    config/config.yml        # Homer dashboard config (title, links, groups)
 setup/
   ollama/ollama.service      # Reference copy of the host systemd unit
   ssh/50-cloud-init.conf     # Reference copy of SSH hardening config
@@ -74,8 +85,9 @@ setup/
     dnsmasq.service.conf     # systemd drop-in: order after tailscaled, Restart=always
 content/
   domain/
-    www/                     # static files for www.jehpok.com
     vps/                     # static files for vps.jehpok.com (Tailscale-only)
+                              # www/ was retired; the cheyou page is preserved at
+                              # repo-root temp/cheyou/index.html (gitignored) for restoration
   share/                     # share.jehpok.com app source (Flask app.py + templates), mounted into the share container
 Makefile                     # Recipes: up-all, setup-host, backup-cloud, backup-secrets, migrate, etc.
 docs/AGENTS.md                    # Operating guide for agents
@@ -103,11 +115,11 @@ Run `make migrate` for the full step-by-step runbook. It assumes: the `net` brid
 Use the `Makefile` recipes (canonical) rather than raw `docker compose`:
 
 ```bash
-make up-all            # start/recreate all four containers in order (share, domain, cloud, vault)
-make up-<service>      # force-recreate one container — up-domain | up-cloud | up-share | up-vault
+make up-all            # start/recreate all six containers in order (share, domain, cloud, vault, kuma, homer)
+make up-<service>      # force-recreate one container — up-domain | up-cloud | up-share | up-vault | up-kuma | up-homer
 make restart-<service> # reload one container without recreating — after editing a mounted config
 make restart-dns       # restart the host dnsmasq resolver — after editing setup/dnsmasq/10-tailnet.conf
-make logs-<service>    # follow one container's logs — logs-domain | logs-cloud | logs-share | logs-vault
+make logs-<service>    # follow one container's logs — logs-domain | logs-cloud | logs-share | logs-vault | logs-kuma | logs-homer
 make logs-dns          # follow the dnsmasq journal
 make status            # show a table of all running containers
 make push MSG="..."    # stage, commit, and push to the jehpok.com remote
@@ -204,6 +216,24 @@ Per-service facts needed to edit safely. The compose files, Caddyfile, and `setu
 - After editing the compose file or pulling a new image: `make up-vault` (force-recreate). Back up with `make backup-vault`.
 - Caddy vhost: `vault.jehpok.com` → `reverse_proxy vault:80`, 100M body max (attachment uploads), security headers. No `file_server` — Vaultwarden serves its own static assets.
 
+### kuma (Uptime Kuma) — `services/kuma/`
+
+- Image `louislam/uptime-kuma:1`, container `kuma`. State at `/var/www/github/jehpok.com/kuma/data` bind-mounted at `/app/data` (SQLite + monitor definitions + status history; not human-editable).
+- No published ports — `expose: 3001` on `net` only; Caddy is the sole entry point.
+- First-run setup: visit `https://status.jehpok.com` once, the wizard prompts for an admin username/password, then monitor definitions. After that, monitor CRUD is UI-only — no config file in the repo to keep in sync.
+- Caddy vhost: `status.jehpok.com` → `reverse_proxy kuma:3001`, security headers. No `file_server` — Kuma serves its own assets.
+- After editing the compose file or pulling a new image: `make up-kuma` (force-recreate). No backup recipe — losing Kuma's state means re-adding monitors; for an MVP that's acceptable. Add a `cp -a` recipe later if desired.
+- No `setup/kuma/` reference copy: Kuma's state is binary (SQLite), not a config file, and `setup/` only holds host-level reference configs.
+
+### homer (Homer dashboard) — `services/homer/`
+
+- Image `b4bz/homer:22.11.1`, container `homer`. Pure static-asset server — no database, no runtime state.
+- No published ports — `expose: 8080` on `net` only; Caddy is the sole entry point.
+- Config at `services/homer/config/config.yml` (in-repo) bind-mounted at `/www/config`; user assets (custom logos, backgrounds) at `/var/www/github/jehpok.com/homer/assets` bind-mounted at `/www/assets`. The image's `/www` is read-only; only the two bind-mounts are writable.
+- Editing the dashboard: change `services/homer/config/config.yml` in the repo, then `make restart-homer` (or just wait — Homer's `b4bz/homer` image serves files dynamically and reloads on read). Mirror to the live host path is not needed because the repo file is bind-mounted directly.
+- Caddy vhost: `www.jehpok.com` → `reverse_proxy homer:8080`, security headers. The previous static-files vhost serving `content/domain/www/` (cheyou page) is retired; the cheyou HTML is preserved at `temp/cheyou/index.html` (gitignored) for restoration if ever needed.
+- No `setup/homer/` reference copy: Homer's config lives at `services/homer/config/config.yml` in the repo and is the source of truth — duplicating it in `setup/` would just drift.
+
 ### Ollama (host systemd) — `setup/ollama/`
 
 - Runs on the host, not Docker. Unit at `/etc/systemd/system/ollama.service`: `enabled`, `Restart=always`, user `ollama`, listens `:11434`, models at `/home/ollama/.ollama/models`.
@@ -212,7 +242,7 @@ Per-service facts needed to edit safely. The compose files, Caddyfile, and `setu
 
 ### Log rotation and healthchecks
 
-All four compose files pin `json-file` with size caps: `domain` 10m×3, `cloud` 10m×3, `share` 5m×2, `vault` 10m×3. Healthchecks: `domain` `caddy version` /30s, `cloud` `php -r phpversion()` /30s, `share` fetches `/healthz` /30s, `vault` `curl -sf /alive` /30s. dnsmasq logs to journald (no log cap beyond the default `journalctl` rotation). Adjust under each service's `logging:` / `healthcheck:` block, or the systemd unit drop-in for dnsmasq.
+All six compose files pin `json-file` with size caps: `domain` 10m×3, `cloud` 10m×3, `share` 5m×2, `vault` 10m×3, `kuma` 10m×3, `homer` 10m×3. Healthchecks: `domain` `caddy version` /30s, `cloud` `php -r phpversion()` /30s, `share` fetches `/healthz` /30s, `vault` `curl -sf /alive` /30s, `kuma` `curl -sf /` /30s, `homer` `wget --spider /` /30s. dnsmasq logs to journald (no log cap beyond the default `journalctl` rotation). Adjust under each service's `logging:` / `healthcheck:` block, or the systemd unit drop-in for dnsmasq.
 
 ## Git remotes
 
@@ -230,7 +260,7 @@ git push jehpok.com main
 - Bind services to the narrowest interface possible. dnsmasq binds to the Tailscale IP only, not `0.0.0.0`.
 - Use `expose` (not `ports`) for inter-container services. Only `domain` (80/443) publishes host ports; dnsmasq is on the host, not Docker.
 - The `net` Docker network is `external: true`. Do not let compose files create their own private networks for inter-service communication.
-- **Container app sources live under `content/<container>/`**, not `services/<container>/`. `services/` holds only Dockerfile + compose + service-level configs; `content/` holds the code/static files the container runs or serves. Mount `content/<container>/` read-only into the container so edits take effect with `make restart-<container>` and the image only carries the runtime. Static-site vhosts (`www`/`vps`) follow the same pattern under `content/domain/`.
+- **Container app sources live under `content/<container>/`**, not `services/<container>/`. `services/` holds only Dockerfile + compose + service-level configs; `content/` holds the code/static files the container runs or serves. Mount `content/<container>/` read-only into the container so edits take effect with `make restart-<container>` and the image only carries the runtime. Static-site vhosts (`www`/`vps`) follow the same pattern under `content/domain/`. Exception: image-only or static-only services (Kuma, Homer) keep their config in-repo under `services/<svc>/` because they have no app source to version separately — the config is a YAML the container reads, not code.
 - Do not add comments to code unless asked.
 - A sentence ending in "?" is a question, not an order. Answer it (yes/no/how) before doing anything. Only act when the operator explicitly tells you to. If the question is ambiguous, rephrase it back and ask for confirmation.
 - Do not paste entire file contents (Caddyfile, dnsmasq config, compose files, Makefile) into `README.md` or other docs. Describe what they do in prose; the files are the source of truth. Command snippets (`make ...`, shell one-liners) are fine.

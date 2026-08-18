@@ -1,6 +1,6 @@
 # jehpok.com
 
-Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker, serving five public subdomains and one Tailscale-only subdomain. Ollama runs on the host as a systemd service for local LLM serving.
+Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker, serving six public subdomains and one Tailscale-only subdomain. Ollama runs on the host as a systemd service for local LLM serving.
 
 This document describes the system: what runs where, why each piece exists, and what to know when something breaks.
 
@@ -9,7 +9,7 @@ This document describes the system: what runs where, why each piece exists, and 
 ```
                    ┌─────────────────────────────────────────────┐
     Public DNS ──► │            Cloudflare (proxy)               │
-                    │  www / share / api / vault / cloud         │
+                    │  www / share / api / vault / cloud / status│
                     └──────────────┬──────────────────────────────┘
                                    │ HTTPS (Origin Cert)
                                    ▼
@@ -20,9 +20,10 @@ This document describes the system: what runs where, why each piece exists, and 
                 ┌──────────────────┼──────────────────┐
                 │                  │                  │
                 ▼                  ▼                  ▼
-           static files       reverse_proxy      php_fastcgi
-           www / vps          share / vault      cloud:9000
-           (/srv/content/)    / api → "ok"       (Nextcloud FPM)
+         static / reverse_proxy   reverse_proxy    php_fastcgi
+         vps / api                share / vault    cloud:9000
+         (content/domain/)        / status         (Nextcloud FPM)
+                                 / www (Homer)
 
                      ┌─────────────────────────────────────────────┐
                      │ Tailscale MagicDNS / split DNS              │
@@ -39,17 +40,18 @@ This document describes the system: what runs where, why each piece exists, and 
                              └──────────────┘
 ```
 
-Only one VPS, one host. Cloudflare fronts five of the six hostnames; the Tailscale-only hostname is invisible on the public internet.
+Only one VPS, one host. Cloudflare fronts six of the seven hostnames; the Tailscale-only hostname is invisible on the public internet.
 
 ## Domains and access model
 
 | Domain             | Where DNS points            | Who can reach it                            | What is served                                  |
 |--------------------|-----------------------------|---------------------------------------------|-------------------------------------------------|
-| www.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Static site from `content/domain/www`              |
+| www.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Homer dashboard — landing page listing every public self-hosted service; reverse-proxied to the `homer` container |
 | share.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | URL shortener + file sharing: public shorten/upload form with DNS validation and 1-year expiry; `GET /<slug>` 307-redirects; `GET /files/` Caddy directory browse; blocked paths render `not found` |
 | api.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Placeholder vhost (no backend currently wired)  |
 | vault.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Vaultwarden (self-hosted Bitwarden-compatible password manager) |
 | cloud.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Nextcloud (file sync, calendar, photos)         |
+| status.jehpok.com  | Cloudflare → VPS IP         | Anyone on the internet                      | Uptime Kuma (HTTP/TCP/ICMP monitor dashboard); reverse-proxied to the `kuma` container |
 | vps.jehpok.com     | **Not in Cloudflare**       | Only devices on the Tailscale network       | Responds `ok`; admin UI for the shortener at `/share` |
 
 The asymmetry on `vps.jehpok.com` is deliberate. By keeping it out of public DNS, the only way anyone can know its IP is by being inside the Tailscale network. Even a DNS leak on the user's device cannot reveal an address that public resolvers don't serve. As defense-in-depth, Caddy also rejects any request to the vhost whose source IP is not on the tailnet (`100.64.0.0/10`), so reaching it via the public IP with a forged Host header returns 403 on every path.
@@ -96,3 +98,4 @@ The trade-off: browser traffic is bot-challenged. For an API endpoint that is hi
 
 - `vps.jehpok.com` will appear "down" from non-Tailscale networks. That's by design. Don't add it to Cloudflare DNS to "fix" it — that defeats the only access control. Caddy also enforces it at the edge: any request to the vhost from a source IP outside `100.64.0.0/10` (the tailnet CGNAT range) returns 403, so even a forged Host header against the public IP cannot reach any path under it.
 - `cloud.jehpok.com` is reached by Nextcloud desktop / mobile clients that cannot solve Cloudflare's Browser Integrity Check or Bot Fight Mode JS challenge. Disable Bot Fight Mode (or set a per-hostname WAF rule skip) for `cloud.jehpok.com` in Cloudflare, otherwise desktop sync will hang on the first request. This is the same mitigation already noted for `api.jehpok.com`.
+- The previous static page at `www.jehpok.com` (the cheyou anniversary page) has been retired and replaced by the Homer dashboard. The cheyou HTML is preserved at `temp/cheyou/index.html` in the repo if it ever needs to be restored.
