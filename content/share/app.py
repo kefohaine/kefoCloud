@@ -3,6 +3,7 @@ import sqlite3
 import secrets
 import string
 import time
+import threading
 import socket
 from urllib.parse import urlparse
 from flask import Flask, request, redirect, abort, render_template, jsonify, url_for
@@ -72,7 +73,7 @@ init_db()
 
 
 def purge_expired():
-    """Delete expired links and their linked files. Called on every resolve."""
+    """Delete expired links and their linked files."""
     now = int(time.time())
     conn = db()
     rows = conn.execute("SELECT target FROM links WHERE expires_at < ?", (now,)).fetchall()
@@ -82,6 +83,19 @@ def purge_expired():
     conn.close()
     for r in rows:
         delete_file_if_linked(r["target"])
+
+
+def _purge_loop():
+    """Background thread: purge expired links every 24h."""
+    while True:
+        try:
+            purge_expired()
+        except Exception:
+            pass
+        time.sleep(86400)
+
+
+threading.Thread(target=_purge_loop, daemon=True).start()
 
 
 def valid_slug(s):
