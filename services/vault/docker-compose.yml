@@ -6,7 +6,7 @@ services:
 
     environment:
       DOMAIN: https://vault.jehpok.com
-      SIGNUPS_ALLOWED: "false"
+      SIGNUPS_ALLOWED: "true"
       INVITATIONS_ALLOWED: "false"
       SHOW_PASSWORD_HINT: "false"
       ROCKET_PORT: "80"
