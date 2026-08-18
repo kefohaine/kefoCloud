@@ -123,6 +123,8 @@ def index():
         return render_template("public.html", short=None, error="target is required"), 400
     if not target.startswith(("http://", "https://")):
         target = "https://" + target
+    if not resolves(target):
+        return render_template("public.html", short=None, error="URL does not resolve"), 422
     slug = gen_slug()
     conn = db()
     try:
@@ -200,6 +202,8 @@ def admin_create():
         return render_template("admin.html", links=all_rows(), error="target is required"), 400
     if not target.startswith(("http://", "https://")):
         target = "https://" + target
+    if not resolves(target):
+        return render_template("admin.html", links=all_rows(), error="URL does not resolve"), 422
 
     conn = db()
     try:
