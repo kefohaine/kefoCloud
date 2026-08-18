@@ -15,7 +15,9 @@ services:
       start_period: 10s
 
     volumes:
-      - /var/www/github/jehpok.com/homer/config:/www/config
+      # In-repo config; edit services/homer/config/config.yml and `make restart-homer`.
+      - ../../services/homer/config:/www/config
+      # Image-bundled assets — read-only override target.
       - /var/www/github/jehpok.com/homer/assets:/www/assets
 
     logging:
