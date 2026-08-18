@@ -46,7 +46,7 @@ Only one VPS, one host. Cloudflare fronts five of the six hostnames; the Tailsca
 | Domain             | Where DNS points            | Who can reach it                            | What is served                                  |
 |--------------------|-----------------------------|---------------------------------------------|-------------------------------------------------|
 | www.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Static site from `content/domain/www`              |
-| share.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | URL shortener + file sharing: `GET /` public shorten/upload form (auto-slug); `GET /<slug>` 307-redirects; `GET /files/` Caddy directory browse; blocked paths render `not found` |
+| share.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | URL shortener + file sharing: public shorten/upload form with DNS validation and 1-year expiry; `GET /<slug>` 307-redirects; `GET /files/` Caddy directory browse; blocked paths render `not found` |
 | api.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Placeholder vhost (no backend currently wired)  |
 | vault.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Vaultwarden (self-hosted Bitwarden-compatible password manager) |
 | cloud.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Nextcloud (file sync, calendar, photos)         |
