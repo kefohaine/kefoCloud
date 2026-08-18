@@ -16,6 +16,10 @@ services:
 
     volumes:
       - /var/www/github/jehpok.com/kuma/data:/app/data:rw
+      # Read-only docker socket so Kuma can monitor running containers.
+      # Risk: compromised Kuma container = host root. Kuma is a single-user
+      # dashboard behind Tailscale + Cloudflare; acceptable for this setup.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
 
     logging:
       driver: json-file
