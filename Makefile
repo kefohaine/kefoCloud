@@ -4,9 +4,9 @@
 REPO := /var/www/github/jehpok.com/repo
 COMPOSE := docker compose -f
 
-.PHONY: up-domain up-cloud up-share up-vault up-all
-.PHONY: restart-domain restart-cloud restart-share restart-vault restart-dns
-.PHONY: logs-domain logs-cloud logs-share logs-vault logs-dns
+.PHONY: up-domain up-cloud up-share up-vault up-kuma up-homer up-all
+.PHONY: restart-domain restart-cloud restart-share restart-vault restart-kuma restart-homer restart-dns
+.PHONY: logs-domain logs-cloud logs-share logs-vault logs-kuma logs-homer logs-dns
 .PHONY: status push backup-cloud backup-share backup-vault clean setup-host
 
 up-domain:
@@ -21,7 +21,13 @@ up-share:
 up-vault:
 >$(COMPOSE) $(REPO)/services/vault/docker-compose.yml up -d --force-recreate
 
-up-all: up-share up-domain up-cloud up-vault
+up-kuma:
+>$(COMPOSE) $(REPO)/services/kuma/docker-compose.yml up -d --force-recreate
+
+up-homer:
+>$(COMPOSE) $(REPO)/services/homer/docker-compose.yml up -d --force-recreate
+
+up-all: up-share up-domain up-cloud up-vault up-kuma up-homer
 
 restart-domain:
 >$(COMPOSE) $(REPO)/services/domain/docker-compose.yml restart domain
@@ -34,6 +40,12 @@ restart-share:
 
 restart-vault:
 >$(COMPOSE) $(REPO)/services/vault/docker-compose.yml restart vault
+
+restart-kuma:
+>$(COMPOSE) $(REPO)/services/kuma/docker-compose.yml restart kuma
+
+restart-homer:
+>$(COMPOSE) $(REPO)/services/homer/docker-compose.yml restart homer
 
 restart-dns:
 >sudo systemctl restart dnsmasq
@@ -49,6 +61,12 @@ logs-share:
 
 logs-vault:
 >docker logs vault --tail 50 -f
+
+logs-kuma:
+>docker logs kuma --tail 50 -f
+
+logs-homer:
+>docker logs homer --tail 50 -f
 
 logs-dns:
 >sudo journalctl -u dnsmasq -n 50 -f
