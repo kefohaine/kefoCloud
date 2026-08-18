@@ -42,7 +42,7 @@
   <p class="sub">paste a URL, get a short redirect</p>
 
   <form id="shortenForm" method="POST" action="/" enctype="application/x-www-form-urlencoded">
-    <input name="target" placeholder="example.com or https://example.com" autocomplete="off" required>
+    <input name="target" placeholder="example.com" autocomplete="off" required>
     <button type="button" onclick="showWarn()">Shorten</button>
   </form>
 
@@ -97,16 +97,14 @@
   </div>
   {% endif %}
 
-  {% if dns_error %}
-  <div class="overlay show" id="dnsOverlay">
+  <div class="overlay{% if dns_error %} show{% endif %}" id="dnsOverlay">
     <div class="modal">
       <div class="icon">⚠️</div>
-      <h2>URL not reachable</h2>
-      <p style="font-size:.9rem;line-height:1.6;margin-bottom:22px;">The URL you entered doesn't resolve. Check for typos and try again.</p>
+      <h2>Invalid URL</h2>
+      <p style="font-size:.9rem;line-height:1.6;margin-bottom:22px;">The URL isn't secure or doesn't exist. Check for typos and try again.</p>
       <button class="ok" onclick="document.getElementById('dnsOverlay').classList.remove('show')">OK</button>
     </div>
   </div>
-  {% endif %}
 
 <script>
 function tryShorten(){
@@ -114,15 +112,16 @@ function tryShorten(){
   var input=f.querySelector('input[name=target]');
   if(!input.checkValidity()){ input.reportValidity(); return; }
   var v=input.value.trim();
-  if(!/^([a-z]+:\/\/)?[^\s]+\.[^\s]+/i.test(v)){ input.setCustomValidity('Enter a valid URL (e.g. example.com)'); input.reportValidity(); input.setCustomValidity(''); return; }
+  if(!/^([a-z]+:\/\/)?[^\s]+\.[^\s]+/i.test(v)){ showInvalid(); return; }
   var fd=new FormData(); fd.append('target', v);
   fetch('/check',{method:'POST',body:fd}).then(r=>r.json()).then(d=>{
-    if(!d.valid){ input.setCustomValidity(d.error||'URL does not resolve'); input.reportValidity(); input.setCustomValidity(''); return; }
+    if(!d.valid){ showInvalid(); return; }
     document.getElementById('shortenForm').dataset.confirmed='1';
     document.getElementById('uploadForm').dataset.confirmed='';
     showWarn();
-  }).catch(()=>{ input.setCustomValidity('Could not verify URL'); input.reportValidity(); input.setCustomValidity(''); });
+  }).catch(()=>{ showInvalid(); });
 }
+function showInvalid(){ document.getElementById('dnsOverlay').classList.add('show'); }
 function tryUpload(){
   var f=document.getElementById('uploadForm');
   var input=f.querySelector('input[type=file]');
