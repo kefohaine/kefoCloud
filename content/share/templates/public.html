@@ -43,14 +43,14 @@
 
   <form id="shortenForm" method="POST" action="/" enctype="application/x-www-form-urlencoded">
     <input name="target" placeholder="example.com" autocomplete="off" required>
-    <button type="button" onclick="showWarn()">Shorten</button>
+    <button type="button">Shorten</button>
   </form>
 
   <hr style="border:0;border-top:1px solid var(--blush);margin:20px 0">
   <p class="sub">or upload a file</p>
   <form id="uploadForm" method="POST" action="/upload" enctype="multipart/form-data">
     <input type="file" name="file" required>
-    <button type="button" onclick="showWarn()">Upload & Shorten</button>
+    <button type="button">Upload & Shorten</button>
   </form>
 
   {% if error %}<p class="err">{{ error }}</p>{% endif %}
