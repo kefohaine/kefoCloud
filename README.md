@@ -49,7 +49,7 @@ One VPS, one host. Cloudflare fronts six of the seven hostnames; the Tailscale-o
 | api.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Placeholder vhost (no backend currently wired)  |
 | vault.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Vaultwarden (self-hosted Bitwarden-compatible password manager); reverse-proxied to the `vault` container |
 | cloud.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Nextcloud (file sync, calendar, photos); PHP-FPM behind Caddy |
-| status.jehpok.com  | Cloudflare → VPS IP         | Anyone on the internet                      | Uptime Kuma monitor dashboard; reverse-proxied to the `kuma` container |
+| kuma.jehpok.com    | Cloudflare → VPS IP         | Anyone on the internet                      | Uptime Kuma monitor dashboard; reverse-proxied to the `kuma` container |
 | vps.jehpok.com     | **Not in Cloudflare**       | Only devices on the Tailscale network       | Responds `ok`; admin UI for the shortener at `/share` |
 
 The asymmetry on `vps.jehpok.com` is deliberate. By keeping it out of public DNS, the only way anyone can know its IP is by being inside the Tailscale network. Even a DNS leak on the user's device cannot reveal an address that public resolvers don't serve. As defense-in-depth, Caddy also rejects any request to the vhost whose source IP is not on the tailnet (`100.64.0.0/10`), so reaching it via the public IP with a forged Host header returns 403 on every path.

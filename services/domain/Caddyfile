@@ -155,7 +155,7 @@ https://cloud.jehpok.com {
 
 # ── Uptime Kuma (status monitor) ──────────────────────────────────────────
 
-https://status.jehpok.com {
+https://kuma.jehpok.com {
     import tls_keys
     request_body {
         max_size 100m
