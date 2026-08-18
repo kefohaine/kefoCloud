@@ -93,7 +93,10 @@
 <script>
 function tryShorten(){
   var f=document.getElementById('shortenForm');
-  if(!f.querySelector('input[name=target]').checkValidity()){ f.querySelector('input[name=target]').reportValidity(); return; }
+  var input=f.querySelector('input[name=target]');
+  if(!input.checkValidity()){ input.reportValidity(); return; }
+  var v=input.value.trim();
+  if(!/^https?:\/\/[^\s]+\.[^\s]+/i.test(v)){ input.setCustomValidity('Enter a valid URL (e.g. https://example.com)'); input.reportValidity(); input.setCustomValidity(''); return; }
   document.getElementById('shortenForm').dataset.confirmed='1';
   document.getElementById('uploadForm').dataset.confirmed='';
   showWarn();
