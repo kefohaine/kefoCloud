@@ -1,0 +1,9 @@
+[Unit]
+Description=jehpok.com daily maintenance (apt upgrade, docker prune, container updates)
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/jehpok-daily.sh
+User=debian
+Group=debian
