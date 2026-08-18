@@ -1,0 +1,32 @@
+services:
+  homer:
+    image: b4bz/homer:22.11.1
+    container_name: homer
+    restart: unless-stopped
+
+    expose:
+      - "8080"
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    volumes:
+      - /var/www/github/jehpok.com/homer/config:/www/config
+      - /var/www/github/jehpok.com/homer/assets:/www/assets
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      - net
+
+networks:
+  net:
+    external: true
