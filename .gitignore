@@ -1,3 +1,4 @@
 .DS_Store
 services/cloud/.env
 temp/
+.claude/
