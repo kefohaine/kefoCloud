@@ -24,7 +24,7 @@ bookmarks:
 links:
   - name: "Status"
     icon: "fas fa-heartbeat"
-    url: "https://status.jehpok.com"
+    url: "https://kuma.jehpok.com"
     target: "_blank"
   - name: "Share"
     icon: "fas fa-share-nodes"
@@ -46,7 +46,7 @@ services:
     items:
       - name: "Status"
         icon: "fas fa-heartbeat"
-        url: "https://status.jehpok.com"
+        url: "https://kuma.jehpok.com"
         target: "_blank"
         subtitle: "Uptime monitor"
         description: "Uptime Kuma — monitor health of every public service."
