@@ -23,6 +23,9 @@
   .result a:hover { text-decoration:underline; }
   .copy { background:var(--blush); border:0; border-radius:6px; padding:6px 10px; margin-top:10px; font:inherit; cursor:pointer; color:var(--ink); }
   .copy:hover { background:var(--rose); color:#fff; }
+  .browse { display:block; width:100%; padding:12px 22px; border:0; border-radius:8px; background:var(--gold); color:#fff; font:inherit; font-weight:600; cursor:pointer; text-align:center; text-decoration:none; margin-top:20px; }
+  .browse:hover { background:var(--rose); }
+  .warn { background:#fff; border:1px solid var(--blush); border-radius:8px; padding:10px 14px; margin:12px 0; font-size:.8rem; color:#8a7d75; }
   footer { margin-top:32px; color:#a99; font-size:.8rem; text-align:center; }
 </style>
 </head>
@@ -42,6 +45,9 @@
     <button type="submit">Upload & Shorten</button>
   </form>
 
+  <div class="warn">Short links and uploaded files expire after 1 year and are then automatically deleted.</div>
+  <div class="warn">Uploaded files are public — anyone with the link can download them. Do not upload sensitive data.</div>
+
   {% if error %}<p class="err">{{ error }}</p>{% endif %}
 
   {% if short %}
@@ -52,6 +58,8 @@
     <button class="copy" type="button" onclick="navigator.clipboard.writeText('{{ short }}').then(()=>this.textContent='copied')">copy</button>
   </div>
   {% endif %}
+
+  <a class="browse" href="/files/">Browse Files</a>
 
   <footer>public URL shortener — jehpok.com</footer>
 </body>

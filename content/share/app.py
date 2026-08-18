@@ -2,6 +2,7 @@ import os
 import sqlite3
 import secrets
 import string
+import time
 from flask import Flask, request, redirect, abort, render_template, jsonify, url_for
 
 BASE_DIR = os.environ.get("LINK_DB_DIR", "/data")
@@ -9,9 +10,8 @@ DB_PATH = os.path.join(BASE_DIR, "links.db")
 FILES_DIR = os.path.join(BASE_DIR, "files")
 os.makedirs(FILES_DIR, exist_ok=True)
 ALLOWED_CHARS = string.ascii_lowercase + string.digits + "-_."
-# Unambiguous alphabet for auto-generated slugs: excludes visually similar pairs
-# 0/O, 1/I/l, 2/Z, 5/S, 8/B, 6/G, U/V.
 SLUG_ALPHABET = "acdefhjkmnpqrtwxy3479"
+LIFESPAN_SECONDS = 365 * 24 * 3600
 
 
 def gen_slug(length=6):
@@ -52,11 +52,28 @@ def init_db():
         "  hits INTEGER NOT NULL DEFAULT 0"
         ")"
     )
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(links)").fetchall()]
+    if "expires_at" not in cols:
+        conn.execute("ALTER TABLE links ADD COLUMN expires_at INTEGER")
+        conn.execute("UPDATE links SET expires_at = created_at + 31536000 WHERE expires_at IS NULL")
     conn.commit()
     conn.close()
 
 
 init_db()
+
+
+def purge_expired():
+    """Delete expired links and their linked files. Called on every resolve."""
+    now = int(time.time())
+    conn = db()
+    rows = conn.execute("SELECT target FROM links WHERE expires_at < ?", (now,)).fetchall()
+    if rows:
+        conn.execute("DELETE FROM links WHERE expires_at < ?", (now,))
+        conn.commit()
+    conn.close()
+    for r in rows:
+        delete_file_if_linked(r["target"])
 
 
 def valid_slug(s):
@@ -83,7 +100,10 @@ def index():
     slug = gen_slug()
     conn = db()
     try:
-        conn.execute("INSERT INTO links (slug, target) VALUES (?, ?)", (slug, target))
+        conn.execute(
+            "INSERT INTO links (slug, target, expires_at) VALUES (?, ?, ?)",
+            (slug, target, int(time.time()) + LIFESPAN_SECONDS),
+        )
         conn.commit()
     except sqlite3.IntegrityError:
         conn.close()
@@ -117,7 +137,10 @@ def upload_file():
     slug = gen_slug()
     conn = db()
     try:
-        conn.execute("INSERT INTO links (slug, target) VALUES (?, ?)", (slug, target))
+        conn.execute(
+            "INSERT INTO links (slug, target, expires_at) VALUES (?, ?, ?)",
+            (slug, target, int(time.time()) + LIFESPAN_SECONDS),
+        )
         conn.commit()
     except sqlite3.IntegrityError:
         conn.close()
@@ -154,7 +177,10 @@ def admin_create():
 
     conn = db()
     try:
-        conn.execute("INSERT INTO links (slug, target) VALUES (?, ?)", (slug, target))
+        conn.execute(
+            "INSERT INTO links (slug, target, expires_at) VALUES (?, ?, ?)",
+            (slug, target, int(time.time()) + LIFESPAN_SECONDS),
+        )
         conn.commit()
     except sqlite3.IntegrityError:
         conn.close()
@@ -206,6 +232,7 @@ def all_rows():
 def resolve(slug):
     if not valid_slug(slug):
         abort(404)
+    purge_expired()
     conn = db()
     row = conn.execute("SELECT target, hits FROM links WHERE slug = ?", (slug,)).fetchone()
     if row:
