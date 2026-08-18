@@ -1,8 +1,6 @@
 # jehpok.com
 
-Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker, serving six public subdomains and one Tailscale-only subdomain. Ollama runs on the host as a systemd service for local LLM serving.
-
-This document describes the system: what runs where, why each piece exists, and what to know when something breaks.
+Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Six public subdomains and one Tailscale-only subdomain. Ollama runs on the host as a systemd service for local LLM serving.
 
 ## High-level overview
 
@@ -20,10 +18,10 @@ This document describes the system: what runs where, why each piece exists, and 
                 ┌──────────────────┼──────────────────┐
                 │                  │                  │
                 ▼                  ▼                  ▼
-         static / reverse_proxy   reverse_proxy    php_fastcgi
-         vps / api                share / vault    cloud:9000
-         (content/domain/)        / status         (Nextcloud FPM)
-                                 / www (Homer)
+           reverse_proxy      reverse_proxy       php_fastcgi
+           vps / api          share / vault       cloud:9000
+                              / status            (Nextcloud FPM)
+                              / www (Homer)
 
                      ┌─────────────────────────────────────────────┐
                      │ Tailscale MagicDNS / split DNS              │
@@ -40,18 +38,18 @@ This document describes the system: what runs where, why each piece exists, and 
                              └──────────────┘
 ```
 
-Only one VPS, one host. Cloudflare fronts six of the seven hostnames; the Tailscale-only hostname is invisible on the public internet.
+One VPS, one host. Cloudflare fronts six of the seven hostnames; the Tailscale-only hostname is invisible on the public internet.
 
 ## Domains and access model
 
 | Domain             | Where DNS points            | Who can reach it                            | What is served                                  |
 |--------------------|-----------------------------|---------------------------------------------|-------------------------------------------------|
 | www.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Homer dashboard — landing page listing every public self-hosted service; reverse-proxied to the `homer` container |
-| share.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | URL shortener + file sharing: public shorten/upload form with DNS validation and 1-year expiry; `GET /<slug>` 307-redirects; `GET /files/` Caddy directory browse; blocked paths render `not found` |
+| share.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | URL shortener + file sharing (Flask); reverse-proxied to the `share` container |
 | api.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Placeholder vhost (no backend currently wired)  |
-| vault.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Vaultwarden (self-hosted Bitwarden-compatible password manager) |
-| cloud.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Nextcloud (file sync, calendar, photos)         |
-| status.jehpok.com  | Cloudflare → VPS IP         | Anyone on the internet                      | Uptime Kuma (HTTP/TCP/ICMP monitor dashboard); reverse-proxied to the `kuma` container |
+| vault.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Vaultwarden (self-hosted Bitwarden-compatible password manager); reverse-proxied to the `vault` container |
+| cloud.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Nextcloud (file sync, calendar, photos); PHP-FPM behind Caddy |
+| status.jehpok.com  | Cloudflare → VPS IP         | Anyone on the internet                      | Uptime Kuma monitor dashboard; reverse-proxied to the `kuma` container |
 | vps.jehpok.com     | **Not in Cloudflare**       | Only devices on the Tailscale network       | Responds `ok`; admin UI for the shortener at `/share` |
 
 The asymmetry on `vps.jehpok.com` is deliberate. By keeping it out of public DNS, the only way anyone can know its IP is by being inside the Tailscale network. Even a DNS leak on the user's device cannot reveal an address that public resolvers don't serve. As defense-in-depth, Caddy also rejects any request to the vhost whose source IP is not on the tailnet (`100.64.0.0/10`), so reaching it via the public IP with a forged Host header returns 403 on every path.
@@ -92,7 +90,7 @@ The trade-off: browser traffic is bot-challenged. For an API endpoint that is hi
 - All inter-container DNS (e.g. Caddy reverse-proxying to `cloud:9000`) needs a user-defined bridge network.
 - Docker's embedded DNS at `127.0.0.11` resolves container names on user-defined networks automatically — no Consul, no extra service registry.
 - One network keeps Caddy and Nextcloud on the same subnet.
-- Marked `external: true` so the same network is reused across `domain` and `cloud` compose files (Compose would otherwise create a private one).
+- Marked `external: true` so the same network is reused across compose files (Compose would otherwise create a private one).
 
 ## Notes for visitors
 
