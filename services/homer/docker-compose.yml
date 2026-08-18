@@ -15,10 +15,10 @@ services:
       start_period: 10s
 
     volumes:
-      # In-repo config; edit services/homer/config/config.yml and `make restart-homer`.
-      - ../../services/homer/config:/www/config
-      # Image-bundled assets — read-only override target.
-      - /var/www/github/jehpok.com/homer/assets:/www/assets
+      # Homer reads /www/assets/config.yml. Bind only that file so the bundled
+      # icons/themes/manifest stay intact. Edit services/homer/config/config.yml
+      # and `make restart-homer` to apply.
+      - ../../services/homer/config/config.yml:/www/assets/config.yml
 
     logging:
       driver: json-file
