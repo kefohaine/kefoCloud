@@ -26,7 +26,7 @@ services/          Docker compose files + configs (checked into git)
   cloud/           Nextcloud (PHP-FPM, SQLite)
   share/           URL shortener (Flask, SQLite, admin UI at vps.jehpok.com/share)
   vault/           Vaultwarden (Bitwarden-compatible password manager, SQLite)
-setup/             Reference copies of host-level configs (Ollama unit, SSH hardening, dnsmasq, daily timer + script)
+setup/             Reference copies of host-level configs (Ollama unit, SSH hardening, dnsmasq, maintenance timer + script under setup/maintenance/)
 content/domain/    Static site files served by Caddy
 docs/AGENTS.md          This file
 docs/ISSUES.md          Known problems and improvements to fix
