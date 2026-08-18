@@ -83,10 +83,16 @@ setup-host:
 >sudo cp $(REPO)/setup/dnsmasq/10-tailnet.conf /etc/dnsmasq.d/10-tailnet.conf
 >sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
 >sudo cp $(REPO)/setup/dnsmasq/dnsmasq.service.conf /etc/systemd/system/dnsmasq.service.d/override.conf
+>sudo cp $(REPO)/scripts/daily.sh /usr/local/bin/jehpok-daily.sh
+>sudo chmod +x /usr/local/bin/jehpok-daily.sh
+>sudo cp $(REPO)/setup/daily.service /etc/systemd/system/jehpok-daily.service
+>sudo cp $(REPO)/setup/daily.timer /etc/systemd/system/jehpok-daily.timer
+>sudo touch /var/log/jehpok-daily.log
+>sudo chown debian:debian /var/log/jehpok-daily.log
 >sudo systemctl daemon-reload
->sudo systemctl enable --now ollama
+>sudo systemctl enable --now ollama jehpok-daily.timer
 >sudo systemctl restart sshd dnsmasq
->@echo "Host setup complete: Ollama enabled, SSH hardened, dnsmasq resolver installed."
+>@echo "Host setup complete: Ollama enabled, SSH hardened, dnsmasq resolver installed, daily maintenance timer enabled."
 
 backup-secrets:
 >mkdir -p /var/www/github/jehpok.com/secrets-backup

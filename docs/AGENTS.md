@@ -26,7 +26,8 @@ services/          Docker compose files + configs (checked into git)
   cloud/           Nextcloud (PHP-FPM, SQLite)
   share/           URL shortener (Flask, SQLite, admin UI at vps.jehpok.com/share)
   vault/           Vaultwarden (Bitwarden-compatible password manager, SQLite)
-setup/             Reference copies of host-level configs (Ollama unit, SSH hardening, dnsmasq)
+setup/             Reference copies of host-level configs (Ollama unit, SSH hardening, dnsmasq, daily timer)
+scripts/           daily.sh — daily maintenance script (apt upgrade, docker prune, container updates)
 content/domain/    Static site files served by Caddy
 docs/AGENTS.md          This file
 docs/ISSUES.md          Known problems and improvements to fix
@@ -114,7 +115,7 @@ make backup-cloud      # snapshot Nextcloud data (maintenance mode on during the
 make backup-share      # copy the shortener SQLite DB to /var/www/github/jehpok.com/share-backup-<date>.db
 make backup-vault      # tar the Vaultwarden data dir to /var/www/github/jehpok.com/vault-backup-<date>.tar.gz
 make backup-secrets    # bundle certs, SSH keys, Ollama unit, dnsmasq config, and Tailscale state for off-VPS storage
-make setup-host        # install reference configs to live paths and enable Ollama + sshd + dnsmasq
+make setup-host        # install reference configs to live paths and enable Ollama + sshd + dnsmasq + daily maintenance timer
 make migrate           # print the full VPS-to-VPS migration runbook
 make clean             # free disk: prune the Docker build cache and clear the apt cache
 ```
@@ -148,6 +149,10 @@ The `runner` user (legacy GitHub Actions) has no SSH key and is not in `AllowUse
 ## Running services on the VPS
 
 Prefer the `Makefile` recipes (canonical entrypoints) over raw `docker compose`. The `net` bridge network is `external: true` — create once with `docker network create net` on a fresh host. Deployment is manual (no CI/CD): `make restart-<service>` for a mounted config edit, `make up-<service>` when the compose file or image changed (force-recreate).
+
+## Daily maintenance
+
+A systemd timer (`jehpok-daily.timer`, enabled) runs `jehpok-daily.service` once per day (midnight). The script (`scripts/daily.sh`, installed to `/usr/local/bin/`) does: `apt update + upgrade -y + autoremove`, `docker builder/image/container prune`, pulls latest images for all services, and `make up-all` to recreate containers with new images. Logs to `/var/log/jehpok-daily.log`. Timer/service/timer unit files are in `setup/`. Run manually with `sudo systemctl start jehpok-daily.service`.
 
 ## Service details
 
