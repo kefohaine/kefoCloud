@@ -82,6 +82,20 @@
   </div>
 
 <script>
+function tryShorten(){
+  var f=document.getElementById('shortenForm');
+  if(!f.querySelector('input[name=target]').checkValidity()){ f.querySelector('input[name=target]').reportValidity(); return; }
+  document.getElementById('shortenForm').dataset.confirmed='1';
+  document.getElementById('uploadForm').dataset.confirmed='';
+  showWarn();
+}
+function tryUpload(){
+  var f=document.getElementById('uploadForm');
+  if(!f.querySelector('input[type=file]').checkValidity()){ f.querySelector('input[type=file]').reportValidity(); return; }
+  document.getElementById('uploadForm').dataset.confirmed='1';
+  document.getElementById('shortenForm').dataset.confirmed='';
+  showWarn();
+}
 function showWarn(){ document.getElementById('warnOverlay').classList.add('show'); }
 function confirmWarn(){
   document.getElementById('warnOverlay').classList.remove('show');
@@ -90,8 +104,8 @@ function confirmWarn(){
   if(sf.dataset.confirmed){ sf.submit(); }
   else if(uf.dataset.confirmed){ uf.submit(); }
 }
-document.getElementById('shortenForm').querySelector('button').onclick=function(){ showWarn(); document.getElementById('shortenForm').dataset.confirmed='1'; document.getElementById('uploadForm').dataset.confirmed=''; };
-document.getElementById('uploadForm').querySelector('button').onclick=function(){ showWarn(); document.getElementById('uploadForm').dataset.confirmed='1'; document.getElementById('shortenForm').dataset.confirmed=''; };
+document.getElementById('shortenForm').querySelector('button').onclick=tryShorten;
+document.getElementById('uploadForm').querySelector('button').onclick=tryUpload;
 </script>
 </body>
 </html>
