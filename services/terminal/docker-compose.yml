@@ -19,8 +19,8 @@ services:
       - -t
       - theme={"background":"#1e1e1e","foreground":"#d4d4d4"}
       - bash
-      - -lc
-      - 'export PATH=/host/usr/local/sbin:/host/usr/local/bin:/host/usr/sbin:/host/usr/bin:/host/sbin:/host/bin:/host/root/.local/bin:$PATH && cd /host/var/www/github/jehpok.com/repo && exec bash'
+      - -c
+      - 'export PATH=$(ls -d /host/usr/local/sbin /host/usr/local/bin /host/usr/sbin /host/usr/bin /host/sbin /host/bin /host/root/.local/bin /home/debian/.local/bin /home/debian/.opencode/bin 2>/dev/null | tr "\n" ":")/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && cd /host/var/www/github/jehpok.com/repo && exec bash'
 
     volumes:
       - /:/host:rw
