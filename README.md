@@ -38,7 +38,7 @@ Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Six publ
                              └──────────────┘
 ```
 
-One VPS, one host. Cloudflare fronts six of the seven hostnames; the Tailscale-only hostname is invisible on the public internet.
+One VPS, one host. Cloudflare fronts six of the seven hostnames; the Tailscale-only hostname is invisible on the public internet. Deliberate non-public behaviours (`vps.jehpok.com` being unreachable off the tailnet, Cloudflare Bot Fight Mode blocking `curl`/desktop sync, the retired cheyou page) are documented under `Intended` in `docs/ISSUES.md` so future agents don't "correct" them.
 
 ## Domains and access model
 
@@ -69,7 +69,7 @@ The asymmetry on `vps.jehpok.com` is deliberate. By keeping it out of public DNS
 - Provides DDoS protection, bot challenge, rate limiting at the edge.
 - Origin TLS only needs a long-lived Origin Certificate that Cloudflare signs for the whole `jehpok.com` zone — no ACME challenge, no rate limits.
 
-The trade-off: browser traffic is bot-challenged. For an API endpoint that is hit by terminal `curl` (Cloudflare's Browser Integrity Check rejects that), the workaround is either to lower WAF strictness for the API hostname or to put the API behind Cloudflare Access with a Service Auth token. Both have been considered; the goal is to keep Cloudflare's full protection on, so a Per-Hostname / Bot Fight Mode rule skip on `api.jehpok.com` is the minimum change.
+The trade-off: browser traffic is bot-challenged. For terminal `curl` or Nextcloud desktop sync clients that can't solve Cloudflare's Browser Integrity Check, the workaround is a per-hostname WAF rule skip on the affected hostname (`api.jehpok.com`, `cloud.jehpok.com`) — see `Intended` in `docs/ISSUES.md`.
 
 ### Why Tailscale for vps.jehpok.com
 
@@ -91,9 +91,3 @@ The trade-off: browser traffic is bot-challenged. For an API endpoint that is hi
 - Docker's embedded DNS at `127.0.0.11` resolves container names on user-defined networks automatically — no Consul, no extra service registry.
 - One network keeps Caddy and Nextcloud on the same subnet.
 - Marked `external: true` so the same network is reused across compose files (Compose would otherwise create a private one).
-
-## Notes for visitors
-
-- `vps.jehpok.com` will appear "down" from non-Tailscale networks. That's by design. Don't add it to Cloudflare DNS to "fix" it — that defeats the only access control. Caddy also enforces it at the edge: any request to the vhost from a source IP outside `100.64.0.0/10` (the tailnet CGNAT range) returns 403, so even a forged Host header against the public IP cannot reach any path under it.
-- `cloud.jehpok.com` is reached by Nextcloud desktop / mobile clients that cannot solve Cloudflare's Browser Integrity Check or Bot Fight Mode JS challenge. Disable Bot Fight Mode (or set a per-hostname WAF rule skip) for `cloud.jehpok.com` in Cloudflare, otherwise desktop sync will hang on the first request. This is the same mitigation already noted for `api.jehpok.com`.
-- The previous static page at `www.jehpok.com` (the cheyou anniversary page) has been retired and replaced by the Homer dashboard. The cheyou HTML is preserved at `temp/cheyou/index.html` in the repo if it ever needs to be restored.
