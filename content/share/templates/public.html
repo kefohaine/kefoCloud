@@ -97,9 +97,13 @@ function tryShorten(){
   if(!input.checkValidity()){ input.reportValidity(); return; }
   var v=input.value.trim();
   if(!/^https?:\/\/[^\s]+\.[^\s]+/i.test(v)){ input.setCustomValidity('Enter a valid URL (e.g. https://example.com)'); input.reportValidity(); input.setCustomValidity(''); return; }
-  document.getElementById('shortenForm').dataset.confirmed='1';
-  document.getElementById('uploadForm').dataset.confirmed='';
-  showWarn();
+  var fd=new FormData(); fd.append('target', v);
+  fetch('/check',{method:'POST',body:fd}).then(r=>r.json()).then(d=>{
+    if(!d.valid){ input.setCustomValidity(d.error||'URL does not resolve'); input.reportValidity(); input.setCustomValidity(''); return; }
+    document.getElementById('shortenForm').dataset.confirmed='1';
+    document.getElementById('uploadForm').dataset.confirmed='';
+    showWarn();
+  }).catch(()=>{ input.setCustomValidity('Could not verify URL'); input.reportValidity(); input.setCustomValidity(''); });
 }
 function tryUpload(){
   var f=document.getElementById('uploadForm');

@@ -3,6 +3,8 @@ import sqlite3
 import secrets
 import string
 import time
+import socket
+from urllib.parse import urlparse
 from flask import Flask, request, redirect, abort, render_template, jsonify, url_for
 
 BASE_DIR = os.environ.get("LINK_DB_DIR", "/data")
@@ -85,6 +87,30 @@ def not_found(e):
     if request.path.startswith("/api/") or request.path.startswith("/share/"):
         return jsonify(error="not found"), 404
     return e
+
+
+def resolves(url):
+    """Check if the URL's hostname resolves via DNS."""
+    try:
+        host = urlparse(url).hostname
+        if not host:
+            return False
+        socket.getaddrinfo(host, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        return True
+    except (socket.gaierror, Exception):
+        return False
+
+
+@app.route("/check", methods=["POST"])
+def check_url():
+    target = (request.form.get("target") or "").strip()
+    if not target:
+        return jsonify(valid=False, error="target is required"), 400
+    if not target.startswith(("http://", "https://")):
+        target = "https://" + target
+    if not resolves(target):
+        return jsonify(valid=False, error="URL does not resolve"), 422
+    return jsonify(valid=True)
 
 
 @app.route("/", methods=["GET", "POST"])
