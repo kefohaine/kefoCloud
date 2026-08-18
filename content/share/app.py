@@ -90,7 +90,7 @@ def not_found(e):
 
 
 def resolves(url):
-    """Check if the URL's hostname resolves via DNS."""
+    """Check if the URL's hostname resolves via DNS. Always tests https://."""
     try:
         host = urlparse(url).hostname
         if not host:
@@ -101,13 +101,20 @@ def resolves(url):
         return False
 
 
+def normalize_target(target):
+    """Prepend https:// if no scheme present."""
+    target = target.strip()
+    if not target.startswith(("http://", "https://")):
+        target = "https://" + target
+    return target
+
+
 @app.route("/check", methods=["POST"])
 def check_url():
     target = (request.form.get("target") or "").strip()
     if not target:
         return jsonify(valid=False, error="target is required"), 400
-    if not target.startswith(("http://", "https://")):
-        target = "https://" + target
+    target = normalize_target(target)
     if not resolves(target):
         return jsonify(valid=False, error="URL does not resolve"), 422
     return jsonify(valid=True)
@@ -121,10 +128,9 @@ def index():
     target = (request.form.get("target") or "").strip()
     if not target:
         return render_template("public.html", short=None, error="target is required"), 400
-    if not target.startswith(("http://", "https://")):
-        target = "https://" + target
+    target = normalize_target(target)
     if not resolves(target):
-        return render_template("public.html", short=None, error="URL does not resolve"), 422
+        return render_template("public.html", short=None, error="URL does not resolve", dns_error=True), 422
     slug = gen_slug()
     conn = db()
     try:
@@ -200,8 +206,7 @@ def admin_create():
         return render_template("admin.html", links=all_rows(), error="slug must be 1-64 alnum/-/_"), 400
     if not target:
         return render_template("admin.html", links=all_rows(), error="target is required"), 400
-    if not target.startswith(("http://", "https://")):
-        target = "https://" + target
+    target = normalize_target(target)
     if not resolves(target):
         return render_template("admin.html", links=all_rows(), error="URL does not resolve"), 422
 
