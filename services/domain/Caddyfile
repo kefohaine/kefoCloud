@@ -39,8 +39,13 @@ http:// {
 
 https://www.jehpok.com {
     import tls_keys
-    root * /srv/content/domain/www
-    import serve_static
+    request_body {
+        max_size 100m
+    }
+    header {
+        import security_headers
+    }
+    reverse_proxy homer:8080
 }
 
 https://vps.jehpok.com {
@@ -147,4 +152,17 @@ https://cloud.jehpok.com {
         import security_headers
     }
     file_server
+}
+
+# ── Uptime Kuma (status monitor) ──────────────────────────────────────────
+
+https://status.jehpok.com {
+    import tls_keys
+    request_body {
+        max_size 100m
+    }
+    header {
+        import security_headers
+    }
+    reverse_proxy kuma:3001
 }
