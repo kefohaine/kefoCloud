@@ -1,5 +1,8 @@
 {
     admin off
+    log {
+        output file /dev/null
+    }
 }
 
 # ── snippets ────────────────────────────────────────────────────────────────
@@ -129,10 +132,6 @@ https://vault.jehpok.com {
 
 https://cloud.jehpok.com {
     import tls_keys
-    log {
-        output stdout
-        format json
-    }
     root * /nextcloud
     request_body {
         max_size 100m
