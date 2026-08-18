@@ -59,6 +59,11 @@ https://vps.jehpok.com {
     handle @share {
         reverse_proxy share:5000
     }
+    @terminal path /terminal /terminal/*
+    handle @terminal {
+        uri strip_prefix /terminal
+        reverse_proxy terminal:7681
+    }
     handle {
         @root path /
         respond @root "ok"
