@@ -83,10 +83,10 @@ setup-host:
 >sudo cp $(REPO)/setup/dnsmasq/10-tailnet.conf /etc/dnsmasq.d/10-tailnet.conf
 >sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
 >sudo cp $(REPO)/setup/dnsmasq/dnsmasq.service.conf /etc/systemd/system/dnsmasq.service.d/override.conf
->sudo cp $(REPO)/setup/daily.sh /usr/local/bin/jehpok-daily.sh
+>sudo cp $(REPO)/setup/maintenance/daily.sh /usr/local/bin/jehpok-daily.sh
 >sudo chmod +x /usr/local/bin/jehpok-daily.sh
->sudo cp $(REPO)/setup/daily.service /etc/systemd/system/jehpok-daily.service
->sudo cp $(REPO)/setup/daily.timer /etc/systemd/system/jehpok-daily.timer
+>sudo cp $(REPO)/setup/maintenance/daily.service /etc/systemd/system/jehpok-daily.service
+>sudo cp $(REPO)/setup/maintenance/daily.timer /etc/systemd/system/jehpok-daily.timer
 >sudo touch /var/log/jehpok-daily.log
 >sudo chown debian:debian /var/log/jehpok-daily.log
 >sudo systemctl daemon-reload
