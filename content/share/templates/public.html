@@ -100,7 +100,12 @@ function tryShorten(){
 }
 function tryUpload(){
   var f=document.getElementById('uploadForm');
-  if(!f.querySelector('input[type=file]').checkValidity()){ f.querySelector('input[type=file]').reportValidity(); return; }
+  var input=f.querySelector('input[type=file]');
+  if(!input.checkValidity()){ input.reportValidity(); return; }
+  if(input.files[0] && input.files[0].size > 104857600){
+    document.getElementById('sizeOverlay').classList.add('show');
+    return;
+  }
   document.getElementById('uploadForm').dataset.confirmed='1';
   document.getElementById('shortenForm').dataset.confirmed='';
   showWarn();
