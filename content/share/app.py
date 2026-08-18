@@ -123,8 +123,8 @@ def check_url():
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "GET":
-        return render_template("public.html", short=None, error=None)
-    # POST — create a short link from the public form (auto-slug only).
+        short = request.args.get("s")
+        return render_template("public.html", short=short, error=None)
     target = (request.form.get("target") or "").strip()
     if not target:
         return render_template("public.html", short=None, error="target is required"), 400
@@ -144,7 +144,7 @@ def index():
         return render_template("public.html", short=None, error="slug collision, retry"), 503
     conn.close()
     host = request.host
-    return render_template("public.html", short=f"https://{host}/{slug}", error=None)
+    return redirect(f"/?s=https://{host}/{slug}", code=303)
 
 
 @app.route("/upload", methods=["POST"])
@@ -181,7 +181,7 @@ def upload_file():
         os.remove(dest)
         return render_template("public.html", short=None, error="slug collision, retry"), 503
     conn.close()
-    return render_template("public.html", short=f"https://{host}/{slug}", error=None)
+    return redirect(f"/?s=https://{host}/{slug}", code=303)
 
 
 @app.route("/share", methods=["GET"])
