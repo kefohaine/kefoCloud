@@ -60,6 +60,11 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 - **Fix**: `systemctl stop ollama` when not in use; `systemctl start ollama` before use.
 - **Why approval**: operator convenience trade-off (cold start latency vs. idle RAM).
 
+### Nextcloud Talk: no High-performance backend, no Client Push
+- **File**: `services/cloud/docker-compose.yml` (or new compose for HPB + push proxy)
+- **Problem**: Talk scales only to ~3 participants without an HPB container; Client Push proxy absent → delayed notifications. Currently a low-impact warning; grows if Talk is used.
+- **Fix**: Add a Talk HPB container on `net` + the `nextcloud-talk-hpb` image, set `TURN_SERVER` / `SIGNALING_*` env; install `nextcloud_announcements` or a separate push proxy. Both are out-of-scope unless Talk calls become a real use case.
+
 ---
 
 ## Solved (kept for history)
@@ -106,3 +111,7 @@ Tracked for follow-up. Categorized by goal. Items marked **[needs human approval
 - **Nextcloud bind mount fixed** — `datadirectory` moved to `/data`, no nesting.
 - **`link.jehpok.com` admin leak closed** — Caddy `@admin` matcher returns 404 for `/link`, `/api/*`, `/healthz`, `/` on public vhost; admin still reachable via `vps.jehpok.com/link`.
 - **Cloudflare 100 MB body cap aligned** — all vhosts `max_size 100m` to match CF free-tier; inconsistent 10G on cloud vhost removed.
+- **Nextcloud `maintenance_window_start`** — set to `4` (04:00) so heavy background jobs don't run during peak.
+- **Nextcloud DB missing indices** — `mail_*` table indices added via `occ db:add-missing-indices`.
+- **Nextcloud mimetype migrations** — applied via `occ maintenance:repair --include-expensive`.
+- **Nextcloud `TRUSTED_PROXIES` expanded** — added all 15 Cloudflare edge ranges so real client IPs reach Nextcloud.
