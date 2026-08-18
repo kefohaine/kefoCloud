@@ -4,9 +4,9 @@
 REPO := /var/www/github/jehpok.com/repo
 COMPOSE := docker compose -f
 
-.PHONY: up-domain up-cloud up-share up-vault up-kuma up-homer up-all
-.PHONY: restart-domain restart-cloud restart-share restart-vault restart-kuma restart-homer restart-dns
-.PHONY: logs-domain logs-cloud logs-share logs-vault logs-kuma logs-homer logs-dns
+.PHONY: up-domain up-cloud up-share up-vault up-kuma up-homer up-terminal up-all
+.PHONY: restart-domain restart-cloud restart-share restart-vault restart-kuma restart-homer restart-terminal restart-dns
+.PHONY: logs-domain logs-cloud logs-share logs-vault logs-kuma logs-homer logs-terminal logs-dns
 .PHONY: status push backup-cloud backup-share backup-vault clean setup-host
 
 up-domain:
@@ -27,7 +27,10 @@ up-kuma:
 up-homer:
 >$(COMPOSE) $(REPO)/services/homer/docker-compose.yml up -d --force-recreate
 
-up-all: up-share up-domain up-cloud up-vault up-kuma up-homer
+up-terminal:
+>$(COMPOSE) $(REPO)/services/terminal/docker-compose.yml up -d --force-recreate
+
+up-all: up-share up-domain up-cloud up-vault up-kuma up-homer up-terminal
 
 restart-domain:
 >$(COMPOSE) $(REPO)/services/domain/docker-compose.yml restart domain
@@ -46,6 +49,9 @@ restart-kuma:
 
 restart-homer:
 >$(COMPOSE) $(REPO)/services/homer/docker-compose.yml restart homer
+
+restart-terminal:
+>$(COMPOSE) $(REPO)/services/terminal/docker-compose.yml restart terminal
 
 restart-dns:
 >sudo systemctl restart dnsmasq
@@ -67,6 +73,9 @@ logs-kuma:
 
 logs-homer:
 >docker logs homer --tail 50 -f
+
+logs-terminal:
+>docker logs terminal --tail 50 -f
 
 logs-dns:
 >sudo journalctl -u dnsmasq -n 50 -f
@@ -135,7 +144,7 @@ migrate:
 >@echo "   make backup-cloud    # snapshot Nextcloud data"
 >@echo "   make backup-share    # snapshot shortener DB"
 >@echo "   make backup-vault    # snapshot Vaultwarden data"
->@echo "   make backup-secrets  # bundle certs, keys, Tailscale state"
+>@echo "   make backup-secrets  # bundle certs, keys, Tailscale state, terminal key"
 >@echo ""
 >@echo "2. Download these OFF the old VPS:"
 >@echo "   /var/www/github/jehpok.com/secrets-backup/secrets-*.tar.gz"
@@ -153,6 +162,8 @@ migrate:
 >@echo "   sudo tar xzf secrets-*.tar.gz -C /"
 >@echo "   sudo chown -R debian:debian /home/debian/.ssh"
 >@echo "   sudo chmod 600 /home/debian/.ssh/github_key"
+>@echo "   # browser user + terminal key are restored by the secrets tarball;"
+>@echo "   # setup-host re-runs browser-user.sh (no-op if already in place)."
 >@echo ""
 >@echo "   # restore Nextcloud data:"
 >@echo "   sudo mkdir -p /var/www/github/jehpok.com/cloud/html /var/www/github/jehpok.com/cloud/users"
