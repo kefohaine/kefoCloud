@@ -38,7 +38,7 @@ Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Six publ
                              └──────────────┘
 ```
 
-One VPS, one host. Cloudflare fronts six of the seven hostnames; the Tailscale-only hostname is invisible on the public internet. Deliberate non-public behaviours (`ops.jehpok.com` being unreachable off the tailnet, Cloudflare Bot Fight Mode blocking `curl`/desktop sync, the retired cheyou page) are documented under `Intended` in `docs/ISSUES.md` so future agents don't "correct" them.
+One VPS, one host. Cloudflare fronts six of the seven hostnames; the Tailscale-only hostname is invisible on the public internet. Deliberate non-public behaviours (`ops.jehpok.com` being unreachable off the tailnet, Cloudflare Bot Fight Mode blocking `curl`/desktop sync) are documented under `Intended` in `docs/ISSUES.md` so future agents don't "correct" them.
 
 ## Domains and access model
 

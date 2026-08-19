@@ -102,12 +102,6 @@ Looks like: Cloudflare rejects `curl`/scripts hitting `api.jehpok.com` with a 40
 ### `share.jehpok.com/share`-style paths return `not found` instead of redirecting to `ops.jehpok.com/share`
 Looks like: the link shortener admin UI is unreachable from `share.jehpok.com/share`. Reality: the public vhost hides `/share`, `/api/*`, and `/healthz` via a Caddy `@admin` matcher returning 404, because admin has no app-level auth and the public side shouldn't leak its existence. Admin lives at `ops.jehpok.com/share`, which is tailnet-only.
 
-### `www.jehpok.com` shows a dashboard, not the previous cheyou anniversary page
-Looks like: the historical cheyou page is gone. Reality: it was retired when the static-files vhost was replaced by the Homer dashboard.
-
-### `content/domain/www/` is gone from the repo
-Looks like: a previously committed directory was deleted. Reality: it served the retired cheyou page only. With the static-files vhost gone, no path references it.
-
 ---
 
 ## Solved
@@ -145,7 +139,7 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Deploy/ops helper scripts** — covered by the Makefile recipes.
 - **System made fully recoverable** — `backup-secrets` + `migrate` recipes, README runbook.
 - **Reference configs in repo** — Ollama unit + SSH hardening copied under `setup/`.
-- **Cheyenne anniversary page** — FR, Spotify embed, countdown, styled.
+- **Static landing page** — FR, Spotify embed, countdown, styled; served from the static `www` vhost before Homer replaced it.
 - **Nextcloud bind mount split** — `cloud/html` (root) + `cloud/users` (datadirectory).
 - **`.md` writing rules** — 10 rules added to AGENTS.md; README deduped (328→271 lines).
 - **Docs reorganized** — AGENTS.md + ISSUES.md moved to `docs/`; README stays at root.
@@ -160,7 +154,7 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Nextcloud DB missing indices** — `mail_*` table indices added via `occ db:add-missing-indices`.
 - **Nextcloud mimetype migrations** — applied via `occ maintenance:repair --include-expensive`.
 - **Nextcloud `TRUSTED_PROXIES` expanded** — added all 15 Cloudflare edge ranges so real client IPs reach Nextcloud.
-- **Homer + Uptime Kuma added** — `www.jehpok.com` serves Homer (cheyou page retired); `kuma.jehpok.com` serves Uptime Kuma; both reverse-proxied via Caddy, no published ports.
+- **Homer + Uptime Kuma added** — `www.jehpok.com` serves Homer (static landing page retired); `kuma.jehpok.com` serves Uptime Kuma; both reverse-proxied via Caddy, no published ports.
 - **Docs split into four** — `README.md` (visitor), `docs/AGENTS.md` (portable agent rules), `docs/GUIDE.md` (project operator guide), `docs/ISSUES.md` (task tracker + Intended section).
 - **Log tightening** — Caddy global `log -> /dev/null` (no per-request access logs); dnsmasq `log-queries` removed; `share` container cap raised to 10m×3 to match the other 5.
 - **`ops.jehpok.com/terminal`** — ttyd-backed host shell; bind-mounts `/` rw + Docker socket; container `privileged`, runs as the host path-aware bash from `/var/www/custom/projects/jehpok/repo`.
