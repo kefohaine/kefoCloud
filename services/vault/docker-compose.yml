@@ -12,7 +12,7 @@ services:
       ROCKET_PORT: "80"
 
     volumes:
-      - /var/www/github/jehpok.com/vault/data:/data
+      - /var/www/custom/projects/jehpok/vault/data:/data
 
     expose:
       - "80"
