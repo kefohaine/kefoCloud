@@ -142,7 +142,7 @@ https://cloud.jehpok.com {
         max_size 100m
     }
     @blocked path /data/* /config/* /lib/* /3rdparty/* /templates/* /occ /console.php /db/* /updater/*
-    respond @blocked 404
+    respond @blocked "not found" 404
     redir /.well-known/carddav /remote.php/dav 301
     redir /.well-known/caldav /remote.php/dav 301
     php_fastcgi cloud:9000 {
