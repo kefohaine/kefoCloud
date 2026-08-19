@@ -139,7 +139,16 @@ clean:
 maintain:
 >sudo apt-get update
 >sudo apt-get upgrade -y
->@for f in $(REPO)/repo/services/*/docker-compose.yml; do $(COMPOSE) "$$f" pull; done
+># Pull service images. Skip services with a `build:` block — those
+>are built locally by their `up-<svc>` recipe (which uses --build)
+>and don't exist on a registry.
+>@for f in $(REPO)/repo/services/*/docker-compose.yml; do \
+    if grep -qE '^[[:space:]]*build:' "$$f"; then \
+      echo "skip pull (built locally): $$f"; \
+    else \
+      $(COMPOSE) "$$f" pull; \
+    fi; \
+  done
 >cd $(REPO)/repo && $(MAKE) up-all
 
 install-ttyd:
