@@ -22,6 +22,24 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### Security
 
+#### `ufw` status command broken on host
+- **File**: `/usr/sbin/ufw` (host package)
+- **Problem**: `sudo ufw status` returns `ERROR: Couldn't determine iptables version`. The UFW rules are still loaded (ttyd port allow from `172.22.0.0/16`, etc.) but status inspection fails — agents can't verify firewall state.
+- **Fix**: Investigate root cause (likely `iptables`/`nftables` backend mismatch — Debian 12+ defaults to nft, UFW expects iptables-legacy). Either install `iptables-legacy` + `iptables-nft` both, or migrate to `nftables` directly, or pin `ufw` to the legacy backend via `update-alternatives`.
+- **Why approval**: touches host firewall tooling; operator should decide path.
+
+#### `fail2ban` installed but inactive
+- **File**: host package `fail2ban`
+- **Problem**: `fail2ban` is on the host but `systemctl is-active` returns `inactive`. No ban jail is protecting SSH even though sshd is hardened — defense-in-depth gap.
+- **Fix**: `systemctl enable --now fail2ban` + configure an SSH jail (filter `/etc/fail2ban/jail.d/sshd.conf` with `enabled = true`, `maxretry = 5`, `bantime = 1h`). Verify with `fail2ban-client status sshd`.
+- **Why approval**: needs a decision on retry threshold and ban duration; affects SSH UX for the operator.
+
+#### Tailscale tailnet has 2 stale devices  **[needs human approval]**
+- **File**: Tailscale admin console (outside repo)
+- **Problem**: `kaliusb` (linux, 18d offline) and `iosphone` (iOS, 6h offline) are still registered in the tailnet. `kaliusb` is a Kali USB stick — likely a forensic / on-demand tool, not a daily driver. Stale devices widen the ACL blast radius.
+- **Fix**: In Tailscale admin console, remove `kaliusb` and `iosphone`. Or rename and tag if they are still in active use.
+- **Why approval**: outside the repo; operator must decide which devices stay.
+
 #### `ops.jehpok.com` has no auth beyond Tailscale membership  **[needs human approval]**
 - **File**: `services/domain/Caddyfile` (`https://ops.jehpok.com`)
 - **Problem**: Any tailnet device can reach `ops.jehpok.com` with no authentication. DNS-obscurity is the only access control — the link shortener admin UI at `/share` and the host ttyd shell at `/server` (a host systemd unit running as `debian` with full host control) both sit behind `@not_tailnet` and nothing else.
