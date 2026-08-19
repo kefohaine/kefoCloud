@@ -53,7 +53,7 @@ make setup-host        # install reference configs to live paths and enable Olla
 make install-ttyd      # install the ttyd binary at /usr/local/bin/ttyd (idempotent — skips if already present)
 make restore-claude-settings # copy setup/claude/settings.local.json into .claude/settings.local.json (gitignored)
 make clean             # free disk/RAM now: prune builder/image/container + apt autoremove + apt clean
-make update            # full refresh: apt update/upgrade + make clean + pull images + make up-all
+make maintain          # refresh: apt update/upgrade + pull all images + make up-all (then run `make clean` to prune)
 make migrate           # print the full VPS-to-VPS migration runbook
 ```
 
@@ -107,7 +107,7 @@ When you need to know "what does X do / where do I edit Y", read the file at the
 
 ## Daily maintenance
 
-A systemd timer (`jehpok-daily.timer`, enabled) runs the script in `setup/maintenance/daily.sh` once per day: `make update` (apt + prune + image pull + `make up-all`), then `make backup-cloud`, then `make backup-share`. Run manually with `sudo systemctl start jehpok-daily.service`. Logs to `/var/log/jehpok-daily.log`.
+A systemd timer (`jehpok-daily.timer`, enabled) runs the script in `setup/maintenance/daily.sh` once per day: `make maintain` (apt + image pull + `make up-all`), then `make clean` (prune), then `make backup-cloud`, then `make backup-share`. Run manually with `sudo systemctl start jehpok-daily.service`. Logs to `/var/log/jehpok-daily.log`.
 
 ## File ownership
 

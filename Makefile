@@ -7,7 +7,7 @@ COMPOSE := docker compose -f
 .PHONY: up-domain up-cloud up-share up-vault up-kuma up-homer up-all
 .PHONY: restart-domain restart-cloud restart-share restart-vault restart-kuma restart-homer restart-dns restart-ttyd
 .PHONY: logs-domain logs-cloud logs-share logs-vault logs-kuma logs-homer logs-dns logs-ttyd
-.PHONY: status push backup-cloud backup-share backup-vault backup-secrets restore-claude-settings clean update install-ttyd setup-host
+.PHONY: status push backup-cloud backup-share backup-vault backup-secrets restore-claude-settings clean maintain install-ttyd setup-host
 
 up-domain:
 >$(COMPOSE) $(REPO)/repo/services/domain/docker-compose.yml up -d --force-recreate
@@ -136,7 +136,7 @@ clean:
 >sudo apt-get autoremove -y
 >sudo apt-get clean
 
-update: clean
+maintain:
 >sudo apt-get update
 >sudo apt-get upgrade -y
 >@for f in $(REPO)/repo/services/*/docker-compose.yml; do $(COMPOSE) "$$f" pull; done
