@@ -25,6 +25,10 @@ services:
     volumes:
       - /:/host:rw
       - /var/run/docker.sock:/var/run/docker.sock:rw
+      # Bind host SSH dir so git push/pull works inside the container using
+      # the host's deploy key. Read-only — the container should never write
+      # to /home/debian/.ssh.
+      - /home/debian/.ssh:/root/.ssh:ro
 
     healthcheck:
       # The ttyd image (Alpine, minimal) ships no wget/curl/nc. Use bash's
