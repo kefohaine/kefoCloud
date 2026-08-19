@@ -49,7 +49,9 @@ make backup-cloud      # snapshot Nextcloud data (maintenance mode on during the
 make backup-share      # copy the shortener SQLite DB to /var/www/custom/projects/jehpok/share-backup-<date>.db
 make backup-vault      # tar the Vaultwarden data dir to /var/www/custom/projects/jehpok/vault-backup-<date>.tar.gz
 make backup-secrets    # bundle certs, SSH keys, Ollama + ttyd units, dnsmasq config, and Tailscale state for off-VPS storage
-make setup-host        # install reference configs to live paths and enable Ollama + ttyd + sshd + dnsmasq + daily maintenance timer
+make setup-host        # install reference configs to live paths and enable Ollama + ttyd + sshd + dnsmasq + daily maintenance timer + restore Claude settings
+make install-ttyd      # install the ttyd binary at /usr/local/bin/ttyd (idempotent — skips if already present)
+make restore-claude-settings # copy setup/claude/settings.local.json into .claude/settings.local.json (gitignored)
 make migrate           # print the full VPS-to-VPS migration runbook
 make clean             # free disk: prune the Docker build cache and clear the apt cache
 ```

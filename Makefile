@@ -7,7 +7,7 @@ COMPOSE := docker compose -f
 .PHONY: up-domain up-cloud up-share up-vault up-kuma up-homer up-all
 .PHONY: restart-domain restart-cloud restart-share restart-vault restart-kuma restart-homer restart-dns restart-ttyd
 .PHONY: logs-domain logs-cloud logs-share logs-vault logs-kuma logs-homer logs-dns logs-ttyd
-.PHONY: status push backup-cloud backup-share backup-vault backup-secrets clean setup-host
+.PHONY: status push backup-cloud backup-share backup-vault backup-secrets restore-claude-settings clean install-ttyd setup-host
 
 up-domain:
 >$(COMPOSE) $(REPO)/repo/services/domain/docker-compose.yml up -d --force-recreate
@@ -115,11 +115,27 @@ backup-secrets:
 >@echo "Secrets bundle at $(REPO)/secrets-backup/secrets-$$(date +%Y%m%d).tar.gz"
 >@echo "Download this file OFF the VPS. It contains private keys and Tailscale identity."
 
+restore-claude-settings:
+>mkdir -p $(REPO)/repo/.claude
+>cp $(REPO)/repo/setup/claude/settings.local.json $(REPO)/repo/.claude/settings.local.json
+>@echo "Restored $(REPO)/repo/.claude/settings.local.json from setup/claude/"
+
 clean:
 >docker builder prune -af
 >sudo apt-get clean
 
-setup-host:
+install-ttyd:
+>if ! command -v ttyd >/dev/null 2>&1; then \
+  echo "Installing ttyd..."; \
+  curl -fsSL -o /tmp/ttyd.tar.gz https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64-linux-gnu-static.tar.gz; \
+  tar xzf /tmp/ttyd.tar.gz -C /tmp ttyd; \
+  sudo install -m 0755 /tmp/ttyd /usr/local/bin/ttyd; \
+  rm -f /tmp/ttyd /tmp/ttyd.tar.gz; \
+else \
+  echo "ttyd already installed at $$(command -v ttyd)"; \
+fi
+
+setup-host: install-ttyd
 >sudo cp $(REPO)/repo/setup/ollama/ollama.service /etc/systemd/system/ollama.service
 >sudo cp $(REPO)/repo/setup/ssh/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf
 >sudo cp $(REPO)/repo/setup/dnsmasq/10-tailnet.conf /etc/dnsmasq.d/10-tailnet.conf
@@ -131,20 +147,15 @@ setup-host:
 >sudo cp $(REPO)/repo/setup/maintenance/daily.timer /etc/systemd/system/jehpok-daily.timer
 >sudo touch /var/log/jehpok-daily.log
 >sudo chown debian:debian /var/log/jehpok-daily.log
-># ttyd — web terminal at ops.jehpok.com/terminal (host systemd, not Docker)
->if ! command -v ttyd >/dev/null 2>&1; then \
-  echo "Installing ttyd..."; \
-  curl -fsSL -o /tmp/ttyd.tar.gz https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64-linux-gnu-static.tar.gz; \
-  tar xzf /tmp/ttyd.tar.gz -C /tmp ttyd; \
-  sudo install -m 0755 /tmp/ttyd /usr/local/bin/ttyd; \
-  rm -f /tmp/ttyd /tmp/ttyd.tar.gz; \
-fi
 >sudo cp $(REPO)/repo/setup/ttyd/ttyd.service /etc/systemd/system/ttyd.service
+># Claude Code local settings — operator allow-list, gitignored at .claude/
+>mkdir -p $(REPO)/repo/.claude
+>cp -n $(REPO)/repo/setup/claude/settings.local.json $(REPO)/repo/.claude/settings.local.json
 >sudo ufw allow from 172.22.0.0/16 to any port 7681 proto tcp
 >sudo systemctl daemon-reload
 >sudo systemctl enable --now ollama jehpok-daily.timer ttyd
 >sudo systemctl restart sshd dnsmasq
->@echo "Host setup complete: Ollama enabled, SSH hardened, dnsmasq resolver installed, daily maintenance timer enabled, ttyd web terminal enabled."
+>@echo "Host setup complete: Ollama + ttyd + dnsmasq + sshd + daily maintenance timer enabled, Claude settings restored."
 
 migrate:
 >@echo "=== Full migration to a new VPS ==="
