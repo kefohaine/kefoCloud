@@ -35,19 +35,21 @@ Manual — no CI/CD, pushes to `main` trigger nothing. Use the `Makefile` recipe
 ### CMD Sheet
 
 ```bash
-make up-all            # start/recreate all seven containers in order (share, domain, cloud, vault, kuma, homer, terminal)
-make up-<service>      # force-recreate one container — up-domain | up-cloud | up-share | up-vault | up-kuma | up-homer | up-terminal
+make up-all            # start/recreate all six containers in order (share, domain, cloud, vault, kuma, homer)
+make up-<service>      # force-recreate one container — up-domain | up-cloud | up-share | up-vault | up-kuma | up-homer
 make restart-<service> # reload one container without recreating — after editing a mounted config
 make restart-dns       # restart the host dnsmasq resolver — after editing setup/dnsmasq/10-tailnet.conf
-make logs-<service>    # follow one container's logs — logs-domain | logs-cloud | logs-share | logs-vault | logs-kuma | logs-homer | logs-terminal
+make restart-ttyd      # restart the host ttyd service — after editing setup/ttyd/ttyd.service
+make logs-<service>    # follow one container's logs — logs-domain | logs-cloud | logs-share | logs-vault | logs-kuma | logs-homer
 make logs-dns          # follow the dnsmasq journal
-make status            # show a table of all running containers
+make logs-ttyd         # follow the ttyd journal
+make status            # show a table of all running containers + host systemd units
 make push MSG="..."    # stage, commit, and push to the jehpok.com remote
 make backup-cloud      # snapshot Nextcloud data (maintenance mode on during the copy)
 make backup-share      # copy the shortener SQLite DB to /var/www/custom/projects/jehpok/share-backup-<date>.db
 make backup-vault      # tar the Vaultwarden data dir to /var/www/custom/projects/jehpok/vault-backup-<date>.tar.gz
-make backup-secrets    # bundle certs, SSH keys, Ollama unit, dnsmasq config, and Tailscale state for off-VPS storage
-make setup-host        # install reference configs to live paths and enable Ollama + sshd + dnsmasq + daily maintenance timer
+make backup-secrets    # bundle certs, SSH keys, Ollama + ttyd units, dnsmasq config, and Tailscale state for off-VPS storage
+make setup-host        # install reference configs to live paths and enable Ollama + ttyd + sshd + dnsmasq + daily maintenance timer
 make migrate           # print the full VPS-to-VPS migration runbook
 make clean             # free disk: prune the Docker build cache and clear the apt cache
 ```
@@ -57,6 +59,7 @@ make clean             # free disk: prune the Docker build cache and clear the a
 **Never delete or disable any of these without explicit operator approval.** Per `docs/AGENTS.md` safety rule 1, if a task seems to require removing any of them, stop and ask.
 
 - `/etc/systemd/system/ollama.service` — Ollama systemd unit (`enabled`, `Restart=always`).
+- `/etc/systemd/system/ttyd.service` — ttyd web-terminal unit (`enabled`, `Restart=always`). Binds `0.0.0.0:7681`, gated by the Caddy tailnet match and the UFW INPUT allow from the `net` bridge.
 - `/etc/dnsmasq.d/10-tailnet.conf` and `/etc/systemd/system/dnsmasq.service.d/override.conf` — host DNS resolver + systemd drop-in (`Restart=always`).
 - `/var/www/custom/projects/jehpok/certs/` — Cloudflare Origin cert + key (wildcard `*.jehpok.com`).
 - `/var/www/custom/projects/jehpok/cloud/html/` and `/var/www/custom/projects/jehpok/cloud/users/` — Nextcloud bind mounts (html root + datadirectory; both owned by uid 33 with a `.ncdata` marker in `users/`).
@@ -79,7 +82,7 @@ The compose files are the source of truth. This table is the one-line reference 
 | vault    | `services/vault/docker-compose.yml`     | `vault`   | `make restart-vault`         | `make up-vault`              |
 | kuma     | `services/kuma/docker-compose.yml`      | `kuma`    | `make restart-kuma`          | `make up-kuma`               |
 | homer    | `services/homer/docker-compose.yml`     | `homer`   | `make restart-homer`         | `make up-homer`              |
-| terminal | `services/terminal/docker-compose.yml`  | `terminal`| `make restart-terminal`      | `make up-terminal`           |
+| terminal | n/a (host systemd; see Protected host resources) | n/a | `make restart-ttyd`          | `make setup-host` (reinstall) |
 | dnsmasq  | n/a (host systemd)                      | n/a       | `make restart-dns`           | n/a                          |
 | ollama   | n/a (host systemd; see Protected host resources) | n/a | `systemctl restart ollama`   | n/a                          |
 
@@ -95,7 +98,7 @@ When you need to know "what does X do / where do I edit Y", read the file at the
 - **`vault`** — env, bind mount, admin token: `services/vault/docker-compose.yml`.
 - **`kuma`** — image, bind mount, healthcheck: `services/kuma/docker-compose.yml`. Monitor definitions live in Kuma's SQLite, edited via the UI on first run.
 - **`homer`** — dashboard YAML: `services/homer/config/config.yml` (in-repo, bind-mounted live). Homer doesn't auto-reload: edit the YAML, then `make restart-homer` and refresh the browser.
-- **`terminal`** — ttyd at `ops.jehpok.com/terminal`; compose + Dockerfile: `services/terminal/`. The container bind-mounts `/` (host root) as `/host` and the Docker socket, runs `runuser -u debian -- bash` with the host's PATH and cwd `…/repo`. No sshd change, no auth — Tailscale-only like the rest of `ops.jehpok.com`. Container is Alpine (musl); for host glibc binaries (e.g. `smem`, `sudo`, the docker compose plugin), use the in-container `host-exec '<cmd>'` shim, which `chroot`s to `/host` and runs the command under the host shell. **All `make *` recipes must be run via `host-exec 'make ...'`** from inside the terminal — the docker compose plugin is glibc and the Alpine loader can't parse its flags.
+- **`terminal`** — ttyd at `ops.jehpok.com/terminal`, runs as a host systemd unit (not a container). Binary at `/usr/local/bin/ttyd`, unit at `/etc/systemd/system/ttyd.service` (reference copy in `setup/ttyd/`). Hardened systemd sandbox (`ProtectSystem=strict`, `NoNewPrivileges`, `PrivateTmp`, etc.); runs as `debian` (uid 1000) — full host control. Tailscale-only like the rest of `ops.jehpok.com`. `make setup-host` installs the binary (static 1.7.7 from upstream) and the unit, and adds the UFW INPUT allow for `172.22.0.0/16 → 7681`. Caddy proxies to the host bridge IP `172.22.0.1:7681` with `transport http { versions 1.1 }` (ttyd only speaks HTTP/1.1).
 - **dnsmasq** — config: `setup/dnsmasq/10-tailnet.conf` (live path: `/etc/dnsmasq.d/10-tailnet.conf`). systemd drop-in: `setup/dnsmasq/dnsmasq.service.conf` (live path: `/etc/systemd/system/dnsmasq.service.d/override.conf`).
 - **ollama** — unit: `setup/ollama/ollama.service` (live path: `/etc/systemd/system/ollama.service`).
 
