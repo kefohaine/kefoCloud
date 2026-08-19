@@ -7,7 +7,7 @@ Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Six publ
 ```
                    ┌─────────────────────────────────────────────┐
     Public DNS ──► │            Cloudflare (proxy)               │
-                    │  www / share / api / vault / cloud / status│
+                    │  www / share / api / vault / cloud / kuma  │
                     └──────────────┬──────────────────────────────┘
                                    │ HTTPS (Origin Cert)
                                    ▼
