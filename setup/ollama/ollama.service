@@ -1,5 +1,5 @@
 [Unit]
-Description=Ollama Service
+Description=Ollama LLM Support Service
 After=network-online.target
 
 [Service]
