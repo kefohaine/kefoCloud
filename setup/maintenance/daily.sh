@@ -6,7 +6,8 @@ echo "=== $(date) ===" >> "$LOG"
 
 cd /var/www/custom/projects/jehpok/repo
 
-make update >> "$LOG" 2>&1
+make maintain >> "$LOG" 2>&1
+make clean >> "$LOG" 2>&1
 make backup-cloud >> "$LOG" 2>&1 || echo "backup-cloud failed" >> "$LOG"
 make backup-share >> "$LOG" 2>&1 || echo "backup-share failed" >> "$LOG"
 
