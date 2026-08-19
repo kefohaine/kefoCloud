@@ -80,6 +80,12 @@ logs-ttyd:
 status:
 >docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
 >sudo systemctl --no-pager status ttyd dnsmasq ollama --lines=0 2>/dev/null | grep -E '●|Active'
+>@echo ""
+>@echo "--- disk ---"
+>@df -h / /var/lib/docker
+>@echo ""
+>@echo "--- memory ---"
+>@free -h
 
 push:
 >cd $(REPO)/repo && git add -A && git commit -m "$(MSG)" && git push jehpok.com main
