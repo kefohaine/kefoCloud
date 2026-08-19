@@ -48,7 +48,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 #### `ops.jehpok.com/server` gives a `debian` shell to any tailnet device  **[needs human approval]**
 - **File**: `services/domain/Caddyfile` (`https://ops.jehpok.com`)
-- **Problem**: `/server` is a host systemd unit (`ttyd.service`) running `/usr/local/bin/ttyd bash` as `debian` (uid 1000). The process is on the host, not in a container, so `sudo -i` reaches root and every host file is writable. The systemd unit is hardened (`ProtectSystem=strict`, `PrivateTmp`, etc.) but that doesn't constrain what `debian` can do once they `sudo`. Tailscale membership alone gates it.
+- **Problem**: `/server` is a host systemd unit (`ttyd.service`) running `/usr/local/bin/ttyd bash` as `debian` (uid 1000). The process is on the host, not in a container, so `sudo -i` reaches root and every host file is writable. The systemd unit has no filesystem sandbox (all `ProtectSystem`, `PrivateTmp`, etc. directives stripped — operator preference: no permission hunts). Tailscale membership alone gates it.
 - **Fix**: Add Caddy `basic_auth` on the `/server*` matcher (needs a username + bcrypt hash), or apply Tailscale ACLs to restrict which devices can reach the VPS, or restrict the container with `cap_drop` + a read-only root mount + a write whitelist.
 - **Why approval**: requires a password / ACL policy from the operator.
 
@@ -103,10 +103,10 @@ Looks like: Cloudflare rejects `curl`/scripts hitting `api.jehpok.com` with a 40
 Looks like: the link shortener admin UI is unreachable from `share.jehpok.com/share`. Reality: the public vhost hides `/share`, `/api/*`, and `/healthz` via a Caddy `@admin` matcher returning 404, because admin has no app-level auth and the public side shouldn't leak its existence. Admin lives at `ops.jehpok.com/share`, which is tailnet-only.
 
 ### `www.jehpok.com` shows a dashboard, not the previous cheyou anniversary page
-Looks like: the historical cheyou page is gone. Reality: it was retired when the static-files vhost was replaced by the Homer dashboard. The HTML is preserved at `temp/cheyou/index.html` (gitignored) if anyone ever needs to restore it.
+Looks like: the historical cheyou page is gone. Reality: it was retired when the static-files vhost was replaced by the Homer dashboard.
 
 ### `content/domain/www/` is gone from the repo
-Looks like: a previously committed directory was deleted. Reality: it served the retired cheyou page only. With the static-files vhost gone, no path references it. The page itself is in `temp/cheyou/index.html`.
+Looks like: a previously committed directory was deleted. Reality: it served the retired cheyou page only. With the static-files vhost gone, no path references it.
 
 ---
 
@@ -160,7 +160,7 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Nextcloud DB missing indices** — `mail_*` table indices added via `occ db:add-missing-indices`.
 - **Nextcloud mimetype migrations** — applied via `occ maintenance:repair --include-expensive`.
 - **Nextcloud `TRUSTED_PROXIES` expanded** — added all 15 Cloudflare edge ranges so real client IPs reach Nextcloud.
-- **Homer + Uptime Kuma added** — `www.jehpok.com` serves Homer (cheyou retired to `temp/cheyou/`); `kuma.jehpok.com` serves Uptime Kuma; both reverse-proxied via Caddy, no published ports.
+- **Homer + Uptime Kuma added** — `www.jehpok.com` serves Homer (cheyou page retired); `kuma.jehpok.com` serves Uptime Kuma; both reverse-proxied via Caddy, no published ports.
 - **Docs split into four** — `README.md` (visitor), `docs/AGENTS.md` (portable agent rules), `docs/GUIDE.md` (project operator guide), `docs/ISSUES.md` (task tracker + Intended section).
 - **Log tightening** — Caddy global `log -> /dev/null` (no per-request access logs); dnsmasq `log-queries` removed; `share` container cap raised to 10m×3 to match the other 5.
 - **`ops.jehpok.com/terminal`** — ttyd-backed host shell; bind-mounts `/` rw + Docker socket; container `privileged`, runs as the host path-aware bash from `/var/www/custom/projects/jehpok/repo`.
@@ -177,8 +177,9 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Uniform 404 format** — every Caddy-controlled 404 now returns plain text `not found` (no JSON, no HTML). Flask `not_found` handler switched from `jsonify(error=...)` to `Response("not found", mimetype="text/plain")`; cloud `@blocked` matcher now responds with body. Vaultwarden / Homer / Nextcloud 404s left as their own upstream pages.
 - **`www.jehpok.com` keeps Homer's HTML 404** — explicit operator call: upstream containers with their own 404 page (Homer, Vaultwarden, Nextcloud) keep that page; only Caddy-controlled paths (share, api, ops, cloud `@blocked`) return plain text `not found`.
 - **`make` from terminal needs `host-exec`** — the docker compose plugin at `/host/usr/libexec/docker/cli-plugins/docker-compose` is glibc-linked and fails in the Alpine ttyd container with a cryptic `unknown shorthand flag: 'f' in -f`. Run any make recipe via `host-exec 'make ...'` from inside `ops.jehpok.com/terminal`.
-- **Terminal migrated to host systemd ttyd** — `services/terminal/` removed; `ttyd.service` runs as `debian` on the host, hardened systemd sandbox, binds `0.0.0.0:7681`, gated by Caddy `@not_tailnet` + UFW INPUT allow from the `net` bridge. Caddy proxies to `172.22.0.1:7681` with `transport http { versions 1.1 }`. `host-exec` / `runuser` shims are gone — the shell is a real host shell directly.
+- **Terminal migrated to host systemd ttyd** — `services/terminal/` removed; `ttyd.service` runs as `debian` on the host, binds `172.22.0.1:7681` (not `0.0.0.0`), gated by Caddy `@not_tailnet` + UFW INPUT allow from the `net` bridge. Caddy proxies to `172.22.0.1:7681` with `transport http { versions 1.1 }`. `host-exec` / `runuser` shims are gone — the shell is a real host shell directly.
 - **`ops.jehpok.com/terminal` → `ops.jehpok.com/server`** — URL renamed; Caddy `@server` matcher at `/server*`, Homer dashboard updated, README + ISSUES + GUIDE all point at `/server`. systemd unit stays `ttyd.service` (it's the runtime, not the URL).
 - **Hostname `vps-742a45f9` → `server`** — system hostname + `/etc/hosts` updated; SSH host keys regenerated so the old `root@vps-742a45f9` comment is gone from the `.pub` files; cloud-init stale state (`/var/lib/cloud/data/{previous,set}-hostname`) deleted.
 - **`debian` has passwordless sudo** — `/etc/sudoers.d/debian-passwordless` (`NOPASSWD:ALL`, mode 0440). Reduces permission prompts during normal agent operations; still requires sudo for anything privileged.
 - **Claude Code allow-list curated + backed up** — `.claude/settings.local.json` is gitignored (per-operator); tracked backup lives at `setup/claude/settings.local.json`. `make restore-claude-settings` re-applies it; `make setup-host` restores it on a fresh install. Allow-list covers ollama/maintenance commands; destructive ops still prompt.
+- **ttyd hardening removed** — `ProtectSystem`, `PrivateTmp`, `MemoryDenyWriteExecute`, `PrivateDevices`, `RestrictAddressFamilies`, `LockPersonality`, `RestrictRealtime`, `ProtectControlGroups` all stripped from `ttyd.service` (operator preference: no permission hunts); access control stays at Tailscale + `Caddy @not_tailnet`.

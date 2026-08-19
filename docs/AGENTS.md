@@ -9,11 +9,12 @@ These are non-negotiable. Follow them on every task.
 1. **Never delete or disable any critical service or file without explicit operator approval.** Each project defines its own list — see `docs/GUIDE.md` for the project-specific protected resources. Do not `systemctl stop/disable`, remove unit files, `daemon-reload` after editing, or replace host services with containers unless the operator has explicitly told you to.
 2. **Stay silent while doing tasks.** Do not narrate progress, do not print status updates, do not summarize what you just did. Run commands, edit files, and only emit text when you need a decision from the user or are reporting a blocker. Output should be minimal — the work product speaks for itself.
 3. **Push at milestones, before destructive ops, and when the prompt is done.** Before any hard-to-reverse operation (deleting files, force-recreating containers, `systemctl` changes, DB/schema changes, firewall edits), first commit and push. After reaching a milestone (feature, resolved issue, doc sync) or completing the prompt, also commit and push. Don't wait for the operator to ask. If a push fails, fix it before proceeding. When completing a big sequence of tasks, first update every `.md` file to reflect the current system state, then commit and push.
-4. **Minimize token usage.** Be extremely efficient: short, accurate, and understanding. No filler, no preamble, no restating the question, no recaps of what you just did. Batch tool calls that can run in parallel. Read only the file regions you need. Prefer one precise edit over rewriting whole sections. Answer in as few words as the task allows without sacrificing correctness.
-5. **When an issue is explicitly intended by the operator or documented as a deliberate feature/design choice, document the rationale rather than treating it as a bug.** If a behaviour is "by design", record it so future agents don't "correct" it.
-6. **Minimize web searches.** Only fetch a URL when the answer is not already in the repo or the agent's own knowledge. Prefer reading local files and reasoning over network fetches.
-7. **Never use user-facing data services for agent purposes.** Any service that hosts files or stores data for a user (a shortener, file upload, file browser, password manager, file sync, database, etc.) is user-only. Do not create records, upload files, write to databases, or store any data through these services for testing, debugging, development, or any agent-side reason. Verify changes with read-only checks (`curl`, logs, status commands) and roll back any test artifacts immediately if created by mistake.
-8. **Never read secrets, credentials, or sensitive user data.** Do not read, print, or inspect database files, password-manager data, user files, uploaded files, `.env` files, SSH private keys, TLS cert/key files, identity state, or any file containing credentials, tokens, passwords, or personal data. Reading these is a privacy violation — treat them as untouchable. If a task requires knowing a value from a secret file, ask the operator to provide it instead.
+4. **Doc maintenance is first-class work, not a cleanup step.** Updating documentation is as important as working on the repo. Every system change, refactor, or operational decision MUST be followed by a doc audit: delete stale content (rules, sections, Solved entries, Intended rationales, file paths, commands, port numbers, hardening claims, container names — anything that no longer matches reality), correct every drift between docs and the executable source (compose files, Makefile, systemd units, config files), and reorganize duplicates so each fact lives in exactly one place (the lower file in the "Boundaries between docs" list). A push that leaves stale `.md` content is the same failure mode as a push that breaks the build — both mean the agent didn't finish the job. Never treat doc updates as optional "if I have time" work; treat them as the definition of done.
+5. **Minimize token usage.** Be extremely efficient: short, accurate, and understanding. No filler, no preamble, no restating the question, no recaps of what you just did. Batch tool calls that can run in parallel. Read only the file regions you need. Prefer one precise edit over rewriting whole sections. Answer in as few words as the task allows without sacrificing correctness.
+6. **When an issue is explicitly intended by the operator or documented as a deliberate feature/design choice, document the rationale rather than treating it as a bug.** If a behaviour is "by design", record it so future agents don't "correct" it.
+7. **Minimize web searches.** Only fetch a URL when the answer is not already in the repo or the agent's own knowledge. Prefer reading local files and reasoning over network fetches.
+8. **Never use user-facing data services for agent purposes.** Any service that hosts files or stores data for a user (a shortener, file upload, file browser, password manager, file sync, database, etc.) is user-only. Do not create records, upload files, write to databases, or store any data through these services for testing, debugging, development, or any agent-side reason. Verify changes with read-only checks (`curl`, logs, status commands) and roll back any test artifacts immediately if created by mistake.
+9. **Never read secrets, credentials, or sensitive user data.** Do not read, print, or inspect database files, password-manager data, user files, uploaded files, `.env` files, SSH private keys, TLS cert/key files, identity state, or any file containing credentials, tokens, passwords, or personal data. Reading these is a privacy violation — treat them as untouchable. If a task requires knowing a value from a secret file, ask the operator to provide it instead.
 
 ## Boundaries between docs
 
@@ -40,11 +41,15 @@ When a fact fits two files, it belongs in the lower one in this list. A future a
 ## Before finishing a task
 
 1. Verify the change works using the project's verification commands (see `docs/GUIDE.md`).
-2. Update `README.md` if the architecture, request flow, or design choices changed.
-3. Update `docs/GUIDE.md` if the layout, commands, or per-service facts changed.
-4. Update or resolve items in `docs/ISSUES.md` if you fixed something listed there.
-5. Add new issues you discovered to `docs/ISSUES.md`.
-6. Commit and push (Safety rule 3).
+2. **Doc audit — mandatory, not optional (Safety rule 4).** Walk every `.md` file in the repo and apply three prongs:
+   - **Delete stale** — anything that no longer matches the running system: outdated paths, ports, container names, unit names, hardened/locked-down claims, decommissioned services, retired rationale, "currently" / "right now" snapshots that have drifted.
+   - **Correct drift** — every fact in every `.md` (commands, ports, paths, file references, env vars, behaviour claims) must match the executable source (compose files, Makefile, systemd units, Caddyfile, daily.sh). Diff docs against the source; if they disagree, the source wins and the doc is wrong.
+   - **Organize duplicates** — each fact lives in exactly one place. If a sentence appears in two files, delete the one in the higher file. If a `Solved` entry is multi-line, collapse to one line. If a section restates the README, point at the README instead.
+3. Update `README.md` if the architecture, request flow, or design choices changed.
+4. Update `docs/GUIDE.md` if the layout, commands, or per-service facts changed.
+5. Update or resolve items in `docs/ISSUES.md` if you fixed something listed there.
+6. Add new issues you discovered to `docs/ISSUES.md`.
+7. Commit and push (Safety rule 3).
 
 ## `.md` writing rules
 
