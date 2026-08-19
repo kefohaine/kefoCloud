@@ -65,7 +65,7 @@ make clean             # free disk: prune the Docker build cache and clear the a
 
 ## SSH access
 
-SSH is restricted to the Tailscale network only — the public internet cannot reach port 22. Password auth is disabled, root login is disabled, `AllowUsers debian` only. Config: `/etc/ssh/sshd_config.d/50-cloud-init.conf`. The `runner` user has no key and is not allowed.
+SSH is restricted to the Tailscale network only — the public internet cannot reach port 22. Password auth is disabled, root login is disabled, `AllowUsers debian` only. Config: `/etc/ssh/sshd_config.d/50-cloud-init.conf`.
 
 ## Service reference
 

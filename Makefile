@@ -162,8 +162,6 @@ migrate:
 >@echo "   sudo tar xzf secrets-*.tar.gz -C /"
 >@echo "   sudo chown -R debian:debian /home/debian/.ssh"
 >@echo "   sudo chmod 600 /home/debian/.ssh/github_key"
->@echo "   # browser user + terminal key are restored by the secrets tarball;"
->@echo "   # setup-host re-runs browser-user.sh (no-op if already in place)."
 >@echo ""
 >@echo "   # restore Nextcloud data:"
 >@echo "   sudo mkdir -p /var/www/custom/projects/jehpok/cloud/html /var/www/custom/projects/jehpok/cloud/users"
