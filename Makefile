@@ -85,7 +85,7 @@ status:
 >@for u in ttyd dnsmasq ollama; do printf "  %-30s %s\n" "$$u" "$$(systemctl is-active $$u)"; done
 >@echo ""
 >@echo "--- disk ---"
->@df -h / /var/lib/docker
+>@df -h /
 >@echo ""
 >@echo "--- memory ---"
 >@free -h
