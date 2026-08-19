@@ -15,7 +15,7 @@ docker image prune -af >> "$LOG" 2>&1
 docker container prune -f >> "$LOG" 2>&1
 
 echo "--- pull + recreate containers ---" >> "$LOG"
-cd /var/www/github/jehpok.com/repo
+cd /var/www/custom/projects/jehpok/repo
 
 for svc in domain cloud share vault kuma homer; do
   compose="services/$svc/docker-compose.yml"
