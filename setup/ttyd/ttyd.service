@@ -24,7 +24,11 @@ Restart=always
 RestartSec=3
 
 # Hardening: ttyd serves a shell; only allowlist what it needs.
-NoNewPrivileges=true
+# NOTE: NoNewPrivileges is intentionally OFF — ttyd gives debian an
+# interactive shell, and sudo needs setuid to elevate. With NNP the
+# kernel ignores setuid bits, so sudo fails with
+# "no new privileges flag is set". We rely on Tailscale membership
+# (Caddy @not_tailnet) for access control instead.
 ProtectSystem=strict
 ProtectHome=read-only
 PrivateTmp=true
