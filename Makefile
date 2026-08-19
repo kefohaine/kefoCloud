@@ -78,8 +78,11 @@ logs-ttyd:
 >sudo journalctl -u ttyd -n 50 -f
 
 status:
->docker ps --format 'table {{.Ports}}\t{{.Image}}\t{{.Status}}\t{{.Names}}'
->sudo systemctl --no-pager status ttyd dnsmasq ollama --lines=0 2>/dev/null | grep -E '●|Active'
+>@echo "--- containers ---"
+>@docker ps --format 'table {{.Ports}}\t{{.Image}}\t{{.Status}}\t{{.Names}}'
+>@echo ""
+>@echo "--- host services ---"
+>@sudo systemctl --no-pager status ttyd dnsmasq ollama --lines=0 2>/dev/null | grep -E '●|Active'
 >@echo ""
 >@echo "--- disk ---"
 >@df -h / /var/lib/docker
