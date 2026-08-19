@@ -24,13 +24,13 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 #### `ops.jehpok.com` has no auth beyond Tailscale membership  **[needs human approval]**
 - **File**: `services/domain/Caddyfile` (`https://ops.jehpok.com`)
-- **Problem**: Any tailnet device can reach `ops.jehpok.com` with no authentication. DNS-obscurity is the only access control — the link shortener admin UI at `/share` and the ttyd-backed shell at `/terminal` (running as `debian` via `runuser`) both sit behind `@not_tailnet` and nothing else.
+- **Problem**: Any tailnet device can reach `ops.jehpok.com` with no authentication. DNS-obscurity is the only access control — the link shortener admin UI at `/share` and the host ttyd shell at `/terminal` (a host systemd unit running as `debian` with full host control) both sit behind `@not_tailnet` and nothing else.
 - **Fix**: Add Caddy `basic_auth` on the `/share*` and `/terminal*` matchers (needs a username + bcrypt hash from the operator), or apply Tailscale ACLs in the admin console to restrict who can reach the VPS at all.
 - **Why approval**: requires a password / ACL policy from the operator.
 
 #### `ops.jehpok.com/terminal` gives a `debian` shell to any tailnet device  **[needs human approval]**
 - **File**: `services/domain/Caddyfile` (`https://ops.jehpok.com`)
-- **Problem**: `/terminal` runs `ttyd → runuser -u debian -- bash` in a container that bind-mounts the host root (`/`) read-write and the Docker socket. The shell is uid 1000 (`debian`), but the container is `privileged: true` and has full host write access via the `/host` mount; root actions are reachable via `sudo -i`. Tailscale membership alone gates it.
+- **Problem**: `/terminal` is a host systemd unit (`ttyd.service`) running `/usr/local/bin/ttyd bash` as `debian` (uid 1000). The process is on the host, not in a container, so `sudo -i` reaches root and every host file is writable. The systemd unit is hardened (`ProtectSystem=strict`, `NoNewPrivileges`, `PrivateTmp`, etc.) but that doesn't constrain what `debian` can do once they `sudo`. Tailscale membership alone gates it.
 - **Fix**: Add Caddy `basic_auth` on the `/terminal*` matcher (needs a username + bcrypt hash), or apply Tailscale ACLs to restrict which devices can reach the VPS, or restrict the container with `cap_drop` + a read-only root mount + a write whitelist.
 - **Why approval**: requires a password / ACL policy from the operator.
 
@@ -159,3 +159,6 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Uniform 404 format** — every Caddy-controlled 404 now returns plain text `not found` (no JSON, no HTML). Flask `not_found` handler switched from `jsonify(error=...)` to `Response("not found", mimetype="text/plain")`; cloud `@blocked` matcher now responds with body. Vaultwarden / Homer / Nextcloud 404s left as their own upstream pages.
 - **`www.jehpok.com` keeps Homer's HTML 404** — explicit operator call: upstream containers with their own 404 page (Homer, Vaultwarden, Nextcloud) keep that page; only Caddy-controlled paths (share, api, ops, cloud `@blocked`) return plain text `not found`.
 - **`make` from terminal needs `host-exec`** — the docker compose plugin at `/host/usr/libexec/docker/cli-plugins/docker-compose` is glibc-linked and fails in the Alpine ttyd container with a cryptic `unknown shorthand flag: 'f' in -f`. Run any make recipe via `host-exec 'make ...'` from inside `ops.jehpok.com/terminal`.
+- **Terminal migrated to host systemd ttyd** — `services/terminal/` removed; `ttyd.service` runs as `debian` on the host, hardened systemd sandbox, binds `0.0.0.0:7681`, gated by Caddy `@not_tailnet` + UFW INPUT allow from the `net` bridge. Caddy proxies to `172.22.0.1:7681` with `transport http { versions 1.1 }`. `host-exec` / `runuser` shims are gone — the shell is a real host shell directly.
+- **Hostname `vps-742a45f9` → `server`** — system hostname + `/etc/hosts` updated; SSH host keys regenerated so the old `root@vps-742a45f9` comment is gone from the `.pub` files; cloud-init stale state (`/var/lib/cloud/data/{previous,set}-hostname`) deleted.
+- **`debian` has passwordless sudo** — `/etc/sudoers.d/debian-passwordless` (`NOPASSWD:ALL`, mode 0440). Reduces permission prompts during normal agent operations; still requires sudo for anything privileged.
