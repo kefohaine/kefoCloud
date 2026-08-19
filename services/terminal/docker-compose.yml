@@ -27,7 +27,11 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:rw
 
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:7681 | grep -qi ttyd || exit 1"]
+      # The ttyd image (Alpine, minimal) ships no wget/curl/nc. Use bash's
+      # /dev/tcp builtin (the container's command already runs bash; healthcheck
+      # invokes bash explicitly so /dev/tcp works regardless of the entrypoint
+      # shell).
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/7681 && echo -e 'GET / HTTP/1.0\\r\\n\\r\\n' >&3 && grep -qi ttyd <&3"]
       interval: 30s
       timeout: 5s
       retries: 3
