@@ -6,7 +6,7 @@ import time
 import threading
 import socket
 from urllib.parse import urlparse
-from flask import Flask, request, redirect, abort, render_template, jsonify, url_for
+from flask import Flask, request, redirect, abort, render_template, jsonify, url_for, Response
 
 BASE_DIR = os.environ.get("LINK_DB_DIR", "/data")
 DB_PATH = os.path.join(BASE_DIR, "links.db")
@@ -104,9 +104,8 @@ def valid_slug(s):
 
 @app.errorhandler(404)
 def not_found(e):
-    if request.path.startswith("/api/") or request.path.startswith("/share/"):
-        return jsonify(error="not found"), 404
-    return e
+    # Uniform plain-text "not found" — never JSON, never HTML.
+    return Response("not found", status=404, mimetype="text/plain")
 
 
 def resolves(url):
