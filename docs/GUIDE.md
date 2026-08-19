@@ -61,7 +61,7 @@ make clean             # free disk: prune the Docker build cache and clear the a
 **Never delete or disable any of these without explicit operator approval.** Per `docs/AGENTS.md` safety rule 1, if a task seems to require removing any of them, stop and ask.
 
 - `/etc/systemd/system/ollama.service` — Ollama systemd unit (`enabled`, `Restart=always`).
-- `/etc/systemd/system/ttyd.service` — ttyd web-terminal unit (`enabled`, `Restart=always`). Binds `0.0.0.0:7681`, gated by the Caddy tailnet match and the UFW INPUT allow from the `net` bridge.
+- `/etc/systemd/system/ttyd.service` — ttyd web-terminal unit (`enabled`, `Restart=always`). Binds `172.22.0.1:7681` only (host bridge IP), gated by the Caddy tailnet match and the UFW INPUT allow from `172.22.0.0/16`.
 - `/etc/dnsmasq.d/10-tailnet.conf` and `/etc/systemd/system/dnsmasq.service.d/override.conf` — host DNS resolver + systemd drop-in (`Restart=always`).
 - `/var/www/custom/projects/jehpok/certs/` — Cloudflare Origin cert + key (wildcard `*.jehpok.com`).
 - `/var/www/custom/projects/jehpok/cloud/html/` and `/var/www/custom/projects/jehpok/cloud/users/` — Nextcloud bind mounts (html root + datadirectory; both owned by uid 33 with a `.ncdata` marker in `users/`).
@@ -100,7 +100,7 @@ When you need to know "what does X do / where do I edit Y", read the file at the
 - **`vault`** — env, bind mount, admin token: `services/vault/docker-compose.yml`.
 - **`kuma`** — image, bind mount, healthcheck: `services/kuma/docker-compose.yml`. Monitor definitions live in Kuma's SQLite, edited via the UI on first run.
 - **`homer`** — dashboard YAML: `services/homer/config/config.yml` (in-repo, bind-mounted live). Homer doesn't auto-reload: edit the YAML, then `make restart-homer` and refresh the browser.
-- **`terminal`** — ttyd at `ops.jehpok.com/server`, runs as a host systemd unit (not a container). Binary at `/usr/local/bin/ttyd`, unit at `/etc/systemd/system/ttyd.service` (reference copy in `setup/ttyd/`). Hardened systemd sandbox (`ProtectSystem=strict`, `PrivateTmp`, etc.); runs as `debian` (uid 1000) — full host control. Tailscale-only like the rest of `ops.jehpok.com`. `make setup-host` installs the binary (static 1.7.7 from upstream) and the unit, and adds the UFW INPUT allow for `172.22.0.0/16 → 7681`. Caddy proxies to the host bridge IP `172.22.0.1:7681` with `transport http { versions 1.1 }` (ttyd only speaks HTTP/1.1).
+- **`terminal`** — ttyd at `ops.jehpok.com/server`, runs as a host systemd unit (not a container). Binary at `/usr/local/bin/ttyd`, unit at `/etc/systemd/system/ttyd.service` (reference copy in `setup/ttyd/`). Hardened systemd sandbox (`ProtectSystem=strict`, `PrivateTmp`, etc.); runs as `debian` (uid 1000) — full host control. Tailscale-only like the rest of `ops.jehpok.com`. `make setup-host` installs the binary (static 1.7.7 from upstream) and the unit; `make install-ttyd` is a separate idempotent recipe that only handles the binary. Caddy proxies to the host bridge IP `172.22.0.1:7681` with `transport http { versions 1.1 }` (ttyd only speaks HTTP/1.1); the UFW INPUT allow from `172.22.0.0/16 → 7681/tcp` is added by `make setup-host` and is what makes the bridge → host reach work.
 - **dnsmasq** — config: `setup/dnsmasq/10-tailnet.conf` (live path: `/etc/dnsmasq.d/10-tailnet.conf`). systemd drop-in: `setup/dnsmasq/dnsmasq.service.conf` (live path: `/etc/systemd/system/dnsmasq.service.d/override.conf`).
 - **ollama** — unit: `setup/ollama/ollama.service` (live path: `/etc/systemd/system/ollama.service`).
 
