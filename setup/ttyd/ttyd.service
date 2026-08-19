@@ -33,9 +33,9 @@ ProtectSystem=strict
 # Strict makes /usr, /boot, /efi AND /var read-only by default.
 # Whitelist the paths the operator actually writes to from a ttyd
 # session (the project tree, the bind-mount data dirs, Docker
-# buildx dir, the Claude settings dir, the daily log, the Docker
-# socket). Everything else stays read-only.
-ReadWritePaths=/var/www/custom /var/www/custom/projects/jehpok /var/www/custom/projects/jehpok/cloud/html /var/www/custom/projects/jehpok/cloud/users /var/www/custom/projects/jehpok/certs /home/debian/.docker /home/debian/.claude /home/debian/.ssh /var/log /run/docker.sock
+# buildx dir, the Claude settings dir, the daily log, the apt
+# cache, and the Docker socket). Everything else stays read-only.
+ReadWritePaths=/var/www/custom /var/www/custom/projects/jehpok /var/www/custom/projects/jehpok/cloud/html /var/www/custom/projects/jehpok/cloud/users /var/www/custom/projects/jehpok/certs /home/debian/.docker /home/debian/.claude /home/debian/.ssh /var/log /var/lib/apt /var/lib/apt/lists /var/lib/apt/lists/partial /var/cache/apt /run/docker.sock
 ProtectHome=read-only
 PrivateTmp=true
 # PrivateDevices is OFF — shell scripts need /dev/null, /dev/zero,
