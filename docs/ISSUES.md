@@ -154,3 +154,4 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Hostname `vps.jehpok.com` → `ops.jehpok.com`** — Caddyfile + dnsmasq + Homer config + 3 .md docs renamed; live dnsmasq + Caddy reloaded; vps.jehpok.com now unmentioned anywhere.
 - **`ops.jehpok.com/terminal` runs as `debian`** — ttyd entrypoint switched from `exec bash` (root in container) to `exec runuser -u debian -- bash`; container also bind-mounts `/etc/passwd` + `/etc/group` so runuser can resolve uid 1000.
 - **Homer dashboard expanded** — Files (`share.jehpok.com/files`) and Terminal (`ops.jehpok.com/terminal`) added; API added to the top links bar.
+- **Terminal `host-exec` shim** — Alpine ttyd container can't run host glibc binaries (`smem`, `sudo`, etc.) directly. Added `/usr/local/bin/host-exec` that `chroot`s to `/host` and runs the command under the host shell. Use `host-exec 'smem'` from inside the ttyd session.

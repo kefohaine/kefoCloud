@@ -95,7 +95,7 @@ When you need to know "what does X do / where do I edit Y", read the file at the
 - **`vault`** — env, bind mount, admin token: `services/vault/docker-compose.yml`.
 - **`kuma`** — image, bind mount, healthcheck: `services/kuma/docker-compose.yml`. Monitor definitions live in Kuma's SQLite, edited via the UI on first run.
 - **`homer`** — dashboard YAML: `services/homer/config/config.yml` (in-repo, bind-mounted live).
-- **`terminal`** — ttyd at `ops.jehpok.com/terminal`; compose + Dockerfile: `services/terminal/`. The container bind-mounts `/` (host root) as `/host` and the Docker socket, runs `bash -lc` with the host `PATH` and cwd `…/repo`. No sshd change, no auth — Tailscale-only like the rest of `ops.jehpok.com`.
+- **`terminal`** — ttyd at `ops.jehpok.com/terminal`; compose + Dockerfile: `services/terminal/`. The container bind-mounts `/` (host root) as `/host` and the Docker socket, runs `runuser -u debian -- bash` with the host's PATH and cwd `…/repo`. No sshd change, no auth — Tailscale-only like the rest of `ops.jehpok.com`. Container is Alpine (musl); for host glibc binaries (e.g. `smem`, `sudo`), use the in-container `host-exec '<cmd>'` shim, which `chroot`s to `/host` and runs the command under the host shell.
 - **dnsmasq** — config: `setup/dnsmasq/10-tailnet.conf` (live path: `/etc/dnsmasq.d/10-tailnet.conf`). systemd drop-in: `setup/dnsmasq/dnsmasq.service.conf` (live path: `/etc/systemd/system/dnsmasq.service.d/override.conf`).
 - **ollama** — unit: `setup/ollama/ollama.service` (live path: `/etc/systemd/system/ollama.service`).
 
