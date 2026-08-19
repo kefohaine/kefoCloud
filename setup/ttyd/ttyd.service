@@ -23,40 +23,12 @@ ExecStart=/usr/local/bin/ttyd -W -i 172.22.0.1 -p 7681 \
 Restart=always
 RestartSec=3
 
-# Hardening: ttyd serves a shell; only allowlist what it needs.
-# NOTE: NoNewPrivileges is intentionally OFF — ttyd gives debian an
-# interactive shell, and sudo needs setuid to elevate. With NNP the
-# kernel ignores setuid bits, so sudo fails with
-# "no new privileges flag is set". We rely on Tailscale membership
-# (Caddy @not_tailnet) for access control instead.
-ProtectSystem=strict
-# Strict makes /usr, /boot, /efi AND /var read-only by default.
-# Whitelist the paths the operator actually writes to from a ttyd
-# session (the project tree, the bind-mount data dirs, Docker
-# buildx dir, the Claude settings dir, the daily log, the apt
-# cache, and the Docker socket). Everything else stays read-only.
-ReadWritePaths=/var/www/custom /var/www/custom/projects/jehpok /var/www/custom/projects/jehpok/cloud/html /var/www/custom/projects/jehpok/cloud/users /var/www/custom/projects/jehpok/certs /home/debian/.docker /home/debian/.claude /home/debian/.ssh /var/log /var/lib/apt /var/lib/apt/lists /var/lib/apt/lists/partial /var/cache/apt /run/docker.sock
-ProtectHome=read-only
-PrivateTmp=true
-# PrivateDevices is OFF — shell scripts need /dev/null, /dev/zero,
-# /dev/tty, /dev/pts/* for interactive use. Tailscale + Caddy
-# @not_tailnet is the real access control, not /dev isolation.
-PrivateDevices=false
-# Allow IPv4, IPv6, and Unix-domain sockets (docker.sock, dbus, etc.).
-# Without this, the default is AF_UNIX only, which breaks DNS+HTTPS+git.
-RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectControlGroups=true
-RestrictSUIDSGID=true
-RestrictNamespaces=true
-RestrictRealtime=true
-LockPersonality=true
-# MemoryDenyWriteExecute is OFF — JIT'd runtimes (Node, Python,
-# some Go binaries) mmap RWX; the protection blocks them outright.
-# The hardening that matters here is the access-control layer
-# (Tailscale + Caddy), not W^X against the operator's own shell.
-MemoryDenyWriteExecute=false
+# Hardening: minimal. The threat model is a single operator using
+# ttyd over Tailscale to manage the host. Access control is at the
+# network layer (Tailscale membership + Caddy @not_tailnet), not at
+# the unit-sandbox layer. No filesystem, device, namespace, or
+# address-family restrictions — the operator can write anywhere on
+# the host without a permission hunt.
 
 [Install]
 WantedBy=multi-user.target
