@@ -16,8 +16,8 @@ services:
       start_period: 10s
 
     volumes:
-      - /var/www/github/jehpok.com/share/db:/data
-      - /var/www/github/jehpok.com/share/files:/data/files
+      - /var/www/custom/projects/jehpok/share/db:/data
+      - /var/www/custom/projects/jehpok/share/files:/data/files
       - ../../content/share:/app/src:ro
 
     logging:
