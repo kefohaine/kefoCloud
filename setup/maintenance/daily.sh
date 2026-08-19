@@ -32,6 +32,6 @@ make backup-cloud >> "$LOG" 2>&1 || echo "backup-cloud failed" >> "$LOG"
 make backup-share >> "$LOG" 2>&1 || echo "backup-share failed" >> "$LOG"
 
 echo "--- resource snapshot ---" >> "$LOG"
-{ df -h / /var/lib/docker; free -h; } >> "$LOG" 2>&1
+{ df -h /; free -h; } >> "$LOG" 2>&1
 
 echo "--- done ---" >> "$LOG"
