@@ -59,9 +59,9 @@ https://ops.jehpok.com {
     handle @share {
         reverse_proxy share:5000
     }
-    @terminal path /terminal /terminal/*
-    handle @terminal {
-        uri strip_prefix /terminal
+    @server path /server /server/*
+    handle @server {
+        uri strip_prefix /server
         reverse_proxy 172.22.0.1:7681 {
             transport http {
                 versions 1.1
