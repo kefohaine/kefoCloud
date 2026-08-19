@@ -89,4 +89,4 @@ This section is project-defined and not part of the portable agent rulebook abov
 
 <!-- project-specific content begins here -->
 
-This project (`jehpok.com`) is a self-hosted Debian VPS running Caddy in Docker. The full project guide lives in `docs/GUIDE.md`. The protected host resources (Ollama systemd unit, dnsmasq resolver config + drop-in, Cloudflare Origin cert/key, Nextcloud data, the `net` Docker network) and any per-project safety constraints are listed there — never assume what they are without reading `docs/GUIDE.md`.
+This project (`jehpok.com`) is a self-hosted Debian VPS. The full project guide lives in `docs/GUIDE.md`. The protected host resources and any per-project safety constraints are listed there — never assume what they are without reading `docs/GUIDE.md`.
