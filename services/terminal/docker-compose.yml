@@ -14,10 +14,16 @@ services:
     command:
       - ttyd
       - -W
+      # macOS Terminal "Pro" theme — colors from Apple's Terminal.app Pro
+      # profile (Settings > Profiles > Pro). Font: Menlo 13pt (macOS
+      # Terminal default for Pro). Falls back to Monaco / Courier New on
+      # non-mac browsers.
       - -t
-      - fontSize=14
+      - fontSize=13
       - -t
-      - theme={"background":"#1e1e1e","foreground":"#d4d4d4"}
+      - fontFamily=Menlo,Monaco,"Courier New",monospace
+      - -t
+      - 'theme={"background":"#1e1c1c","foreground":"#d4d4d4","cursor":"#d4d4d4","cursorAccent":"#1e1c1c","selectionBackground":"#404040","black":"#1e1c1c","red":"#c91b1b","green":"#1bc91b","yellow":"#c91b1b","blue":"#1b1bc9","magenta":"#c91bc9","cyan":"#1bc9c9","white":"#d4d4d4","brightBlack":"#6f6f6f","brightRed":"#ff6f6f","brightGreen":"#6fff6f","brightYellow":"#ffff6f","brightBlue":"#6f6fff","brightMagenta":"#ff6fff","brightCyan":"#6fffff","brightWhite":"#ffffff"}'
       - bash
       - -c
       - 'export PATH=$(ls -d /host/usr/local/sbin /host/usr/local/bin /host/usr/sbin /host/usr/bin /host/sbin /host/bin /host/root/.local/bin /home/debian/.local/bin /home/debian/.opencode/bin 2>/dev/null | tr "\n" ":")/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && cd /host/var/www/github/jehpok.com/repo && exec bash'
