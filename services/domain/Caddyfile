@@ -62,7 +62,11 @@ https://ops.jehpok.com {
     @terminal path /terminal /terminal/*
     handle @terminal {
         uri strip_prefix /terminal
-        reverse_proxy terminal:7681
+        reverse_proxy 172.22.0.1:7681 {
+            transport http {
+                versions 1.1
+            }
+        }
     }
     handle {
         @root path /
