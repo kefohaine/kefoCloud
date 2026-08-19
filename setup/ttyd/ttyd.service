@@ -1,5 +1,5 @@
 [Unit]
-Description=Tailnet Server Terminal
+Description=Tailnet Web Terminal
 Documentation=https://github.com/tsl0922/ttyd
 After=network-online.target
 Wants=network-online.target
