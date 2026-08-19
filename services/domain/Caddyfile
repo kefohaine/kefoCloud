@@ -51,7 +51,7 @@ https://www.jehpok.com {
     reverse_proxy homer:8080
 }
 
-https://vps.jehpok.com {
+https://ops.jehpok.com {
     import tls_keys
     @not_tailnet not remote_ip 100.64.0.0/10
     respond @not_tailnet 403

@@ -22,15 +22,15 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### Security
 
-#### `vps.jehpok.com` has no auth beyond Tailscale membership  **[needs human approval]**
-- **File**: `services/domain/Caddyfile` (`https://vps.jehpok.com`)
-- **Problem**: Any tailnet device can reach `vps.jehpok.com` with no authentication. DNS-obscurity is the only access control — the link shortener admin UI at `/share` and, since the `/terminal` route was added, a host root shell via ttyd both sit behind `@not_tailnet` and nothing else.
+#### `ops.jehpok.com` has no auth beyond Tailscale membership  **[needs human approval]**
+- **File**: `services/domain/Caddyfile` (`https://ops.jehpok.com`)
+- **Problem**: Any tailnet device can reach `ops.jehpok.com` with no authentication. DNS-obscurity is the only access control — the link shortener admin UI at `/share` and, since the `/terminal` route was added, a host root shell via ttyd both sit behind `@not_tailnet` and nothing else.
 - **Fix**: Add Caddy `basic_auth` on the `/share*` and `/terminal*` matchers (needs a username + bcrypt hash from the operator), or apply Tailscale ACLs in the admin console to restrict who can reach the VPS at all.
 - **Why approval**: requires a password / ACL policy from the operator.
 
-#### `vps.jehpok.com/terminal` grants a root shell to any tailnet device  **[needs human approval]**
-- **File**: `services/domain/Caddyfile` (`https://vps.jehpok.com`)
-- **Problem**: `/terminal` runs `ttyd → bash` in a container that bind-mounts the host root (`/`) read-write and the Docker socket. Tailscale membership alone gates it. Anyone on the tailnet effectively has root on the host.
+#### `ops.jehpok.com/terminal` gives a `debian` shell to any tailnet device  **[needs human approval]**
+- **File**: `services/domain/Caddyfile` (`https://ops.jehpok.com`)
+- **Problem**: `/terminal` runs `ttyd → runuser -u debian -- bash` in a container that bind-mounts the host root (`/`) read-write and the Docker socket. The shell is uid 1000 (`debian`), but the container is `privileged: true` and has full host write access via the `/host` mount; root actions are reachable via `sudo -i`. Tailscale membership alone gates it.
 - **Fix**: Add Caddy `basic_auth` on the `/terminal*` matcher (needs a username + bcrypt hash), or apply Tailscale ACLs to restrict which devices can reach the VPS, or restrict the container with `cap_drop` + a read-only root mount + a write whitelist.
 - **Why approval**: requires a password / ACL policy from the operator.
 
@@ -75,14 +75,14 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 Behaviours that look like bugs but are deliberate. Do not fix; the rationale is the answer.
 
-### `vps.jehpok.com` is unresolvable from the public internet
-Looks like: DNS lookup fails for `vps.jehpok.com` outside Tailscale. Reality: this is the only access control. The hostname is deliberately absent from Cloudflare DNS so the resolver only knows it on the tailnet. Caddy additionally returns 403 for any non-tailnet source IP via `@not_tailnet`, so a forged Host header against the public IP also fails.
+### `ops.jehpok.com` is unresolvable from the public internet
+Looks like: DNS lookup fails for `ops.jehpok.com` outside Tailscale. Reality: this is the only access control. The hostname is deliberately absent from Cloudflare DNS so the resolver only knows it on the tailnet. Caddy additionally returns 403 for any non-tailnet source IP via `@not_tailnet`, so a forged Host header against the public IP also fails.
 
 ### Cloudflare Bot Fight Mode blocks `curl` against `api.jehpok.com`
 Looks like: Cloudflare rejects `curl`/scripts hitting `api.jehpok.com` with a 403 / challenge. Reality: terminal traffic cannot solve the Browser Integrity Check. The intended fix is a per-hostname WAF rule skip on `api.jehpok.com` (and the same mitigation is required for `cloud.jehpok.com` desktop sync); the goal is to keep Cloudflare's full protection on everywhere else.
 
-### `share.jehpok.com/share`-style paths return `not found` instead of redirecting to `vps.jehpok.com/share`
-Looks like: the link shortener admin UI is unreachable from `share.jehpok.com/share`. Reality: the public vhost hides `/share`, `/api/*`, and `/healthz` via a Caddy `@admin` matcher returning 404, because admin has no app-level auth and the public side shouldn't leak its existence. Admin lives at `vps.jehpok.com/share`, which is tailnet-only.
+### `share.jehpok.com/share`-style paths return `not found` instead of redirecting to `ops.jehpok.com/share`
+Looks like: the link shortener admin UI is unreachable from `share.jehpok.com/share`. Reality: the public vhost hides `/share`, `/api/*`, and `/healthz` via a Caddy `@admin` matcher returning 404, because admin has no app-level auth and the public side shouldn't leak its existence. Admin lives at `ops.jehpok.com/share`, which is tailnet-only.
 
 ### `www.jehpok.com` shows a dashboard, not the previous cheyou anniversary page
 Looks like: the historical cheyou page is gone. Reality: it was retired when the static-files vhost was replaced by the Homer dashboard. The HTML is preserved at `temp/cheyou/index.html` (gitignored) if anyone ever needs to restore it.
@@ -134,9 +134,9 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Sensitive files purged from git history** — `config/web/certs/key.pem`, `cert.pem`, `.github/workflows/deploy.yml`, `install.sh`, `app.py` removed via `git filter-repo`; `origin` remote (PAT-embedded) removed; history rewritten, force-pushed.
 - **CoreDNS → dnsmasq** — container removed; host dnsmasq on `100.81.245.77:53`.
 - **`tailnet_default` gone** — spare bridge removed with the container.
-- **URL shortener** — Flask + SQLite; `link.jehpok.com` public, `vps.jehpok.com/link` admin.
+- **URL shortener** — Flask + SQLite; `link.jehpok.com` public, `ops.jehpok.com/link` admin.
 - **Nextcloud bind mount fixed** — `datadirectory` moved to `/data`, no nesting.
-- **`link.jehpok.com` admin leak closed** — Caddy `@admin` matcher returns 404 for `/link`, `/api/*`, `/healthz`, `/` on public vhost; admin still reachable via `vps.jehpok.com/link`.
+- **`link.jehpok.com` admin leak closed** — Caddy `@admin` matcher returns 404 for `/link`, `/api/*`, `/healthz`, `/` on public vhost; admin still reachable via `ops.jehpok.com/link`.
 - **Cloudflare 100 MB body cap aligned** — all vhosts `max_size 100m` to match CF free-tier; inconsistent 10G on cloud vhost removed.
 - **Nextcloud `maintenance_window_start`** — set to `4` (04:00) so heavy background jobs don't run during peak.
 - **Nextcloud DB missing indices** — `mail_*` table indices added via `occ db:add-missing-indices`.
@@ -145,9 +145,12 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Homer + Uptime Kuma added** — `www.jehpok.com` now serves Homer (cheyou retired to `temp/cheyou/`); `status.jehpok.com` serves Uptime Kuma; both reverse-proxied via Caddy, no published ports.
 - **Docs split into four** — `README.md` (visitor), `docs/AGENTS.md` (portable agent rules), `docs/GUIDE.md` (project operator guide), `docs/ISSUES.md` (task tracker + Intended section).
 - **Log tightening** — Caddy global `log -> /dev/null` (no per-request access logs); dnsmasq `log-queries` removed; `share` container cap raised to 10m×3 to match the other 5.
-- **`vps.jehpok.com/terminal`** — ttyd-backed host shell; bind-mounts `/` rw + Docker socket; container `privileged`, runs as the host path-aware bash from `/var/www/custom/projects/jehpok/repo`.
+- **`ops.jehpok.com/terminal`** — ttyd-backed host shell; bind-mounts `/` rw + Docker socket; container `privileged`, runs as the host path-aware bash from `/var/www/custom/projects/jehpok/repo`.
 - **`status.jehpok.com` → `kuma.jehpok.com`** — hostname rename to match the container name; Cloudflare + Caddy + Homer YAML updated.
 - **Kuma monitor set trimmed** — `tcp: vps 443` (unreachable from Kuma's netns), `ping: vps` (redundant), `docker: kuma` (self-check) dropped; `docker: *` monitors moved to 3600s; HTTP monitors stay at 60s.
 - **Kuma `seed-monitors.sql`** — idempotent SQL for the 9 monitors + 2 groups; applied once via `docker exec -i kuma sqlite3 ... < seed-monitors.sql`.
 - **Homer config bind tightened** — bind only `services/homer/config/config.yml` → `/www/assets/config.yml` so the bundled icons/themes/manifest stay intact.
 - **Repo relocated** — moved from `/var/www/github/jehpok.com` to `/var/www/custom/projects/jehpok`; `/var/www/github/` deleted; all compose/Makefile/.md/live-`jehpok-daily.sh` paths rewritten; `cloud/html` + `cloud/users` chowned to uid 33.
+- **Hostname `vps.jehpok.com` → `ops.jehpok.com`** — Caddyfile + dnsmasq + Homer config + 3 .md docs renamed; live dnsmasq + Caddy reloaded; vps.jehpok.com now unmentioned anywhere.
+- **`ops.jehpok.com/terminal` runs as `debian`** — ttyd entrypoint switched from `exec bash` (root in container) to `exec runuser -u debian -- bash`; container also bind-mounts `/etc/passwd` + `/etc/group` so runuser can resolve uid 1000.
+- **Homer dashboard expanded** — Files (`share.jehpok.com/files`) and Terminal (`ops.jehpok.com/terminal`) added; API added to the top links bar.
