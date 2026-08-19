@@ -1,7 +1,7 @@
 .RECIPEPREFIX = >
 .SHELLFLAGS := -eu -c
 
-REPO := /var/www/github/jehpok.com/repo
+REPO := /var/www/custom/projects/jehpok/repo
 COMPOSE := docker compose -f
 
 .PHONY: up-domain up-cloud up-share up-vault up-kuma up-homer up-terminal up-all
@@ -88,17 +88,17 @@ push:
 
 backup-cloud:
 >docker exec -w /var/www/html cloud php occ maintenance:mode --on
->cp -a /var/www/github/jehpok.com/cloud/users /var/www/github/jehpok.com/cloud-backup-$$(date +%Y%m%d)
+>cp -a /var/www/custom/projects/jehpok/cloud/users /var/www/custom/projects/jehpok/cloud-backup-$$(date +%Y%m%d)
 >docker exec -w /var/www/html cloud php occ maintenance:mode --off
->@echo "Backup at /var/www/github/jehpok.com/cloud-backup-$$(date +%Y%m%d)"
+>@echo "Backup at /var/www/custom/projects/jehpok/cloud-backup-$$(date +%Y%m%d)"
 
 backup-share:
->cp /var/www/github/jehpok.com/share/db/links.db /var/www/github/jehpok.com/share-backup-$$(date +%Y%m%d).db
->@echo "Backup at /var/www/github/jehpok.com/share-backup-$$(date +%Y%m%d).db"
+>cp /var/www/custom/projects/jehpok/share/db/links.db /var/www/custom/projects/jehpok/share-backup-$$(date +%Y%m%d).db
+>@echo "Backup at /var/www/custom/projects/jehpok/share-backup-$$(date +%Y%m%d).db"
 
 backup-vault:
->tar czf /var/www/github/jehpok.com/vault-backup-$$(date +%Y%m%d).tar.gz -C /var/www/github/jehpok.com/vault data
->@echo "Backup at /var/www/github/jehpok.com/vault-backup-$$(date +%Y%m%d).tar.gz"
+>tar czf /var/www/custom/projects/jehpok/vault-backup-$$(date +%Y%m%d).tar.gz -C /var/www/custom/projects/jehpok/vault data
+>@echo "Backup at /var/www/custom/projects/jehpok/vault-backup-$$(date +%Y%m%d).tar.gz"
 
 clean:
 >docker builder prune -af
@@ -122,9 +122,9 @@ setup-host:
 >@echo "Host setup complete: Ollama enabled, SSH hardened, dnsmasq resolver installed, daily maintenance timer enabled."
 
 backup-secrets:
->mkdir -p /var/www/github/jehpok.com/secrets-backup
->tar czf /var/www/github/jehpok.com/secrets-backup/secrets-$$(date +%Y%m%d).tar.gz \
-  /var/www/github/jehpok.com/certs \
+>mkdir -p /var/www/custom/projects/jehpok/secrets-backup
+>tar czf /var/www/custom/projects/jehpok/secrets-backup/secrets-$$(date +%Y%m%d).tar.gz \
+  /var/www/custom/projects/jehpok/certs \
   /home/debian/.ssh/github_key \
   /home/debian/.ssh/github_key.pub \
   /home/debian/.ssh/config \
@@ -134,7 +134,7 @@ backup-secrets:
   /etc/dnsmasq.d/10-tailnet.conf \
   /etc/systemd/system/dnsmasq.service.d/override.conf \
   /var/lib/tailscale
->@echo "Secrets bundle at /var/www/github/jehpok.com/secrets-backup/secrets-$$(date +%Y%m%d).tar.gz"
+>@echo "Secrets bundle at /var/www/custom/projects/jehpok/secrets-backup/secrets-$$(date +%Y%m%d).tar.gz"
 >@echo "Download this file OFF the VPS. It contains private keys and Tailscale identity."
 
 migrate:
@@ -147,10 +147,10 @@ migrate:
 >@echo "   make backup-secrets  # bundle certs, keys, Tailscale state, terminal key"
 >@echo ""
 >@echo "2. Download these OFF the old VPS:"
->@echo "   /var/www/github/jehpok.com/secrets-backup/secrets-*.tar.gz"
->@echo "   /var/www/github/jehpok.com/cloud-backup-*"
->@echo "   /var/www/github/jehpok.com/share-backup-*.db"
->@echo "   /var/www/github/jehpok.com/vault-backup-*.tar.gz"
+>@echo "   /var/www/custom/projects/jehpok/secrets-backup/secrets-*.tar.gz"
+>@echo "   /var/www/custom/projects/jehpok/cloud-backup-*"
+>@echo "   /var/www/custom/projects/jehpok/share-backup-*.db"
+>@echo "   /var/www/custom/projects/jehpok/vault-backup-*.tar.gz"
 >@echo ""
 >@echo "3. On the NEW VPS (Debian), as root then debian:"
 >@echo "   apt update && apt install -y docker.io docker-compose-plugin git curl make sudo dnsmasq"
@@ -166,27 +166,27 @@ migrate:
 >@echo "   # setup-host re-runs browser-user.sh (no-op if already in place)."
 >@echo ""
 >@echo "   # restore Nextcloud data:"
->@echo "   sudo mkdir -p /var/www/github/jehpok.com/cloud/html /var/www/github/jehpok.com/cloud/users"
->@echo "   sudo cp -a cloud-backup-*/html/* /var/www/github/jehpok.com/cloud/html/"
->@echo "   sudo cp -a cloud-backup-*/users/* /var/www/github/jehpok.com/cloud/users/"
->@echo "   echo '# Nextcloud data directory' | sudo tee /var/www/github/jehpok.com/cloud/users/.ncdata"
->@echo "   sudo chown -R 33:33 /var/www/github/jehpok.com/cloud/html /var/www/github/jehpok.com/cloud/users"
+>@echo "   sudo mkdir -p /var/www/custom/projects/jehpok/cloud/html /var/www/custom/projects/jehpok/cloud/users"
+>@echo "   sudo cp -a cloud-backup-*/html/* /var/www/custom/projects/jehpok/cloud/html/"
+>@echo "   sudo cp -a cloud-backup-*/users/* /var/www/custom/projects/jehpok/cloud/users/"
+>@echo "   echo '# Nextcloud data directory' | sudo tee /var/www/custom/projects/jehpok/cloud/users/.ncdata"
+>@echo "   sudo chown -R 33:33 /var/www/custom/projects/jehpok/cloud/html /var/www/custom/projects/jehpok/cloud/users"
 >@echo ""
 >@echo "   # restore share DB:"
->@echo "   sudo mkdir -p /var/www/github/jehpok.com/share/db"
->@echo "   sudo cp share-backup-*.db /var/www/github/jehpok.com/share/db/links.db"
+>@echo "   sudo mkdir -p /var/www/custom/projects/jehpok/share/db"
+>@echo "   sudo cp share-backup-*.db /var/www/custom/projects/jehpok/share/db/links.db"
 >@echo ""
 >@echo "   # restore vault data:"
->@echo "   sudo mkdir -p /var/www/github/jehpok.com/vault"
->@echo "   sudo tar xzf vault-backup-*.tar.gz -C /var/www/github/jehpok.com/vault"
->@echo "   sudo chown -R 1000:1000 /var/www/github/jehpok.com/vault/data"
+>@echo "   sudo mkdir -p /var/www/custom/projects/jehpok/vault"
+>@echo "   sudo tar xzf vault-backup-*.tar.gz -C /var/www/custom/projects/jehpok/vault"
+>@echo "   sudo chown -R 1000:1000 /var/www/custom/projects/jehpok/vault/data"
 >@echo ""
 >@echo "   # clone and bootstrap:"
->@echo "   git clone git@github.com:friedutch/jehpok.com.git /var/www/github/jehpok.com/repo"
->@echo "   cp <your-.env> /var/www/github/jehpok.com/repo/services/cloud/.env"
+>@echo "   git clone git@github.com:friedutch/jehpok.com.git /var/www/custom/projects/jehpok/repo"
+>@echo "   cp <your-.env> /var/www/custom/projects/jehpok/repo/services/cloud/.env"
 >@echo "   docker network create net"
->@echo "   make -C /var/www/github/jehpok.com/repo setup-host"
->@echo "   make -C /var/www/github/jehpok.com/repo up-all"
+>@echo "   make -C /var/www/custom/projects/jehpok/repo setup-host"
+>@echo "   make -C /var/www/custom/projects/jehpok/repo up-all"
 >@echo ""
 >@echo "4. Update Cloudflare DNS to point to the new VPS IP."
 >@echo "5. Verify: curl -sk https://www.jehpok.com/cheyou --resolve www.jehpok.com:443:127.0.0.1"

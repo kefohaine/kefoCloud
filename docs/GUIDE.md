@@ -44,8 +44,8 @@ make logs-dns          # follow the dnsmasq journal
 make status            # show a table of all running containers
 make push MSG="..."    # stage, commit, and push to the jehpok.com remote
 make backup-cloud      # snapshot Nextcloud data (maintenance mode on during the copy)
-make backup-share      # copy the shortener SQLite DB to /var/www/github/jehpok.com/share-backup-<date>.db
-make backup-vault      # tar the Vaultwarden data dir to /var/www/github/jehpok.com/vault-backup-<date>.tar.gz
+make backup-share      # copy the shortener SQLite DB to /var/www/custom/projects/jehpok/share-backup-<date>.db
+make backup-vault      # tar the Vaultwarden data dir to /var/www/custom/projects/jehpok/vault-backup-<date>.tar.gz
 make backup-secrets    # bundle certs, SSH keys, Ollama unit, dnsmasq config, and Tailscale state for off-VPS storage
 make setup-host        # install reference configs to live paths and enable Ollama + sshd + dnsmasq + daily maintenance timer
 make migrate           # print the full VPS-to-VPS migration runbook
@@ -58,8 +58,8 @@ make clean             # free disk: prune the Docker build cache and clear the a
 
 - `/etc/systemd/system/ollama.service` — Ollama systemd unit (`enabled`, `Restart=always`).
 - `/etc/dnsmasq.d/10-tailnet.conf` and `/etc/systemd/system/dnsmasq.service.d/override.conf` — host DNS resolver + systemd drop-in (`Restart=always`).
-- `/var/www/github/jehpok.com/certs/` — Cloudflare Origin cert + key (wildcard `*.jehpok.com`).
-- `/var/www/github/jehpok.com/cloud/html/` and `/var/www/github/jehpok.com/cloud/users/` — Nextcloud bind mounts (html root + datadirectory; both owned by uid 33 with a `.ncdata` marker in `users/`).
+- `/var/www/custom/projects/jehpok/certs/` — Cloudflare Origin cert + key (wildcard `*.jehpok.com`).
+- `/var/www/custom/projects/jehpok/cloud/html/` and `/var/www/custom/projects/jehpok/cloud/users/` — Nextcloud bind mounts (html root + datadirectory; both owned by uid 33 with a `.ncdata` marker in `users/`).
 - `net` Docker network — user-defined bridge, `external: true`. Reused by all inter-container services.
 - SSH keys, Nextcloud data, Vaultwarden data, shortener DB, uploaded files — user-only (also `docs/AGENTS.md` safety rules 7 and 8).
 

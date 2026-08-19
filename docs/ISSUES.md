@@ -145,8 +145,9 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Homer + Uptime Kuma added** — `www.jehpok.com` now serves Homer (cheyou retired to `temp/cheyou/`); `status.jehpok.com` serves Uptime Kuma; both reverse-proxied via Caddy, no published ports.
 - **Docs split into four** — `README.md` (visitor), `docs/AGENTS.md` (portable agent rules), `docs/GUIDE.md` (project operator guide), `docs/ISSUES.md` (task tracker + Intended section).
 - **Log tightening** — Caddy global `log -> /dev/null` (no per-request access logs); dnsmasq `log-queries` removed; `share` container cap raised to 10m×3 to match the other 5.
-- **`vps.jehpok.com/terminal`** — ttyd-backed host shell; bind-mounts `/` rw + Docker socket; container `privileged`, runs as the host path-aware bash from `/var/www/github/jehpok.com/repo`.
+- **`vps.jehpok.com/terminal`** — ttyd-backed host shell; bind-mounts `/` rw + Docker socket; container `privileged`, runs as the host path-aware bash from `/var/www/custom/projects/jehpok/repo`.
 - **`status.jehpok.com` → `kuma.jehpok.com`** — hostname rename to match the container name; Cloudflare + Caddy + Homer YAML updated.
 - **Kuma monitor set trimmed** — `tcp: vps 443` (unreachable from Kuma's netns), `ping: vps` (redundant), `docker: kuma` (self-check) dropped; `docker: *` monitors moved to 3600s; HTTP monitors stay at 60s.
 - **Kuma `seed-monitors.sql`** — idempotent SQL for the 9 monitors + 2 groups; applied once via `docker exec -i kuma sqlite3 ... < seed-monitors.sql`.
 - **Homer config bind tightened** — bind only `services/homer/config/config.yml` → `/www/assets/config.yml` so the bundled icons/themes/manifest stay intact.
+- **Repo relocated** — moved from `/var/www/github/jehpok.com` to `/var/www/custom/projects/jehpok`; `/var/www/github/` deleted; all compose/Makefile/.md/live-`jehpok-daily.sh` paths rewritten; `cloud/html` + `cloud/users` chowned to uid 33.
