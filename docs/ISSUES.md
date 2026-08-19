@@ -24,7 +24,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 #### `ops.jehpok.com` has no auth beyond Tailscale membership  **[needs human approval]**
 - **File**: `services/domain/Caddyfile` (`https://ops.jehpok.com`)
-- **Problem**: Any tailnet device can reach `ops.jehpok.com` with no authentication. DNS-obscurity is the only access control — the link shortener admin UI at `/share` and, since the `/terminal` route was added, a host root shell via ttyd both sit behind `@not_tailnet` and nothing else.
+- **Problem**: Any tailnet device can reach `ops.jehpok.com` with no authentication. DNS-obscurity is the only access control — the link shortener admin UI at `/share` and the ttyd-backed shell at `/terminal` (running as `debian` via `runuser`) both sit behind `@not_tailnet` and nothing else.
 - **Fix**: Add Caddy `basic_auth` on the `/share*` and `/terminal*` matchers (needs a username + bcrypt hash from the operator), or apply Tailscale ACLs in the admin console to restrict who can reach the VPS at all.
 - **Why approval**: requires a password / ACL policy from the operator.
 
@@ -142,7 +142,7 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Nextcloud DB missing indices** — `mail_*` table indices added via `occ db:add-missing-indices`.
 - **Nextcloud mimetype migrations** — applied via `occ maintenance:repair --include-expensive`.
 - **Nextcloud `TRUSTED_PROXIES` expanded** — added all 15 Cloudflare edge ranges so real client IPs reach Nextcloud.
-- **Homer + Uptime Kuma added** — `www.jehpok.com` now serves Homer (cheyou retired to `temp/cheyou/`); `status.jehpok.com` serves Uptime Kuma; both reverse-proxied via Caddy, no published ports.
+- **Homer + Uptime Kuma added** — `www.jehpok.com` serves Homer (cheyou retired to `temp/cheyou/`); `kuma.jehpok.com` serves Uptime Kuma; both reverse-proxied via Caddy, no published ports.
 - **Docs split into four** — `README.md` (visitor), `docs/AGENTS.md` (portable agent rules), `docs/GUIDE.md` (project operator guide), `docs/ISSUES.md` (task tracker + Intended section).
 - **Log tightening** — Caddy global `log -> /dev/null` (no per-request access logs); dnsmasq `log-queries` removed; `share` container cap raised to 10m×3 to match the other 5.
 - **`ops.jehpok.com/terminal`** — ttyd-backed host shell; bind-mounts `/` rw + Docker socket; container `privileged`, runs as the host path-aware bash from `/var/www/custom/projects/jehpok/repo`.
@@ -155,3 +155,4 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **`ops.jehpok.com/terminal` runs as `debian`** — ttyd entrypoint switched from `exec bash` (root in container) to `exec runuser -u debian -- bash`; container also bind-mounts `/etc/passwd` + `/etc/group` so runuser can resolve uid 1000.
 - **Homer dashboard expanded** — Files (`share.jehpok.com/files`) and Terminal (`ops.jehpok.com/terminal`) added; API added to the top links bar.
 - **Terminal `host-exec` shim** — Alpine ttyd container can't run host glibc binaries (`smem`, `sudo`, etc.) directly. Added `/usr/local/bin/host-exec` that `chroot`s to `/host` and runs the command under the host shell. Use `host-exec 'smem'` from inside the ttyd session.
+- **`browser` user dropped from sshd, `runner` user deleted** — `AllowUsers debian browser` → `AllowUsers debian`; `userdel -r runner`. Both were unused leftovers; host now has `debian` as the sole human account.
