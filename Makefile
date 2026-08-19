@@ -79,10 +79,10 @@ logs-ttyd:
 
 status:
 >@echo "--- containers ---"
->@docker ps --format 'table {{.Ports}}\t{{.Image}}\t{{.Status}}\t{{.Names}}'
+>@docker ps --format 'table {{.Names}}\t{{.Status}}'
 >@echo ""
 >@echo "--- host services ---"
->@sudo systemctl --no-pager status ttyd dnsmasq ollama --lines=0 2>/dev/null | grep -E '●|Active'
+>@for u in ttyd dnsmasq ollama; do printf "  %-30s %s\n" "$$u" "$$(systemctl is-active $$u)"; done
 >@echo ""
 >@echo "--- disk ---"
 >@df -h / /var/lib/docker
