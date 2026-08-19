@@ -38,7 +38,13 @@ ProtectSystem=strict
 ReadWritePaths=/var/www/custom /var/www/custom/projects/jehpok /var/www/custom/projects/jehpok/cloud/html /var/www/custom/projects/jehpok/cloud/users /var/www/custom/projects/jehpok/certs /home/debian/.docker /home/debian/.claude /home/debian/.ssh /var/log /run/docker.sock
 ProtectHome=read-only
 PrivateTmp=true
-PrivateDevices=true
+# PrivateDevices is OFF — shell scripts need /dev/null, /dev/zero,
+# /dev/tty, /dev/pts/* for interactive use. Tailscale + Caddy
+# @not_tailnet is the real access control, not /dev isolation.
+PrivateDevices=false
+# Allow IPv4, IPv6, and Unix-domain sockets (docker.sock, dbus, etc.).
+# Without this, the default is AF_UNIX only, which breaks DNS+HTTPS+git.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
@@ -46,7 +52,11 @@ RestrictSUIDSGID=true
 RestrictNamespaces=true
 RestrictRealtime=true
 LockPersonality=true
-MemoryDenyWriteExecute=true
+# MemoryDenyWriteExecute is OFF — JIT'd runtimes (Node, Python,
+# some Go binaries) mmap RWX; the protection blocks them outright.
+# The hardening that matters here is the access-control layer
+# (Tailscale + Caddy), not W^X against the operator's own shell.
+MemoryDenyWriteExecute=false
 
 [Install]
 WantedBy=multi-user.target
