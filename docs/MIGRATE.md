@@ -1,25 +1,26 @@
 # Migration
 
-Step-by-step runbook for moving jehpok.com to a new VPS. The four `make backup-*` recipes and `make setup` are the only recipes this runbook calls; everything else is operator-issued shell. Run `make migrate` to print this file.
+Step-by-step runbook for moving jehpok.com to a new VPS. The five `make backup-*` recipes and `make setup` are the only recipes this runbook calls; everything else is operator-issued shell. Run `make migrate` to print this file.
 
 ## 1. On the OLD VPS
 
-Run all four backups in one shot:
+Run all five backups in one shot:
 
 ```
 make backup-all
 ```
 
-This produces four artifacts at the project root (`$(REPO)`): a `cloud-backup-<date>` directory, a `share-backup-<date>.db` file, a `vault-backup-<date>.tar.gz` archive, and a `secrets-backup/secrets-<date>.tar.gz` bundle.
+This produces five artifacts at the project root (`$(REPO)`): a `cloud-backup-<date>` directory, a `share-backup-<date>.db` file, a `vault-backup-<date>.tar.gz` archive, a `secrets-backup/secrets-<date>.tar.gz` bundle, and a `minecraft-backup-<date>.tar.gz` world archive.
 
 ## 2. Download OFF the old VPS
 
-Move the four artifacts off the VPS — the secrets bundle contains private keys and the Tailscale identity state:
+Move the five artifacts off the VPS — the secrets bundle contains private keys and the Tailscale identity state:
 
 - `$(REPO)/secrets-backup/secrets-<date>.tar.gz`
 - `$(REPO)/cloud-backup-<date>`
 - `$(REPO)/share-backup-<date>.db`
 - `$(REPO)/vault-backup-<date>.tar.gz`
+- `$(REPO)/minecraft-backup-<date>.tar.gz`
 
 ## 3. On the NEW VPS (Debian)
 
