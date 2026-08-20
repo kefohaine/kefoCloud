@@ -102,9 +102,6 @@ Looks like: Cloudflare rejects `curl`/scripts hitting `api.jehpok.com` with a 40
 ### `share.jehpok.com/share`-style paths return `not found` instead of redirecting to `server.jehpok.com/share`
 Looks like: the link shortener admin UI is unreachable from `share.jehpok.com/share`. Reality: the public vhost hides `/share`, `/api/*`, and `/healthz` via a Caddy `@admin` matcher returning 404, because admin has no app-level auth and the public side shouldn't leak its existence. Admin lives at `server.jehpok.com/share`, which is tailnet-only.
 
-### Kuma HTTP probes via Cloudflare get 403 from Bot Fight Mode
-Looks like: every Kuma HTTP monitor (www/share/api/vault/cloud) goes red. Reality: Cloudflare Bot Fight Mode rejects the Kuma probe UA. The same root cause as the `api.jehpok.com` `curl` Intended entry. **Fix in place**: HTTP monitors point at `https://172.22.0.1` with `hostname` set to the public vhost as SNI, probing Caddy directly via the host bridge and bypassing CF. Real visitors still hit CF; Kuma tests Caddy.
-
 ---
 
 ## Solved
