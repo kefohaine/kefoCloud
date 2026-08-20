@@ -6,6 +6,7 @@ import struct
 import subprocess
 import tarfile
 import tempfile
+import threading
 import time
 import zipfile
 from pathlib import Path
@@ -60,15 +61,33 @@ RCON_TYPE_CMD = 2
 RCON_TYPE_AUTH = 3
 
 
-def rcon(cmd, timeout=3.0):
-    """Run one rcon command and return the response string. Raises on error."""
-    request_id = 1
+# ── persistent rcon connection ─────────────────────────────────────────────
+#
+# The dashboard polls stats / list / tps / version every 2 s, which produces
+# 4-6 rcon connections per second. Each one logs
+#   "RCON Client /<ip> started" / "shutting down"
+# which floods latest.log. A single shared, thread-safe connection removes
+# that noise. Idle timeout keeps an unused socket from sitting open across
+# long gaps (e.g. dashboard hidden in a background tab). Auto-reconnect
+# handles the game-container restart case.
 
+RCON_IDLE_TIMEOUT = 30.0  # seconds; close connection after this much idle
+
+
+class _RconPool:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._sock = None
+        self._last_used = 0.0
+        self._next_id = 1  # per-connection request id counter
+
+    @staticmethod
     def _packet(req_id, type_, body):
         body_bytes = body.encode("utf-8") + b"\x00\x00"
         length = 4 + 4 + len(body_bytes)
         return struct.pack("<iii", length, req_id, type_) + body_bytes
 
+    @staticmethod
     def _read_packet(sock):
         header = b""
         while len(header) < 4:
@@ -86,22 +105,64 @@ def rcon(cmd, timeout=3.0):
         req_id, type_ = struct.unpack("<ii", body[:8])
         return req_id, type_, body[8:-2].decode("utf-8", errors="replace")
 
-    sock = socket.create_connection((RCON_HOST, RCON_PORT), timeout=timeout)
-    try:
-        sock.settimeout(timeout)
-        sock.sendall(_packet(request_id, RCON_TYPE_AUTH, RCON_PASSWORD))
-        auth_id, _, _ = _read_packet(sock)
+    def _open(self, timeout):
+        s = socket.create_connection((RCON_HOST, RCON_PORT), timeout=timeout)
+        s.settimeout(timeout)
+        s.sendall(self._packet(self._next_id, RCON_TYPE_AUTH, RCON_PASSWORD))
+        self._next_id += 1
+        auth_id, _, _ = self._read_packet(s)
         if auth_id == -1:
+            s.close()
             raise RuntimeError("rcon: authentication failed")
-        request_id += 1
-        sock.sendall(_packet(request_id, RCON_TYPE_CMD, cmd))
-        _, _, resp = _read_packet(sock)
-        return resp
-    finally:
-        try:
-            sock.close()
-        except Exception:
-            pass
+        return s
+
+    def _close_quiet(self):
+        if self._sock is not None:
+            try:
+                self._sock.close()
+            except Exception:
+                pass
+            self._sock = None
+
+    def cmd(self, body, timeout=3.0):
+        """Run one rcon command over a shared connection. Auto-reconnects
+        once on failure."""
+        with self._lock:
+            now = time.monotonic()
+            # Close stale idle connections.
+            if (self._sock is not None
+                    and now - self._last_used > RCON_IDLE_TIMEOUT):
+                self._close_quiet()
+
+            if self._sock is None:
+                self._sock = self._open(timeout)
+                self._next_id = 2  # request id 1 was used for AUTH
+
+            req_id = self._next_id
+            self._next_id += 1
+            try:
+                self._sock.sendall(self._packet(req_id, RCON_TYPE_CMD, body))
+                _, _, resp = self._read_packet(self._sock)
+            except Exception:
+                # Connection is poisoned — drop it and let the caller retry
+                # via the single reconnect attempt below.
+                self._close_quiet()
+                self._sock = self._open(timeout)
+                req_id = self._next_id
+                self._next_id += 1
+                self._sock.sendall(self._packet(req_id, RCON_TYPE_CMD, body))
+                _, _, resp = self._read_packet(self._sock)
+
+            self._last_used = time.monotonic()
+            return resp
+
+
+_rcon_pool = _RconPool()
+
+
+def rcon(cmd, timeout=3.0):
+    """Public rcon entry point. Thread-safe; uses the shared connection."""
+    return _rcon_pool.cmd(cmd, timeout=timeout)
 
 
 def parse_tps(text):
@@ -121,6 +182,47 @@ def container_running():
         return _docker_client().containers.get(CONTAINER).status == "running"
     except Exception:
         return False
+
+
+# Paper's `version` doesn't change at runtime — only when the image changes
+# or the game container restarts. Cache it keyed on the container StartedAt
+# timestamp so we re-read only when the game container has been restarted.
+# Drops one rcon round-trip from every 2 s stats poll.
+_version_cache = {"started_at": None, "version": None}
+_version_lock = threading.Lock()
+
+
+def _paper_version():
+    """Return Paper version string. Cached; refreshed only when the game
+    container has been restarted since the last read."""
+    try:
+        c = _docker_client().containers.get(CONTAINER)
+        started = c.attrs["State"].get("StartedAt", "")
+    except Exception:
+        started = ""
+    with _version_lock:
+        if started == _version_cache["started_at"] and _version_cache["version"]:
+            return _version_cache["version"]
+    # Cache miss — fetch via rcon. Outside the lock so concurrent first
+    # requests can both try; the cache write is last-writer-wins which is
+    # fine since the version string is deterministic.
+    try:
+        ver_resp = rcon("version")
+        # Paper's /version returns e.g.
+        #   "This server is running Paper version 26.2-112-main@c9e894d ..."
+        # with §X color codes (rcon does its own coloring). Older Paper
+        # builds used the form "Paper version git-Paper-XXX (MC: 1.20.4)".
+        # Strip the color codes first, then accept either shape.
+        plain = re.sub(r"§.", "", ver_resp)
+        m = re.search(r"Paper version ([^\s(]+)", plain)
+        if m:
+            with _version_lock:
+                _version_cache["started_at"] = started
+                _version_cache["version"] = m.group(1)
+            return m.group(1)
+    except Exception:
+        pass
+    return None
 
 
 def stats():
@@ -161,13 +263,8 @@ def stats():
         out["tps"] = parse_tps(tps_resp)
     except Exception:
         pass
-    try:
-        ver_resp = rcon("version")
-        vmatch = re.search(r"Paper (\d+\.\d+\.\d+)", ver_resp)
-        if vmatch:
-            out["version"] = vmatch.group(1)
-    except Exception:
-        pass
+    out["version"] = _paper_version()
+    return out
     return out
 
 
@@ -589,6 +686,23 @@ def run_rcon():
     except Exception as e:
         return redirect(f"/mc/?rcon_flash=rcon+request+failed:+{quote(str(e))}")
     return redirect(f"/mc/?rcon_flash=rcon+request+sent:+{quote(out[:120])}")
+
+
+# JSON variant used by the dashboard's Quick rcon box. Returns the cmd that
+# was sent alongside the rcon output so the UI can show both.
+@app.route("/mc/api/rcon", methods=["POST"])
+def api_rcon_run():
+    payload = request.form if request.form else (request.json or {})
+    cmd = (payload.get("cmd") or "").strip()
+    if not cmd:
+        return jsonify(error="empty command"), 400
+    if not container_running():
+        return jsonify(error="server is not running"), 409
+    try:
+        out = rcon(cmd)
+    except Exception as e:
+        return jsonify(error=f"rcon: {e}"), 500
+    return jsonify(ok=True, cmd=cmd, output=out[:1200])
 
 
 # ── JSON APIs ───────────────────────────────────────────────────────────────

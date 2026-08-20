@@ -503,16 +503,9 @@
     if (!cmd) { setAck('rcon-ack', 'empty command', true); return; }
     setAck('rcon-ack', 'request sent');
     try {
-      const fd = new FormData(); fd.append('cmd', cmd);
-      // The legacy /mc/rcon redirects — follow it manually since fetch
-      // doesn't surface redirect queries. Instead, hit the new rcon form
-      // via a fetch with redirect: follow and extract query params from
-      // the final URL.
-      const r = await fetch('/mc/rcon', { method: 'POST', body: fd, redirect: 'follow' });
-      // Final URL has ?rcon_flash=...
-      const url = new URL(r.url);
-      const flash = url.searchParams.get('rcon_flash') || '(no response)';
-      document.getElementById('rcon-output').textContent = decodeURIComponent(flash);
+      const r = await postJSON('/mc/api/rcon', { cmd });
+      document.getElementById('rcon-output').textContent =
+        '> ' + r.cmd + '\n' + (r.output || '(no response)');
       setAck('rcon-ack', 'rcon request sent');
       inp.value = '';
     } catch (e) {
