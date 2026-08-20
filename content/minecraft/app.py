@@ -526,6 +526,82 @@ def usercache_map():
     return out
 
 
+# ── player IP tracking from log ─────────────────────────────────────────────
+#
+# Paper logs each connection with the player's uuid and source IP in the
+# form "<uuid>[/<ip>:<port>]". For online players the most recent
+# "joined the game" entry is their current IP. For offline players, the
+# most recent "lost connection" entry is their last known IP. Lines we
+# care about:
+#   <uuid>[/<ip>:<port>] joined the game
+#   <uuid>[/<ip>:<port>] lost connection: <reason>
+#
+# The log gets large on a busy server, so we cache the read offset and
+# only parse new tail bytes per call. A log rotation resets the cache.
+
+_ip_cache = {
+    "log_size": 0,           # size of latest.log on last read
+    "online": {},            # uuid_lower -> {"ip": str, "port": int}
+    "last_known": {},        # uuid_lower -> {"ip": str, "port": int}
+}
+
+# Match "<uuid>[/<ip>:<port>] joined the game" — capture both halves.
+# Paper uses full hyphenated UUIDs (8-4-4-4-12), IP is dotted quad or
+# bracketed IPv6 ([::1]:25565) when IPv6 binds.
+_JOIN_RE = re.compile(
+    r"\[?([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\]?"
+    r"\[/([^]]+):(\d+)\]"
+    r"\s+joined the game"
+)
+_LEAVE_RE = re.compile(
+    r"\[?([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\]?"
+    r"\[/([^]]+):(\d+)\]"
+    r"\s+lost connection"
+)
+
+
+def _scan_log_for_ips():
+    """Parse latest.log for join/leave lines. Updates _ip_cache in place."""
+    global _ip_cache
+    try:
+        size = LATEST_LOG.stat().st_size
+    except OSError:
+        return
+    # Rotation: file shrank since last read → reset.
+    if size < _ip_cache["log_size"]:
+        _ip_cache["log_size"] = 0
+        _ip_cache["online"] = {}
+        _ip_cache["last_known"] = {}
+    if size == _ip_cache["log_size"]:
+        return
+    try:
+        with LATEST_LOG.open("rb") as f:
+            f.seek(_ip_cache["log_size"])
+            chunk = f.read(size - _ip_cache["log_size"])
+    except OSError:
+        return
+    _ip_cache["log_size"] = size
+    try:
+        text = chunk.decode("utf-8", errors="replace")
+    except Exception:
+        return
+    for m in _JOIN_RE.finditer(text):
+        uuid = m.group(1).lower()
+        ip = m.group(2)
+        port = int(m.group(3))
+        _ip_cache["online"][uuid] = {"ip": ip, "port": port}
+        _ip_cache["last_known"][uuid] = {"ip": ip, "port": port}
+    for m in _LEAVE_RE.finditer(text):
+        uuid = m.group(1).lower()
+        ip = m.group(2)
+        port = int(m.group(3))
+        # Drop from online; record as last_known.
+        _ip_cache["online"].pop(uuid, None)
+        _ip_cache["last_known"][uuid] = {"ip": ip, "port": port}
+
+
 def list_known_players():
     """Return list of {uuid, name} from usercache, de-duped by uuid."""
     cache = usercache_map()
@@ -577,6 +653,8 @@ def players_api():
     """Return the JSON for /mc/api/players."""
     cache = usercache_map()
     online_names = list_online_names()
+    # Refresh the IP cache from new tail of latest.log.
+    _scan_log_for_ips()
 
     # Build online list: name + uuid from cache.
     online = []
@@ -588,7 +666,10 @@ def players_api():
             if n == name:
                 uuid = u
                 break
-        online.append({"name": name, "uuid": uuid})
+        entry = {"name": name, "uuid": uuid}
+        if uuid and uuid in _ip_cache["online"]:
+            entry["ip"] = _ip_cache["online"][uuid]["ip"]
+        online.append(entry)
         online_lower.add(name.lower())
 
     # Known players: usercache minus currently-online. Stats from disk.
@@ -600,6 +681,9 @@ def players_api():
         stats = parse_player_stats(uuid)
         if stats:
             entry.update(stats)
+        last = _ip_cache["last_known"].get(uuid)
+        if last:
+            entry["last_ip"] = last["ip"]
         known.append(entry)
 
     ops = [r["name"] for r in parse_roster(SERVER_DIR / "ops.json")]
