@@ -8,7 +8,7 @@ SHELL := /bin/bash
 
 REPO     := /var/www/custom/projects/jehpok
 COMPOSE  := docker compose -f
-SERVICES := domain homer kuma share cloud vault minecraft
+SERVICES := domain homer kuma share cloud vault mc
 HOST     := ttyd dnsmasq ollama
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -34,8 +34,8 @@ $(foreach s,$(SERVICES),$(eval $(call up_rule,$s)))
 
 define restart_rule
 restart-$1:
-># Some compose files declare more than one service (e.g. minecraft has
-# `minecraft` + `minecraft-web`). Restarting the named service alone would
+># Some compose files declare more than one service (e.g. mc has
+# `mc` + `mc-web`). Restarting the named service alone would
 # leave the other untouched and surprise the next edit, so restart every
 # service in the file.
 >$(COMPOSE) $(REPO)/repo/services/$1/docker-compose.yml restart
@@ -45,11 +45,11 @@ $(foreach s,$(SERVICES),$(eval $(call restart_rule,$s)))
 define logs_rule
 logs-$1:
 ># Tail the service container named after the directory; for compose files
-# with multiple services (minecraft: minecraft + minecraft-web), tail both
+# with multiple services (mc: mc + mc-web), tail both
 # with a [container] prefix so they don't interleave silently.
->if [ "$1" = "minecraft" ]; then \
-    docker logs minecraft --tail 50 -f 2>&1 | stdbuf -oL sed "s/^/[minecraft] /" & \
-    docker logs minecraft-web --tail 50 -f 2>&1 | stdbuf -oL sed "s/^/[minecraft-web] /" & \
+>if [ "$1" = "mc" ]; then \
+    docker logs mc --tail 50 -f 2>&1 | stdbuf -oL sed "s/^/[mc] /" & \
+    docker logs mc-web --tail 50 -f 2>&1 | stdbuf -oL sed "s/^/[mc-web] /" & \
     wait; \
   else \
     docker logs $1 --tail 50 -f; \
@@ -112,7 +112,7 @@ clean-apt:
 
 # Keep the 3 most recent artifacts per backup pattern; delete older.
 clean-backups:
->@for pattern in cloud-backup-* share-backup-*.db vault-backup-*.tar.gz secrets-backup/secrets-*.tar.gz minecraft-backup-*.tar.gz; do \
+>@for pattern in cloud-backup-* share-backup-*.db vault-backup-*.tar.gz secrets-backup/secrets-*.tar.gz mc-backup-*.tar.gz; do \
     sudo ls -1dt $(REPO)/$$pattern 2>/dev/null | tail -n +4 | sudo xargs -r rm -rf; \
   done
 >@echo "Pruned backups older than the 3 most recent."
@@ -179,7 +179,7 @@ setup:
 # Backups
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: backup-cloud backup-share backup-vault backup-secrets backup-minecraft backup-all
+.PHONY: backup-cloud backup-share backup-vault backup-secrets backup-mc backup-all
 
 backup-cloud:
 >@dest=$(REPO)/cloud-backup-$$(date +%Y%m%d); \
@@ -221,16 +221,16 @@ backup-secrets:
 # Differs from `backup-all` (which snapshots everything): this one is for
 # world data only, intended to be run before destructive ops (regenerate,
 # world import) so a recovery path exists. Does NOT auto-run by itself.
-# When run from `backup-all`, daily.sh stops the minecraft container first
+# When run from `backup-all`, daily.sh stops the mc container first
 # so tar reads a quiescent filesystem; running this standalone while the
 # server is up is unsafe (regions may be partially written).
-backup-minecraft:
->@dest=$(REPO)/minecraft-backup-$$(date +%Y%m%d-%H%M%S).tar.gz; \
-  sudo tar czf "$$dest" -C $(REPO)/minecraft/data world; \
+backup-mc:
+>@dest=$(REPO)/mc-backup-$$(date +%Y%m%d-%H%M%S).tar.gz; \
+  sudo tar czf "$$dest" -C $(REPO)/mc/data world; \
   sudo chown debian:debian "$$dest"; \
   echo "World backup at $$dest"
 
-backup-all: backup-cloud backup-share backup-vault backup-secrets backup-minecraft
+backup-all: backup-cloud backup-share backup-vault backup-secrets backup-mc
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Migration
@@ -245,14 +245,14 @@ migrate:
 # Git
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: git-add git-commit git-push git-all
+.PHONY: git-add git-com git-push git-all
 
 git-add:
 >cd $(REPO)/repo && git add -A
 
-git-commit:
+git-com:
 >@if [ -z "$(MSG)" ]; then \
-    echo "Usage: make git-commit MSG=\"...\"  (MSG is required)"; \
+    echo "Usage: make git-com MSG=\"...\"  (MSG is required)"; \
     exit 1; \
   fi
 >cd $(REPO)/repo && git commit -m "$(MSG)"
@@ -301,7 +301,7 @@ help:
 >@echo ""
 >@echo "  Git"
 >@echo "    make git-add          git add -A in $(REPO)/repo"
->@echo "    make git-commit MSG=\"…\" git commit -m MSG (MSG required)"
+>@echo "    make git-com MSG=\"…\"  git commit -m MSG (MSG required)"
 >@echo "    make git-push         git push jehpok.com main"
 >@echo ""
 >@echo "  Maintenance"
@@ -315,7 +315,7 @@ help:
 >@echo "    make backup-share     shortener SQLite DB"
 >@echo "    make backup-vault     Vaultwarden data tar"
 >@echo "    make backup-secrets   bundle certs + keys + Tailscale state"
->@echo "    make backup-minecraft Minecraft world tar (stops the container via daily.sh when chained)"
+>@echo "    make backup-mc Minecraft world tar (stops the container via daily.sh when chained)"
 >@echo ""
 >@echo "  Cleanup"
 >@echo "    make clean-docker     prune builder / image / container"
