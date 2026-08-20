@@ -95,12 +95,16 @@ services:
       SERVER_DIR: /server
 
     volumes:
-      # Bind the game server's data dir rw so the dashboard can rewrite
-      # server.properties (the form at /mc/config POSTs here). The dashboard
-      # only writes server.properties — not world data, plugins, or logs —
-      # so even with rw, accidental file touches from the dashboard can't
-      # corrupt game state. Game data safety still relies on the game
-      # container being the only writer of /data/world etc.
+      # Bind the game server's data dir rw so the dashboard can edit
+      # server.properties, YAML config files, and handle world downloads,
+      # uploads, and regeneration. The dashboard is the only writer of
+      # /data/server.properties, /data/config/, /data/bukkit.yml,
+      # /data/spigot.yml, /data/commands.yml, and /data/plugins/ — Paper
+      # itself never touches those files while running. The dashboard
+      # refuses world writes (download / upload / regenerate) while the
+      # game container is running, so /data/world is only mutated when the
+      # server is stopped. Game data safety still relies on the game
+      # container being the only writer of /data/world at runtime.
       - /var/www/custom/projects/jehpok/minecraft/data:/server:rw
       - ../../content/minecraft:/app/src:ro
       # Docker socket so the dashboard can start/stop/restart the game
