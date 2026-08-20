@@ -8,7 +8,7 @@ SHELL := /bin/bash
 
 REPO     := /var/www/custom/projects/jehpok
 COMPOSE  := docker compose -f
-SERVICES := share domain cloud vault kuma homer minecraft
+SERVICES := domain homer kuma share cloud vault minecraft
 HOST     := ttyd dnsmasq ollama
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -20,10 +20,15 @@ HOST     := ttyd dnsmasq ollama
 .PHONY: $(addprefix restart-,$(SERVICES)) restart-all
 .PHONY: $(addprefix logs-,$(SERVICES)) logs-all
 
-# share rebuilds its image locally; the rest just pull.
+# share + domain rebuild their image locally; the rest just pull.
+# share = custom Dockerfile for the link shortener.
+# domain = custom Dockerfile adds caddy-dns/cloudflare so the
+#   mc.jehpok.com vhost can use ACME DNS-01 (HTTP-01 is blocked because
+#   the game ports require CF proxy to stay off, but CF proxy is what
+#   would carry the HTTP-01 challenge traffic from the public internet).
 define up_rule
 up-$1:
->$(COMPOSE) $(REPO)/repo/services/$1/docker-compose.yml up -d --force-recreate$(if $(filter share,$1), --build)
+>$(COMPOSE) $(REPO)/repo/services/$1/docker-compose.yml up -d --force-recreate$(if $(filter share domain,$1), --build)
 endef
 $(foreach s,$(SERVICES),$(eval $(call up_rule,$s)))
 
@@ -98,13 +103,12 @@ status:
 >@free -h
 
 clean-docker:
->docker builder prune -af
->docker image prune -af
->docker container prune -f
+>@docker builder prune -af
+>@docker image prune -af
+>@docker container prune -f
 
 clean-apt:
->sudo apt-get autoremove -y
->sudo apt-get clean
+>@sudo apt-get -qq autoremove -y
 
 # Keep the 3 most recent artifacts per backup pattern; delete older.
 clean-backups:
@@ -185,6 +189,7 @@ backup-cloud:
   trap 'docker exec -w /var/www/html cloud php occ maintenance:mode --off' EXIT; \
   docker exec -i cloud tar cf - -C /data . | sudo tar xf - -C "$$dest"; \
   sudo chown -R 33:33 "$$dest"; \
+  trap - EXIT; \
   docker exec -w /var/www/html cloud php occ maintenance:mode --off; \
   echo "Backup at $$dest"
 
@@ -199,7 +204,7 @@ backup-vault:
 backup-secrets:
 >@sudo mkdir -p $(REPO)/secrets-backup
 >@sudo tar czf $(REPO)/secrets-backup/secrets-$$(date +%Y%m%d).tar.gz \
-  $(REPO)/certs \
+  --warning=no-absolute-names \
   /home/debian/.ssh/github_key \
   /home/debian/.ssh/github_key.pub \
   /home/debian/.ssh/config \
@@ -211,7 +216,6 @@ backup-secrets:
   /etc/systemd/system/dnsmasq.service.d/override.conf \
   /var/lib/tailscale
 >@echo "Secrets bundle at $(REPO)/secrets-backup/secrets-$$(date +%Y%m%d).tar.gz"
->@echo "Download this file OFF the VPS. It contains private keys and Tailscale identity."
 
 # Snapshot just the Minecraft world data folder as a timestamped .tar.gz.
 # Differs from `backup-all` (which snapshots everything): this one is for
@@ -263,8 +267,8 @@ help:
 >@echo "    make logs-<svc>       follow container logs"
 >@echo ""
 >@echo "  Bulk"
->@echo "    make up-all           recreate all 6 containers in order"
 >@echo "    make restart-all      restart all 6 containers + dnsmasq + ttyd"
+>@echo "    make up-all           recreate all 6 containers in order"
 >@echo "    make logs-all         tail all 6 container logs in one stream"
 >@echo "    make backup-all       run all five backup recipes in order (stops the mc container via daily.sh)"
 >@echo "    make clean-all        chain: clean-docker + clean-apt + clean-backups"
@@ -286,7 +290,7 @@ help:
 >@echo "    make backup-cloud     Nextcloud snapshot (maintenance mode during copy)"
 >@echo "    make backup-share     shortener SQLite DB"
 >@echo "    make backup-vault     Vaultwarden data tar"
->@echo "    make backup-secrets   bundle certs + keys + Tailscale state (download off VPS)"
+>@echo "    make backup-secrets   bundle certs + keys + Tailscale state"
 >@echo "    make backup-minecraft Minecraft world tar (stops the container via daily.sh when chained)"
 >@echo ""
 >@echo "  Cleanup"
