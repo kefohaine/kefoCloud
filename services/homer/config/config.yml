@@ -106,6 +106,12 @@ services:
         target: "_blank"
         subtitle: "Shortener admin"
         description: "Manage short links at server.jehpok.com/share."
+      - name: "Minecraft"
+        icon: "fas fa-cubes"
+        url: "https://server.jehpok.com/mc"
+        target: "_blank"
+        subtitle: "Game server dashboard"
+        description: "Start/stop the Minecraft server, view stats, edit server.properties. Connect at mc.jehpok.com:25565 (Java) or :19132 (Bedrock)."
 
   - name: "About"
     icon: "fas fa-circle-info"
