@@ -4,9 +4,13 @@ services:
     container_name: domain
     restart: unless-stopped
 
-    ports:
-      - "80:80"
-      - "443:443"
+    # Host network so Caddy sees the real client source IP — without it,
+    # Docker DNAT rewrites every packet to 172.22.0.1 (the bridge gateway)
+    # before Caddy sees it, which breaks the @not_tailnet remote_ip matcher
+    # on https://server.jehpok.com. The host network namespace is on the
+    # `net` bridge at 172.22.0.0/16, so Caddy can still reach upstream
+    # containers by their bridge IP (172.22.0.2 .. .9 — see Caddyfile).
+    network_mode: host
 
     healthcheck:
       test: ["CMD", "caddy", "version"]
@@ -26,10 +30,3 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
-    networks:
-      - net
-
-networks:
-  net:
-    external: true

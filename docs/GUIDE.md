@@ -84,13 +84,13 @@ The compose files are the source of truth. This table is the one-line reference 
 | dnsmasq  | n/a (host systemd)                      | n/a       | `make restart-dns`           | n/a                          |
 | ollama   | n/a (host systemd; see Protected host resources) | n/a | `systemctl restart ollama`   | n/a                          |
 
-The `net` Docker network is `external: true` — create once with `docker network create net` on a fresh host. All inter-container services use `expose`, not `ports`. Only `domain` (80/443) publishes host ports; dnsmasq binds to the Tailscale IP only, not `0.0.0.0`.
+The `net` Docker network is `external: true` — create once with `docker network create net` on a fresh host. All inter-container services use `expose`, not `ports`. The exception is `domain`: it runs with `network_mode: host` so Caddy sees the real client source IP — without host networking, Docker DNAT rewrites every packet to `172.22.0.1` (the bridge gateway) before Caddy sees it, which breaks the `@not_tailnet` remote_ip matcher on `https://server.jehpok.com`. The host network namespace is on the `net` bridge at `172.22.0.0/16`, so Caddy still dials upstream containers by their bridge IP (see Caddyfile). dnsmasq binds to the Tailscale IP only, not `0.0.0.0`.
 
 ### Per-service edit pointers
 
 When you need to know "what does X do / where do I edit Y", read the file at the path below — the docs don't re-type the contents.
 
-- **`domain`** — vhosts, snippets, header policy: `services/domain/Caddyfile`. Bind mounts and TLS cert path: `services/domain/docker-compose.yml`.
+- **`domain`** — vhosts, snippets, header policy: `services/domain/Caddyfile`. Compose + bind mounts + TLS cert path: `services/domain/docker-compose.yml`. Runs `network_mode: host` — see note above.
 - **`cloud`** — Nextcloud env, PHP-FPM pool tuning, bind mounts: `services/cloud/docker-compose.yml` + `services/cloud/php-fpm.d/zz-custom.conf`. Admin creds: `services/cloud/.env` (gitignored — read access only via the operator).
 - **`share`** — Flask routes: `content/share/app.py`. Compose + DB bind mount: `services/share/docker-compose.yml`.
 - **`vault`** — env, bind mount, admin token: `services/vault/docker-compose.yml`.

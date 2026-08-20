@@ -48,7 +48,7 @@ https://www.jehpok.com {
     header {
         import security_headers
     }
-    reverse_proxy homer:8080
+    reverse_proxy 172.22.0.2:8080
 }
 
 https://server.jehpok.com {
@@ -59,12 +59,12 @@ https://server.jehpok.com {
     }
     @share path /share /share/*
     handle @share {
-        reverse_proxy share:5000
+        reverse_proxy 172.22.0.3:5000
     }
     @mc path /mc /mc/*
     handle @mc {
         uri strip_prefix /mc
-        reverse_proxy minecraft-web:5000
+        reverse_proxy 172.22.0.8:5000
     }
     @shell path /shell /shell/*
     handle @shell {
@@ -107,7 +107,7 @@ https://share.jehpok.com {
     handle_errors 404 {
         respond "not found"
     }
-    reverse_proxy share:5000 {
+    reverse_proxy 172.22.0.3:5000 {
         @notfound status 404
         handle_response @notfound {
             respond "not found" 404
@@ -169,7 +169,7 @@ https://vault.jehpok.com {
     header {
         import security_headers
     }
-    reverse_proxy vault:80
+    reverse_proxy 172.22.0.4:80
 }
 
 # ── Nextcloud (PHP-FPM) ────────────────────────────────────────────────────
@@ -184,7 +184,7 @@ https://cloud.jehpok.com {
     respond @blocked "not found" 404
     redir /.well-known/carddav /remote.php/dav 301
     redir /.well-known/caldav /remote.php/dav 301
-    php_fastcgi cloud:9000 {
+    php_fastcgi 172.22.0.7:9000 {
         root /var/www/html
         dial_timeout 10s
         read_timeout 300s
@@ -207,5 +207,5 @@ https://kuma.jehpok.com {
     header {
         import security_headers
     }
-    reverse_proxy kuma:3001
+    reverse_proxy 172.22.0.6:3001
 }
