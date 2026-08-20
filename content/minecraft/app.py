@@ -342,17 +342,24 @@ def write_properties(values):
 # ── container control ────────────────────────────────────────────────────────
 
 def container_action(action):
-    """Start / stop / restart the game container via the Docker SDK."""
+    """Start / stop / restart the game container via the Docker SDK.
+    Idempotent: stopping an already-stopped container is a no-op, not an
+    error — the dashboard Stop button is pressed often enough that
+    surfacing "already stopped" as an error would be misleading."""
     if action not in ("start", "stop", "restart"):
         return False, "unknown action"
     try:
         c = _docker_client().containers.get(CONTAINER)
     except Exception as e:
         return False, f"container not found: {e}"
-    if action == "start":
-        c.start()
-    elif action == "stop":
+    if action == "stop":
+        if c.status != "running":
+            return True, "already stopped"
         c.stop()
+    elif action == "start":
+        if c.status == "running":
+            return True, "already running"
+        c.start()
     elif action == "restart":
         c.restart()
     return True, f"{action}ed"
@@ -665,6 +672,20 @@ def control():
         return redirect("/mc/?control_flash=request+rejected+unknown+action")
     container_action(action)
     return redirect(f"/mc/?control_flash={quote(action + ' request sent')}")
+
+
+# JSON variant used by the dashboard's Start / Stop / Restart buttons.
+# Returns the action result so the UI can show a useful toast.
+@app.route("/mc/api/control", methods=["POST"])
+def api_control():
+    payload = request.form if request.form else (request.json or {})
+    action = (payload.get("action") or "").strip()
+    if action not in ("start", "stop", "restart"):
+        return jsonify(error="unknown action"), 400
+    ok, msg = container_action(action)
+    if not ok:
+        return jsonify(error=msg), 500
+    return jsonify(ok=True, action=action, message=msg)
 
 
 @app.route("/mc/config", methods=["POST"])

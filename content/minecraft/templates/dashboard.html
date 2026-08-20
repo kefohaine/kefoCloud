@@ -480,19 +480,22 @@
   // ── container controls ─────────────────────────────────────────────
   document.getElementById('btn-start').addEventListener('click', async () => {
     setAck('control-ack', 'start request sent');
-    try { await postForm('/mc/control', { action: 'start' }); toast('start request sent'); }
+    try { const r = await postJSON('/mc/api/control', { action: 'start' });
+          toast(`start: ${r.message}`); }
     catch (e) { toast('start failed: ' + e.message, true); }
   });
   document.getElementById('btn-stop').addEventListener('click', async () => {
     if (!confirm('Stop the Minecraft server?')) return;
     setAck('control-ack', 'stop request sent');
-    try { await postForm('/mc/control', { action: 'stop' }); toast('stop request sent'); }
+    try { const r = await postJSON('/mc/api/control', { action: 'stop' });
+          toast(`stop: ${r.message}`); }
     catch (e) { toast('stop failed: ' + e.message, true); }
   });
   document.getElementById('btn-restart').addEventListener('click', async () => {
     if (!confirm('Restart the Minecraft server?')) return;
     setAck('control-ack', 'restart request sent');
-    try { await postForm('/mc/control', { action: 'restart' }); toast('restart request sent'); }
+    try { const r = await postJSON('/mc/api/control', { action: 'restart' });
+          toast(`restart: ${r.message}`); }
     catch (e) { toast('restart failed: ' + e.message, true); }
   });
 
