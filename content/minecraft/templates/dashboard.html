@@ -59,6 +59,10 @@
   .card .v { font-size: 1.8rem; font-weight: 600; color: var(--accent); }
   .card .k { font-size: .8rem; color: var(--stone);
              text-transform: uppercase; letter-spacing: 1px; }
+  /* The Server card spans the full row width so the status pill has room
+     to breathe next to the optional booting-hint text. The other cards
+     (online/max/tps/version/uptime) sit below it in the auto-fit grid. */
+  .card-wide { grid-column: 1 / -1; }
 
   .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
   form { margin: 0; }
@@ -77,8 +81,9 @@
 
   .pill { display: inline-block; padding: 4px 14px; border-radius: 999px;
           font-size: 1.1rem; font-weight: 600; color: #fff; }
-  .pill-on  { background: var(--good); }
-  .pill-off { background: var(--bad); }
+  .pill-on     { background: var(--good); }
+  .pill-off    { background: var(--bad); }
+  .pill-booting { background: var(--warn); }
 
   table { width: 100%; border-collapse: collapse; font-size: .95rem;
           background: var(--card); border: 1px solid var(--border);
@@ -222,9 +227,10 @@
 
   <h2>Status</h2>
   <div class="grid">
-    <div class="card">
+    <div class="card card-wide">
       <div class="v" id="card-running">
         <span class="pill pill-off" id="card-running-pill">offline</span>
+        <span class="hint" id="card-running-hint" style="margin-left:.5em;"></span>
       </div>
       <div class="k">Server</div>
     </div>
@@ -501,14 +507,27 @@
     try {
       const s = await fetchJSON('/mc/api/stats');
       const pill = document.getElementById('card-running-pill');
-      pill.textContent = s.running ? 'online' : 'offline';
-      pill.className = 'pill ' + (s.running ? 'pill-on' : 'pill-off');
+      const hint = document.getElementById('card-running-hint');
+      // Three states: offline (not running), booting (running but the
+      // rcon listener hasn't accepted a client yet), online (booting done).
+      let label, klass, hdr;
+      if (!s.running) {
+        label = 'offline'; klass = 'pill-off';
+      } else if (s.booting) {
+        label = 'booting'; klass = 'pill-booting';
+      } else {
+        label = 'online'; klass = 'pill-on';
+      }
+      pill.textContent = label;
+      pill.className = 'pill ' + klass;
+      hint.textContent = s.booting ? 'waiting for rcon listener…' : '';
+      const hdrLabel = s.running ? (s.booting ? 'booting' : 'online') : 'offline';
       document.getElementById('card-online').textContent = fmt(s.online);
       document.getElementById('card-max').textContent = fmt(s.max);
       document.getElementById('card-tps').textContent = s.tps == null ? '—' : Number(s.tps).toFixed(1);
       document.getElementById('card-version').textContent = fmt(s.version);
       document.getElementById('card-uptime').textContent = fmtUptime(s.uptime_s);
-      document.getElementById('hdr-server').textContent = s.running ? 'online' : 'offline';
+      document.getElementById('hdr-server').textContent = hdrLabel;
       document.getElementById('hdr-players').textContent = (s.online != null ? s.online : '—') + ' / ' + fmt(s.max);
       document.getElementById('hdr-tps').textContent = s.tps == null ? '—' : Number(s.tps).toFixed(1);
     } catch (e) {

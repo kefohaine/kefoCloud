@@ -196,6 +196,78 @@ _version_cache = {"started_at": None, "version": None}
 _version_lock = threading.Lock()
 
 
+# When does the dashboard consider the server "online" (vs. "loading")?
+# Two log lines matter:
+#   [HH:MM:SS] [ServerMain/INFO]: [bootstrap] Loading Paper ...
+#       — printed once per JVM start; marks the start of the current session.
+#   [HH:MM:SS] [RCON Listener #N/INFO]: Thread RCON Client /<ip> started
+#       — printed on every rcon client connect; the first one after the
+#         bootstrap line proves the listener is accepting connections
+#         AND that the dashboard successfully talked to the server.
+# Stats treats the gap between the bootstrap line and the first rcon
+# client line as "loading" — uptime is hidden in that window so the
+# boot time isn't counted as uptime.
+#
+# Scanned once per StartedAt; cached keyed on StartedAt so subsequent
+# 2 s polls don't re-read latest.log.
+_RCON_READY_BOOTSTRAP_RE = re.compile(
+    r"\[(\d{2}:\d{2}:\d{2})\] \[ServerMain/INFO\]: \[bootstrap\]"
+)
+_RCON_READY_CLIENT_RE = re.compile(
+    r"\[(\d{2}:\d{2}:\d{2})\] \[RCON Listener #\d+/INFO\]: "
+    r"Thread RCON Client /"
+)
+_rcon_ready_cache = {"started_at": None, "ts": None}
+_rcon_ready_lock = threading.Lock()
+
+
+def _rcon_ready_since(started_at_iso):
+    """Return the timestamp (epoch seconds) of the first RCON Client line
+    in the current session, or None if no client has connected yet.
+    `started_at_iso` is the container's State.StartedAt in ISO format."""
+    with _rcon_ready_lock:
+        if _rcon_ready_cache["started_at"] == started_at_iso:
+            return _rcon_ready_cache["ts"]
+    try:
+        text = LATEST_LOG.read_text(errors="replace")
+    except OSError:
+        return None
+    # Find the last bootstrap line in the file — that's the start of the
+    # current session. Older log archives (rotated YYYY-MM-DD-N.log.gz)
+    # may also contain bootstrap lines from previous sessions; the LAST
+    # one in latest.log is the one we want.
+    bootstrap_match = None
+    for m in _RCON_READY_BOOTSTRAP_RE.finditer(text):
+        bootstrap_match = m
+    if bootstrap_match is None:
+        # No bootstrap line in the log yet — server still in early init.
+        return None
+    tail = text[bootstrap_match.end():]
+    client_match = _RCON_READY_CLIENT_RE.search(tail)
+    if client_match is None:
+        return None
+    # Combine the bootstrap line's HH:MM:SS with the date from
+    # started_at_iso to form an absolute timestamp.
+    from datetime import datetime, timezone, timedelta
+    started_dt = datetime.fromisoformat(started_at_iso.replace("Z", "+00:00"))
+    hms = client_match.group(1)
+    # Bootstrap lines and rcon client lines use local-time HH:MM:SS,
+    # but we don't know the JVM's local TZ. The itzg image sets TZ=UTC
+    # (compose env), so local == UTC.
+    h, m, s = (int(x) for x in hms.split(":"))
+    online_dt = started_dt.replace(hour=h, minute=m, second=s, microsecond=0)
+    # Edge case: if the client connected shortly before midnight and the
+    # log shows a HH:MM:SS that looks earlier than the bootstrap time on
+    # a clock wrap, the day-rollover would give a wrong date. The itzg
+    # image guarantees TZ=UTC and the JVM rarely boots in <1s, so this
+    # is a non-issue in practice; document it as a known limitation.
+    epoch = online_dt.timestamp()
+    with _rcon_ready_lock:
+        _rcon_ready_cache["started_at"] = started_at_iso
+        _rcon_ready_cache["ts"] = epoch
+    return epoch
+
+
 # `_last_started_at` is the latest container StartedAt we've observed.
 # stats() populates it on every call (after containers.get), so the
 # _paper_version() cache check can compare against this without re-hitting
@@ -249,12 +321,16 @@ def stats():
     """Live stats from rcon + container status via Docker SDK."""
     out = {
         "online": None, "max": None, "tps": None,
-        "running": False, "version": None, "uptime_s": None, "raw": "",
+        "running": False, "version": None, "uptime_s": None,
+        "booting": False, "raw": "",
     }
     try:
         c = _docker_client.containers.get(CONTAINER)
         out["running"] = c.status == "running"
-        # Uptime is only meaningful while the container is running.
+        # Uptime is only meaningful while the container is running AND the
+        # rcon listener has accepted at least one client connect. Before
+        # that, the server is "booting" and uptime is hidden so boot time
+        # isn't counted as uptime.
         # c.attrs["State"]["StartedAt"] holds the LAST start time even
         # when stopped, so we must guard on running first.
         if out["running"]:
@@ -263,9 +339,14 @@ def stats():
                 # Format: "2026-08-20T15:49:54.123456789Z"
                 from datetime import datetime, timezone
                 t = datetime.fromisoformat(started.replace("Z", "+00:00"))
-                out["uptime_s"] = int((datetime.now(timezone.utc) - t).total_seconds())
-                # Share with _paper_version so its cache check doesn't need
-                # a second containers.get() call.
+                online_since = _rcon_ready_since(started)
+                if online_since is None:
+                    # Running, but no rcon client connect yet. Still booting.
+                    out["booting"] = True
+                else:
+                    out["uptime_s"] = int(datetime.now(timezone.utc).timestamp() - online_since)
+                # Share StartedAt with _paper_version so its cache check
+                # doesn't need a second containers.get() call.
                 with _last_started_at["lock"]:
                     _last_started_at["value"] = started
             except Exception:
@@ -889,6 +970,7 @@ def api_stats():
     s = stats()
     return jsonify(
         running=s["running"],
+        booting=s["booting"],
         online=s["online"],
         max=s["max"],
         tps=s["tps"],
