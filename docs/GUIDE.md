@@ -41,7 +41,10 @@ make status            # show a table of all running containers + host systemd u
 make refresh           # apt update/upgrade + pull all images + make up-all
 make setup             # one-shot host bootstrap: install ttyd, copy reference configs, enable Ollama + ttyd + sshd + dnsmasq + daily maintenance timer, open UFW rule, restore Claude settings
 make migrate           # cat docs/MIGRATE.md — the full VPS-to-VPS migration runbook
-make push MSG="..."    # stage, commit, and push to the jehpok.com remote
+make git-add           # git add -A in $(REPO)/repo
+make git-commit MSG="…"  # git commit -m MSG (MSG required)
+make git-push          # git push jehpok.com main
+make git-all MSG="…"   # shortcut: stage + commit + push
 make backup-cloud      # snapshot Nextcloud data (maintenance mode on during the copy)
 make backup-share      # copy the shortener SQLite DB to /var/www/custom/projects/jehpok/share-backup-<date>.db
 make backup-vault      # tar the Vaultwarden data dir to /var/www/custom/projects/jehpok/vault-backup-<date>.tar.gz

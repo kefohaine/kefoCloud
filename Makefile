@@ -245,10 +245,29 @@ migrate:
 # Git
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: push
+.PHONY: git-add git-commit git-push git-all
 
-push:
->cd $(REPO)/repo && git add -A && git commit -m "$(MSG)" && git push jehpok.com main
+git-add:
+>cd $(REPO)/repo && git add -A
+
+git-commit:
+>@if [ -z "$(MSG)" ]; then \
+    echo "Usage: make git-commit MSG=\"...\"  (MSG is required)"; \
+    exit 1; \
+  fi
+>cd $(REPO)/repo && git commit -m "$(MSG)"
+
+git-push:
+>cd $(REPO)/repo && git push jehpok.com main
+
+# Bulk: stage + commit (MSG required) + push in one shot. Same as the
+# old 'make push', kept as a shortcut for the common case.
+git-all: git-add
+>@if [ -z "$(MSG)" ]; then \
+    echo "Usage: make git-all MSG=\"...\"  (MSG is required)"; \
+    exit 1; \
+  fi
+>cd $(REPO)/repo && git commit -m "$(MSG)" && git push jehpok.com main
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Help (default goal)
@@ -267,11 +286,12 @@ help:
 >@echo "    make logs-<svc>       follow container logs"
 >@echo ""
 >@echo "  Bulk"
->@echo "    make restart-all      restart all 6 containers + dnsmasq + ttyd"
->@echo "    make up-all           recreate all 6 containers in order"
->@echo "    make logs-all         tail all 6 container logs in one stream"
+>@echo "    make restart-all      restart all containers + dnsmasq + ttyd"
+>@echo "    make up-all           recreate all containers in order"
+>@echo "    make logs-all         tail all container logs in one stream"
 >@echo "    make backup-all       run all five backup recipes in order (stops the mc container via daily.sh)"
 >@echo "    make clean-all        chain: clean-docker + clean-apt + clean-backups"
+>@echo "    make git-all MSG=\"…\"  stage + commit + push (shortcut for the 3 below)"
 >@echo ""
 >@echo "  Host services (systemd)"
 >@echo "    make restart-ttyd     restart host ttyd"
@@ -279,12 +299,16 @@ help:
 >@echo "    make logs-ttyd        follow ttyd journal"
 >@echo "    make logs-dnsmasq     follow dnsmasq journal"
 >@echo ""
+>@echo "  Git"
+>@echo "    make git-add          git add -A in $(REPO)/repo"
+>@echo "    make git-commit MSG=\"…\" git commit -m MSG (MSG required)"
+>@echo "    make git-push         git push jehpok.com main"
+>@echo ""
 >@echo "  Maintenance"
 >@echo "    make status           containers + host services + disk + memory"
 >@echo "    make refresh          apt update/upgrade + pull images + up-all"
 >@echo "    make setup            one-shot host bootstrap (configs, units, UFW, Claude)"
 >@echo "    make migrate          cat docs/MIGRATE.md (full VPS-to-VPS runbook)"
->@echo "    make push MSG=\"...\"   commit + push to jehpok.com main"
 >@echo ""
 >@echo "  Backups"
 >@echo "    make backup-cloud     Nextcloud snapshot (maintenance mode during copy)"
