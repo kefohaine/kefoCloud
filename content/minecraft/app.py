@@ -212,9 +212,11 @@ def _paper_version():
         #   "This server is running Paper version 26.2-112-main@c9e894d ..."
         # with §X color codes (rcon does its own coloring). Older Paper
         # builds used the form "Paper version git-Paper-XXX (MC: 1.20.4)".
-        # Strip the color codes first, then accept either shape.
+        # Strip the color codes first, then return only the leading
+        # MAJOR.MINOR (e.g. "26.2") — the trailing build number + git hash
+        # is noise for the dashboard card.
         plain = re.sub(r"§.", "", ver_resp)
-        m = re.search(r"Paper version ([^\s(]+)", plain)
+        m = re.search(r"Paper version (\d+\.\d+)", plain)
         if m:
             with _version_lock:
                 _version_cache["started_at"] = started
