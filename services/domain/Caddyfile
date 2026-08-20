@@ -184,7 +184,7 @@ https://cloud.jehpok.com {
     respond @blocked "not found" 404
     redir /.well-known/carddav /remote.php/dav 301
     redir /.well-known/caldav /remote.php/dav 301
-    php_fastcgi 172.22.0.7:9000 {
+    php_fastcgi 172.22.0.5:9000 {
         root /var/www/html
         dial_timeout 10s
         read_timeout 300s
