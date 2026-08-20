@@ -19,7 +19,7 @@ Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Six publ
                 │                  │                  │
                 ▼                  ▼                  ▼
            reverse_proxy      reverse_proxy       php_fastcgi
-           ops / api          share / vault       cloud:9000
+           server / api       share / vault       cloud:9000
                               / kuma              (Nextcloud FPM)
                               / www (Homer)
 

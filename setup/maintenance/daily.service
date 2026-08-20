@@ -1,5 +1,5 @@
 [Unit]
-Description=jehpok.com daily maintenance (apt upgrade, docker prune, container updates)
+Description=jehpok.com daily maintenance (make refresh + backup-all + clean-all)
 After=docker.service
 
 [Service]

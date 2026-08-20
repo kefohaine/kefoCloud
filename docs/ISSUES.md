@@ -134,6 +134,13 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Static site placeholders** — non-blank `index.html` on www/app/vps.
 - **Healthchecks** — domain + cloud healthy; tailnet `NONE` (`FROM scratch`).
 - **Security headers** — HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy on all vhosts.
+- **Claude Code project safety rail** — `setup/claude/settings.local.json` (deny-only, AGENTS.md-protected resources + user-data bind mounts) deployed by `make setup`.
+- **Backup + migrate recipes broken as `debian`** — root-owned `/var/www/custom/projects/jehpok/` blocked `cp/tar/mkdir` destinations; `backup-cloud` source was unreachable (`cloud/users` is `770 www-data:www-data`); `migrate` recipe was deleted by `582b789` and only its help line survived. Now: backup-share/vault/secrets use `sudo` for destinations; backup-cloud streams via `docker exec cloud tar cf - -C /data . | sudo tar xf -`; `migrate` recipe restored verbatim.
+- **Makefile `set -u` foot-gun** — `SHELLFLAGS := -eu -c` with unset `SHELL` ran recipes under `dash -eu`, where `-u` semantics differ from bash; latent crash on any unset var. Fixed: `SHELL := /bin/bash` set explicitly at top; documented in `GUIDE.md` operational gotchas.
+- **`backup-cloud` maintenance trap** — added `trap 'occ maintenance:mode --off' EXIT` so a tar-stream failure can't leave Nextcloud in maintenance mode.
+- **`clean` split into `clean-docker` + `clean-apt` + `clean-backups` + `clean-all`** — old `clean` was a hardcoded mix of apt + docker prune; now each is independently runnable; `clean-backups` keeps latest 3 per pattern and prunes older.
+- **`backup-all`** — chains the four backup recipes in order; daily timer now runs `make refresh` → `make backup-all` → `make clean-all`.
+- **Migrate runbook extracted to `docs/MIGRATE.md`** — `make migrate` now cats the doc instead of echoing ~50 lines inline; prose rewritten per `.md` writing rules (points at executable source, doesn't retype).
 - **Makefile** — recipes for up/restart/logs/status/push/backup/clean.
 - **Nextcloud overrides env-driven** — `TRUSTED_PROXIES` + `OVERWRITECLIURL` in compose; removed from `config.php`.
 - **Deploy/ops helper scripts** — covered by the Makefile recipes.
@@ -175,5 +182,5 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **`ops.jehpok.com/terminal` → `ops.jehpok.com/server`** — URL renamed; Caddy `@server` matcher at `/server*`, Homer dashboard updated, README + ISSUES + GUIDE all point at `/server`. systemd unit stays `ttyd.service` (it's the runtime, not the URL).
 - **Hostname `vps-742a45f9` → `server`** — system hostname + `/etc/hosts` updated; SSH host keys regenerated so the old `root@vps-742a45f9` comment is gone from the `.pub` files; cloud-init stale state (`/var/lib/cloud/data/{previous,set}-hostname`) deleted.
 - **`debian` has passwordless sudo** — `/etc/sudoers.d/debian-passwordless` (`NOPASSWD:ALL`, mode 0440). Reduces permission prompts during normal agent operations; still requires sudo for anything privileged.
-- **Claude Code allow-list curated + backed up** — `.claude/settings.local.json` is gitignored (per-operator); tracked backup lives at `setup/claude/settings.local.json`. `make restore-claude-settings` re-applies it; `make setup-host` restores it on a fresh install. Allow-list covers ollama/maintenance commands; destructive ops still prompt.
+- **Claude Code allow-list curated + backed up** — `.claude/settings.local.json` is gitignored (per-operator); tracked template lives at `setup/claude/settings.local.json`; `make setup` deploys it. Allow-list covers ollama/maintenance commands; destructive ops still prompt. Later superseded by the project-level deny-only safety rail (see Claude Code project safety rail).
 - **ttyd hardening removed** — `ProtectSystem`, `PrivateTmp`, `MemoryDenyWriteExecute`, `PrivateDevices`, `RestrictAddressFamilies`, `LockPersonality`, `RestrictRealtime`, `ProtectControlGroups` all stripped from `ttyd.service` (operator preference: no permission hunts); access control stays at Tailscale + `Caddy @not_tailnet`.

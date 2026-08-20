@@ -6,9 +6,10 @@ echo "=== $(date) ===" >> "$LOG"
 
 cd /var/www/custom/projects/jehpok/repo
 
-make maintain >> "$LOG" 2>&1
-make clean >> "$LOG" 2>&1
-make backup-cloud >> "$LOG" 2>&1 || echo "backup-cloud failed" >> "$LOG"
-make backup-share >> "$LOG" 2>&1 || echo "backup-share failed" >> "$LOG"
+# Refresh: apt + image pull + up-all. Backup-all: all four backup recipes.
+# Clean-all: docker prune + apt autoremove + prune old backups.
+make refresh       >> "$LOG" 2>&1
+make backup-all    >> "$LOG" 2>&1 || echo "backup-all failed" >> "$LOG"
+make clean-all     >> "$LOG" 2>&1 || echo "clean-all failed" >> "$LOG"
 
 echo "--- done ---" >> "$LOG"
