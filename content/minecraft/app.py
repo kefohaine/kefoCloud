@@ -17,6 +17,7 @@ from flask import (
     Flask,
     Response,
     jsonify,
+    make_response,
     redirect,
     render_template,
     request,
@@ -41,12 +42,21 @@ RCON_PASSWORD = os.environ.get("RCON_PASSWORD", "change-me-via-dashboard")
 
 CONTAINER = os.environ.get("MC_CONTAINER", "minecraft")
 
-# Host-side backup directory (outside the bind mount — tar creates the
-# archive here, so the file isn't subject to dashboard bind-mount semantics).
-HOST_BACKUP_DIR = Path("/var/www/custom/projects/jehpok")
-HOST_WORLD_SOURCE = HOST_BACKUP_DIR / "minecraft" / "data" / "world"
+# Backup directory for dashboard-created world snapshots. Lives inside the
+# game-data bind mount (/var/www/custom/projects/jehpok/minecraft/data
+# → /server) as a sibling of `world/`, so the dashboard container can write
+# to it without an extra host mount. Makefile-driven backups (`make
+# backup-minecraft`) write to $(REPO) — i.e. the parent of `minecraft/` —
+# and are independent of this directory.
+BACKUP_DIR = SERVER_DIR / ".backups"
+BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
-app = Flask(__name__)
+app = Flask(__name__,
+            # Caddy's @mc path match forwards /mc/* without stripping
+            # the prefix, so the dashboard is reached as /mc/... Flask's
+            # default static URL would be /static/...; remap it so
+            # @font-face src: url('/mc/static/fonts/...') resolves.
+            static_url_path='/mc/static')
 
 
 # ── rcon ─────────────────────────────────────────────────────────────────────
@@ -898,6 +908,18 @@ def index():
     )
 
 
+# Temporary font showcase. Lets the operator compare pixel-font candidates
+# at the sizes they're actually rendered in the dashboard before committing
+# to a redesign. Delete once the redesign lands and the user is happy.
+@app.route("/mc/fonts")
+def fonts_showcase():
+    resp = make_response(render_template("fonts.html"))
+    # Don't cache the showcase page — operators may iterate on it
+    # quickly and a stale copy hides changes.
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 # ── legacy POST routes (kept for the no-JS fallback flow) ────────────────────
 
 @app.route("/mc/control", methods=["POST"])
@@ -1245,14 +1267,13 @@ def api_files_delete():
 def api_world_download():
     if container_running():
         return jsonify(error="stop the server first"), 409
-    if not HOST_WORLD_SOURCE.exists():
+    if not WORLD_DIR.exists():
         return jsonify(error="world directory not found"), 404
 
     def gen():
-        # Stream tar.gz from the host-side source so the dashboard bind
-        # mount (/server) doesn't matter for the archive contents.
+        # Stream tar.gz from the bind-mounted world dir.
         proc = subprocess.Popen(
-            ["tar", "czf", "-", "-C", str(HOST_WORLD_SOURCE.parent), "world"],
+            ["tar", "czf", "-", "-C", str(WORLD_DIR.parent), "world"],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         )
         try:
@@ -1282,15 +1303,14 @@ def api_world_regenerate():
     if container_running():
         return jsonify(error="stop the server first"), 409
     backup_name = f"minecraft-backup-{time.strftime('%Y%m%d-%H%M%S')}.tar.gz"
-    backup_path = HOST_BACKUP_DIR / backup_name
-    # 1. Tar the host-side world.
+    backup_path = BACKUP_DIR / backup_name
+    # 1. Tar the bind-mounted world.
     try:
         subprocess.run(
-            ["sudo", "tar", "czf", str(backup_path),
-             "-C", str(HOST_WORLD_SOURCE.parent), "world"],
+            ["tar", "czf", str(backup_path),
+             "-C", str(WORLD_DIR.parent), "world"],
             check=True,
         )
-        subprocess.run(["sudo", "chown", "debian:debian", str(backup_path)], check=False)
     except subprocess.CalledProcessError as e:
         return jsonify(error=f"backup failed: {e}"), 500
     # 2. Remove the world inside the bind mount.
@@ -1312,16 +1332,15 @@ def api_world_backup():
     if container_running():
         return jsonify(error="stop the server first"), 409
     backup_name = f"minecraft-backup-{time.strftime('%Y%m%d-%H%M%S')}.tar.gz"
-    backup_path = HOST_BACKUP_DIR / backup_name
-    if not HOST_WORLD_SOURCE.exists():
+    backup_path = BACKUP_DIR / backup_name
+    if not WORLD_DIR.exists():
         return jsonify(error="world directory not found"), 404
     try:
         subprocess.run(
-            ["sudo", "tar", "czf", str(backup_path),
-             "-C", str(HOST_WORLD_SOURCE.parent), "world"],
+            ["tar", "czf", str(backup_path),
+             "-C", str(WORLD_DIR.parent), "world"],
             check=True,
         )
-        subprocess.run(["sudo", "chown", "debian:debian", str(backup_path)], check=False)
     except subprocess.CalledProcessError as e:
         return jsonify(error=f"backup failed: {e}"), 500
     return jsonify(ok=True, backup=str(backup_path))
@@ -1329,10 +1348,10 @@ def api_world_backup():
 
 @app.route("/mc/api/world/backups")
 def api_world_backups():
-    """List existing world backups on the host side."""
+    """List existing world backups in the dashboard's backup directory."""
     out = []
-    if HOST_BACKUP_DIR.exists():
-        for p in HOST_BACKUP_DIR.glob("minecraft-backup-*.tar.gz"):
+    if BACKUP_DIR.exists():
+        for p in BACKUP_DIR.glob("minecraft-backup-*.tar.gz"):
             try:
                 st = p.stat()
                 out.append({
@@ -1352,7 +1371,7 @@ def api_world_backup_download():
     name = request.args.get("name", "")
     if not name or "/" in name or ".." in name:
         return jsonify(error="bad name"), 400
-    p = HOST_BACKUP_DIR / name
+    p = BACKUP_DIR / name
     if not p.exists() or not p.name.startswith("minecraft-backup-"):
         return jsonify(error="not found"), 404
     return send_file(str(p), as_attachment=True)

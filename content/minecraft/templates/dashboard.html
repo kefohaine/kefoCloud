@@ -5,194 +5,664 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mc.jehpok.com — dashboard</title>
 <style>
+  /* Self-hosted pixel fonts. Latin subset only — the dashboard is
+     English-only. Files live at /mc/static/fonts/*.woff2. Self-hosting
+     (instead of pulling from Google Fonts CDN) sidesteps Safari ITP
+     blocking cross-origin font CSS, and removes a third-party CDN hop. */
+  @font-face {
+    font-family: 'Press Start 2P';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('/mc/static/fonts/press-start-2p.woff2') format('woff2');
+  }
+  @font-face {
+    font-family: 'VT323';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('/mc/static/fonts/vt323.woff2') format('woff2');
+  }
+
+  /* ── design tokens ──────────────────────────────────────────────────── */
   :root {
-    --ink:#2d2a26; --stone:#8a7d75; --accent:#6b8e4e; --warn:#b8787f;
-    --warn-bg:#f5e6e8; --bg:#f5f1ea; --card:#fff; --border:#e6dfd4;
-    --good:#4e8e6b; --bad:#b8787f;
+    /* Palette — universal classic Minecraft */
+    --grass:        #5b8c3e;
+    --grass-dark:   #3f6b2a;
+    --dirt:         #7a5a3a;
+    --dirt-dark:    #5e4528;
+    --planks:       #a17a4a;
+    --stone:        #7d7d7d;
+    --stone-light:  #9a9a9a;
+    --stone-dark:   #5a5a5a;
+    --bg:           #2a2a2a;
+    --surface:      #3d3d3d;
+    --surface-2:    #4a4a4a;
+    --ink:          #f0f0f0;
+    --ink-dim:      #a0a0a0;
+    --gold:         #fcb94c;
+    --redstone:     #c61c1c;
+    --emerald:      #3ed47e;
+
+    /* Nether — emphasis / danger */
+    --obsidian:     #1a0e1a;
+    --obsidian-l:   #3a1c2a;
+    --obsidian-d:   #0a040a;
+    --lava:         #d9722a;
+
+    /* End — info */
+    --end-stone:    #dbde8e;
+    --end-stone-d:  #a89a4d;
+    --end-purple:   #6b3fa0;
+
+    /* Type */
+    --font-display: 'Press Start 2P', monospace;
+    --font-body:    'VT323', monospace;
   }
-  * { margin:0; padding:0; box-sizing:border-box; }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: var(--bg); color: var(--ink); }
   body {
-    font-family: system-ui, Segoe, Roboto, sans-serif;
-    background: var(--bg); color: var(--ink);
-    padding: 0; max-width: 1100px; margin: 0 auto;
+    font-family: var(--font-body);
+    font-size: 18px; line-height: 1.4;
+    padding: 0; max-width: 1200px; margin: 0 auto;
+    image-rendering: pixelated;
   }
+  a { color: var(--gold); }
+
+  /* ── header ──────────────────────────────────────────────────────────── */
   header.top {
-    background: #2d2a26; color: #f5f1ea; padding: 14px 24px;
+    background: var(--planks);
+    color: var(--ink);
+    padding: 14px 24px;
     display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-    border-bottom: 1px solid var(--border);
+    border-top: 4px solid #d8a76a;
+    border-bottom: 4px solid var(--dirt-dark);
   }
-  header.top h1 { font-size: 1.2rem; flex: 1; }
-  header.top .header-meta { display: flex; gap: 18px; font-size: .85rem; align-items: center; }
+  header.top h1 {
+    font-family: var(--font-display);
+    font-size: 1rem; flex: 1;
+    color: #2a1a0a;
+    text-shadow: 2px 2px 0 rgba(0,0,0,.25);
+    letter-spacing: 1px;
+  }
+  header.top .header-meta {
+    display: flex; gap: 18px; font-size: 1.05rem;
+    align-items: center; color: #2a1a0a;
+  }
   header.top .header-meta span { display: flex; gap: 6px; align-items: center; }
-  header.top .header-meta b { font-weight: 700; color: #f5f1ea; }
-  header.top .header-meta em { font-style: normal; opacity: .7; }
+  header.top .header-meta b { font-family: var(--font-display); font-size: .65rem; color: #fff; }
+  header.top .header-meta em { font-style: normal; opacity: .8; font-size: .9rem; }
+
+  /* ── tab bar ─────────────────────────────────────────────────────────── */
   nav.tabs {
-    display: flex; gap: 4px; padding: 8px 16px;
-    background: #ece6da; border-bottom: 1px solid var(--border);
+    display: flex; gap: 4px; padding: 8px 12px;
+    background: var(--surface);
+    border-bottom: 4px solid #1a1a1a;
     overflow-x: auto;
   }
   nav.tabs button {
-    background: transparent; color: var(--ink);
-    border: 1px solid transparent; border-radius: 6px;
-    padding: 8px 14px; cursor: pointer; font: inherit;
-    font-weight: 600; font-size: .9rem; white-space: nowrap;
+    background: var(--stone);
+    color: #1a1a1a;
+    border-top:    3px solid var(--stone-light);
+    border-left:   3px solid var(--stone-light);
+    border-right:  3px solid var(--stone-dark);
+    border-bottom: 3px solid var(--stone-dark);
+    padding: 8px 14px;
+    cursor: pointer;
+    font-family: var(--font-display);
+    font-size: .65rem;
+    white-space: nowrap;
+    text-transform: uppercase;
+    letter-spacing: 1px;
   }
+  nav.tabs button:hover { background: var(--stone-light); }
   nav.tabs button.active {
-    background: var(--card); border-color: var(--border);
-    color: var(--accent);
+    background: var(--gold);
+    border-top-color: #ffd97a;
+    border-left-color: #ffd97a;
+    border-right-color: #b0833a;
+    border-bottom-color: #b0833a;
+    color: #1a1a1a;
+    transform: translate(1px, 1px);
   }
-  nav.tabs button:hover { background: var(--card); }
+  nav.tabs button:active {
+    border-top-color: var(--stone-dark);
+    border-left-color: var(--stone-dark);
+    border-right-color: var(--stone-light);
+    border-bottom-color: var(--stone-light);
+    transform: translate(1px, 1px);
+    filter: brightness(.95);
+  }
 
+  /* ── main ────────────────────────────────────────────────────────────── */
   main { padding: 24px; }
   .tab-panel { display: none; }
   .tab-panel.active { display: block; }
 
-  h2 { font-size: 1.1rem; margin: 24px 0 12px; color: var(--accent);
-       text-transform: uppercase; letter-spacing: 1px; }
+  h2 {
+    font-family: var(--font-display);
+    font-size: .9rem; margin: 24px 0 12px;
+    color: var(--gold);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    text-shadow: 2px 2px 0 rgba(0,0,0,.4);
+  }
   h2:first-child { margin-top: 0; }
-  .sub { color: var(--stone); font-size: .85rem; margin-bottom: 16px; }
-  .hint { color: var(--stone); font-size: .85rem; margin: -4px 0 12px; }
+  h3 {
+    font-family: var(--font-display);
+    font-size: .7rem; color: var(--gold);
+    text-transform: uppercase; letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+  .sub, .hint {
+    font-family: var(--font-body);
+    color: var(--ink-dim);
+    font-size: 1.05rem;
+    margin: -4px 0 12px;
+  }
 
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
-  .card { background: var(--card); border: 1px solid var(--border);
-          border-radius: 10px; padding: 16px; }
-  .card .v { font-size: 1.8rem; font-weight: 600; color: var(--accent); }
-  .card .k { font-size: .8rem; color: var(--stone);
-             text-transform: uppercase; letter-spacing: 1px; }
-  /* The Server card spans the full row width so the status pill has room
-     to breathe next to the optional booting-hint text. The other cards
-     (online/max/tps/version/uptime) sit below it in the auto-fit grid. */
+  /* ── beveled block primitive ─────────────────────────────────────────── */
+  .block, button, .card, .input-wrap, select, input[type=text],
+  input[type=search], textarea, .pill, .pub {
+    border-top:    3px solid var(--stone-light);
+    border-left:   3px solid var(--stone-light);
+    border-right:  3px solid var(--stone-dark);
+    border-bottom: 3px solid var(--stone-dark);
+    background: var(--stone);
+    color: #1a1a1a;
+    border-radius: 0;
+    image-rendering: pixelated;
+  }
+
+  /* ── cards ───────────────────────────────────────────────────────────── */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 12px;
+  }
+  .card {
+    padding: 14px 16px;
+    background: var(--surface);
+    color: var(--ink);
+    border-top:    3px solid #5a5a5a;
+    border-left:   3px solid #5a5a5a;
+    border-right:  3px solid #1a1a1a;
+    border-bottom: 3px solid #1a1a1a;
+  }
+  .card .v {
+    font-family: var(--font-body);
+    font-size: 1.8rem;
+    color: var(--gold);
+    text-shadow: 2px 2px 0 rgba(0,0,0,.5);
+  }
+  .card .k {
+    font-family: var(--font-display);
+    font-size: .55rem;
+    color: var(--ink-dim);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-top: 6px;
+  }
   .card-wide { grid-column: 1 / -1; }
 
-  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
-  form { margin: 0; }
+  /* ── pub (connect info block) ────────────────────────────────────────── */
+  .pub {
+    background: var(--surface-2);
+    color: var(--ink);
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    font-family: var(--font-body);
+    font-size: 1.1rem;
+    border-top:    3px solid #6a6a6a;
+    border-left:   3px solid #6a6a6a;
+    border-right:  3px solid #1a1a1a;
+    border-bottom: 3px solid #1a1a1a;
+  }
+  .pub strong { font-family: var(--font-display); font-size: .6rem; color: var(--gold); }
+  .pub code {
+    font-family: var(--font-body);
+    color: var(--emerald);
+    background: var(--bg);
+    padding: 1px 6px;
+    margin: 0 2px;
+  }
+
+  /* ── buttons ─────────────────────────────────────────────────────────── */
+  .row {
+    display: flex; gap: 8px; flex-wrap: wrap;
+    margin-bottom: 12px; align-items: center;
+  }
   button, .btn {
-    padding: 8px 14px; border: 0; border-radius: 6px;
-    background: var(--accent); color: #fff;
-    font: inherit; font-weight: 600; cursor: pointer;
+    padding: 10px 16px;
+    font-family: var(--font-display);
+    font-size: .65rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #1a1a1a;
+    cursor: pointer;
+    background: var(--stone);
   }
-  button.warn { background: var(--warn); }
-  button.ghost { background: var(--stone); }
-  button.small { padding: 4px 10px; font-size: .85rem; }
-  button:hover { filter: brightness(1.1); }
-  button:disabled { opacity: .55; cursor: not-allowed; }
-  .btn-link { background: transparent; color: var(--accent);
-              text-decoration: underline; padding: 0; }
+  button:hover { background: var(--stone-light); }
+  button:active, button.pressed {
+    border-top-color: var(--stone-dark);
+    border-left-color: var(--stone-dark);
+    border-right-color: var(--stone-light);
+    border-bottom-color: var(--stone-light);
+    transform: translate(1px, 1px);
+    filter: brightness(.92);
+  }
+  button:disabled {
+    opacity: .55; cursor: not-allowed;
+    background: var(--stone-dark);
+  }
+  /* Primary — grass */
+  button.grass {
+    background: var(--grass);
+    border-top-color: #7ba858;
+    border-left-color: #7ba858;
+    border-right-color: #2d4e1a;
+    border-bottom-color: #2d4e1a;
+    color: #fff;
+    text-shadow: 1px 1px 0 rgba(0,0,0,.3);
+  }
+  button.grass:hover { background: #6b9c4e; }
+  button.grass:active { filter: brightness(.9); }
+  /* Danger — redstone */
+  button.danger {
+    background: var(--redstone);
+    border-top-color: #e84848;
+    border-left-color: #e84848;
+    border-right-color: #6a0808;
+    border-bottom-color: #6a0808;
+    color: #fff;
+    text-shadow: 1px 1px 0 rgba(0,0,0,.4);
+  }
+  button.danger:hover { background: #d83838; }
+  /* Dirt accent */
+  button.dirt {
+    background: var(--dirt);
+    border-top-color: #9a724e;
+    border-left-color: #9a724e;
+    border-right-color: #4a361e;
+    border-bottom-color: #4a361e;
+    color: #fff;
+    text-shadow: 1px 1px 0 rgba(0,0,0,.3);
+  }
+  button.dirt:hover { background: #8a6a44; }
+  /* Small variants */
+  button.small { padding: 6px 12px; font-size: .55rem; }
+  .btn-link {
+    background: transparent; color: var(--gold);
+    text-decoration: underline; padding: 0;
+    border: 0;
+  }
 
-  .pill { display: inline-block; padding: 4px 14px; border-radius: 999px;
-          font-size: 1.1rem; font-weight: 600; color: #fff; }
-  .pill-on     { background: var(--good); }
-  .pill-off    { background: var(--bad); }
-  .pill-booting { background: var(--warn); }
+  /* ── pill (status) ───────────────────────────────────────────────────── */
+  .pill {
+    display: inline-block;
+    padding: 6px 18px;
+    font-family: var(--font-display);
+    font-size: .7rem;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: #fff;
+    text-shadow: 1px 1px 0 rgba(0,0,0,.3);
+  }
+  .pill-on       { background: var(--emerald); border-top-color: #6ee8a3; border-left-color: #6ee8a3; border-right-color: #1f7a48; border-bottom-color: #1f7a48; }
+  .pill-off      { background: var(--redstone); border-top-color: #e84848; border-left-color: #e84848; border-right-color: #6a0808; border-bottom-color: #6a0808; }
+  .pill-booting  { background: var(--gold); border-top-color: #ffd97a; border-left-color: #ffd97a; border-right-color: #b0833a; border-bottom-color: #b0833a; color: #1a1a1a; text-shadow: 1px 1px 0 rgba(255,255,255,.2); }
 
-  table { width: 100%; border-collapse: collapse; font-size: .95rem;
-          background: var(--card); border: 1px solid var(--border);
-          border-radius: 10px; overflow: hidden; }
-  th, td { text-align: left; padding: 10px 12px;
-           border-bottom: 1px solid var(--border); }
-  th { background: #f5f1ea; color: var(--stone); font-weight: 600;
-       font-size: .8rem; text-transform: uppercase; letter-spacing: 1px; }
+  /* ── tables ──────────────────────────────────────────────────────────── */
+  table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 1rem;
+    background: var(--surface);
+    color: var(--ink);
+    border-top:    3px solid #5a5a5a;
+    border-left:   3px solid #5a5a5a;
+    border-right:  3px solid #1a1a1a;
+    border-bottom: 3px solid #1a1a1a;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid #1a1a1a;
+  }
+  th {
+    background: var(--surface-2);
+    color: var(--gold);
+    font-family: var(--font-display);
+    font-size: .55rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
   tr:last-child td { border-bottom: 0; }
+  td.field {
+    width: 30%;
+    color: var(--ink-dim);
+    font-family: var(--font-body);
+  }
+
+  /* ── inputs ──────────────────────────────────────────────────────────── */
   input[type=text], input[type=search], textarea, select {
-    padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px;
-    font: inherit; background: #fff; width: 100%;
+    padding: 8px 10px;
+    font-family: var(--font-body);
+    font-size: 1.05rem;
+    color: var(--ink);
+    background: var(--surface);
+    border-top:    3px solid #1a1a1a;
+    border-left:   3px solid #1a1a1a;
+    border-right:  3px solid #5a5a5a;
+    border-bottom: 3px solid #5a5a5a;
+    width: 100%;
   }
-  textarea { min-height: 260px; font-family: ui-monospace, monospace; font-size: .85rem; }
-  td.field { width: 30%; color: var(--stone); font-family: monospace; }
+  textarea {
+    min-height: 260px;
+    font-family: ui-monospace, monospace;
+    font-size: .85rem;
+  }
+  input[type=file] {
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 1rem;
+  }
 
+  /* ── slider (chunky pixel style) ─────────────────────────────────────── */
+  input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 18px;
+    background: var(--stone-dark);
+    border-top:    2px solid var(--stone);
+    border-left:   2px solid var(--stone);
+    border-right:  2px solid #2a2a2a;
+    border-bottom: 2px solid #2a2a2a;
+    padding: 0;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px; height: 18px;
+    background: var(--gold);
+    border-top:    2px solid #ffd97a;
+    border-left:   2px solid #ffd97a;
+    border-right:  2px solid #b0833a;
+    border-bottom: 2px solid #b0833a;
+    cursor: pointer;
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 18px; height: 18px;
+    background: var(--gold);
+    border-top:    2px solid #ffd97a;
+    border-left:   2px solid #ffd97a;
+    border-right:  2px solid #b0833a;
+    border-bottom: 2px solid #b0833a;
+    cursor: pointer;
+    border-radius: 0;
+  }
+
+  /* ── log view ────────────────────────────────────────────────────────── */
   pre.log, .log-view {
-    background: #1d1b18; color: #e6dfd4; border-radius: 10px;
-    padding: 12px; max-height: 480px; overflow: auto;
-    font-family: ui-monospace, monospace; font-size: .78rem;
-    white-space: pre-wrap; word-break: break-word;
+    background: #0a0a0a;
+    color: #cbd5c8;
+    padding: 12px;
+    max-height: 480px;
+    overflow: auto;
+    font-family: ui-monospace, monospace;
+    font-size: .82rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+    border-top:    3px solid #2a2a2a;
+    border-left:   3px solid #2a2a2a;
+    border-right:  3px solid #000;
+    border-bottom: 3px solid #000;
   }
-  .log-view .l-INFO { color: #cbd5c8; }
-  .log-view .l-WARN { color: #e8c264; }
-  .log-view .l-ERROR { color: #f08c8c; font-weight: 600; }
+  .log-view .l-INFO  { color: #cbd5c8; }
+  .log-view .l-WARN  { color: var(--gold); }
+  .log-view .l-ERROR { color: #ff6868; font-weight: 700; }
 
-  .pub { font-family: monospace; color: var(--stone); font-size: .85rem;
-         background: var(--card); border: 1px solid var(--border);
-         border-radius: 8px; padding: 12px; margin-bottom: 16px; }
+  /* ── ack / toast ─────────────────────────────────────────────────────── */
+  .ack {
+    font-family: var(--font-body);
+    color: var(--ink-dim);
+    font-size: 1rem;
+    margin: 8px 0 0;
+  }
+  .ack.err { color: #ff6868; }
+  .toast {
+    position: fixed; right: 16px; bottom: 16px;
+    background: var(--ink); color: #1a1a1a;
+    padding: 12px 18px;
+    font-family: var(--font-display);
+    font-size: .65rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    z-index: 1000;
+    border-top:    3px solid #fff;
+    border-left:   3px solid #fff;
+    border-right:  3px solid #888;
+    border-bottom: 3px solid #888;
+    box-shadow: 4px 4px 0 rgba(0,0,0,.5);
+  }
+  .toast.err {
+    background: var(--redstone);
+    color: #fff;
+    border-top-color: #ff6868;
+    border-left-color: #ff6868;
+    border-right-color: #6a0808;
+    border-bottom-color: #6a0808;
+  }
 
-  .ack { color: var(--stone); font-size: .85rem; margin: 8px 0 0; font-style: italic; }
-  .ack.err { color: var(--bad); }
-  .toast { position: fixed; right: 16px; bottom: 16px;
-           background: var(--ink); color: #f5f1ea; padding: 12px 16px;
-           border-radius: 8px; font-size: .9rem; max-width: 420px;
-           box-shadow: 0 6px 16px rgba(0,0,0,.2); z-index: 1000; }
-  .toast.err { background: var(--bad); }
-
-  .files-tree { font-family: monospace; font-size: .9rem; line-height: 1.7; }
-  .files-tree a { color: var(--accent); text-decoration: none; cursor: pointer; }
-  .files-tree a:hover { text-decoration: underline; }
-  .files-tree .dir { font-weight: 600; }
+  /* ── files tree ──────────────────────────────────────────────────────── */
+  .files-tree {
+    font-family: ui-monospace, monospace;
+    font-size: .9rem;
+    line-height: 1.7;
+    background: var(--surface);
+    padding: 10px 14px;
+    border-top:    3px solid #5a5a5a;
+    border-left:   3px solid #5a5a5a;
+    border-right:  3px solid #1a1a1a;
+    border-bottom: 3px solid #1a1a1a;
+  }
+  .files-tree a { color: var(--gold); text-decoration: none; cursor: pointer; }
+  .files-tree a:hover { color: var(--ink); }
+  .files-tree .dir  { font-weight: 700; color: var(--emerald); }
   .files-tree .file { color: var(--ink); }
-  .files-tree .size { color: var(--stone); font-size: .8rem; margin-left: 8px; }
+  .files-tree .size { color: var(--ink-dim); font-size: .85rem; margin-left: 8px; }
 
-  /* Player card — compact two-row layout with inline expansion */
+  /* ── player card ─────────────────────────────────────────────────────── */
   .pcard {
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: 8px; padding: 8px 10px; margin-bottom: 6px;
-    transition: border-color .15s;
+    background: var(--surface);
+    border-top:    3px solid #5a5a5a;
+    border-left:   3px solid #5a5a5a;
+    border-right:  3px solid #1a1a1a;
+    border-bottom: 3px solid #1a1a1a;
+    padding: 8px 10px;
+    margin-bottom: 6px;
   }
-  .pcard.expanded { border-color: var(--accent); }
+  .pcard.expanded {
+    border-top-color: var(--gold);
+    border-left-color: var(--gold);
+    border-bottom-color: #b0833a;
+    border-right-color: #b0833a;
+  }
   .pcard .phead {
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   }
-  .pcard .pname { font-weight: 600; color: var(--ink); flex: 1; min-width: 0;
-                  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pcard .pname {
+    font-family: var(--font-display);
+    font-size: .65rem;
+    color: var(--gold);
+    flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
   .pcard .pip {
-    font-family: ui-monospace, monospace; font-size: .78rem;
-    color: var(--stone); padding: 1px 6px; background: var(--bg);
-    border-radius: 4px; white-space: nowrap;
+    font-family: ui-monospace, monospace;
+    font-size: .8rem;
+    color: var(--ink-dim);
+    padding: 1px 6px;
+    background: var(--bg);
+    border: 1px solid #1a1a1a;
   }
   .pcard .pstatus {
-    font-size: .7rem; padding: 2px 8px; border-radius: 999px;
-    color: #fff; font-weight: 600; letter-spacing: .3px;
+    font-family: var(--font-display);
+    font-size: .5rem;
+    padding: 3px 10px;
+    color: #fff;
     text-transform: uppercase;
+    letter-spacing: 1px;
+    text-shadow: 1px 1px 0 rgba(0,0,0,.3);
+    border-top: 2px solid rgba(255,255,255,.3);
+    border-left: 2px solid rgba(255,255,255,.3);
+    border-right: 2px solid rgba(0,0,0,.3);
+    border-bottom: 2px solid rgba(0,0,0,.3);
   }
-  .pcard .pstatus.online { background: var(--good); }
-  .pcard .pstatus.offline { background: var(--stone); }
+  .pcard .pstatus.online  { background: var(--emerald); }
+  .pcard .pstatus.offline { background: var(--stone-dark); color: var(--ink-dim); }
   .pcard .pactions {
     display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px;
-    font-size: .8rem;
   }
   .pcard .pactions a, .pcard .pactions button {
-    padding: 3px 8px; font-size: .78rem;
+    padding: 4px 8px;
+    font-size: .5rem;
   }
   .pcard .pexpand {
     overflow: hidden; max-height: 0; opacity: 0;
-    transition: max-height .2s ease, opacity .15s ease, margin-top .15s ease;
     border-top: 1px solid transparent;
   }
   .pcard.expanded .pexpand {
     max-height: 600px; opacity: 1; margin-top: 8px; padding-top: 8px;
-    border-top-color: var(--border);
+    border-top-color: #1a1a1a;
   }
   .pcard .stat-row {
     display: flex; justify-content: space-between; padding: 4px 0;
-    border-bottom: 1px solid var(--border); font-size: .85rem;
+    border-bottom: 1px solid #1a1a1a;
+    font-family: var(--font-body);
+    font-size: 1rem;
   }
   .pcard .stat-row:last-child { border-bottom: 0; }
-  .pcard .stat-row .k { color: var(--stone); }
+  .pcard .stat-row .k {
+    color: var(--ink-dim);
+    font-family: var(--font-display);
+    font-size: .55rem;
+    text-transform: uppercase;
+  }
   .pcard .stats-meta {
-    font-size: .75rem; color: var(--stone); margin-top: 6px;
+    font-family: var(--font-body);
+    color: var(--ink-dim);
+    font-size: .95rem;
+    margin-top: 6px;
     display: flex; gap: 10px; flex-wrap: wrap;
   }
   .pcard .toggle-btn {
-    background: transparent; color: var(--accent); padding: 3px 8px;
-    font-size: .78rem; border: 1px solid transparent;
+    background: var(--stone);
+    color: #1a1a1a;
+    padding: 4px 8px;
+    font-family: var(--font-display);
+    font-size: .5rem;
+    text-transform: uppercase;
   }
-  .pcard .toggle-btn:hover { border-color: var(--accent); }
 
-  .backup-card { background: var(--card); border: 1px solid var(--border);
-                 border-radius: 10px; padding: 12px; margin-bottom: 8px;
-                 display: flex; justify-content: space-between; align-items: center; }
-  .backup-card .meta { color: var(--stone); font-size: .8rem; }
+  /* ── backup card ─────────────────────────────────────────────────────── */
+  .backup-card {
+    background: var(--surface);
+    border-top:    3px solid #5a5a5a;
+    border-left:   3px solid #5a5a5a;
+    border-right:  3px solid #1a1a1a;
+    border-bottom: 3px solid #1a1a1a;
+    padding: 12px;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .backup-card .meta {
+    font-family: var(--font-body);
+    color: var(--ink-dim);
+    font-size: 1rem;
+  }
 
-  .danger-zone { background: var(--warn-bg); border: 1px solid var(--warn);
-                 border-radius: 10px; padding: 16px; margin-top: 24px; }
-  .danger-zone h3 { color: var(--warn); margin-bottom: 8px; }
+  /* ── Nether card — emphasis / danger container ───────────────────────── */
+  .nether {
+    background: var(--obsidian);
+    color: var(--ink);
+    padding: 16px;
+    margin-top: 24px;
+    border-top:    4px solid var(--lava);
+    border-left:   4px solid var(--lava);
+    border-right:  4px solid var(--obsidian-d);
+    border-bottom: 4px solid var(--obsidian-d);
+    box-shadow: 0 0 0 1px var(--lava) inset, 4px 4px 0 rgba(0,0,0,.4);
+  }
+  .nether h2, .nether h3 {
+    color: var(--lava);
+    text-shadow: 1px 1px 0 var(--obsidian-d), 2px 2px 0 rgba(0,0,0,.6);
+  }
+  .nether .hint { color: #b88e6a; }
+  .nether .ack  { color: #b88e6a; }
+  .nether .ack.err { color: #ff8868; }
+  .nether .pub {
+    background: var(--obsidian-l);
+    border-top-color: var(--lava);
+    border-left-color: var(--lava);
+    border-right-color: var(--obsidian-d);
+    border-bottom-color: var(--obsidian-d);
+  }
+  .nether .pub code { color: var(--lava); }
+
+  /* ── End card — passive info ─────────────────────────────────────────── */
+  .end {
+    background: var(--end-stone);
+    color: #1a1a1a;
+    padding: 16px;
+    margin-top: 24px;
+    border-top:    4px solid #f5f8b0;
+    border-left:   4px solid #f5f8b0;
+    border-right:  4px solid var(--end-stone-d);
+    border-bottom: 4px solid var(--end-stone-d);
+    box-shadow: 4px 4px 0 rgba(0,0,0,.4);
+  }
+  .end h2, .end h3 {
+    color: var(--end-purple);
+    text-shadow: 1px 1px 0 rgba(255,255,255,.4);
+  }
+  .end .hint { color: #4a3a5a; }
+  .end .ack  { color: #4a3a5a; }
+  .end .ack.err { color: #6a1c1c; }
+  .end .card {
+    background: #ecebb8;
+    border-top-color: #fff8c8;
+    border-left-color: #fff8c8;
+    border-right-color: var(--end-stone-d);
+    border-bottom-color: var(--end-stone-d);
+    color: #1a1a1a;
+  }
+  .end .card .v {
+    color: var(--end-purple);
+    text-shadow: 1px 1px 0 rgba(255,255,255,.4);
+  }
+  .end .card .k { color: #4a3a5a; }
+  .end .backup-card {
+    background: #ecebb8;
+    border-top-color: #fff8c8;
+    border-left-color: #fff8c8;
+    border-right-color: var(--end-stone-d);
+    border-bottom-color: var(--end-stone-d);
+    color: #1a1a1a;
+  }
+  .end .backup-card .meta { color: #4a3a5a; }
+  .end code {
+    color: var(--end-purple);
+    background: rgba(0,0,0,.08);
+    padding: 1px 6px;
+  }
 </style>
 </head>
 <body>
@@ -246,26 +716,28 @@
          <div class="k">Uptime</div></div>
   </div>
 
-  <h2>Container</h2>
-  <p class="hint">Independent actions — the server's real state is the Status card above.</p>
-  <div class="row">
-    <button id="btn-start">Start</button>
-    <button id="btn-stop" class="warn">Stop</button>
-    <button id="btn-restart">Restart</button>
+  <div class="nether">
+    <h2>Container</h2>
+    <p class="hint">Independent actions — the server's real state is the Status card above.</p>
+    <div class="row">
+      <button id="btn-start" class="grass">Start</button>
+      <button id="btn-stop" class="danger">Stop</button>
+      <button id="btn-restart" class="dirt">Restart</button>
+    </div>
+    <p class="ack" id="control-ack"></p>
   </div>
-  <p class="ack" id="control-ack"></p>
 
   <h2>Quick rcon</h2>
   <div class="row">
     <input type="text" id="rcon-input" placeholder="/say hello" style="flex:1; min-width:240px;">
-    <button id="btn-rcon">Send</button>
+    <button id="btn-rcon" class="grass">Send</button>
   </div>
   <pre class="log" id="rcon-output" style="max-height:160px;"></pre>
   <p class="ack" id="rcon-ack"></p>
 
   <h2>Log tail</h2>
   <div class="row">
-    <button id="btn-log-refresh" class="ghost small">Refresh tail</button>
+    <button id="btn-log-refresh" class="small">Refresh tail</button>
     <span class="hint" id="log-tail-meta" style="margin:0;">—</span>
   </div>
   <pre class="log" id="log-tail">(no log yet)</pre>
@@ -282,10 +754,10 @@
       <option value="WARN">WARN</option>
       <option value="ERROR">ERROR</option>
     </select>
-    <label style="display:flex; align-items:center; gap:6px;">
+    <label style="display:flex; align-items:center; gap:6px; color: var(--ink-dim);">
       <input type="checkbox" id="console-autoscroll" checked> auto-scroll
     </label>
-    <button id="btn-console-refresh" class="ghost small">Refresh</button>
+    <button id="btn-console-refresh" class="small">Refresh</button>
   </div>
   <pre class="log-view" id="console-view">(no log yet)</pre>
 </section>
@@ -294,34 +766,36 @@
 <section class="tab-panel" id="tab-players">
   <h2>Players</h2>
   <div class="row" style="margin-bottom:16px;">
-    <button id="btn-players-refresh" class="ghost small">Refresh</button>
+    <button id="btn-players-refresh" class="small">Refresh</button>
     <span class="hint" id="players-meta">—</span>
   </div>
 
   <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
     <div>
-      <h2 style="font-size:.9rem; color:var(--stone);">Online</h2>
+      <h2 style="font-size:.7rem; color:var(--ink-dim);">Online</h2>
       <div id="players-online-list"></div>
     </div>
     <div>
-      <h2 style="font-size:.9rem; color:var(--stone);">All known (offline)</h2>
+      <h2 style="font-size:.7rem; color:var(--ink-dim);">All known (offline)</h2>
       <div id="players-known-list"></div>
     </div>
   </div>
 
-  <h2>Roster</h2>
-  <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
-    <div class="card">
-      <div class="k">Ops</div>
-      <div id="roster-ops" style="margin-top:8px;">—</div>
-    </div>
-    <div class="card">
-      <div class="k">Whitelisted</div>
-      <div id="roster-whitelist" style="margin-top:8px;">—</div>
-    </div>
-    <div class="card">
-      <div class="k">Banned</div>
-      <div id="roster-banned" style="margin-top:8px;">—</div>
+  <div class="end">
+    <h2>Roster</h2>
+    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+      <div class="card">
+        <div class="k">Ops</div>
+        <div id="roster-ops" style="margin-top:8px;">—</div>
+      </div>
+      <div class="card">
+        <div class="k">Whitelisted</div>
+        <div id="roster-whitelist" style="margin-top:8px;">—</div>
+      </div>
+      <div class="card">
+        <div class="k">Banned</div>
+        <div id="roster-banned" style="margin-top:8px;">—</div>
+      </div>
     </div>
   </div>
 </section>
@@ -334,7 +808,7 @@
     <tr><th>Field</th><th>Value</th></tr>
   </table>
   <div class="row" style="margin-top:12px;">
-    <button id="btn-props-save">Save</button>
+    <button id="btn-props-save" class="grass">Save</button>
     <span class="ack" id="props-ack"></span>
   </div>
 
@@ -348,8 +822,8 @@
       <option value="config/paper-global.yml">config/paper-global.yml</option>
       <option value="config/paper-world-defaults.yml">config/paper-world-defaults.yml</option>
     </select>
-    <button id="btn-yaml-load" class="ghost small">Load</button>
-    <button id="btn-yaml-save">Save</button>
+    <button id="btn-yaml-load" class="small">Load</button>
+    <button id="btn-yaml-save" class="grass">Save</button>
     <span class="ack" id="yaml-ack"></span>
   </div>
   <textarea id="yaml-editor" spellcheck="false"></textarea>
@@ -360,9 +834,9 @@
   <h2>Files</h2>
   <p class="hint">Plugins, configs, logs. The world folder has its own tab.</p>
   <div class="row">
-    <button id="btn-files-up" class="ghost small">← Up</button>
-    <span id="files-cwd" style="font-family:monospace;">/</span>
-    <button id="btn-files-refresh" class="ghost small">Refresh</button>
+    <button id="btn-files-up" class="small">← Up</button>
+    <span id="files-cwd" style="font-family:ui-monospace,monospace;">/</span>
+    <button id="btn-files-refresh" class="small">Refresh</button>
   </div>
   <div class="files-tree" id="files-tree">(loading)</div>
 
@@ -370,7 +844,7 @@
   <p class="hint">Upload a .jar to <code>/server/plugins/</code>. Restart the server to load it.</p>
   <div class="row">
     <input type="file" id="plugin-file" accept=".jar">
-    <button id="btn-plugin-upload">Upload</button>
+    <button id="btn-plugin-upload" class="grass">Upload</button>
   </div>
   <p class="ack" id="plugin-upload-ack"></p>
 
@@ -378,7 +852,7 @@
   <p class="hint">Click a text file in the tree to load it here. Save writes atomically (tmp + rename).</p>
   <textarea id="file-editor" spellcheck="false"></textarea>
   <div class="row" style="margin-top:8px;">
-    <button id="btn-file-save">Save</button>
+    <button id="btn-file-save" class="grass">Save</button>
     <span class="ack" id="file-save-ack"></span>
   </div>
 </section>
@@ -392,30 +866,32 @@
     <div class="card">
       <h2 style="margin-top:0;">Download</h2>
       <p class="hint">Stream <code>world/</code> as a <code>.tar.gz</code>.</p>
-      <button id="btn-world-download">Download world</button>
+      <button id="btn-world-download" class="grass">Download world</button>
     </div>
     <div class="card">
       <h2 style="margin-top:0;">Upload</h2>
       <p class="hint">Replace the current world with a <code>.zip</code> archive. Existing world is destroyed.</p>
       <input type="file" id="world-zip" accept=".zip" style="margin-bottom:8px;">
-      <button id="btn-world-upload" class="warn">Upload & replace</button>
+      <button id="btn-world-upload" class="danger">Upload &amp; replace</button>
       <p class="ack" id="world-upload-ack"></p>
     </div>
   </div>
 
-  <h2>Backups</h2>
-  <p class="hint">Snapshots stored under <code>/var/www/custom/projects/jehpok/minecraft-backup-*.tar.gz</code>.</p>
-  <div class="row">
-    <button id="btn-world-backup" class="ghost small">Snapshot now</button>
-    <button id="btn-backups-refresh" class="ghost small">Refresh</button>
-    <span class="ack" id="backup-ack"></span>
+  <div class="end">
+    <h2>Backups</h2>
+    <p class="hint">Snapshots stored under <code>/var/www/custom/projects/jehpok/minecraft-backup-*.tar.gz</code>.</p>
+    <div class="row">
+      <button id="btn-world-backup" class="small grass">Snapshot now</button>
+      <button id="btn-backups-refresh" class="small">Refresh</button>
+      <span class="ack" id="backup-ack"></span>
+    </div>
+    <div id="backups-list"></div>
   </div>
-  <div id="backups-list"></div>
 
-  <div class="danger-zone">
+  <div class="nether">
     <h3>Backup &amp; regenerate world</h3>
     <p class="hint">Snapshots the current world, deletes it, and restarts the server (Paper will create a fresh world on first run). The backup link appears below after the operation.</p>
-    <button id="btn-world-regenerate" class="warn">Backup &amp; regenerate</button>
+    <button id="btn-world-regenerate" class="danger">Backup &amp; regenerate</button>
     <p class="ack" id="world-regenerate-ack"></p>
   </div>
 </section>
@@ -436,7 +912,6 @@
     activeTab = name;
     tabs.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
     panels.forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
-    // Eagerly refresh on tab change so the new panel has fresh data.
     if (name === 'console') refreshConsole();
     if (name === 'players') refreshPlayers();
     if (name === 'files') refreshFiles('');
@@ -502,15 +977,13 @@
     return (n / 1024 / 1024 / 1024).toFixed(1) + ' GB';
   }
 
-  // ── stats polling (always while page visible) ──────────────────────
+  // ── stats polling ─────────────────────────────────────────────────
   async function refreshStats() {
     try {
       const s = await fetchJSON('/mc/api/stats');
       const pill = document.getElementById('card-running-pill');
       const hint = document.getElementById('card-running-hint');
-      // Three states: offline (not running), booting (running but the
-      // rcon listener hasn't accepted a client yet), online (booting done).
-      let label, klass, hdr;
+      let label, klass;
       if (!s.running) {
         label = 'offline'; klass = 'pill-off';
       } else if (s.booting) {
@@ -522,14 +995,17 @@
       pill.className = 'pill ' + klass;
       hint.textContent = s.booting ? 'waiting for rcon listener…' : '';
       const hdrLabel = s.running ? (s.booting ? 'booting' : 'online') : 'offline';
-      document.getElementById('card-online').textContent = fmt(s.online);
-      document.getElementById('card-max').textContent = fmt(s.max);
-      document.getElementById('card-tps').textContent = s.tps == null ? '—' : Number(s.tps).toFixed(1);
-      document.getElementById('card-version').textContent = fmt(s.version);
-      document.getElementById('card-uptime').textContent = fmtUptime(s.uptime_s);
+      // While booting, every stat is "—" — the API may still return
+      // stale values from the previous session (or null) but the dashboard
+      // should never display them until Paper has fully accepted rcon.
+      document.getElementById('card-online').textContent  = s.booting ? '—' : fmt(s.online);
+      document.getElementById('card-max').textContent     = s.booting ? '—' : fmt(s.max);
+      document.getElementById('card-tps').textContent     = s.booting ? '—' : (s.tps == null ? '—' : Number(s.tps).toFixed(1));
+      document.getElementById('card-version').textContent = s.booting ? '—' : fmt(s.version);
+      document.getElementById('card-uptime').textContent  = s.booting ? '—' : fmtUptime(s.uptime_s);
       document.getElementById('hdr-server').textContent = hdrLabel;
-      document.getElementById('hdr-players').textContent = (s.online != null ? s.online : '—') + ' / ' + fmt(s.max);
-      document.getElementById('hdr-tps').textContent = s.tps == null ? '—' : Number(s.tps).toFixed(1);
+      document.getElementById('hdr-players').textContent = s.booting ? '— / —' : ((s.online != null ? s.online : '—') + ' / ' + fmt(s.max));
+      document.getElementById('hdr-tps').textContent    = s.booting ? '—' : (s.tps == null ? '—' : Number(s.tps).toFixed(1));
     } catch (e) {
       // Don't spam toasts for transient polling errors.
     }
@@ -628,7 +1104,11 @@
     }
   }
   function escapeHtml(s) {
-    return s.replace(/[&<>"']/g, c => ({
+    // server.properties values can be numbers/booleans/null when the
+    // JSON parser sees bare tokens; coerce to string before escaping
+    // so non-string values (e.g. true, 1, null) don't crash replace().
+    if (s === null || s === undefined) return '';
+    return String(s).replace(/[&<>"']/g, c => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     })[c]);
   }
@@ -642,9 +1122,6 @@
       const d = await fetchJSON('/mc/api/players');
       document.getElementById('players-meta').textContent =
         `${(d.online || []).length} online · ${(d.known || []).length} known`;
-      // Remember which cards were expanded so we can restore after the
-      // re-render — the stats inside get re-fetched on the next open
-      // (cached fetchJSON would otherwise show stale data).
       const expanded = new Set(
         Array.from(document.querySelectorAll('.pcard.expanded'))
              .map(c => c.dataset.uuid)
@@ -664,7 +1141,6 @@
       document.getElementById('roster-banned').innerHTML =
         (d.banned || []).map(escapeHtml).join('<br>') || '—';
       bindPlayerActions();
-      // Restore expanded state.
       expanded.forEach(uuid => {
         const btn = document.querySelector(
           `.pcard[data-uuid="${uuid}"] .toggle-btn`);
@@ -684,15 +1160,14 @@
     const status = `<span class="pstatus ${isOnline ? 'online' : 'offline'}">${isOnline ? 'online' : 'offline'}</span>`;
     const actions = uuid ? `
       <div class="pactions">
-        <button class="ghost" data-action="kick" data-uuid="${uuid}">Kick</button>
-        <button class="ghost" data-action="ban" data-uuid="${uuid}">Ban</button>
-        <button class="ghost" data-action="op" data-uuid="${uuid}">Op</button>
-        <button class="ghost" data-action="whitelist_add" data-uuid="${uuid}">Whitelist</button>
-        <button class="ghost" data-action="gamemode_creative" data-uuid="${uuid}">→ Creative</button>
-        <button class="ghost" data-action="gamemode_survival" data-uuid="${uuid}">→ Survival</button>
-        ${isOnline ? '' : '<button class="ghost" data-action="pardon" data-uuid="' + uuid + '">Pardon</button>'}
+        <button data-action="kick" data-uuid="${uuid}">Kick</button>
+        <button data-action="ban" data-uuid="${uuid}">Ban</button>
+        <button data-action="op" data-uuid="${uuid}">Op</button>
+        <button data-action="whitelist_add" data-uuid="${uuid}">Whitelist</button>
+        <button data-action="gamemode_creative" data-uuid="${uuid}">Creative</button>
+        <button data-action="gamemode_survival" data-uuid="${uuid}">Survival</button>
+        ${isOnline ? '' : '<button data-action="pardon" data-uuid="' + uuid + '">Pardon</button>'}
       </div>` : '';
-    // Summary bits on the head row (compact)
     const summary = [];
     if (!isOnline) {
       if (p.playtime_min != null) summary.push(`${p.playtime_min}m played`);
@@ -717,112 +1192,97 @@
       if (b.dataset.bound) return;
       b.dataset.bound = '1';
       b.addEventListener('click', async ev => {
-        ev.preventDefault();
-        const a = b.dataset.action;
+        const action = b.dataset.action;
         const uuid = b.dataset.uuid;
-        if (a === 'details') { toggleExpand(uuid, b); return; }
-        let url, body = {};
-        if (a === 'gamemode_creative') { url = `/mc/api/players/${uuid}/gamemode`; body = { gamemode: 'creative' }; }
-        else if (a === 'gamemode_survival') { url = `/mc/api/players/${uuid}/gamemode`; body = { gamemode: 'survival' }; }
-        else { url = `/mc/api/players/${uuid}/${a}`; }
+        if (action === 'details') {
+          toggleExpand(uuid, b);
+          return;
+        }
+        let extra = {};
+        if (action.startsWith('gamemode_')) {
+          extra.mode = action.split('_')[1];
+        }
+        const reason = action === 'kick' ? prompt('Reason?') : null;
+        if (action === 'kick' && reason == null) return;
         try {
-          const r = await postJSON(url, body);
-          toast(`${a} → ${r.output || 'ok'}`);
+          const r = await postJSON('/mc/api/players/' + uuid + '/' + action,
+            Object.assign({ reason: reason || '' }, extra));
+          toast(r.output || 'done');
         } catch (e) {
-          toast(`${a} failed: ${e.message}`, true);
+          toast(action + ' failed: ' + e.message, true);
         }
       });
     });
   }
   async function toggleExpand(uuid, btn) {
-    const card = btn.closest('.pcard');
-    const expanded = card.classList.toggle('expanded');
-    btn.textContent = expanded ? '▴ Hide' : '▾ Details';
-    if (!expanded) return;
-    const box = document.getElementById('pexpand-' + uuid);
-    box.innerHTML = '<div class="hint">loading stats…</div>';
+    const card = document.querySelector(`.pcard[data-uuid="${uuid}"]`);
+    if (!card) return;
+    const exp = card.querySelector('.pexpand');
+    const isOpen = card.classList.toggle('expanded');
+    btn.textContent = isOpen ? '▴ Hide' : '▾ Details';
+    if (!isOpen) {
+      exp.style.maxHeight = '0';
+      exp.style.opacity = '0';
+      return;
+    }
+    exp.style.maxHeight = '600px';
+    exp.style.opacity = '1';
     try {
-      const s = await fetchJSON(`/mc/api/players/${uuid}/stats`);
-      const stats = s.stats || {};
-      const rows = [
-        statRow('Playtime (min)', stats.playtime_min),
-        statRow('Mob kills', stats.mob_kills),
-        statRow('Deaths', stats.deaths),
-        statRow('Blocks broken', stats.blocks_broken),
-      ];
-      if (s.advancements && s.advancements.total) {
-        rows.push(statRow('Advancements', `${s.advancements.done} / ${s.advancements.total} (${s.advancements.pct}%)`));
-      }
-      box.innerHTML = rows.join('');
+      const s = await fetchJSON('/mc/api/players/' + uuid + '/stats');
+      exp.innerHTML = renderStats(s);
     } catch (e) {
-      box.innerHTML = '<div class="hint">Could not load stats.</div>';
+      exp.innerHTML = '<p class="ack err">stats failed: ' + e.message + '</p>';
     }
   }
-  function statRow(k, v) {
-    return `<div class="stat-row"><span class="k">${escapeHtml(k)}</span><b>${fmt(v)}</b></div>`;
+  function renderStats(s) {
+    if (!s) return '<p class="hint">No stats.</p>';
+    const rows = [
+      ['Playtime',     s.playtime_min != null ? `${s.playtime_min}m` : null],
+      ['Mob kills',    s.mob_kills != null ? s.mob_kills : null],
+      ['Deaths',       s.deaths != null ? s.deaths : null],
+      ['Blocks broken', s.blocks_broken != null ? s.blocks_broken : null],
+      ['UUID',         s.uuid],
+    ];
+    return rows.map(([k, v]) =>
+      `<div class="stat-row"><span class="k">${k}</span><span>${v == null ? '—' : escapeHtml(String(v))}</span></div>`
+    ).join('');
   }
-  document.getElementById('btn-players-refresh').addEventListener('click', refreshPlayers);
 
-  // ── settings (server.properties + YAML) ───────────────────────────
-  let propsData = {};
+  // ── settings (server.properties + YAML) ────────────────────────────
   async function loadProps() {
     try {
-      const d = await fetchJSON('/mc/api/server_props');
-      propsData = d.props || {};
-      renderProps();
-    } catch (e) { toast('props load failed: ' + e.message, true); }
-  }
-  function renderProps() {
-    const sel = {
-      gamemode: ['survival', 'creative', 'adventure', 'spectator'],
-      difficulty: ['peaceful', 'easy', 'normal', 'hard'],
-    };
-    const editable = (window._editable || []);
-    const selectOpts = (window._select_opts || {});
-    const tbl = document.getElementById('settings-props');
-    let rows = '<tr><th>Field</th><th>Value</th></tr>';
-    for (const f of editable) {
-      const v = propsData[f] != null ? propsData[f] : '';
-      const opts = selectOpts[f];
-      let ctrl;
-      if (opts) {
-        ctrl = `<select name="${f}">${opts.map(o =>
-          `<option value="${o}" ${v === o ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
-      } else if (f === 'white-list' || f === 'enforce-whitelist' || f === 'hardcore'
-                 || f === 'online-mode' || f === 'allow-flight') {
-        ctrl = `<select name="${f}">
-          <option value="true" ${v === 'true' ? 'selected' : ''}>true</option>
-          <option value="false" ${v === 'false' ? 'selected' : ''}>false</option>
-        </select>`;
-      } else {
-        ctrl = `<input type="text" name="${f}" value="${escapeHtml(v)}">`;
+      const body = await fetchJSON('/mc/api/server_props');
+      // /mc/api/server_props returns { props: {...}, editable: {...}, select_options: {...} }
+      const props = body.props || body;
+      const tbl = document.getElementById('settings-props');
+      tbl.innerHTML = '<tr><th>Field</th><th>Value</th></tr>';
+      for (const [k, v] of Object.entries(props)) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td class="field">${escapeHtml(k)}</td>
+                        <td><input type="text" data-key="${escapeHtml(k)}" value="${escapeHtml(v)}"></td>`;
+        tbl.appendChild(tr);
       }
-      rows += `<tr><td class="field">${f}</td><td>${ctrl}</td></tr>`;
+    } catch (e) {
+      setAck('props-ack', 'load failed: ' + e.message, true);
     }
-    tbl.innerHTML = rows;
   }
   document.getElementById('btn-props-save').addEventListener('click', async () => {
-    const inputs = document.querySelectorAll('#settings-props input, #settings-props select');
+    const inputs = document.querySelectorAll('#settings-props input[data-key]');
     const body = {};
-    inputs.forEach(i => { body[i.name] = i.value; });
-    setAck('props-ack', 'saving…');
+    inputs.forEach(i => { body[i.dataset.key] = i.value; });
     try {
-      const r = await postJSON('/mc/api/server_props', body);
-      setAck('props-ack', `saved ${r.saved.length} field(s)`);
-      toast('server.properties saved');
+      await postJSON('/mc/api/server_props', body);
+      setAck('props-ack', 'saved');
     } catch (e) {
       setAck('props-ack', 'save failed: ' + e.message, true);
     }
   });
 
-  // YAML editor
-  let yamlPath = '';
   async function loadYaml() {
-    yamlPath = document.getElementById('yaml-picker').value;
-    setAck('yaml-ack', 'loading…');
+    const path = document.getElementById('yaml-picker').value;
     try {
-      const d = await fetchJSON(`/mc/api/files/raw?path=${encodeURIComponent(yamlPath)}`);
-      document.getElementById('yaml-editor').value = d.content;
+      const r = await fetchJSON('/mc/api/files/raw?path=' + encodeURIComponent(path));
+      document.getElementById('yaml-editor').value = r.content || '';
       setAck('yaml-ack', 'loaded');
     } catch (e) {
       setAck('yaml-ack', 'load failed: ' + e.message, true);
@@ -830,88 +1290,82 @@
   }
   document.getElementById('btn-yaml-load').addEventListener('click', loadYaml);
   document.getElementById('btn-yaml-save').addEventListener('click', async () => {
-    if (!yamlPath) { yamlPath = document.getElementById('yaml-picker').value; }
-    setAck('yaml-ack', 'saving…');
+    const path = document.getElementById('yaml-picker').value;
+    const content = document.getElementById('yaml-editor').value;
     try {
-      const fd = new FormData();
-      fd.append('path', yamlPath);
-      fd.append('content', document.getElementById('yaml-editor').value);
-      await fetchJSON('/mc/api/files/save', { method: 'POST', body: fd });
+      await postJSON('/mc/api/files/save', { path, content });
       setAck('yaml-ack', 'saved');
-      toast('saved');
     } catch (e) {
       setAck('yaml-ack', 'save failed: ' + e.message, true);
     }
   });
 
-  // ── files ──────────────────────────────────────────────────────────
+  // ── files tree ─────────────────────────────────────────────────────
   let filesCwd = '';
-  async function refreshFiles(cwd) {
-    if (cwd != null) filesCwd = cwd;
-    document.getElementById('files-cwd').textContent = '/' + filesCwd;
+  async function refreshFiles(path) {
+    filesCwd = path;
+    document.getElementById('files-cwd').textContent = '/' + (path || '');
     try {
-      const d = await fetchJSON(`/mc/api/files?path=${encodeURIComponent(filesCwd)}`);
+      const r = await fetchJSON('/mc/api/files?path=' + encodeURIComponent(path));
       const tree = document.getElementById('files-tree');
-      if (!d.entries.length) { tree.innerHTML = '<p class="hint">(empty)</p>'; return; }
-      const lines = d.entries.map(e => {
+      const entries = (r.entries || []).map(e => {
         if (e.is_dir) {
-          return `<div><a data-cd="${e.path}">📁 ${escapeHtml(e.name)}/</a></div>`;
+          return `<div><a class="dir" data-nav="${escapeHtml(e.name)}">▸ ${escapeHtml(e.name)}/</a></div>`;
         }
-        return `<div><a data-load="${e.path}">📄 ${escapeHtml(e.name)}</a><span class="size">${fmtSize(e.size)}</span></div>`;
+        return `<div><a class="file" data-load="${escapeHtml(e.name)}">📄 ${escapeHtml(e.name)}</a><span class="size">${fmtSize(e.size)}</span></div>`;
+      }).join('');
+      tree.innerHTML = entries || '<p class="hint">Empty directory.</p>';
+      tree.querySelectorAll('[data-nav]').forEach(a => {
+        a.addEventListener('click', () => {
+          const next = filesCwd ? filesCwd + '/' + a.dataset.nav : a.dataset.nav;
+          refreshFiles(next);
+        });
       });
-      tree.innerHTML = lines.join('');
-      tree.querySelectorAll('a[data-cd]').forEach(a => {
-        a.addEventListener('click', () => refreshFiles(a.dataset.cd));
-      });
-      tree.querySelectorAll('a[data-load]').forEach(a => {
-        a.addEventListener('click', () => loadFile(a.dataset.load));
+      tree.querySelectorAll('[data-load]').forEach(a => {
+        a.addEventListener('click', () => loadFile(filesCwd, a.dataset.load));
       });
     } catch (e) {
-      document.getElementById('files-tree').innerHTML = 'load failed: ' + escapeHtml(e.message);
+      document.getElementById('files-tree').textContent = 'load failed: ' + e.message;
     }
   }
-  document.getElementById('btn-files-up').addEventListener('click', () => {
-    if (!filesCwd) return;
-    const parts = filesCwd.split('/');
-    parts.pop();
-    refreshFiles(parts.join('/'));
-  });
-  document.getElementById('btn-files-refresh').addEventListener('click', () => refreshFiles());
-
-  let fileEditorPath = '';
-  async function loadFile(path) {
-    fileEditorPath = path;
+  async function loadFile(cwd, name) {
+    const path = cwd ? cwd + '/' + name : name;
     try {
-      const d = await fetchJSON(`/mc/api/files/raw?path=${encodeURIComponent(path)}`);
-      document.getElementById('file-editor').value = d.content;
-      setAck('file-save-ack', 'loaded');
+      const r = await fetchJSON('/mc/api/files/raw?path=' + encodeURIComponent(path));
+      document.getElementById('file-editor').value = r.content || '';
+      document.getElementById('file-editor').dataset.path = path;
     } catch (e) {
       setAck('file-save-ack', 'load failed: ' + e.message, true);
     }
   }
+  document.getElementById('btn-files-up').addEventListener('click', () => {
+    if (!filesCwd) return;
+    refreshFiles(filesCwd.split('/').slice(0, -1).join('/'));
+  });
+  document.getElementById('btn-files-refresh').addEventListener('click', () => refreshFiles(filesCwd));
   document.getElementById('btn-file-save').addEventListener('click', async () => {
-    if (!fileEditorPath) { setAck('file-save-ack', 'no file loaded', true); return; }
-    setAck('file-save-ack', 'saving…');
+    const ed = document.getElementById('file-editor');
+    const path = ed.dataset.path;
+    if (!path) { setAck('file-save-ack', 'no file loaded', true); return; }
     try {
-      const fd = new FormData();
-      fd.append('path', fileEditorPath);
-      fd.append('content', document.getElementById('file-editor').value);
-      await fetchJSON('/mc/api/files/save', { method: 'POST', body: fd });
+      await postJSON('/mc/api/files/save', { path, content: ed.value });
       setAck('file-save-ack', 'saved');
-      toast('saved');
     } catch (e) {
       setAck('file-save-ack', 'save failed: ' + e.message, true);
     }
   });
+
+  // ── plugin upload ──────────────────────────────────────────────────
   document.getElementById('btn-plugin-upload').addEventListener('click', async () => {
-    const inp = document.getElementById('plugin-file');
-    if (!inp.files.length) { setAck('plugin-upload-ack', 'choose a file', true); return; }
+    const file = document.getElementById('plugin-file').files[0];
+    if (!file) { setAck('plugin-upload-ack', 'no file selected', true); return; }
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('path', 'plugins');
     setAck('plugin-upload-ack', 'uploading…');
-    const fd = new FormData(); fd.append('file', inp.files[0]); fd.append('kind', 'plugin');
     try {
-      const r = await fetchJSON('/mc/api/files/upload', { method: 'POST', body: fd });
-      setAck('plugin-upload-ack', 'uploaded → ' + r.path);
-      toast('plugin uploaded');
+      await fetchJSON('/mc/api/files/upload', { method: 'POST', body: fd });
+      setAck('plugin-upload-ack', 'uploaded');
       refreshFiles(filesCwd);
     } catch (e) {
       setAck('plugin-upload-ack', 'upload failed: ' + e.message, true);
@@ -919,125 +1373,73 @@
   });
 
   // ── world ──────────────────────────────────────────────────────────
-  document.getElementById('btn-world-download').addEventListener('click', async () => {
-    try {
-      const r = await fetch('/mc/api/world/download', { method: 'POST' });
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        throw new Error(j.error || 'HTTP ' + r.status);
-      }
-      const blob = await r.blob();
-      const cd = r.headers.get('Content-Disposition') || '';
-      const m = cd.match(/filename="([^"]+)"/);
-      const fname = m ? m[1] : 'world.tar.gz';
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = fname;
-      a.click();
-      URL.revokeObjectURL(a.href);
-      toast('world downloaded');
-    } catch (e) {
-      toast('download failed: ' + e.message, true);
-    }
+  document.getElementById('btn-world-download').addEventListener('click', () => {
+    window.location.href = '/mc/api/world/download';
   });
   document.getElementById('btn-world-upload').addEventListener('click', async () => {
-    const inp = document.getElementById('world-zip');
-    if (!inp.files.length) { setAck('world-upload-ack', 'choose a .zip', true); return; }
-    if (!confirm('Replace the current world with this upload?')) return;
+    const file = document.getElementById('world-zip').files[0];
+    if (!file) { setAck('world-upload-ack', 'no file selected', true); return; }
+    if (!confirm('This will REPLACE the current world. Continue?')) return;
+    const fd = new FormData();
+    fd.append('file', file);
     setAck('world-upload-ack', 'uploading…');
-    const fd = new FormData(); fd.append('file', inp.files[0]); fd.append('kind', 'world');
     try {
       await fetchJSON('/mc/api/world/upload', { method: 'POST', body: fd });
-      setAck('world-upload-ack', 'world replaced');
-      toast('world replaced');
+      setAck('world-upload-ack', 'uploaded');
     } catch (e) {
       setAck('world-upload-ack', 'upload failed: ' + e.message, true);
     }
   });
-  async function refreshBackups() {
-    try {
-      const d = await fetchJSON('/mc/api/world/backups');
-      const list = document.getElementById('backups-list');
-      if (!d.backups.length) { list.innerHTML = '<p class="hint">(no backups)</p>'; return; }
-      list.innerHTML = d.backups.map(b => `
-        <div class="backup-card">
-          <div>
-            <b>${escapeHtml(b.name)}</b>
-            <div class="meta">${fmtSize(b.size)} · ${new Date(b.mtime * 1000).toLocaleString()}</div>
-          </div>
-          <a class="btn-link" href="/mc/api/world/backup/download?name=${encodeURIComponent(b.name)}">Download</a>
-        </div>`).join('');
-    } catch (e) {
-      document.getElementById('backups-list').textContent = 'load failed: ' + e.message;
-    }
-  }
   document.getElementById('btn-world-backup').addEventListener('click', async () => {
     setAck('backup-ack', 'snapshotting…');
     try {
       const r = await postJSON('/mc/api/world/backup', {});
-      setAck('backup-ack', 'snapshot: ' + r.backup);
+      setAck('backup-ack', 'snapshot saved');
       refreshBackups();
     } catch (e) {
       setAck('backup-ack', 'snapshot failed: ' + e.message, true);
     }
   });
   document.getElementById('btn-backups-refresh').addEventListener('click', refreshBackups);
+  async function refreshBackups() {
+    try {
+      const r = await fetchJSON('/mc/api/world/backups');
+      const list = document.getElementById('backups-list');
+      list.innerHTML = (r.backups || []).map(b =>
+        `<div class="backup-card">
+          <div>
+            <b>${escapeHtml(b.name)}</b>
+            <div class="meta">${fmtSize(b.size)} · ${escapeHtml(b.created)}</div>
+          </div>
+          <a class="btn-link" href="/mc/api/world/backup/download?name=${encodeURIComponent(b.name)}">Download</a>
+        </div>`
+      ).join('') || '<p class="hint">No backups yet.</p>';
+    } catch (e) {
+      document.getElementById('backups-list').textContent = 'load failed: ' + e.message;
+    }
+  }
   document.getElementById('btn-world-regenerate').addEventListener('click', async () => {
-    if (!confirm('Backup current world → DELETE it → restart server. The world will be regenerated. Continue?')) return;
+    if (!confirm('Backup current world then DELETE it and restart the server?')) return;
     setAck('world-regenerate-ack', 'running…');
     try {
       const r = await postJSON('/mc/api/world/regenerate', {});
-      setAck('world-regenerate-ack', 'done. backup: ' + (r.backup || '(none)'));
-      toast('world regenerated');
+      setAck('world-regenerate-ack', 'regenerated; backup: ' + (r.backup || '?'));
       refreshBackups();
     } catch (e) {
       setAck('world-regenerate-ack', 'failed: ' + e.message, true);
     }
   });
 
-  // ── polling loops ─────────────────────────────────────────────────
-  let statsTimer = null, tabTimer = null;
-  function startPolling() {
-    stopPolling();
-    refreshStats();
-    refreshLogTail();
-    refreshPlayers();
-    refreshBackups();
-    statsTimer = setInterval(() => {
-      if (document.visibilityState === 'visible') refreshStats();
-    }, 2000);
-    scheduleTabPoll();
-  }
-  function scheduleTabPoll() {
-    clearInterval(tabTimer);
-    tabTimer = setInterval(() => {
-      if (document.visibilityState !== 'visible') return;
-      if (activeTab === 'status') refreshLogTail();
-      if (activeTab === 'console') refreshConsole();
-      if (activeTab === 'players') refreshPlayers();
-    }, 5000);
-  }
-  function stopPolling() {
-    clearInterval(statsTimer);
-    clearInterval(tabTimer);
-  }
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-      refreshStats();
-      if (activeTab === 'console') refreshConsole();
-      if (activeTab === 'players') refreshPlayers();
-    }
-  });
-
   // ── boot ───────────────────────────────────────────────────────────
-  // The template's editable / select_options are exposed via the HTML body
-  // so the JS can use them without a separate fetch.
-  window._editable = {{ editable|tojson }};
-  window._select_opts = {{ select_options|tojson }};
+  refreshStats();
   loadProps();
-  startPolling();
+  refreshBackups();
+  setInterval(refreshStats, 2000);
+  setInterval(refreshLogTail, 5000);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) refreshStats();
+  });
 })();
 </script>
-
 </body>
 </html>
