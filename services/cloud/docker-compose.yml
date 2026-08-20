@@ -29,6 +29,9 @@ services:
       - /var/www/custom/projects/jehpok/cloud/users:/data:rw
       # Persistent PHP-FPM pool configuration
       - ./php-fpm.d/zz-custom.conf:/usr/local/etc/php-fpm.d/zz-custom.conf:ro
+      # Persistent opcache tuning. Dropped into conf.d so it survives image
+      # upgrades; zz- prefix so it loads last (overrides anything earlier).
+      - ./php-conf.d/zz-opcache.ini:/usr/local/etc/php/conf.d/zz-opcache.ini:ro
 
     environment:
       # With no MYSQL_/POSTGRES_ vars set, the official image's entrypoint
