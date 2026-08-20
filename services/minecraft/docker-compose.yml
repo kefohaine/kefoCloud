@@ -53,8 +53,15 @@ services:
         max-size: "10m"
         max-file: "3"
 
+    # Pin both bridge IPs. Caddy's @mc upstream (minecraft-web @ .8) is one
+    # reason; the other is that minecraft itself sits on .7 by convention —
+    # nothing else in the repo hardcodes this IP, but pinning it makes
+    # `docker network inspect net` output deterministic across recreates
+    # (the itzg image's entrypoint init can take >90s, so `docker compose
+    # up` recreates are common during iteration).
     networks:
-      - net
+      net:
+        ipv4_address: 172.22.0.7
 
   minecraft-web:
     build: .
@@ -65,8 +72,17 @@ services:
     expose:
       - "5000"
 
+    # Pin the bridge IP so Caddy's @mc upstream (172.22.0.8:5000) stays valid
+    # across recreates. Without this Docker assigns the next free /16 address,
+    # and a container named `minecraft-web` could land on .8 one run and .9 the
+    # next. The other pinned upstreams in services/domain/Caddyfile rely on
+    # this convention too.
+    networks:
+      net:
+        ipv4_address: 172.22.0.8
+
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/healthz').read()\" || exit 1"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/mc/healthz').read()\" || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -79,19 +95,23 @@ services:
       SERVER_DIR: /server
 
     volumes:
-      # Read-only view of server.properties + logs so the dashboard can
-      # read stats and write config without touching game data.
-      - /var/www/custom/projects/jehpok/minecraft/data:/server:ro
+      # Bind the game server's data dir rw so the dashboard can rewrite
+      # server.properties (the form at /mc/config POSTs here). The dashboard
+      # only writes server.properties — not world data, plugins, or logs —
+      # so even with rw, accidental file touches from the dashboard can't
+      # corrupt game state. Game data safety still relies on the game
+      # container being the only writer of /data/world etc.
+      - /var/www/custom/projects/jehpok/minecraft/data:/server:rw
       - ../../content/minecraft:/app/src:ro
+      # Docker socket so the dashboard can start/stop/restart the game
+      # container via the Python docker SDK (see services/minecraft/Dockerfile).
+      - /var/run/docker.sock:/var/run/docker.sock
 
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
-
-    networks:
-      - net
 
 networks:
   net:
