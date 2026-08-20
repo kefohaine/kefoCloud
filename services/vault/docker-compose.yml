@@ -30,8 +30,11 @@ services:
         max-size: "10m"
         max-file: "3"
 
+    # Pin the bridge IP — services/domain/Caddyfile hardcodes
+    # 172.22.0.4:80 for the vault upstream.
     networks:
-      - net
+      net:
+        ipv4_address: 172.22.0.4
 
 networks:
   net:
