@@ -1,0 +1,96 @@
+services:
+  minecraft:
+    image: itzg/minecraft-server:latest
+    container_name: minecraft
+    restart: unless-stopped
+
+    environment:
+      # Java edition (latest stable).
+      VERSION: LATEST
+      TYPE: PAPER
+      # Bedrock via Geyser + Floodgate — Java + Bedrock on the same server.
+      GEYSER_VERSION: latest
+      FLOODGATE_VERSION: latest
+      # Bedrock port; Java listens on 25565 by default.
+      BEDROCK_PORT: "19132"
+      # Memory cap; itzg image sets Xms=Xmx from MEMORY.
+      MEMORY: "4G"
+      DIFFICULTY: normal
+      MODE: survival
+      MAX_PLAYERS: "20"
+      # rcon so the dashboard can run server commands.
+      ENABLE_RCON: "true"
+      RCON_PORT: "25575"
+      RCON_PASSWORD: "change-me-via-dashboard"
+      # itzg images handle EULA.
+      EULA: "TRUE"
+      TZ: UTC
+
+    ports:
+      # Game traffic — DNS A record on mc.jehpok.com points to VPS IP.
+      # Cloudflare is not involved for game traffic.
+      - "25565:25565"   # Java edition (TCP)
+      - "19132:19132"   # Bedrock edition (TCP+UDP)
+      - "19132:19132/udp"
+      # rcon for the dashboard, loopback only.
+      - "127.0.0.1:25575:25575"
+
+    volumes:
+      - /var/www/custom/projects/jehpok/minecraft/data:/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/25565 || exit 1'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      - net
+
+  minecraft-web:
+    build: .
+    image: jehpok/minecraft-web:1
+    container_name: minecraft-web
+    restart: unless-stopped
+
+    expose:
+      - "5000"
+
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/healthz').read()\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    environment:
+      RCON_HOST: minecraft
+      RCON_PORT: "25575"
+      RCON_PASSWORD: "change-me-via-dashboard"
+      SERVER_DIR: /server
+
+    volumes:
+      # Read-only view of server.properties + logs so the dashboard can
+      # read stats and write config without touching game data.
+      - /var/www/custom/projects/jehpok/minecraft/data:/server:ro
+      - ../../content/minecraft:/app/src:ro
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      - net
+
+networks:
+  net:
+    external: true
