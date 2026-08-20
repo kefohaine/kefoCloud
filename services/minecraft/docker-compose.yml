@@ -8,9 +8,6 @@ services:
       # Java edition (latest stable).
       VERSION: LATEST
       TYPE: PAPER
-      # Bedrock via Geyser + Floodgate — Java + Bedrock on the same server.
-      GEYSER_VERSION: latest
-      FLOODGATE_VERSION: latest
       # Bedrock port; Java listens on 25565 by default.
       BEDROCK_PORT: "19132"
       # Memory cap; itzg image sets Xms=Xmx from MEMORY.
@@ -26,6 +23,14 @@ services:
       EULA: "TRUE"
       TZ: UTC
 
+    # itzg/minecraft-server does not auto-install Geyser/Floodgate from env
+    # vars. The init script fetches the Spigot JARs into /data/plugins so a
+    # fresh volume still ends up Java + Bedrock on one server.
+    entrypoint: ["/bin/sh", "-c", "bash /etc/mc-plugins/init.sh && exec /start"]
+    volumes:
+      - /var/www/custom/projects/jehpok/minecraft/data:/data
+      - ./plugins:/etc/mc-plugins:ro
+
     ports:
       # Game traffic — DNS A record on mc.jehpok.com points to VPS IP.
       # Cloudflare is not involved for game traffic.
@@ -34,9 +39,6 @@ services:
       - "19132:19132/udp"
       # rcon for the dashboard, loopback only.
       - "127.0.0.1:25575:25575"
-
-    volumes:
-      - /var/www/custom/projects/jehpok/minecraft/data:/data
 
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/25565 || exit 1'"]
