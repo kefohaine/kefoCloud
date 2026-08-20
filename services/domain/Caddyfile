@@ -54,19 +54,21 @@ https://www.jehpok.com {
 https://server.jehpok.com {
     import tls_keys
     @not_tailnet not remote_ip 100.64.0.0/10
-    respond @not_tailnet 403
-    @share path /share /share/*
+    handle @not_tailnet {
+        respond 403
+    }
+    @share path /share/dashboard /share/dashboard/*
     handle @share {
         reverse_proxy share:5000
     }
-    @minecraft path /mc /mc/*
-    handle @minecraft {
-        uri strip_prefix /mc
+    @mc path /mc/dashboard /mc/dashboard/*
+    handle @mc {
+        uri strip_prefix /mc/dashboard
         reverse_proxy minecraft-web:5000
     }
-    @console path /console /console/*
-    handle @console {
-        uri strip_prefix /console
+    @shell path /shell /shell/*
+    handle @shell {
+        uri strip_prefix /shell
         reverse_proxy 172.22.0.1:7681 {
             transport http {
                 versions 1.1
@@ -92,7 +94,7 @@ https://share.jehpok.com {
         X-Content-Type-Options "nosniff"
         Referrer-Policy "no-referrer"
     }
-    @admin path /share /share/* /api /api/* /healthz
+    @admin path /share/dashboard /share/dashboard/* /api /api/* /healthz
     respond @admin "not found" 404
     @browse path /files /files/*
     handle @browse {
@@ -150,7 +152,7 @@ Java:     mc.jehpok.com:25565  (Paper 26.2)
 Bedrock:  mc.jehpok.com:19132  (via Geyser 2.11.1)
 
 
-Dashboard: server.jehpok.com/mc
+Dashboard (Tailscale-only): https://server.jehpok.com/mc/dashboard
 `
     respond "not found" 404
 }
