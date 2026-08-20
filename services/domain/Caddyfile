@@ -63,8 +63,7 @@ https://server.jehpok.com {
     }
     @mc path /mc /mc/*
     handle @mc {
-        uri strip_prefix /mc
-        reverse_proxy 172.22.0.7:5000
+        reverse_proxy 172.22.0.8:5000
     }
     @shell path /shell /shell/*
     handle @shell {
