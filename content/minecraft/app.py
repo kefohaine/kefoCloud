@@ -254,19 +254,22 @@ def stats():
     try:
         c = _docker_client.containers.get(CONTAINER)
         out["running"] = c.status == "running"
-        # Uptime from container start time (docker-side, not rcon-side)
-        try:
-            started = c.attrs["State"]["StartedAt"]
-            # Format: "2026-08-20T15:49:54.123456789Z"
-            from datetime import datetime, timezone
-            t = datetime.fromisoformat(started.replace("Z", "+00:00"))
-            out["uptime_s"] = int((datetime.now(timezone.utc) - t).total_seconds())
-            # Share with _paper_version so its cache check doesn't need a
-            # second containers.get() call.
-            with _last_started_at["lock"]:
-                _last_started_at["value"] = started
-        except Exception:
-            pass
+        # Uptime is only meaningful while the container is running.
+        # c.attrs["State"]["StartedAt"] holds the LAST start time even
+        # when stopped, so we must guard on running first.
+        if out["running"]:
+            try:
+                started = c.attrs["State"]["StartedAt"]
+                # Format: "2026-08-20T15:49:54.123456789Z"
+                from datetime import datetime, timezone
+                t = datetime.fromisoformat(started.replace("Z", "+00:00"))
+                out["uptime_s"] = int((datetime.now(timezone.utc) - t).total_seconds())
+                # Share with _paper_version so its cache check doesn't need
+                # a second containers.get() call.
+                with _last_started_at["lock"]:
+                    _last_started_at["value"] = started
+            except Exception:
+                pass
     except Exception:
         out["running"] = False
     if not out["running"]:
