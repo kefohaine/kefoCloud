@@ -172,14 +172,18 @@ def parse_tps(text):
     return float(m.group(1)) if m else None
 
 
-def _docker_client():
-    import docker as _docker
-    return _docker.DockerClient(base_url="unix:///var/run/docker.sock")
+# Single shared Docker SDK client. Constructing one is ~12 ms because it
+# reads the engine version + negotiates the API version over the unix
+# socket — pure waste when stats() is called every 2 s. Cache one at module
+# load and reuse it. The client is thread-safe for the calls we make
+# (containers.get / container.start/stop/restart).
+import docker as _docker
+_docker_client = _docker.DockerClient(base_url="unix:///var/run/docker.sock")
 
 
 def container_running():
     try:
-        return _docker_client().containers.get(CONTAINER).status == "running"
+        return _docker_client.containers.get(CONTAINER).status == "running"
     except Exception:
         return False
 
@@ -196,7 +200,7 @@ def _paper_version():
     """Return Paper version string. Cached; refreshed only when the game
     container has been restarted since the last read."""
     try:
-        c = _docker_client().containers.get(CONTAINER)
+        c = _docker_client.containers.get(CONTAINER)
         started = c.attrs["State"].get("StartedAt", "")
     except Exception:
         started = ""
@@ -234,7 +238,7 @@ def stats():
         "running": False, "version": None, "uptime_s": None, "raw": "",
     }
     try:
-        c = _docker_client().containers.get(CONTAINER)
+        c = _docker_client.containers.get(CONTAINER)
         out["running"] = c.status == "running"
         # Uptime from container start time (docker-side, not rcon-side)
         try:
@@ -349,7 +353,7 @@ def container_action(action):
     if action not in ("start", "stop", "restart"):
         return False, "unknown action"
     try:
-        c = _docker_client().containers.get(CONTAINER)
+        c = _docker_client.containers.get(CONTAINER)
     except Exception as e:
         return False, f"container not found: {e}"
     if action == "stop":
