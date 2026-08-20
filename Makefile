@@ -145,6 +145,16 @@ setup:
 >sudo cp $(REPO)/repo/setup/dnsmasq/10-tailnet.conf /etc/dnsmasq.d/10-tailnet.conf
 >sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
 >sudo cp $(REPO)/repo/setup/dnsmasq/dnsmasq.service.conf /etc/systemd/system/dnsmasq.service.d/override.conf
+>sudo cp $(REPO)/repo/setup/sysctl/99-jehpok.conf /etc/sysctl.d/99-jehpok.conf
+>sudo sysctl --system >/dev/null
+>@if ! diff -q /etc/docker/daemon.json $(REPO)/repo/setup/docker/daemon.json >/dev/null 2>&1; then \
+    echo "Installing /etc/docker/daemon.json (Docker daemon restart required to take effect)."; \
+    sudo mkdir -p /etc/docker; \
+    sudo cp $(REPO)/repo/setup/docker/daemon.json /etc/docker/daemon.json; \
+    echo "Run: sudo systemctl restart docker  (containers stay up via live-restore)."; \
+  else \
+    echo "Docker daemon config already up to date."; \
+  fi
 >sudo cp $(REPO)/repo/setup/maintenance/daily.sh /usr/local/bin/jehpok-daily.sh
 >sudo chmod +x /usr/local/bin/jehpok-daily.sh
 >sudo cp $(REPO)/repo/setup/maintenance/daily.service /etc/systemd/system/jehpok-daily.service
