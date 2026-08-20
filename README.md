@@ -9,15 +9,15 @@ Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Seven pu
     Public DNS ──► │            Cloudflare (proxy)               │
                     │  www / share / api / vault / cloud / kuma  │
                     └──────────────┬──────────────────────────────┘
-                                   │ HTTPS (Origin Cert)
+                                   │ HTTPS (LE cert via DNS-01)
                                    ▼
                             ┌──────────────┐
                             │    Caddy     │  port 80 → 308 redirect
-                            │  (domain)    │  port 443 (TLS + vhosts)
-                            └──────┬───────┘
-                ┌──────────────────┼──────────────────┐
-                │                  │                  │
-                ▼                  ▼                  ▼
+                            │  (domain)    │  port 443 (per-vhost LE)
+                            └──────┬───────┘  custom image with the
+                ┌──────────────────┼──────────────────┐     caddy-dns/
+                │                  │                  │     cloudflare
+                ▼                  ▼                  ▼     plugin
            reverse_proxy      reverse_proxy       php_fastcgi
            server / api       share / vault       cloud:9000
                               / kuma              (Nextcloud FPM)
@@ -59,16 +59,16 @@ The asymmetry on `server.jehpok.com` is deliberate. By keeping it out of public 
 
 ### Why Caddy and not nginx / Traefik
 
-- Caddy reads TLS certs directly from a directory, no ceremony for renewal.
-- Caddyfile syntax maps cleanly to "one vhost per subdomain".
+- Caddyfile syntax maps cleanly to "one vhost per subdomain" — each `vhosts/<host>.caddy` file owns its own TLS block independently.
+- Caddy handles ACME renewal automatically via the built-in issuer; the `caddy-dns/cloudflare` plugin adds DNS-01 challenge support so certs can be issued even when the origin is not reachable over port 80 (e.g. `mc.jehpok.com` is DNS-only at CF, so HTTP-01 can't reach it).
+- Certs persist under `/data` (bind-mounted) so container recreates don't restart the 90-day clock.
 - Supports HTTP/3 with one line.
-- Can keep the same cert path across restarts because the certs directory is bind-mounted read-only.
 
 ### Why Cloudflare in front
 
 - Hides the VPS IP from clients (a small amount of obfuscation).
 - Provides DDoS protection, bot challenge, rate limiting at the edge.
-- Origin TLS only needs a long-lived Origin Certificate that Cloudflare signs for the whole `jehpok.com` zone — no ACME challenge, no rate limits.
+- The CF-proxy'd vhosts (`www`, `share`, `api`, `vault`, `cloud`, `kuma`) terminate TLS at the CF edge and re-encrypt to the origin with the LE cert that Caddy issues via DNS-01.
 
 The trade-off: browser traffic is bot-challenged. For terminal `curl` or Nextcloud desktop sync clients that can't solve Cloudflare's Browser Integrity Check, the workaround is a per-hostname WAF rule skip on the affected hostname (`api.jehpok.com`, `cloud.jehpok.com`) — see `Intended` in `docs/ISSUES.md`.
 
@@ -77,6 +77,7 @@ The trade-off: browser traffic is bot-challenged. For terminal `curl` or Nextclo
 - The VPS hostname should be reachable only from the user's devices.
 - Public DNS would let any bot or attacker hit a port that isn't supposed to be public.
 - Tailscale's split-DNS means the moment a Tailscale client joins the network, the hostname is reachable AND the resolver knows it. No port forwarding, no firewall holes.
+- The `server.jehpok.com` vhost in Caddy uses a LE cert just like every other vhost — tailnet clients get a clean HTTPS handshake instead of a self-signed cert warning.
 
 ### Why dnsmasq on the host and not CoreDNS in a container
 

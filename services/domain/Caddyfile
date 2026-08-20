@@ -1,3 +1,12 @@
+# Top-level Caddy config. Per-vhost routes live in ./vhosts/*.caddy
+# and are imported below. Each vhost declares its own TLS block — all
+# use Let's Encrypt DNS-01 via the Cloudflare plugin (token in
+# CF_API_TOKEN env var). The old CF Origin CA wildcard cert was
+# removed because its SNI wildcard (`*.jehpok.com`) covered every
+# vhost, so Caddy served it as a fallback for `mc.jehpok.com` SNI
+# matches and the per-vhost ACME automation policy never fired.
+# Per-vhost LE certs keep each cert scoped to its own SNI.
+
 {
     admin off
     log {
@@ -6,10 +15,6 @@
 }
 
 # ── snippets ────────────────────────────────────────────────────────────────
-
-(tls_keys) {
-    tls /certs/cert.pem /certs/key.pem
-}
 
 (security_headers) {
     Strict-Transport-Security "max-age=31536000"
@@ -28,200 +33,22 @@
     encode zstd gzip
 }
 
-(serve_static) {
-    encode zstd gzip
-    header {
-        import security_headers
-    }
-    request_body {
-        max_size 100m
-    }
-    file_server
-    handle_errors 404 {
-        respond "not found"
-    }
-}
-
 # ── HTTP → HTTPS ────────────────────────────────────────────────────────────
-
 http:// {
     redir https://{host}{uri} 308
 }
 
-# ── static sites ────────────────────────────────────────────────────────────
+# ── vhosts ──────────────────────────────────────────────────────────────────
+# Each vhost declares its own `tls { dns cloudflare { ... } }` block so the
+# ACME cert is scoped to that vhost's SNI. The wildcard cert that used to
+# back all vhosts is no longer referenced — see ./vhosts/mc.jehpok.com.caddy
+# for the SNI-fallback rationale.
 
-https://www.jehpok.com {
-    import tls_keys
-    import compress
-    request_body {
-        max_size 100m
-    }
-    header {
-        import security_headers
-    }
-    reverse_proxy 172.22.0.2:8080
-}
-
-https://server.jehpok.com {
-    import tls_keys
-    import compress
-    @not_tailnet not remote_ip 100.64.0.0/10
-    handle @not_tailnet {
-        respond 403
-    }
-    @share path /share /share/*
-    handle @share {
-        reverse_proxy 172.22.0.3:5000
-    }
-    @mc path /mc /mc/*
-    handle @mc {
-        reverse_proxy 172.22.0.8:5000
-    }
-    @shell path /shell /shell/*
-    handle @shell {
-        uri strip_prefix /shell
-        reverse_proxy 172.22.0.1:7681 {
-            transport http {
-                versions 1.1
-            }
-        }
-    }
-    handle {
-        @root path /
-        respond @root "ok"
-        respond "not found" 404
-    }
-}
-
-# ── URL shortener + file sharing ───────────────────────────────────────────
-
-https://share.jehpok.com {
-    import tls_keys
-    import compress
-    request_body {
-        max_size 100m
-    }
-    header {
-        Strict-Transport-Security "max-age=31536000"
-        X-Content-Type-Options "nosniff"
-        Referrer-Policy "no-referrer"
-    }
-    @admin path /share /share/* /api /api/* /healthz
-    respond @admin "not found" 404
-    @browse path /files /files/*
-    handle @browse {
-        root * /files
-        uri strip_prefix /files
-        file_server browse {
-            precompressed zstd gzip
-        }
-    }
-    handle_errors 404 {
-        respond "not found"
-    }
-    reverse_proxy 172.22.0.3:5000 {
-        @notfound status 404
-        handle_response @notfound {
-            respond "not found" 404
-        }
-    }
-}
-
-# ── API placeholder ────────────────────────────────────────────────────────
-
-https://api.jehpok.com {
-    import tls_keys
-    import compress
-    request_body {
-        max_size 100m
-    }
-    header {
-        Strict-Transport-Security "max-age=31536000"
-        X-Content-Type-Options "nosniff"
-    }
-    @root path /
-    respond @root "ok"
-    respond "not found" 404
-}
-
-# ── Minecraft ─────────────────────────────────────────────────────────────
-
-# Game traffic (25565 Java, 19132 Bedrock) bypasses Cloudflare — the VPS
-# publishes those ports directly (see services/minecraft/docker-compose.yml),
-# so client traffic reaches the JVM without going through this vhost. This
-# vhost is just a human-readable landing page for the HTTPS hostname so
-# anyone hitting https://mc.jehpok.com in a browser gets connect info
-# instead of a 404.
-https://mc.jehpok.com {
-    import tls_keys
-    import compress
-    header {
-        Strict-Transport-Security "max-age=31536000"
-        X-Content-Type-Options "nosniff"
-    }
-    @root path /
-    respond @root `ok
-
-
-Server IP: 137.74.166.131
-Java:     mc.jehpok.com:25565  (Paper, latest stable)
-Bedrock:  mc.jehpok.com:19132  (Geyser + Floodgate, TCP+UDP)
-
-
-Dashboard (Tailscale-only): https://server.jehpok.com/mc
-`
-    respond "not found" 404
-}
-
-# ── Vaultwarden (password manager) ─────────────────────────────────────────
-
-https://vault.jehpok.com {
-    import tls_keys
-    import compress
-    request_body {
-        max_size 100m
-    }
-    header {
-        import security_headers
-    }
-    reverse_proxy 172.22.0.4:80
-}
-
-# ── Nextcloud (PHP-FPM) ────────────────────────────────────────────────────
-
-https://cloud.jehpok.com {
-    import tls_keys
-    root * /nextcloud
-    request_body {
-        max_size 100m
-    }
-    @blocked path /data/* /config/* /lib/* /3rdparty/* /templates/* /occ /console.php /db/* /updater/*
-    respond @blocked "not found" 404
-    redir /.well-known/carddav /remote.php/dav 301
-    redir /.well-known/caldav /remote.php/dav 301
-    php_fastcgi 172.22.0.5:9000 {
-        root /var/www/html
-        dial_timeout 10s
-        read_timeout 300s
-        write_timeout 300s
-    }
-    encode zstd gzip
-    header {
-        import security_headers
-    }
-    file_server
-}
-
-# ── Uptime Kuma (status monitor) ──────────────────────────────────────────
-
-https://kuma.jehpok.com {
-    import tls_keys
-    import compress
-    request_body {
-        max_size 100m
-    }
-    header {
-        import security_headers
-    }
-    reverse_proxy 172.22.0.6:3001
-}
+import vhosts/server.jehpok.com.caddy
+import vhosts/share.jehpok.com.caddy
+import vhosts/vault.jehpok.com.caddy
+import vhosts/cloud.jehpok.com.caddy
+import vhosts/kuma.jehpok.com.caddy
+import vhosts/www.jehpok.com.caddy
+import vhosts/api.jehpok.com.caddy
+import vhosts/mc.jehpok.com.caddy

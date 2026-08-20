@@ -22,6 +22,8 @@ Move the five artifacts off the VPS — the secrets bundle contains private keys
 - `$(REPO)/vault-backup-<date>.tar.gz`
 - `$(REPO)/minecraft-backup-<date>.tar.gz`
 
+The CF API token is **not** in any backup — it lives at `$(REPO)/caddy_data/CF_API_TOKEN` on the active VPS. It's a single line `CF_API_TOKEN=<token>` (mode 0600, owner `debian`). Caddy renews certs from the token, so transferring it is the only thing needed to skip the first 0–90-day issuance window on the new host.
+
 ## 3. On the NEW VPS (Debian)
 
 Become root for system installs and unit restoration, then drop to `debian` for the rest. Run as root:
@@ -75,14 +77,31 @@ git clone git@github.com:friedutch/jehpok.com.git $(REPO)/repo
 cp <your-.env> $(REPO)/repo/services/cloud/.env
 docker network create net
 make -C $(REPO)/repo setup
+```
+
+`make setup` is idempotent: it installs ttyd, copies reference configs into host paths, enables the systemd units (ollama, ttyd, dnsmasq, sshd, jehpok-daily.timer), opens the UFW rule for ttyd, and deploys the project-level Claude Code safety rail from `setup/claude/settings.local.json`.
+
+Now create the Caddy data dir + restore the CF API token (so the per-vhost ACME certs can be issued on first request):
+
+```
+sudo mkdir -p $(REPO)/caddy_data
+sudo chown -R 201:201 $(REPO)/caddy_data
+sudo install -m 0644 -o debian -g debian /dev/null $(REPO)/caddy_data/CF_API_TOKEN
+printf 'CF_API_TOKEN=%s\n' '<paste token here>' | sudo tee $(REPO)/caddy_data/CF_API_TOKEN > /dev/null
+sudo chmod 0644 $(REPO)/caddy_data/CF_API_TOKEN
+```
+
+Then bring up the containers:
+
+```
 make -C $(REPO)/repo up-all
 ```
 
-`make setup` is idempotent: it installs ttyd, copies reference configs into host paths, enables the systemd units (ollama, ttyd, dnsmasq, sshd, jehpok-daily.timer), opens the UFW rule for ttyd, and deploys the project-level Claude Code safety rail from `setup/claude/settings.local.json`. `make up-all` brings up the six containers in dependency order.
+`make up-all` brings up the six containers in dependency order. The `domain` container is built locally from `services/domain/Dockerfile` (Caddy + caddy-dns/cloudflare plugin) — that adds ~3 minutes the first time.
 
 ## 4. Update Cloudflare DNS
 
-Point `jehpok.com` (and any subdomains serving traffic) at the new VPS IP.
+Point `jehpok.com` (and any subdomains serving traffic) at the new VPS IP. Each vhost will issue its own LE cert via DNS-01 — no CF Origin CA to copy.
 
 ## 5. Verify
 
@@ -92,10 +111,21 @@ Tail each container's logs to confirm clean startup:
 make logs-all
 ```
 
-And hit the public landing page to confirm Caddy is serving:
+Hit each public vhost to trigger ACME issuance (one cert per hit, ~seconds total):
 
 ```
-curl -sk --resolve www.jehpok.com:443:127.0.0.1 https://www.jehpok.com/
+for h in www share vault cloud kuma api mc; do
+  curl -sk -o /dev/null -w "$h.jehpok.com: HTTP %{http_code}\n" https://$h.jehpok.com/
+done
+```
+
+Verify the cert issuer is Let's Encrypt on every vhost:
+
+```
+for h in www share vault cloud kuma api mc; do
+  echo -n "$h.jehpok.com: "
+  echo | openssl s_client -connect $h.jehpok.com:443 -servername $h.jehpok.com 2>/dev/null | openssl x509 -noout -issuer 2>&1 | cut -d'=' -f2-
+done
 ```
 
 The tailnet routes (`server.jehpok.com/{,/share,/mc,/shell}`) are unreachable from a fresh VPS without Tailscale; verify those after `make setup` from a tailnet-joined device, not from the VPS host itself.

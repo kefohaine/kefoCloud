@@ -1,6 +1,9 @@
 services:
   domain:
-    image: caddy:2.11.4
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: caddy-dns:local
     container_name: domain
     restart: unless-stopped
 
@@ -22,8 +25,25 @@ services:
       - ../..:/srv:ro
       - /var/www/custom/projects/jehpok/cloud/html:/nextcloud:ro
       - /var/www/custom/projects/jehpok/share/files:/files:ro
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - /var/www/custom/projects/jehpok/certs:/certs:ro
+      # Top-level Caddyfile + per-vhost snippets. The dir is mounted so
+      # the `import` directives in the top-level file resolve relative
+      # paths (Caddy treats imports as relative to the importing file).
+      - ./:/etc/caddy:ro
+      # Persistent Caddy data: ACME certs, account keys, OCSP staples.
+      # Bound at /data, which is the caddy:2.x default base directory —
+      # the built-in ACME issuer writes under /data/caddy and renewal
+      # simply updates the same files, so the cert survives a container
+      # recreate. Without this bind every `make up-domain` would force
+      # a fresh issuance and a 90-day clock restart.
+      - /var/www/custom/projects/jehpok/caddy_data:/data
+
+    # Cloudflare API token for ACME DNS-01. Sourced from a host file
+    # (chmod 0600, owner uid 201 = caddy) so the literal token never
+    # lives in the compose file or the repo. `docker compose` exports
+    # every KEY=VAL line into the container's env at start, so the
+    # `env.CF_API_TOKEN` reference in the Caddyfile resolves at runtime.
+    env_file:
+      - /var/www/custom/projects/jehpok/caddy_data/CF_API_TOKEN
 
     logging:
       driver: json-file

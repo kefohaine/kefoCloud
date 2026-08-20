@@ -1,0 +1,41 @@
+# mc.jehpok.com — public landing page for the Minecraft server.
+# Game ports (25565 Java, 19132 Bedrock) bypass Cloudflare entirely by
+# design (the VPS publishes them directly, see services/minecraft/
+# docker-compose.yml), so this vhost is just a human-readable landing
+# page so anyone hitting https://mc.jehpok.com in a browser gets
+# connect info instead of a 404.
+#
+# TLS: Let's Encrypt DNS-01 via the Cloudflare DNS plugin. mc.jehpok.com
+# is DNS-only at CF (the CF proxy would break the game ports), so the
+# HTTP-01 challenge can't reach the origin over port 80. DNS-01 instead
+# lets Caddy drop a _acme-challenge TXT record at CF over HTTPS using
+# the token in CF_API_TOKEN, LE validates it, and Caddy stores the cert
+# under /data (persistent) for automatic renewal. No port 80 needed.
+# The other vhosts in this Caddyfile use the CF Origin CA (channels
+# 67-72) shared wildcard cert, so the mc.jehpok.com vhost explicitly
+# opts into its own ACME cert instead of importing `tls_keys` — this
+# prevents the wildcard cert from being served as a SNI fallback for
+# this hostname and lets the ACME automation policy take precedence.
+
+https://mc.jehpok.com {
+    tls {
+        dns cloudflare {env.CF_API_TOKEN}
+    }
+    import compress
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+    }
+    @root path /
+    respond @root `ok
+
+
+Server IP: 137.74.166.131
+Java:     mc.jehpok.com:25565  (Paper, latest stable)
+Bedrock:  mc.jehpok.com:19132  (Geyser + Floodgate, TCP+UDP)
+
+
+Dashboard (Tailscale-only): https://server.jehpok.com/mc
+`
+    respond "not found" 404
+}
