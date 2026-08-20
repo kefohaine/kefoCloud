@@ -39,7 +39,7 @@
 <h1>share.jehpok.com</h1>
 <p class="sub">admin — Tailscale-only</p>
 
-<form class="create" method="POST" action="/share">
+<form class="create" method="POST" action="/share/dashboard">
   <input name="slug" placeholder="slug (blank=random)" autocomplete="off">
   <input name="target" placeholder="https://destination.url" autocomplete="off" required>
   <button type="submit">Add</button>
@@ -49,7 +49,7 @@
 
 {% if links %}
 <table>
-  <thead><tr><th>Slug</th><th>Target</th><th>Hits</th><th>Expires</th><th><form method="POST" action="/share/all" style="display:inline"><input type="hidden" name="_method" value="DELETE"><button type="submit" class="delall" onclick="return confirm('Delete ALL links?')">del-all</button></form></th></tr></thead>
+  <thead><tr><th>Slug</th><th>Target</th><th>Hits</th><th>Expires</th><th><form method="POST" action="/share/dashboard/all" style="display:inline"><input type="hidden" name="_method" value="DELETE"><button type="submit" class="delall" onclick="return confirm('Delete ALL links?')">del-all</button></form></th></tr></thead>
   <tbody>
   {% for l in links %}
     <tr>
@@ -58,7 +58,7 @@
       <td class="hits">{{ l.hits }}</td>
       <td class="expires">{{ l.expires_at | expires }}</td>
       <td>
-        <form method="POST" action="/share/{{ l.slug }}">
+        <form method="POST" action="/share/dashboard/{{ l.slug }}">
           <input type="hidden" name="_method" value="DELETE">
           <button type="submit" onclick="return confirm('Delete {{ l.slug }}?')">del</button>
         </form>

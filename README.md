@@ -45,13 +45,13 @@ One VPS, one host. Cloudflare fronts six of the seven hostnames; the Tailscale-o
 | Domain             | Where DNS points            | Who can reach it                            | What is served                                  |
 |--------------------|-----------------------------|---------------------------------------------|-------------------------------------------------|
 | www.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Homer dashboard — landing page listing every public self-hosted service; reverse-proxied to the `homer` container |
-| share.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | URL shortener + file sharing (Flask); reverse-proxied to the `share` container |
+| share.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | URL shortener + file sharing (Flask); reverse-proxied to the `share` container. Admin UI at `/share/dashboard` is hidden on this vhost (returns 404) — only reachable via `server.jehpok.com/share/dashboard` (tailnet-only) |
 | api.jehpok.com     | Cloudflare → VPS IP         | Anyone on the internet                      | Placeholder vhost (no backend currently wired)  |
 | vault.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Vaultwarden (self-hosted Bitwarden-compatible password manager); reverse-proxied to the `vault` container |
 | cloud.jehpok.com   | Cloudflare → VPS IP         | Anyone on the internet                      | Nextcloud (file sync, calendar, photos); PHP-FPM behind Caddy |
 | kuma.jehpok.com    | Cloudflare → VPS IP         | Anyone on the internet                      | Uptime Kuma monitor dashboard; reverse-proxied to the `kuma` container |
-| mc.jehpok.com      | **Not in Cloudflare** (DNS A only) | Anyone on the internet — game ports only | Minecraft server: Paper on `:25565` (Java) + `:19132` (Bedrock via Geyser); tailnet-only dashboard at `server.jehpok.com/mc` |
-| server.jehpok.com  | **Not in Cloudflare**       | Only devices on the Tailscale network       | Responds `ok`; admin UI for the shortener at `/share`; Minecraft dashboard at `/mc`; ttyd shell on the host at `/console` |
+| mc.jehpok.com      | **Not in Cloudflare** (DNS A only) | Anyone on the internet — landing page + game ports | Landing text on `/`. Game traffic on `:25565` (Java) + `:19132` (Bedrock via Geyser) bypasses Cloudflare entirely |
+| server.jehpok.com  | **Not in Cloudflare**, not in public DNS | Only devices on the Tailscale network       | Responds `ok` on `/`; shortener admin UI at `/share/dashboard`; Minecraft dashboard at `/mc/dashboard`; ttyd host shell at `/shell`. Caddy `@not_tailnet` returns 403 for any non-tailnet source IP, including forged Host headers against the public IP |
 
 The asymmetry on `server.jehpok.com` is deliberate. By keeping it out of public DNS, the only way anyone can know its IP is by being inside the Tailscale network. Even a DNS leak on the user's device cannot reveal an address that public resolvers don't serve. As defense-in-depth, Caddy also rejects any request to the vhost whose source IP is not on the tailnet (`100.64.0.0/10`), so reaching it via the public IP with a forged Host header returns 403 on every path.
 

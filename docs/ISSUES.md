@@ -42,14 +42,14 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 #### `server.jehpok.com` has no auth beyond Tailscale membership  **[needs human approval]**
 - **File**: `services/domain/Caddyfile` (`https://server.jehpok.com`)
-- **Problem**: Any tailnet device can reach `server.jehpok.com` with no authentication. DNS-obscurity is the only access control — the link shortener admin UI at `/share` and the host ttyd shell at `/console` (a host systemd unit running as `debian` with full host control) both sit behind `@not_tailnet` and nothing else.
-- **Fix**: Add Caddy `basic_auth` on the `/share*` and `/console*` matchers (needs a username + bcrypt hash from the operator), or apply Tailscale ACLs in the admin console to restrict who can reach the VPS at all.
+- **Problem**: Any tailnet device can reach `server.jehpok.com` with no authentication. DNS-obscurity is the only access control — the link shortener admin UI at `/share/dashboard` and the host ttyd shell at `/shell` (a host systemd unit running as `debian` with full host control) both sit behind `@not_tailnet` and nothing else.
+- **Fix**: Add Caddy `basic_auth` on the `/share/dashboard*` and `/shell*` matchers (needs a username + bcrypt hash from the operator), or apply Tailscale ACLs in the admin console to restrict who can reach the VPS at all.
 - **Why approval**: requires a password / ACL policy from the operator.
 
-#### `server.jehpok.com/console` gives a `debian` shell to any tailnet device  **[needs human approval]**
+#### `server.jehpok.com/shell` gives a `debian` shell to any tailnet device  **[needs human approval]**
 - **File**: `services/domain/Caddyfile` (`https://server.jehpok.com`)
-- **Problem**: `/console` is a host systemd unit (`ttyd.service`) running `/usr/local/bin/ttyd bash` as `debian` (uid 1000). The process is on the host, not in a container, so `sudo -i` reaches root and every host file is writable. The systemd unit has no filesystem sandbox (all `ProtectSystem`, `PrivateTmp`, etc. directives stripped — operator preference: no permission hunts). Tailscale membership alone gates it.
-- **Fix**: Add Caddy `basic_auth` on the `/console*` matcher (needs a username + bcrypt hash), or apply Tailscale ACLs to restrict which devices can reach the VPS, or restrict the container with `cap_drop` + a read-only root mount + a write whitelist.
+- **Problem**: `/shell` is a host systemd unit (`ttyd.service`) running `/usr/local/bin/ttyd bash` as `debian` (uid 1000). The process is on the host, not in a container, so `sudo -i` reaches root and every host file is writable. The systemd unit has no filesystem sandbox (all `ProtectSystem`, `PrivateTmp`, etc. directives stripped — operator preference: no permission hunts). Tailscale membership alone gates it.
+- **Fix**: Add Caddy `basic_auth` on the `/shell*` matcher (needs a username + bcrypt hash), or apply Tailscale ACLs to restrict which devices can reach the VPS, or restrict the container with `cap_drop` + a read-only root mount + a write whitelist.
 - **Why approval**: requires a password / ACL policy from the operator.
 
 #### Tailscale ACLs not configured  **[needs human approval]**
@@ -94,13 +94,13 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 Behaviours that look like bugs but are deliberate. Do not fix; the rationale is the answer.
 
 ### `server.jehpok.com` is unresolvable from the public internet
-Looks like: DNS lookup fails for `server.jehpok.com` outside Tailscale, *or* a `curl` against `https://server.jehpok.com/...` (or any path under it: `/share`, `/console`) from a non-tailnet source times out, returns 403, or connection-refuses — including from the VPS host itself if the host isn't on the tailnet resolver. Reality: this is the only access control. The hostname is deliberately absent from Cloudflare DNS so the resolver only knows it on the tailnet. Caddy additionally returns 403 for any non-tailnet source IP via `@not_tailnet`, so a forged Host header against the public IP also fails. **A failed curl is `@not_tailnet` working, not a service outage** — only the operator and tailnet devices can reach `server.jehpok.com`; verify from a tailnet device or by SSH'ing in and curling from a tailnet-joined source.
+Looks like: DNS lookup fails for `server.jehpok.com` outside Tailscale, *or* a `curl` against `https://server.jehpok.com/...` (or any path under it: `/share`, `/shell`) from a non-tailnet source times out, returns 403, or connection-refuses — including from the VPS host itself if the host isn't on the tailnet resolver. Reality: this is the only access control. The hostname is deliberately absent from Cloudflare DNS so the resolver only knows it on the tailnet. Caddy additionally returns 403 for any non-tailnet source IP via `@not_tailnet`, so a forged Host header against the public IP also fails. **A failed curl is `@not_tailnet` working, not a service outage** — only the operator and tailnet devices can reach `server.jehpok.com`; verify from a tailnet device or by SSH'ing in and curling from a tailnet-joined source.
 
 ### Cloudflare Bot Fight Mode blocks `curl` against `api.jehpok.com`
 Looks like: Cloudflare rejects `curl`/scripts hitting `api.jehpok.com` with a 403 / challenge. Reality: terminal traffic cannot solve the Browser Integrity Check. The intended fix is a per-hostname WAF rule skip on `api.jehpok.com` (and the same mitigation is required for `cloud.jehpok.com` desktop sync); the goal is to keep Cloudflare's full protection on everywhere else.
 
 ### `share.jehpok.com/share`-style paths return `not found` instead of redirecting to `server.jehpok.com/share`
-Looks like: the link shortener admin UI is unreachable from `share.jehpok.com/share`. Reality: the public vhost hides `/share`, `/api/*`, and `/healthz` via a Caddy `@admin` matcher returning 404, because admin has no app-level auth and the public side shouldn't leak its existence. Admin lives at `server.jehpok.com/share`, which is tailnet-only.
+Looks like: the link shortener admin UI is unreachable from `share.jehpok.com/share/dashboard`. Reality: the public vhost hides `/share`, `/api/*`, and `/healthz` via a Caddy `@admin` matcher returning 404, because admin has no app-level auth and the public side shouldn't leak its existence. Admin lives at `server.jehpok.com/share/dashboard`, which is tailnet-only.
 
 ---
 
@@ -184,4 +184,4 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **`debian` has passwordless sudo** — `/etc/sudoers.d/debian-passwordless` (`NOPASSWD:ALL`, mode 0440). Reduces permission prompts during normal agent operations; still requires sudo for anything privileged.
 - **Claude Code allow-list curated + backed up** — `.claude/settings.local.json` is gitignored (per-operator); tracked template lives at `setup/claude/settings.local.json`; `make setup` deploys it. Allow-list covers ollama/maintenance commands; destructive ops still prompt. Later superseded by the project-level deny-only safety rail (see Claude Code project safety rail).
 - **ttyd hardening removed** — `ProtectSystem`, `PrivateTmp`, `MemoryDenyWriteExecute`, `PrivateDevices`, `RestrictAddressFamilies`, `LockPersonality`, `RestrictRealtime`, `ProtectControlGroups` all stripped from `ttyd.service` (operator preference: no permission hunts); access control stays at Tailscale + `Caddy @not_tailnet`.
-- **Minecraft server** — Paper + Geyser/Floodgate at `mc.jehpok.com` (Java `:25565`, Bedrock `:19132`); tailnet-only Flask+rcon dashboard at `server.jehpok.com/mc` (start/stop/restart, live stats, editable `server.properties`, log tail, quick rcon). World data bind-mounted under `$(REPO)/minecraft/data`.
+- **Minecraft server** — Paper + Geyser/Floodgate at `mc.jehpok.com` (Java `:25565`, Bedrock `:19132`); tailnet-only Flask+rcon dashboard at `server.jehpok.com/mc/dashboard` (start/stop/restart, live stats, editable `server.properties`, log tail, quick rcon). World data bind-mounted under `$(REPO)/minecraft/data`.

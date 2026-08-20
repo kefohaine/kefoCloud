@@ -203,7 +203,7 @@ def upload_file():
     return redirect(f"/?s=https://{host}/{slug}", code=303)
 
 
-@app.route("/share", methods=["GET"])
+@app.route("/share/dashboard", methods=["GET"])
 def admin_page():
     conn = db()
     rows = conn.execute(
@@ -213,7 +213,7 @@ def admin_page():
     return render_template("admin.html", links=rows)
 
 
-@app.route("/share", methods=["POST"])
+@app.route("/share/dashboard", methods=["POST"])
 def admin_create():
     data = request.form
     slug = (data.get("slug") or "").strip()
@@ -240,10 +240,10 @@ def admin_create():
         conn.close()
         return render_template("admin.html", links=all_rows(), error=f"'{slug}' already exists"), 400
     conn.close()
-    return redirect("/share", code=303)
+    return redirect("/share/dashboard", code=303)
 
 
-@app.route("/share/all", methods=["DELETE", "POST"])
+@app.route("/share/dashboard/all", methods=["DELETE", "POST"])
 def admin_delete_all():
     if request.method == "POST" and request.form.get("_method") != "DELETE":
         abort(405)
@@ -254,10 +254,10 @@ def admin_delete_all():
     conn.close()
     for r in rows:
         delete_file_if_linked(r["target"])
-    return redirect("/share", code=303)
+    return redirect("/share/dashboard", code=303)
 
 
-@app.route("/share/<slug>", methods=["DELETE", "POST"])
+@app.route("/share/dashboard/<slug>", methods=["DELETE", "POST"])
 def admin_delete(slug):
     if request.method == "POST" and request.form.get("_method") != "DELETE":
         abort(405)
@@ -270,7 +270,7 @@ def admin_delete(slug):
         delete_file_if_linked(row["target"])
     if request.headers.get("Accept") == "application/json":
         return jsonify(ok=True)
-    return redirect("/share", code=303)
+    return redirect("/share/dashboard", code=303)
 
 
 def all_rows():
