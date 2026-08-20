@@ -1,4 +1,9 @@
 .RECIPEPREFIX = >
+# Use bash explicitly so SHELLFLAGS go to bash, not /bin/sh (dash on Debian).
+# Without this, `dash -eu -c '<recipe>'` runs the recipe with `set -eu` and
+# bites any line that references an unset variable — see docs/GUIDE.md
+# "Operational gotchas" for the symptom and the fix.
+SHELL := /bin/bash
 .SHELLFLAGS := -eu -c
 
 REPO     := /var/www/custom/projects/jehpok
@@ -64,7 +69,7 @@ logs-dnsmasq:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: status clean refresh setup help
+.PHONY: status clean-docker clean-apt clean-backups clean-all refresh setup help
 
 status:
 >@echo "--- containers ---"
@@ -79,12 +84,23 @@ status:
 >@echo "--- memory ---"
 >@free -h
 
-clean:
+clean-docker:
 >docker builder prune -af
 >docker image prune -af
 >docker container prune -f
+
+clean-apt:
 >sudo apt-get autoremove -y
 >sudo apt-get clean
+
+# Keep the 3 most recent artifacts per backup pattern; delete older.
+clean-backups:
+>@for pattern in cloud-backup-* share-backup-*.db vault-backup-*.tar.gz secrets-backup/secrets-*.tar.gz; do \
+    sudo ls -1dt $(REPO)/$$pattern 2>/dev/null | tail -n +4 | sudo xargs -r rm -rf; \
+  done
+>@echo "Pruned backups older than the 3 most recent."
+
+clean-all: clean-docker clean-apt clean-backups
 
 # Pull every image that isn't built locally, then bring everything up.
 refresh:
@@ -124,7 +140,8 @@ setup:
 >sudo chown debian:debian /var/log/jehpok-daily.log
 >sudo cp $(REPO)/repo/setup/ttyd/ttyd.service /etc/systemd/system/ttyd.service
 >mkdir -p $(REPO)/repo/.claude
->cp -n $(REPO)/repo/setup/claude/settings.local.json $(REPO)/repo/.claude/settings.local.json
+>cp $(REPO)/repo/setup/claude/settings.local.json $(REPO)/repo/.claude/settings.local.json
+>chmod 0644 $(REPO)/repo/.claude/settings.local.json
 >sudo ufw allow from 172.22.0.0/16 to any port 7681 proto tcp
 >sudo systemctl daemon-reload
 >sudo systemctl enable --now ollama jehpok-daily.timer ttyd
@@ -135,25 +152,30 @@ setup:
 # Backups
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: backup-cloud backup-share backup-vault backup-secrets
+.PHONY: backup-cloud backup-share backup-vault backup-secrets backup-all
 
 backup-cloud:
->docker exec -w /var/www/html cloud php occ maintenance:mode --on
->cp -a $(REPO)/cloud/users $(REPO)/cloud-backup-$$(date +%Y%m%d)
->docker exec -w /var/www/html cloud php occ maintenance:mode --off
->@echo "Backup at $(REPO)/cloud-backup-$$(date +%Y%m%d)"
+>@dest=$(REPO)/cloud-backup-$$(date +%Y%m%d); \
+  sudo mkdir -p "$$dest"; \
+  sudo chown debian:debian "$$dest"; \
+  docker exec -w /var/www/html cloud php occ maintenance:mode --on; \
+  trap 'docker exec -w /var/www/html cloud php occ maintenance:mode --off' EXIT; \
+  docker exec -i cloud tar cf - -C /data . | sudo tar xf - -C "$$dest"; \
+  sudo chown -R 33:33 "$$dest"; \
+  docker exec -w /var/www/html cloud php occ maintenance:mode --off; \
+  echo "Backup at $$dest"
 
 backup-share:
->cp $(REPO)/share/db/links.db $(REPO)/share-backup-$$(date +%Y%m%d).db
+>@sudo cp $(REPO)/share/db/links.db $(REPO)/share-backup-$$(date +%Y%m%d).db
 >@echo "Backup at $(REPO)/share-backup-$$(date +%Y%m%d).db"
 
 backup-vault:
->tar czf $(REPO)/vault-backup-$$(date +%Y%m%d).tar.gz -C $(REPO)/vault data
+>@sudo bash -c 'tar czf $(REPO)/vault-backup-$$(date +%Y%m%d).tar.gz -C $(REPO)/vault data'
 >@echo "Backup at $(REPO)/vault-backup-$$(date +%Y%m%d).tar.gz"
 
 backup-secrets:
->mkdir -p $(REPO)/secrets-backup
->tar czf $(REPO)/secrets-backup/secrets-$$(date +%Y%m%d).tar.gz \
+>@sudo mkdir -p $(REPO)/secrets-backup
+>@sudo tar czf $(REPO)/secrets-backup/secrets-$$(date +%Y%m%d).tar.gz \
   $(REPO)/certs \
   /home/debian/.ssh/github_key \
   /home/debian/.ssh/github_key.pub \
@@ -167,6 +189,17 @@ backup-secrets:
   /var/lib/tailscale
 >@echo "Secrets bundle at $(REPO)/secrets-backup/secrets-$$(date +%Y%m%d).tar.gz"
 >@echo "Download this file OFF the VPS. It contains private keys and Tailscale identity."
+
+backup-all: backup-cloud backup-share backup-vault backup-secrets
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Migration
+# ─────────────────────────────────────────────────────────────────────────────
+
+.PHONY: migrate
+
+migrate:
+>@cat $(REPO)/repo/docs/MIGRATE.md
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Git
@@ -188,7 +221,7 @@ help:
 >@echo ""
 >@echo "  jehpok.com — make recipes"
 >@echo ""
->@echo "  Per-container  (one of: $(SERVICES))"
+>@echo "  Docker Containers  (one of: $(SERVICES))"
 >@echo "    make up-<svc>         force-recreate container (share also rebuilds)"
 >@echo "    make restart-<svc>    reload container without recreating"
 >@echo "    make logs-<svc>       follow container logs"
@@ -197,6 +230,8 @@ help:
 >@echo "    make up-all           recreate all 6 containers in order"
 >@echo "    make restart-all      restart all 6 containers + dnsmasq + ttyd"
 >@echo "    make logs-all         tail all 6 container logs in one stream"
+>@echo "    make backup-all       run all four backup recipes in order"
+>@echo "    make clean-all        chain: clean-docker + clean-apt + clean-backups"
 >@echo ""
 >@echo "  Host services (systemd)"
 >@echo "    make restart-ttyd     restart host ttyd"
@@ -207,8 +242,9 @@ help:
 >@echo "  Maintenance"
 >@echo "    make status           containers + host services + disk + memory"
 >@echo "    make refresh          apt update/upgrade + pull images + up-all"
->@echo "    make clean            prune docker builder/image/container + apt"
 >@echo "    make setup            one-shot host bootstrap (configs, units, UFW, Claude)"
+>@echo "    make migrate          cat docs/MIGRATE.md (full VPS-to-VPS runbook)"
+>@echo "    make push MSG=\"...\"   commit + push to jehpok.com main"
 >@echo ""
 >@echo "  Backups"
 >@echo "    make backup-cloud     Nextcloud snapshot (maintenance mode during copy)"
@@ -216,7 +252,8 @@ help:
 >@echo "    make backup-vault     Vaultwarden data tar"
 >@echo "    make backup-secrets   bundle certs + keys + Tailscale state (download off VPS)"
 >@echo ""
->@echo "  Migration / git"
->@echo "    make migrate          print full VPS-to-VPS migration runbook"
->@echo "    make push MSG=\"...\"   commit + push to jehpok.com main"
+>@echo "  Cleanup"
+>@echo "    make clean-docker     prune builder / image / container"
+>@echo "    make clean-apt        apt autoremove + clean"
+>@echo "    make clean-backups    keep latest 3 backups per pattern, delete older"
 >@echo ""
