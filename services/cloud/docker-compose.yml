@@ -52,8 +52,11 @@ services:
         max-size: "10m"
         max-file: "3"
 
+    # Pin the bridge IP — services/domain/Caddyfile php_fastcgi upstream
+    # is 172.22.0.5:9000.
     networks:
-      - net
+      net:
+        ipv4_address: 172.22.0.5
 
 networks:
   net:
