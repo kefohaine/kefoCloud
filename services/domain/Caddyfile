@@ -18,6 +18,16 @@
     Referrer-Policy "strict-origin-when-cross-origin"
 }
 
+# Compress every response that has a compressible MIME type (default 512 B
+# threshold, text/* + JSON + SVG + JS + CSS + XML). Caddy's `encode`
+# middleware can't live in the global options block — it has to be inside
+# each site block or imported via a snippet. Every vhost below either sets
+# `encode zstd gzip` explicitly or imports this snippet, so no response
+# leaks uncompressed.
+(compress) {
+    encode zstd gzip
+}
+
 (serve_static) {
     encode zstd gzip
     header {
@@ -42,6 +52,7 @@ http:// {
 
 https://www.jehpok.com {
     import tls_keys
+    import compress
     request_body {
         max_size 100m
     }
@@ -53,6 +64,7 @@ https://www.jehpok.com {
 
 https://server.jehpok.com {
     import tls_keys
+    import compress
     @not_tailnet not remote_ip 100.64.0.0/10
     handle @not_tailnet {
         respond 403
@@ -85,6 +97,7 @@ https://server.jehpok.com {
 
 https://share.jehpok.com {
     import tls_keys
+    import compress
     request_body {
         max_size 100m
     }
@@ -118,6 +131,7 @@ https://share.jehpok.com {
 
 https://api.jehpok.com {
     import tls_keys
+    import compress
     request_body {
         max_size 100m
     }
@@ -140,6 +154,7 @@ https://api.jehpok.com {
 # instead of a 404.
 https://mc.jehpok.com {
     import tls_keys
+    import compress
     header {
         Strict-Transport-Security "max-age=31536000"
         X-Content-Type-Options "nosniff"
@@ -162,6 +177,7 @@ Dashboard (Tailscale-only): https://server.jehpok.com/mc
 
 https://vault.jehpok.com {
     import tls_keys
+    import compress
     request_body {
         max_size 100m
     }
@@ -200,6 +216,7 @@ https://cloud.jehpok.com {
 
 https://kuma.jehpok.com {
     import tls_keys
+    import compress
     request_body {
         max_size 100m
     }
