@@ -29,13 +29,26 @@ $(foreach s,$(SERVICES),$(eval $(call up_rule,$s)))
 
 define restart_rule
 restart-$1:
->$(COMPOSE) $(REPO)/repo/services/$1/docker-compose.yml restart $1
+># Some compose files declare more than one service (e.g. minecraft has
+# `minecraft` + `minecraft-web`). Restarting the named service alone would
+# leave the other untouched and surprise the next edit, so restart every
+# service in the file.
+>$(COMPOSE) $(REPO)/repo/services/$1/docker-compose.yml restart
 endef
 $(foreach s,$(SERVICES),$(eval $(call restart_rule,$s)))
 
 define logs_rule
 logs-$1:
->docker logs $1 --tail 50 -f
+># Tail the service container named after the directory; for compose files
+# with multiple services (minecraft: minecraft + minecraft-web), tail both
+# with a [container] prefix so they don't interleave silently.
+>if [ "$1" = "minecraft" ]; then \
+    docker logs minecraft --tail 50 -f 2>&1 | stdbuf -oL sed "s/^/[minecraft] /" & \
+    docker logs minecraft-web --tail 50 -f 2>&1 | stdbuf -oL sed "s/^/[minecraft-web] /" & \
+    wait; \
+  else \
+    docker logs $1 --tail 50 -f; \
+  fi
 endef
 $(foreach s,$(SERVICES),$(eval $(call logs_rule,$s)))
 
