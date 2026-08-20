@@ -85,14 +85,16 @@ Point `jehpok.com` (and any subdomains serving traffic) at the new VPS IP.
 
 ## 5. Verify
 
-The `cheyou` path on `www.jehpok.com` returns 200 when Caddy is healthy:
-
-```
-curl -sk https://www.jehpok.com/cheyou --resolve www.jehpok.com:443:127.0.0.1
-```
-
-Also tail each container's logs to confirm clean startup:
+Tail each container's logs to confirm clean startup:
 
 ```
 make logs-all
 ```
+
+And hit the public landing page to confirm Caddy is serving:
+
+```
+curl -sk --resolve www.jehpok.com:443:127.0.0.1 https://www.jehpok.com/
+```
+
+The tailnet routes (`server.jehpok.com/{,/share,/mc,/shell}`) are unreachable from a fresh VPS without Tailscale; verify those after `make setup` from a tailnet-joined device, not from the VPS host itself.

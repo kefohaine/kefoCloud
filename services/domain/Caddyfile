@@ -133,10 +133,12 @@ https://api.jehpok.com {
 
 # ── Minecraft ─────────────────────────────────────────────────────────────
 
-# Game traffic (25565 Java, 19132 Bedrock) bypasses Cloudflare — DNS A at
-# mc.jehpok.com points at the VPS IP. This vhost is just a human-readable
-# landing page so anyone hitting mc.jehpok.com in a browser gets connect
-# info instead of a TLS error.
+# Game traffic (25565 Java, 19132 Bedrock) bypasses Cloudflare — the VPS
+# publishes those ports directly (see services/minecraft/docker-compose.yml),
+# so client traffic reaches the JVM without going through this vhost. This
+# vhost is just a human-readable landing page for the HTTPS hostname so
+# anyone hitting https://mc.jehpok.com in a browser gets connect info
+# instead of a 404.
 https://mc.jehpok.com {
     import tls_keys
     header {
@@ -148,8 +150,8 @@ https://mc.jehpok.com {
 
 
 Server IP: 137.74.166.131
-Java:     mc.jehpok.com:25565  (Paper 26.2)
-Bedrock:  mc.jehpok.com:19132  (via Geyser 2.11.1)
+Java:     mc.jehpok.com:25565  (Paper, latest stable)
+Bedrock:  mc.jehpok.com:19132  (Geyser + Floodgate, TCP+UDP)
 
 
 Dashboard (Tailscale-only): https://server.jehpok.com/mc
