@@ -8,7 +8,7 @@ SHELL := /bin/bash
 
 REPO     := /var/www/custom/projects/jehpok
 COMPOSE  := docker compose -f
-SERVICES := share domain cloud vault kuma homer
+SERVICES := share domain cloud vault kuma homer minecraft
 HOST     := ttyd dnsmasq ollama
 
 # ─────────────────────────────────────────────────────────────────────────────
