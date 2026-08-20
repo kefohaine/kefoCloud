@@ -5,8 +5,8 @@ REPO := /var/www/custom/projects/jehpok
 COMPOSE := docker compose -f
 
 .PHONY: up-domain up-cloud up-share up-vault up-kuma up-homer up-all
-.PHONY: restart-domain restart-cloud restart-share restart-vault restart-kuma restart-homer restart-dns restart-ttyd
-.PHONY: logs-domain logs-cloud logs-share logs-vault logs-kuma logs-homer logs-dns logs-ttyd
+.PHONY: restart-domain restart-cloud restart-share restart-vault restart-kuma restart-homer restart-all restart-dns restart-ttyd
+.PHONY: logs logs-domain logs-cloud logs-share logs-vault logs-kuma logs-homer logs-dns logs-ttyd
 .PHONY: status push backup-cloud backup-share backup-vault backup-secrets restore-claude-settings clean maintain install-ttyd setup-host
 
 up-domain:
@@ -53,6 +53,8 @@ restart-dns:
 restart-ttyd:
 >sudo systemctl restart ttyd
 
+restart-all: restart-share restart-domain restart-cloud restart-vault restart-kuma restart-homer restart-dns restart-ttyd
+
 logs-domain:
 >docker logs domain --tail 50 -f
 
@@ -73,6 +75,9 @@ logs-homer:
 
 logs-dns:
 >sudo journalctl -u dnsmasq -n 50 -f
+
+logs:
+>@stdbuf -oL bash -c 'for c in share domain cloud vault kuma homer; do docker logs $$c --tail 50 -f 2>&1 | stdbuf -oL sed "s/^/[$$c] /" & done; wait'
 
 logs-ttyd:
 >sudo journalctl -u ttyd -n 50 -f

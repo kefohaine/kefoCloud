@@ -36,8 +36,10 @@ Manual — no CI/CD, pushes to `main` trigger nothing. Use the `Makefile` recipe
 make up-all            # start/recreate all six containers in order (share, domain, cloud, vault, kuma, homer)
 make up-<service>      # force-recreate one container — up-domain | up-cloud | up-share | up-vault | up-kuma | up-homer
 make restart-<service> # reload one container without recreating — after editing a mounted config
+make restart-all       # restart every container + dnsmasq + ttyd — same order as up-all
 make restart-dns       # restart the host dnsmasq resolver — after editing setup/dnsmasq/10-tailnet.conf
 make restart-ttyd      # restart the host ttyd service — after editing setup/ttyd/ttyd.service
+make logs              # tail all six container logs in one stream, each line prefixed with [container]
 make logs-<service>    # follow one container's logs — logs-domain | logs-cloud | logs-share | logs-vault | logs-kuma | logs-homer
 make logs-dns          # follow the dnsmasq journal
 make logs-ttyd         # follow the ttyd journal
