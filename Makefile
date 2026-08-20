@@ -108,7 +108,7 @@ clean-apt:
 
 # Keep the 3 most recent artifacts per backup pattern; delete older.
 clean-backups:
->@for pattern in cloud-backup-* share-backup-*.db vault-backup-*.tar.gz secrets-backup/secrets-*.tar.gz; do \
+>@for pattern in cloud-backup-* share-backup-*.db vault-backup-*.tar.gz secrets-backup/secrets-*.tar.gz minecraft-backup-*.tar.gz; do \
     sudo ls -1dt $(REPO)/$$pattern 2>/dev/null | tail -n +4 | sudo xargs -r rm -rf; \
   done
 >@echo "Pruned backups older than the 3 most recent."
@@ -165,7 +165,7 @@ setup:
 # Backups
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: backup-cloud backup-share backup-vault backup-secrets backup-all
+.PHONY: backup-cloud backup-share backup-vault backup-secrets backup-minecraft backup-all
 
 backup-cloud:
 >@dest=$(REPO)/cloud-backup-$$(date +%Y%m%d); \
@@ -203,7 +203,20 @@ backup-secrets:
 >@echo "Secrets bundle at $(REPO)/secrets-backup/secrets-$$(date +%Y%m%d).tar.gz"
 >@echo "Download this file OFF the VPS. It contains private keys and Tailscale identity."
 
-backup-all: backup-cloud backup-share backup-vault backup-secrets
+# Snapshot just the Minecraft world data folder as a timestamped .tar.gz.
+# Differs from `backup-all` (which snapshots everything): this one is for
+# world data only, intended to be run before destructive ops (regenerate,
+# world import) so a recovery path exists. Does NOT auto-run by itself.
+# When run from `backup-all`, daily.sh stops the minecraft container first
+# so tar reads a quiescent filesystem; running this standalone while the
+# server is up is unsafe (regions may be partially written).
+backup-minecraft:
+>@dest=$(REPO)/minecraft-backup-$$(date +%Y%m%d-%H%M%S).tar.gz; \
+  sudo tar czf "$$dest" -C $(REPO)/minecraft/data world; \
+  sudo chown debian:debian "$$dest"; \
+  echo "World backup at $$dest"
+
+backup-all: backup-cloud backup-share backup-vault backup-secrets backup-minecraft
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Migration
@@ -243,7 +256,7 @@ help:
 >@echo "    make up-all           recreate all 6 containers in order"
 >@echo "    make restart-all      restart all 6 containers + dnsmasq + ttyd"
 >@echo "    make logs-all         tail all 6 container logs in one stream"
->@echo "    make backup-all       run all four backup recipes in order"
+>@echo "    make backup-all       run all five backup recipes in order (stops the mc container via daily.sh)"
 >@echo "    make clean-all        chain: clean-docker + clean-apt + clean-backups"
 >@echo ""
 >@echo "  Host services (systemd)"
@@ -264,6 +277,7 @@ help:
 >@echo "    make backup-share     shortener SQLite DB"
 >@echo "    make backup-vault     Vaultwarden data tar"
 >@echo "    make backup-secrets   bundle certs + keys + Tailscale state (download off VPS)"
+>@echo "    make backup-minecraft Minecraft world tar (stops the container via daily.sh when chained)"
 >@echo ""
 >@echo "  Cleanup"
 >@echo "    make clean-docker     prune builder / image / container"
