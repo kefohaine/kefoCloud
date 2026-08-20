@@ -1,7 +1,7 @@
 services:
-  minecraft:
+  mc:
     image: itzg/minecraft-server:latest
-    container_name: minecraft
+    container_name: mc
     restart: unless-stopped
 
     environment:
@@ -55,7 +55,7 @@ services:
     # fresh volume still ends up Java + Bedrock on one server.
     entrypoint: ["/bin/sh", "-c", "bash /etc/mc-plugins/init.sh && exec /start"]
     volumes:
-      - /var/www/custom/projects/jehpok/minecraft/data:/data
+      - /var/www/custom/projects/jehpok/mc/data:/data
       - ./plugins:/etc/mc-plugins:ro
 
     ports:
@@ -80,8 +80,8 @@ services:
         max-size: "10m"
         max-file: "3"
 
-    # Pin both bridge IPs. Caddy's @mc upstream (minecraft-web @ .8) is one
-    # reason; the other is that minecraft itself sits on .7 by convention —
+    # Pin both bridge IPs. Caddy's @mc upstream (mc-web @ .8) is one
+    # reason; the other is that mc itself sits on .7 by convention —
     # nothing else in the repo hardcodes this IP, but pinning it makes
     # `docker network inspect net` output deterministic across recreates
     # (the itzg image's entrypoint init can take >90s, so `docker compose
@@ -90,10 +90,10 @@ services:
       net:
         ipv4_address: 172.22.0.7
 
-  minecraft-web:
+  mc-web:
     build: .
     image: jehpok/minecraft-web:1
-    container_name: minecraft-web
+    container_name: mc-web
     restart: unless-stopped
 
     expose:
@@ -101,7 +101,7 @@ services:
 
     # Pin the bridge IP so Caddy's @mc upstream (172.22.0.8:5000) stays valid
     # across recreates. Without this Docker assigns the next free /16 address,
-    # and a container named `minecraft-web` could land on .8 one run and .9 the
+    # and a container named `mc-web` could land on .8 one run and .9 the
     # next. The other pinned upstreams in services/domain/Caddyfile rely on
     # this convention too.
     networks:
@@ -116,7 +116,7 @@ services:
       start_period: 10s
 
     environment:
-      RCON_HOST: minecraft
+      RCON_HOST: mc
       RCON_PORT: "25575"
       RCON_PASSWORD: "change-me-via-dashboard"
       SERVER_DIR: /server
@@ -132,10 +132,10 @@ services:
       # game container is running, so /data/world is only mutated when the
       # server is stopped. Game data safety still relies on the game
       # container being the only writer of /data/world at runtime.
-      - /var/www/custom/projects/jehpok/minecraft/data:/server:rw
+      - /var/www/custom/projects/jehpok/mc/data:/server:rw
       - ../../content/minecraft:/app/src:ro
       # Docker socket so the dashboard can start/stop/restart the game
-      # container via the Python docker SDK (see services/minecraft/Dockerfile).
+      # container via the Python docker SDK (see services/mc/Dockerfile).
       - /var/run/docker.sock:/var/run/docker.sock
 
     logging:
