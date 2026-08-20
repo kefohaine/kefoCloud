@@ -196,14 +196,28 @@ _version_cache = {"started_at": None, "version": None}
 _version_lock = threading.Lock()
 
 
+# `_last_started_at` is the latest container StartedAt we've observed.
+# stats() populates it on every call (after containers.get), so the
+# _paper_version() cache check can compare against this without re-hitting
+# the Docker SDK. The value is only used for read; the write happens
+# under _version_lock so the (started_at, version) pair stays consistent.
+_last_started_at = {"value": None, "lock": threading.Lock()}
+
+
 def _paper_version():
     """Return Paper version string. Cached; refreshed only when the game
     container has been restarted since the last read."""
-    try:
-        c = _docker_client.containers.get(CONTAINER)
-        started = c.attrs["State"].get("StartedAt", "")
-    except Exception:
-        started = ""
+    # Fast path: stats() ran recently in this process and populated the
+    # shared StartedAt value. Use it without a Docker SDK round-trip.
+    with _last_started_at["lock"]:
+        started = _last_started_at["value"]
+    if started is None:
+        # First call ever, or no stats() has run. Hit Docker.
+        try:
+            c = _docker_client.containers.get(CONTAINER)
+            started = c.attrs["State"].get("StartedAt", "")
+        except Exception:
+            started = ""
     with _version_lock:
         if started == _version_cache["started_at"] and _version_cache["version"]:
             return _version_cache["version"]
@@ -247,6 +261,10 @@ def stats():
             from datetime import datetime, timezone
             t = datetime.fromisoformat(started.replace("Z", "+00:00"))
             out["uptime_s"] = int((datetime.now(timezone.utc) - t).total_seconds())
+            # Share with _paper_version so its cache check doesn't need a
+            # second containers.get() call.
+            with _last_started_at["lock"]:
+                _last_started_at["value"] = started
         except Exception:
             pass
     except Exception:
@@ -270,7 +288,6 @@ def stats():
     except Exception:
         pass
     out["version"] = _paper_version()
-    return out
     return out
 
 
@@ -517,9 +534,29 @@ def parse_player_advancements(uuid):
     return {"done": done, "total": total, "pct": round(done / total * 100, 1)}
 
 
+# usercache + per-player stats are read on every /mc/api/players poll.
+# Both files are small but reading + parsing JSON for every request adds up
+# when the dashboard is the only thing running. Cache keyed on file mtime:
+# Paper rewrites usercache.json only when a player joins; per-player stats
+# files grow on player activity but rarely change otherwise. Both invalidate
+# correctly because mtime moves forward.
+
+_USERCACHE_PATH = SERVER_DIR / "usercache.json"
+_usercache_cache = {"mtime": None, "data": None, "lock": threading.Lock()}
+
+
 def usercache_map():
-    """Return {uuid_lower: name} from usercache.json (most recent name)."""
-    data = load_json(SERVER_DIR / "usercache.json")
+    """Return {uuid_lower: name} from usercache.json (most recent name).
+    Cached on file mtime; invalidated automatically when Paper rewrites
+    the file (player join/leave)."""
+    try:
+        mtime = _USERCACHE_PATH.stat().st_mtime
+    except OSError:
+        mtime = 0
+    with _usercache_cache["lock"]:
+        if _usercache_cache["mtime"] == mtime and _usercache_cache["data"] is not None:
+            return _usercache_cache["data"]
+    data = load_json(_USERCACHE_PATH)
     out = {}
     if isinstance(data, list):
         for e in data:
@@ -527,7 +564,33 @@ def usercache_map():
             name = e.get("name")
             if uuid and name:
                 out[uuid] = name
+    with _usercache_cache["lock"]:
+        _usercache_cache["mtime"] = mtime
+        _usercache_cache["data"] = out
     return out
+
+
+# Per-player stats cached per (uuid, file mtime). Each player's stats JSON
+# only changes when the player plays; reading it on every 5 s players poll
+# is pure waste for known players who haven't been online.
+_stats_cache = {"lock": threading.Lock(), "entries": {}}  # uuid -> (mtime, data)
+
+
+def parse_player_stats_cached(uuid):
+    """Same return shape as parse_player_stats, cached per file mtime."""
+    p = WORLD_DIR / "players" / "stats" / f"{uuid}.json"
+    try:
+        mtime = p.stat().st_mtime
+    except OSError:
+        mtime = 0
+    with _stats_cache["lock"]:
+        hit = _stats_cache["entries"].get(uuid)
+        if hit and hit[0] == mtime:
+            return hit[1]
+    data = parse_player_stats(uuid)
+    with _stats_cache["lock"]:
+        _stats_cache["entries"][uuid] = (mtime, data)
+    return data
 
 
 # ── player IP tracking from log ─────────────────────────────────────────────
@@ -682,7 +745,7 @@ def players_api():
         if name.lower() in online_lower:
             continue
         entry = {"uuid": uuid, "name": name}
-        stats = parse_player_stats(uuid)
+        stats = parse_player_stats_cached(uuid)
         if stats:
             entry.update(stats)
         last = _ip_cache["last_known"].get(uuid)
@@ -844,7 +907,7 @@ def api_player_stats(uuid):
     name = cache.get(uuid_l, "")
     if not name:
         return jsonify(error="unknown player"), 404
-    stats = parse_player_stats(uuid_l) or {}
+    stats = parse_player_stats_cached(uuid_l) or {}
     adv = parse_player_advancements(uuid_l) or {}
     return jsonify(uuid=uuid_l, name=name, stats=stats, advancements=adv)
 
