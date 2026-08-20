@@ -11,7 +11,7 @@ services:
       # Bedrock port; Java listens on 25565 by default.
       BEDROCK_PORT: "19132"
       # Memory cap; itzg image sets Xms=Xmx from MEMORY.
-      MEMORY: "4G"
+      MEMORY: "2G"
       DIFFICULTY: normal
       MODE: survival
       MAX_PLAYERS: "20"
