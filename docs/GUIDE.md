@@ -33,15 +33,16 @@ Manual — no CI/CD, pushes to `main` trigger nothing. Use the `Makefile` recipe
 ### CMD Sheet
 
 ```bash
+make                   # default: print help with categories
 make up-all            # start/recreate all six containers in order (share, domain, cloud, vault, kuma, homer)
 make up-<service>      # force-recreate one container — up-domain | up-cloud | up-share | up-vault | up-kuma | up-homer
 make restart-<service> # reload one container without recreating — after editing a mounted config
 make restart-all       # restart every container + dnsmasq + ttyd — same order as up-all
-make restart-dns       # restart the host dnsmasq resolver — after editing setup/dnsmasq/10-tailnet.conf
+make restart-dnsmasq   # restart the host dnsmasq resolver — after editing setup/dnsmasq/10-tailnet.conf
 make restart-ttyd      # restart the host ttyd service — after editing setup/ttyd/ttyd.service
-make logs              # tail all six container logs in one stream, each line prefixed with [container]
+make logs-all          # tail all six container logs in one stream, each line prefixed with [container]
 make logs-<service>    # follow one container's logs — logs-domain | logs-cloud | logs-share | logs-vault | logs-kuma | logs-homer
-make logs-dns          # follow the dnsmasq journal
+make logs-dnsmasq      # follow the dnsmasq journal
 make logs-ttyd         # follow the ttyd journal
 make status            # show a table of all running containers + host systemd units
 make push MSG="..."    # stage, commit, and push to the jehpok.com remote
@@ -49,11 +50,9 @@ make backup-cloud      # snapshot Nextcloud data (maintenance mode on during the
 make backup-share      # copy the shortener SQLite DB to /var/www/custom/projects/jehpok/share-backup-<date>.db
 make backup-vault      # tar the Vaultwarden data dir to /var/www/custom/projects/jehpok/vault-backup-<date>.tar.gz
 make backup-secrets    # bundle certs, SSH keys, Ollama + ttyd units, dnsmasq config, and Tailscale state for off-VPS storage
-make setup-host        # install reference configs to live paths and enable Ollama + ttyd + sshd + dnsmasq + daily maintenance timer + restore Claude settings
-make install-ttyd      # install the ttyd binary at /usr/local/bin/ttyd (idempotent — skips if already present)
-make restore-claude-settings # copy setup/claude/settings.local.json into .claude/settings.local.json (gitignored)
+make setup             # one-shot host bootstrap: install ttyd, copy reference configs, enable Ollama + ttyd + sshd + dnsmasq + daily maintenance timer, open UFW rule, restore Claude settings
 make clean             # free disk/RAM now: prune builder/image/container + apt autoremove + apt clean
-make maintain          # refresh: apt update/upgrade + pull all images + make up-all (then run `make clean` to prune)
+make refresh           # apt update/upgrade + pull all images + make up-all (then run `make clean` to prune)
 make migrate           # print the full VPS-to-VPS migration runbook
 ```
 

@@ -1,93 +1,77 @@
 .RECIPEPREFIX = >
 .SHELLFLAGS := -eu -c
 
-REPO := /var/www/custom/projects/jehpok
-COMPOSE := docker compose -f
+REPO     := /var/www/custom/projects/jehpok
+COMPOSE  := docker compose -f
+SERVICES := share domain cloud vault kuma homer
+HOST     := ttyd dnsmasq ollama
 
-.PHONY: up-domain up-cloud up-share up-vault up-kuma up-homer up-all
-.PHONY: restart-domain restart-cloud restart-share restart-vault restart-kuma restart-homer restart-all restart-dns restart-ttyd
-.PHONY: logs logs-domain logs-cloud logs-share logs-vault logs-kuma logs-homer logs-dns logs-ttyd
-.PHONY: status push backup-cloud backup-share backup-vault backup-secrets restore-claude-settings clean maintain install-ttyd setup-host
+# ─────────────────────────────────────────────────────────────────────────────
+# Per-container: up / restart / logs
+# One set of rules, expanded across $(SERVICES).
+# ─────────────────────────────────────────────────────────────────────────────
 
-up-domain:
->$(COMPOSE) $(REPO)/repo/services/domain/docker-compose.yml up -d --force-recreate
+.PHONY: $(addprefix up-,$(SERVICES)) up-all
+.PHONY: $(addprefix restart-,$(SERVICES)) restart-all
+.PHONY: $(addprefix logs-,$(SERVICES)) logs-all
 
-up-cloud:
->$(COMPOSE) $(REPO)/repo/services/cloud/docker-compose.yml up -d --force-recreate
+# share rebuilds its image locally; the rest just pull.
+define up_rule
+up-$1:
+>$(COMPOSE) $(REPO)/repo/services/$1/docker-compose.yml up -d --force-recreate$(if $(filter share,$1), --build)
+endef
+$(foreach s,$(SERVICES),$(eval $(call up_rule,$s)))
 
-up-share:
->$(COMPOSE) $(REPO)/repo/services/share/docker-compose.yml up -d --force-recreate --build
+define restart_rule
+restart-$1:
+>$(COMPOSE) $(REPO)/repo/services/$1/docker-compose.yml restart $1
+endef
+$(foreach s,$(SERVICES),$(eval $(call restart_rule,$s)))
 
-up-vault:
->$(COMPOSE) $(REPO)/repo/services/vault/docker-compose.yml up -d --force-recreate
+define logs_rule
+logs-$1:
+>docker logs $1 --tail 50 -f
+endef
+$(foreach s,$(SERVICES),$(eval $(call logs_rule,$s)))
 
-up-kuma:
->$(COMPOSE) $(REPO)/repo/services/kuma/docker-compose.yml up -d --force-recreate
+up-all: $(addprefix up-,$(SERVICES))
+restart-all: $(addprefix restart-,$(SERVICES)) restart-dnsmasq restart-ttyd
 
-up-homer:
->$(COMPOSE) $(REPO)/repo/services/homer/docker-compose.yml up -d --force-recreate
+logs-all:
+>@stdbuf -oL bash -c 'for c in $(SERVICES); do \
+    docker logs $$c --tail 50 -f 2>&1 | stdbuf -oL sed "s/^/[$$c] /" & \
+  done; wait'
 
-up-all: up-share up-domain up-cloud up-vault up-kuma up-homer
+# ─────────────────────────────────────────────────────────────────────────────
+# Host services (systemd): ttyd, dnsmasq
+# ─────────────────────────────────────────────────────────────────────────────
 
-restart-domain:
->$(COMPOSE) $(REPO)/repo/services/domain/docker-compose.yml restart domain
-
-restart-cloud:
->$(COMPOSE) $(REPO)/repo/services/cloud/docker-compose.yml restart cloud
-
-restart-share:
->$(COMPOSE) $(REPO)/repo/services/share/docker-compose.yml restart share
-
-restart-vault:
->$(COMPOSE) $(REPO)/repo/services/vault/docker-compose.yml restart vault
-
-restart-kuma:
->$(COMPOSE) $(REPO)/repo/services/kuma/docker-compose.yml restart kuma
-
-restart-homer:
->$(COMPOSE) $(REPO)/repo/services/homer/docker-compose.yml restart homer
-
-restart-dns:
->sudo systemctl restart dnsmasq
+.PHONY: restart-ttyd restart-dnsmasq logs-ttyd logs-dnsmasq
 
 restart-ttyd:
 >sudo systemctl restart ttyd
 
-restart-all: restart-share restart-domain restart-cloud restart-vault restart-kuma restart-homer restart-dns restart-ttyd
-
-logs-domain:
->docker logs domain --tail 50 -f
-
-logs-cloud:
->docker logs cloud --tail 50 -f
-
-logs-share:
->docker logs share --tail 50 -f
-
-logs-vault:
->docker logs vault --tail 50 -f
-
-logs-kuma:
->docker logs kuma --tail 50 -f
-
-logs-homer:
->docker logs homer --tail 50 -f
-
-logs-dns:
->sudo journalctl -u dnsmasq -n 50 -f
-
-logs:
->@stdbuf -oL bash -c 'for c in share domain cloud vault kuma homer; do docker logs $$c --tail 50 -f 2>&1 | stdbuf -oL sed "s/^/[$$c] /" & done; wait'
+restart-dnsmasq:
+>sudo systemctl restart dnsmasq
 
 logs-ttyd:
 >sudo journalctl -u ttyd -n 50 -f
+
+logs-dnsmasq:
+>sudo journalctl -u dnsmasq -n 50 -f
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Maintenance
+# ─────────────────────────────────────────────────────────────────────────────
+
+.PHONY: status clean refresh setup help
 
 status:
 >@echo "--- containers ---"
 >@docker ps --format 'table {{.Names}}\t{{.Status}}'
 >@echo ""
 >@echo "--- host services ---"
->@for u in ttyd dnsmasq ollama; do printf "  %-30s %s\n" "$$u" "$$(systemctl is-active $$u)"; done
+>@for u in $(HOST); do printf "  %-30s %s\n" "$$u" "$$(systemctl is-active $$u)"; done
 >@echo ""
 >@echo "--- disk ---"
 >@df -h /
@@ -95,8 +79,63 @@ status:
 >@echo "--- memory ---"
 >@free -h
 
-push:
->cd $(REPO)/repo && git add -A && git commit -m "$(MSG)" && git push jehpok.com main
+clean:
+>docker builder prune -af
+>docker image prune -af
+>docker container prune -f
+>sudo apt-get autoremove -y
+>sudo apt-get clean
+
+# Pull every image that isn't built locally, then bring everything up.
+refresh:
+>sudo apt-get update
+>sudo apt-get upgrade -y
+>@for f in $(REPO)/repo/services/*/docker-compose.yml; do \
+    if grep -qE '^[[:space:]]*build:' "$$f"; then \
+      echo "skip pull (built locally): $$f"; \
+    else \
+      $(COMPOSE) "$$f" pull; \
+    fi; \
+  done
+>cd $(REPO)/repo && $(MAKE) up-all
+
+# One-shot bootstrap: install ttyd, install reference configs, enable units,
+# restore Claude settings, open the UFW rule for ttyd. Idempotent.
+setup:
+>@if ! command -v ttyd >/dev/null 2>&1; then \
+    echo "Installing ttyd..."; \
+    curl -fsSL -o /tmp/ttyd.tar.gz https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64-linux-gnu-static.tar.gz; \
+    tar xzf /tmp/ttyd.tar.gz -C /tmp ttyd; \
+    sudo install -m 0755 /tmp/ttyd /usr/local/bin/ttyd; \
+    rm -f /tmp/ttyd /tmp/ttyd.tar.gz; \
+  else \
+    echo "ttyd already installed at $$(command -v ttyd)"; \
+  fi
+>sudo cp $(REPO)/repo/setup/ollama/ollama.service /etc/systemd/system/ollama.service
+>sudo cp $(REPO)/repo/setup/ssh/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf
+>sudo cp $(REPO)/repo/setup/dnsmasq/10-tailnet.conf /etc/dnsmasq.d/10-tailnet.conf
+>sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
+>sudo cp $(REPO)/repo/setup/dnsmasq/dnsmasq.service.conf /etc/systemd/system/dnsmasq.service.d/override.conf
+>sudo cp $(REPO)/repo/setup/maintenance/daily.sh /usr/local/bin/jehpok-daily.sh
+>sudo chmod +x /usr/local/bin/jehpok-daily.sh
+>sudo cp $(REPO)/repo/setup/maintenance/daily.service /etc/systemd/system/jehpok-daily.service
+>sudo cp $(REPO)/repo/setup/maintenance/daily.timer /etc/systemd/system/jehpok-daily.timer
+>sudo touch /var/log/jehpok-daily.log
+>sudo chown debian:debian /var/log/jehpok-daily.log
+>sudo cp $(REPO)/repo/setup/ttyd/ttyd.service /etc/systemd/system/ttyd.service
+>mkdir -p $(REPO)/repo/.claude
+>cp -n $(REPO)/repo/setup/claude/settings.local.json $(REPO)/repo/.claude/settings.local.json
+>sudo ufw allow from 172.22.0.0/16 to any port 7681 proto tcp
+>sudo systemctl daemon-reload
+>sudo systemctl enable --now ollama jehpok-daily.timer ttyd
+>sudo systemctl restart sshd dnsmasq
+>@echo "Host setup complete: ollama + ttyd + dnsmasq + sshd + daily timer enabled, Claude settings restored."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Backups
+# ─────────────────────────────────────────────────────────────────────────────
+
+.PHONY: backup-cloud backup-share backup-vault backup-secrets
 
 backup-cloud:
 >docker exec -w /var/www/html cloud php occ maintenance:mode --on
@@ -129,116 +168,55 @@ backup-secrets:
 >@echo "Secrets bundle at $(REPO)/secrets-backup/secrets-$$(date +%Y%m%d).tar.gz"
 >@echo "Download this file OFF the VPS. It contains private keys and Tailscale identity."
 
-restore-claude-settings:
->mkdir -p $(REPO)/repo/.claude
->cp $(REPO)/repo/setup/claude/settings.local.json $(REPO)/repo/.claude/settings.local.json
->@echo "Restored $(REPO)/repo/.claude/settings.local.json from setup/claude/"
+# ─────────────────────────────────────────────────────────────────────────────
+# Git
+# ─────────────────────────────────────────────────────────────────────────────
 
-clean:
->docker builder prune -af
->docker image prune -af
->docker container prune -f
->sudo apt-get autoremove -y
->sudo apt-get clean
+.PHONY: push
 
-maintain:
->sudo apt-get update
->sudo apt-get upgrade -y
-># Pull service images. Skip services with a `build:` block — those
->are built locally by their `up-<svc>` recipe (which uses --build)
->and don't exist on a registry.
->@for f in $(REPO)/repo/services/*/docker-compose.yml; do \
-    if grep -qE '^[[:space:]]*build:' "$$f"; then \
-      echo "skip pull (built locally): $$f"; \
-    else \
-      $(COMPOSE) "$$f" pull; \
-    fi; \
-  done
->cd $(REPO)/repo && $(MAKE) up-all
+push:
+>cd $(REPO)/repo && git add -A && git commit -m "$(MSG)" && git push jehpok.com main
 
-install-ttyd:
->if ! command -v ttyd >/dev/null 2>&1; then \
-  echo "Installing ttyd..."; \
-  curl -fsSL -o /tmp/ttyd.tar.gz https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64-linux-gnu-static.tar.gz; \
-  tar xzf /tmp/ttyd.tar.gz -C /tmp ttyd; \
-  sudo install -m 0755 /tmp/ttyd /usr/local/bin/ttyd; \
-  rm -f /tmp/ttyd /tmp/ttyd.tar.gz; \
-else \
-  echo "ttyd already installed at $$(command -v ttyd)"; \
-fi
+# ─────────────────────────────────────────────────────────────────────────────
+# Help (default goal)
+# ─────────────────────────────────────────────────────────────────────────────
 
-setup-host: install-ttyd
->sudo cp $(REPO)/repo/setup/ollama/ollama.service /etc/systemd/system/ollama.service
->sudo cp $(REPO)/repo/setup/ssh/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf
->sudo cp $(REPO)/repo/setup/dnsmasq/10-tailnet.conf /etc/dnsmasq.d/10-tailnet.conf
->sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
->sudo cp $(REPO)/repo/setup/dnsmasq/dnsmasq.service.conf /etc/systemd/system/dnsmasq.service.d/override.conf
->sudo cp $(REPO)/repo/setup/maintenance/daily.sh /usr/local/bin/jehpok-daily.sh
->sudo chmod +x /usr/local/bin/jehpok-daily.sh
->sudo cp $(REPO)/repo/setup/maintenance/daily.service /etc/systemd/system/jehpok-daily.service
->sudo cp $(REPO)/repo/setup/maintenance/daily.timer /etc/systemd/system/jehpok-daily.timer
->sudo touch /var/log/jehpok-daily.log
->sudo chown debian:debian /var/log/jehpok-daily.log
->sudo cp $(REPO)/repo/setup/ttyd/ttyd.service /etc/systemd/system/ttyd.service
-># Claude Code local settings — operator allow-list, gitignored at .claude/
->mkdir -p $(REPO)/repo/.claude
->cp -n $(REPO)/repo/setup/claude/settings.local.json $(REPO)/repo/.claude/settings.local.json
->sudo ufw allow from 172.22.0.0/16 to any port 7681 proto tcp
->sudo systemctl daemon-reload
->sudo systemctl enable --now ollama jehpok-daily.timer ttyd
->sudo systemctl restart sshd dnsmasq
->@echo "Host setup complete: Ollama + ttyd + dnsmasq + sshd + daily maintenance timer enabled, Claude settings restored."
+.DEFAULT_GOAL := help
+.PHONY: help
 
-migrate:
->@echo "=== Full migration to a new VPS ==="
+help:
 >@echo ""
->@echo "1. On the OLD VPS:"
->@echo "   make backup-cloud    # snapshot Nextcloud data"
->@echo "   make backup-share    # snapshot shortener DB"
->@echo "   make backup-vault    # snapshot Vaultwarden data"
->@echo "   make backup-secrets  # bundle certs, keys, Tailscale state, ttyd unit"
+>@echo "  jehpok.com — make recipes"
 >@echo ""
->@echo "2. Download these OFF the old VPS:"
->@echo "   $(REPO)/secrets-backup/secrets-*.tar.gz"
->@echo "   $(REPO)/cloud-backup-*"
->@echo "   $(REPO)/share-backup-*.db"
->@echo "   $(REPO)/vault-backup-*.tar.gz"
+>@echo "  Per-container  (one of: $(SERVICES))"
+>@echo "    make up-<svc>         force-recreate container (share also rebuilds)"
+>@echo "    make restart-<svc>    reload container without recreating"
+>@echo "    make logs-<svc>       follow container logs"
 >@echo ""
->@echo "3. On the NEW VPS (Debian), as root then debian:"
->@echo "   apt update && apt install -y docker.io docker-compose-plugin git curl make sudo dnsmasq ufw"
->@echo "   curl -fsSL https://ollama.com/install.sh | sh"
->@echo "   curl -fsSL https://tailscale.com/install.sh | sh"
->@echo "   tailscale up"
+>@echo "  Bulk"
+>@echo "    make up-all           recreate all 6 containers in order"
+>@echo "    make restart-all      restart all 6 containers + dnsmasq + ttyd"
+>@echo "    make logs-all         tail all 6 container logs in one stream"
 >@echo ""
->@echo "   # restore secrets:"
->@echo "   sudo tar xzf secrets-*.tar.gz -C /"
->@echo "   sudo chown -R debian:debian /home/debian/.ssh"
->@echo "   sudo chmod 600 /home/debian/.ssh/github_key"
+>@echo "  Host services (systemd)"
+>@echo "    make restart-ttyd     restart host ttyd"
+>@echo "    make restart-dnsmasq  restart host dnsmasq"
+>@echo "    make logs-ttyd        follow ttyd journal"
+>@echo "    make logs-dnsmasq     follow dnsmasq journal"
 >@echo ""
->@echo "   # restore Nextcloud data:"
->@echo "   sudo mkdir -p $(REPO)/cloud/html $(REPO)/cloud/users"
->@echo "   sudo cp -a cloud-backup-*/html/* $(REPO)/cloud/html/"
->@echo "   sudo cp -a cloud-backup-*/users/* $(REPO)/cloud/users/"
->@echo "   echo '# Nextcloud data directory' | sudo tee $(REPO)/cloud/users/.ncdata"
->@echo "   sudo chown -R 33:33 $(REPO)/cloud/html $(REPO)/cloud/users"
+>@echo "  Maintenance"
+>@echo "    make status           containers + host services + disk + memory"
+>@echo "    make refresh          apt update/upgrade + pull images + up-all"
+>@echo "    make clean            prune docker builder/image/container + apt"
+>@echo "    make setup            one-shot host bootstrap (configs, units, UFW, Claude)"
 >@echo ""
->@echo "   # restore share DB:"
->@echo "   sudo mkdir -p $(REPO)/share/db"
->@echo "   sudo cp share-backup-*.db $(REPO)/share/db/links.db"
+>@echo "  Backups"
+>@echo "    make backup-cloud     Nextcloud snapshot (maintenance mode during copy)"
+>@echo "    make backup-share     shortener SQLite DB"
+>@echo "    make backup-vault     Vaultwarden data tar"
+>@echo "    make backup-secrets   bundle certs + keys + Tailscale state (download off VPS)"
 >@echo ""
->@echo "   # restore vault data:"
->@echo "   sudo mkdir -p $(REPO)/vault"
->@echo "   sudo tar xzf vault-backup-*.tar.gz -C $(REPO)/vault"
->@echo "   sudo chown -R 1000:1000 $(REPO)/vault/data"
+>@echo "  Migration / git"
+>@echo "    make migrate          print full VPS-to-VPS migration runbook"
+>@echo "    make push MSG=\"...\"   commit + push to jehpok.com main"
 >@echo ""
->@echo "   # clone and bootstrap:"
->@echo "   git clone git@github.com:friedutch/jehpok.com.git $(REPO)/repo"
->@echo "   cp <your-.env> $(REPO)/repo/services/cloud/.env"
->@echo "   docker network create net"
->@echo "   make -C $(REPO)/repo setup-host"
->@echo "   make -C $(REPO)/repo up-all"
->@echo ""
->@echo "4. Update Cloudflare DNS to point to the new VPS IP."
->@echo "5. Verify: curl -sk https://www.jehpok.com/cheyou --resolve www.jehpok.com:443:127.0.0.1"
->@echo ""
->@echo "=== Done. ==="
