@@ -1,12 +1,15 @@
 import os
 import re
-import subprocess
-import time
-import signal
+import socket
+import struct
 from pathlib import Path
-from flask import Flask, request, redirect, render_template, Response
+from urllib.parse import quote
+from flask import Flask, request, redirect, render_template, Response, jsonify
 
-from mcrcon import MCRcon
+# The mc dashboard is served at https://server.jehpok.com/mc/ — Caddy's
+# `@mc` matcher routes the /mc/* prefix without stripping, so every route
+# here lives under /mc/. (Share's admin uses the same pattern: /share
+# routes in the app, no strip_prefix in Caddy.)
 
 SERVER_DIR = Path(os.environ.get("SERVER_DIR", "/server"))
 SERVER_PROPERTIES = SERVER_DIR / "server.properties"
@@ -22,26 +25,102 @@ CONTAINER = os.environ.get("MC_CONTAINER", "minecraft")
 app = Flask(__name__)
 
 
-# ── rcon helpers ──────────────────────────────────────────────────────────────
+# ── rcon ─────────────────────────────────────────────────────────────────────
+#
+# The `mcrcon` PyPI package used `signal.alarm()` to enforce its socket
+# timeout, which raises "signal only works in main thread of the main
+# interpreter" from inside a Flask request handler. Roll our own with
+# socket.settimeout instead. RCON protocol:
+#   length(4 LE) + request_id(4 LE) + type(4 LE) + payload + \x00 + \x00
+
+RCON_TYPE_CMD = 2
+RCON_TYPE_AUTH = 3
+
 
 def rcon(cmd, timeout=3.0):
-    """Run a single rcon command. Returns the response string or raises."""
-    with MCRcon(RCON_HOST, RCON_PASSWORD, port=RCON_PORT, timeout=timeout) as r:
-        return r.command(cmd)
+    """Run one rcon command and return the response string. Raises on error."""
+    payload = b""
+    request_id = 1
+
+    def _packet(req_id, type_, body):
+        body_bytes = body.encode("utf-8") + b"\x00\x00"
+        length = 4 + 4 + len(body_bytes)
+        return struct.pack("<iii", length, req_id, type_) + body_bytes
+
+    def _read_packet(sock):
+        header = b""
+        while len(header) < 4:
+            chunk = sock.recv(4 - len(header))
+            if not chunk:
+                raise RuntimeError("rcon: connection closed before header")
+            header += chunk
+        (length,) = struct.unpack("<i", header)
+        body = b""
+        while len(body) < length:
+            chunk = sock.recv(length - len(body))
+            if not chunk:
+                raise RuntimeError("rcon: connection closed mid-body")
+            body += chunk
+        req_id, type_ = struct.unpack("<ii", body[:8])
+        return req_id, type_, body[8:-2].decode("utf-8", errors="replace")
+
+    sock = socket.create_connection((RCON_HOST, RCON_PORT), timeout=timeout)
+    try:
+        sock.settimeout(timeout)
+        sock.sendall(_packet(request_id, RCON_TYPE_AUTH, RCON_PASSWORD))
+        auth_id, auth_type, _ = _read_packet(sock)
+        if auth_id == -1:
+            raise RuntimeError("rcon: authentication failed")
+        request_id += 1
+        sock.sendall(_packet(request_id, RCON_TYPE_CMD, cmd))
+        _, _, resp = _read_packet(sock)
+        return resp
+    finally:
+        try:
+            sock.close()
+        except Exception:
+            pass
 
 
 def parse_tps(text):
-    """Parse `debug` TPS section. Returns float tps (or None)."""
-    # Example: " TPS from last 1m, 5m, 15m: 20.00, 19.98, 19.95"
-    m = re.search(r"TPS from last 1m.*?:\s*([\d.]+)", text)
+    """Parse the `/tps` output. Returns float tps (or None)."""
+    # Paper prints color codes inside the rcon response, e.g.
+    #   "§6TPS from last 1m, 5m, 15m: §a19.9§r, §a19.9§r, §a19.9"
+    # §X / §xY are vanilla section-sign color codes that would derail a
+    # plain regex on the 1m value (the "§a" between ":" and "19.9" would
+    # prevent `[\d.]+` from matching). Strip them first.
+    plain = re.sub(r"§.", "", text)
+    m = re.search(r"TPS from last 1m.*?:\s*([\d.]+)", plain)
     return float(m.group(1)) if m else None
 
 
+def _docker_client():
+    """Lazy docker SDK client bound to /var/run/docker.sock."""
+    import docker as _docker
+    return _docker.DockerClient(base_url="unix:///var/run/docker.sock")
+
+
 def stats():
-    """Live stats from rcon."""
-    out = {"online": None, "max": None, "tps": None, "uptime": None, "raw": ""}
+    """Live stats from rcon + container status via Docker SDK."""
+    out = {"online": None, "max": None, "tps": None, "running": False, "raw": ""}
+    # Check container state first — if it's not running, every other rcon
+    # call will fail. Surface "offline" rather than letting the user see a
+    # wall of N/A values for a server they could just start.
+    try:
+        c = _docker_client().containers.get(CONTAINER)
+        out["running"] = c.status == "running"
+    except Exception:
+        out["running"] = False
+    if not out["running"]:
+        return out
     try:
         out["raw"] = rcon("list")
+    except ConnectionRefusedError:
+        # Container is up (docker check passed) but rcon port isn't bound
+        # yet — Paper binds rcon late in startup, after the compose
+        # healthcheck on the Java port already marked the container
+        # healthy. Treat as "starting", not an error.
+        return out
     except Exception as e:
         out["error"] = f"rcon: {e}"
         return out
@@ -50,17 +129,8 @@ def stats():
         out["online"] = int(m.group(1))
         out["max"] = int(m.group(2))
     try:
-        debug = rcon("debug")
-        out["tps"] = parse_tps(debug)
-    except Exception:
-        pass
-    # Container uptime via docker inspect (best-effort).
-    try:
-        s = subprocess.run(
-            ["docker", "inspect", "-f", "{{.State.StartedAt}}", CONTAINER],
-            capture_output=True, text=True, timeout=2,
-        )
-        out["started_at"] = s.stdout.strip()
+        tps = rcon("tps")
+        out["tps"] = parse_tps(tps)
     except Exception:
         pass
     return out
@@ -68,14 +138,46 @@ def stats():
 
 # ── config (server.properties) ────────────────────────────────────────────────
 
-# Fields exposed in the dashboard. Keep in sync with Paper's defaults.
+# Fields exposed in the dashboard. Each is a key Paper still reads from
+# server.properties (1.20+, 1.21+, Paper 26.x) AND is safe to edit without
+# risking an unmanageable or unbootable server.
+#
+# Removed because Paper no longer honors them from server.properties:
+#   - `pvp`: vanilla removed it in 1.21.2; now `/gamerule pvp`.
+#   - `spawn-protection`: Paper stopped enforcing it around 1.16.5
+#     (PR #581); the value is logged but does nothing.
+#   - `enable-command-block`: canonical toggle moved to
+#     `paper-world-defaults.yml → gameplay.allow-command-blocks` (Paper
+#     1.19+, PR #9545); the server.properties key is no longer authoritative.
+#
+# Removed because misconfiguration can lock the dashboard out or break
+# startup (the user can't recover via the dashboard itself):
+#   - `server-port`: a typo means rcon + game traffic listen on the wrong
+#     port; the dashboard only knows the default. Recovery requires the
+#     ttyd host shell, not the dashboard.
+#   - `enable-rcon`: setting `false` cuts the only channel the dashboard
+#     uses for stats and rcon. Recovery requires ttyd.
+#   - `level-seed`: a non-numeric / blank value on next restart triggers
+#     world regeneration from a new random seed (irreversible).
+#   - `level-type`: an invalid value (typo, removed namespace) crashes
+#     Paper at startup with "java.lang.IllegalArgumentException".
+#   - `view-distance`, `simulation-distance`: out-of-range integers (Paper
+#     validates 2..32) crash startup; large valid values blow up memory.
+#
+# Added:
+#   - `enforce-whitelist`: kicks already-online players when the whitelist
+#     changes (complementary to `white-list`, which gates new connections).
 EDITABLE_FIELDS = [
-    "max-players", "gamemode", "difficulty", "hardcore", "pvp",
-    "white-list", "view-distance", "simulation-distance",
-    "motd", "spawn-protection", "level-seed", "level-type",
-    "online-mode", "enable-command-block", "allow-flight",
-    "server-port", "enable-rcon",
+    "max-players", "gamemode", "difficulty", "hardcore",
+    "white-list", "enforce-whitelist",
+    "view-distance", "simulation-distance", "motd",
+    "online-mode", "allow-flight",
 ]
+
+SELECT_OPTIONS = {
+    "gamemode": ["survival", "creative", "adventure", "spectator"],
+    "difficulty": ["peaceful", "easy", "normal", "hard"],
+}
 
 
 def read_properties():
@@ -108,42 +210,59 @@ def write_properties(values):
             seen.add(k)
         else:
             new_text_lines.append(line)
-    # Append any new fields.
     for k, v in values.items():
         if k not in seen:
             new_text_lines.append(f"{k}={v}")
     SERVER_PROPERTIES.write_text("\n".join(new_text_lines) + "\n")
 
 
-# ── container control ─────────────────────────────────────────────────────────
+# ── container control ────────────────────────────────────────────────────────
 
-def docker(action):
-    """Start / stop / restart the game container. Stop+start to apply config."""
+def container_action(action):
+    """Start / stop / restart the game container via the Docker SDK."""
     if action not in ("start", "stop", "restart"):
         return False, "unknown action"
-    if action == "restart":
-        subprocess.run(["docker", "restart", CONTAINER], timeout=60)
-        return True, "restarted"
-    if action == "stop":
-        subprocess.run(["docker", "stop", CONTAINER], timeout=60)
-        return True, "stopped"
-    subprocess.run(["docker", "start", CONTAINER], timeout=60)
+    try:
+        c = _docker_client().containers.get(CONTAINER)
+    except Exception as e:
+        return False, f"container not found: {e}"
+    if action == "start":
+        c.start()
+    elif action == "stop":
+        c.stop()
+    elif action == "restart":
+        c.restart()
     return True, f"{action}ed"
 
 
-# ── routes ────────────────────────────────────────────────────────────────────
+# ── routes ───────────────────────────────────────────────────────────────────
 
 @app.errorhandler(404)
 def not_found(e):
     return Response("not found", status=404, mimetype="text/plain")
 
 
-@app.route("/healthz")
+@app.route("/mc/healthz")
 def healthz():
     return "ok", 200
 
 
-@app.route("/", methods=["GET"])
+@app.route("/mc/api/stats")
+def api_stats():
+    """Live stats as JSON. Used by the dashboard's Refresh button to
+    repaint the cards without reloading the whole page (preserves form
+    state — server.properties edits, rcon input)."""
+    s = stats()
+    return jsonify(
+        running=s["running"],
+        online=s["online"],
+        max=s["max"],
+        tps=s["tps"],
+        error=s.get("error"),
+    )
+
+
+@app.route("/mc/")
 def index():
     s = stats()
     props = read_properties()
@@ -158,19 +277,28 @@ def index():
         stats=s,
         props=props,
         editable=EDITABLE_FIELDS,
+        select_options=SELECT_OPTIONS,
         log_tail=log_tail,
-        flash=request.args.get("flash"),
+        control_flash=request.args.get("control_flash"),
+        rcon_flash=request.args.get("rcon_flash"),
+        config_flash=request.args.get("config_flash"),
     )
 
 
-@app.route("/control", methods=["POST"])
+@app.route("/mc/control", methods=["POST"])
 def control():
     action = (request.form.get("action") or "").strip()
-    ok, msg = docker(action)
-    return redirect(f"/?flash={msg}")
+    if action not in ("start", "stop", "restart"):
+        return redirect("/mc/?control_flash=request+rejected+unknown+action")
+    # Fire the request and acknowledge — do not claim what happened. The
+    # status cards (Refresh to update) are the only source of truth for
+    # whether the container actually started/stopped/restarted; the flash
+    # only says the request was accepted and dispatched.
+    container_action(action)
+    return redirect(f"/mc/?control_flash={quote(action + ' request sent')}")
 
 
-@app.route("/config", methods=["POST"])
+@app.route("/mc/config", methods=["POST"])
 def save_config():
     values = {}
     for k in EDITABLE_FIELDS:
@@ -178,21 +306,27 @@ def save_config():
         if v is not None and v != "":
             values[k] = v
     write_properties(values)
-    # server.properties is hot-reloaded only for some keys. Restart to apply all.
-    docker("restart")
-    return redirect("/?flash=config+saved+and+server+restarted")
+    # Pure write — do NOT trigger a restart. Restart is an independent
+    # control: click it when you want it. Some server.properties keys
+    # are hot-reloaded by Paper, so a save without restart is valid;
+    # the user can decide which keys need a restart to take effect.
+    return redirect("/mc/?config_flash=config+saved")
 
 
-@app.route("/rcon", methods=["POST"])
+@app.route("/mc/rcon", methods=["POST"])
 def run_rcon():
     cmd = (request.form.get("cmd") or "").strip()
     if not cmd:
-        return redirect("/?flash=empty+command")
+        return redirect("/mc/?rcon_flash=empty+command")
+    # Dispatch the rcon command; the response text is rcon output, not a
+    # claim about server state. Treat it the same as the control buttons:
+    # acknowledge the request, surface a snippet of the response for
+    # feedback, don't claim more than "the command ran".
     try:
         out = rcon(cmd)
     except Exception as e:
-        return redirect(f"/?flash=rcon+error:+{e}")
-    return redirect(f"/?flash={out[:200]}")
+        return redirect(f"/mc/?rcon_flash=rcon+request+failed:+{quote(str(e))}")
+    return redirect(f"/mc/?rcon_flash=rcon+request+sent:+{quote(out[:120])}")
 
 
 if __name__ == "__main__":

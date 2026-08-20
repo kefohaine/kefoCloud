@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>minecraft — jehpok.com</title>
+<title>mc.jehpok.com — dashboard</title>
 <style>
   :root { --ink:#2d2a26; --stone:#8a7d75; --accent:#6b8e4e; --warn:#b8787f;
           --bg:#f5f1ea; --card:#fff; --border:#e6dfd4; --code:#2d2a26; }
@@ -42,11 +42,25 @@
   .pub { font-family:monospace; color:var(--stone); font-size:.85rem;
          background:var(--card); border:1px solid var(--border); border-radius:8px;
          padding:12px; margin-bottom:16px; }
+  .pill { display:inline-block; padding:4px 14px; border-radius:999px;
+          font-size:1.1rem; font-weight:600; color:#fff; }
+  .pill-on  { background:var(--accent); }
+  .pill-off { background:var(--warn); }
+  .status-card .v { font-size:1.4rem; }
+  .hint { color:var(--stone); font-size:.85rem; margin:-4px 0 12px; }
+  .refresh-btn { padding:4px 12px; border:0; border-radius:6px;
+                 background:var(--stone); color:#fff; font-size:.75rem;
+                 font-weight:600; cursor:pointer; text-transform:uppercase;
+                 letter-spacing:.5px; margin-left:8px; vertical-align:middle; }
+  .refresh-btn:hover { filter:brightness(1.1); }
+  .refresh-btn:disabled { opacity:.6; cursor:wait; }
+  .stats-error { color:var(--warn); margin-top:8px; font-size:.9rem; }
+  .ack { color:var(--stone); font-size:.85rem; margin:8px 0 0; font-style:italic; }
 </style>
 </head>
 <body>
-<h1>minecraft.jehpok.com</h1>
-<p class="sub">Dashboard — Tailscale-only at <code>server.jehpok.com/mc</code></p>
+<h1>mc.jehpok.com</h1>
+<p class="sub">Dashboard — Tailscale-only at <code>server.jehpok.com/mc/</code></p>
 
 <div class="pub">
   <strong>Connect:</strong>
@@ -54,41 +68,50 @@
   Bedrock: <code>mc.jehpok.com:19132</code> (via Geyser)
 </div>
 
-{% if flash %}<div class="flash {% if 'error' in flash %}err{% endif %}">{{ flash }}</div>{% endif %}
-
-<h2>Status</h2>
+<h2>Status <button type="button" id="refresh-btn" class="refresh-btn">Refresh</button></h2>
 <div class="grid">
-  <div class="card"><div class="v">{{ stats.online if stats.online is not none else '—' }}</div>
+  <div class="card status-card">
+    {% if stats.running %}
+      <div class="v pill pill-on" id="card-running">online</div>
+    {% else %}
+      <div class="v pill pill-off" id="card-running">offline</div>
+    {% endif %}
+    <div class="k">Server</div>
+  </div>
+  <div class="card"><div class="v" id="card-online">{{ stats.online if stats.online is not none else '—' }}</div>
        <div class="k">Players online</div></div>
-  <div class="card"><div class="v">{{ stats.max if stats.max is not none else '—' }}</div>
+  <div class="card"><div class="v" id="card-max">{{ stats.max if stats.max is not none else '—' }}</div>
        <div class="k">Max players</div></div>
-  <div class="card"><div class="v">{{ '%.1f' % stats.tps if stats.tps else '—' }}</div>
+  <div class="card"><div class="v" id="card-tps">{{ '%.1f' % stats.tps if stats.tps else '—' }}</div>
        <div class="k">TPS (1m)</div></div>
-  <div class="card"><div class="v">{{ stats.started_at[:19] if stats.started_at else '—' }}</div>
-       <div class="k">Container started</div></div>
 </div>
+<p id="stats-error" class="stats-error" style="display:none;"></p>
 {% if stats.error %}<p style="color:var(--warn);margin-top:8px;">{{ stats.error }}</p>{% endif %}
 
 <h2>Control</h2>
+<p class="hint">Independent actions — clicking one doesn't read status. Refresh to see updated state.</p>
 <div class="row">
-  <form method="POST" action="/control"><input type="hidden" name="action" value="start">
+  <form method="POST" action="/mc/control"><input type="hidden" name="action" value="start">
     <button type="submit">Start</button></form>
-  <form method="POST" action="/control"><input type="hidden" name="action" value="stop">
+  <form method="POST" action="/mc/control"><input type="hidden" name="action" value="stop">
     <button type="submit" class="warn">Stop</button></form>
-  <form method="POST" action="/control"><input type="hidden" name="action" value="restart">
+  <form method="POST" action="/mc/control"><input type="hidden" name="action" value="restart">
     <button type="submit">Restart</button></form>
 </div>
+{% if control_flash %}<p class="ack">{{ control_flash }}</p>{% endif %}
 
 <h2>Quick rcon</h2>
-<form method="POST" action="/rcon">
+<form method="POST" action="/mc/rcon">
   <div class="row">
     <input type="text" name="cmd" placeholder="/say hello  /  whitelist add Notch" style="flex:1;min-width:240px;">
     <button type="submit">Send</button>
   </div>
 </form>
+{% if rcon_flash %}<p class="ack">{{ rcon_flash }}</p>{% endif %}
 
 <h2>server.properties</h2>
-<form method="POST" action="/config">
+<p class="hint">Save writes the file only — use the Restart control above to apply changes that Paper doesn't hot-reload.</p>
+<form method="POST" action="/mc/config">
 <table>
   <tr><th>Field</th><th>Value</th></tr>
   {% for f in editable %}
@@ -96,11 +119,9 @@
     <td class="field">{{ f }}</td>
     <td>
       {% set v = props.get(f, '') %}
-      {% if f in ['gamemode','difficulty','level-type'] %}
+      {% if f in select_options %}
         <select name="{{ f }}">
-          {% for opt in {'gamemode':['survival','creative','adventure','spectator'],
-                         'difficulty':['peaceful','easy','normal','hard'],
-                         'level-type':['default','flat','largebiomes','amplified']}[f] %}
+          {% for opt in select_options[f] %}
             <option value="{{ opt }}" {% if v == opt %}selected{% endif %}>{{ opt }}</option>
           {% endfor %}
         </select>
@@ -111,11 +132,51 @@
   </tr>
   {% endfor %}
 </table>
-<div class="row" style="margin-top:12px;"><button type="submit">Save &amp; restart</button></div>
+<div class="row" style="margin-top:12px;"><button type="submit">Save</button></div>
 </form>
+{% if config_flash %}<p class="ack">{{ config_flash }}</p>{% endif %}
 
 <h2>Server log (tail)</h2>
 <pre>{{ log_tail or '(no log yet)' }}</pre>
+
+<script>
+(function () {
+  const btn = document.getElementById('refresh-btn');
+  if (!btn) return;
+  const card = (id) => document.getElementById(id);
+  const fmt = (v) => (v === null || v === undefined) ? '—' : v;
+  const setPill = (running) => {
+    const el = card('card-running');
+    el.textContent = running ? 'online' : 'offline';
+    el.className = 'v pill ' + (running ? 'pill-on' : 'pill-off');
+  };
+  const setError = (msg) => {
+    const el = card('stats-error');
+    if (msg) { el.textContent = msg; el.style.display = ''; }
+    else    { el.textContent = '';     el.style.display = 'none'; }
+  };
+  const refresh = async () => {
+    btn.disabled = true;
+    btn.textContent = '…';
+    try {
+      const r = await fetch('/mc/api/stats', { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const s = await r.json();
+      setPill(!!s.running);
+      card('card-online').textContent = fmt(s.online);
+      card('card-max').textContent    = fmt(s.max);
+      card('card-tps').textContent    = (s.tps === null || s.tps === undefined) ? '—' : Number(s.tps).toFixed(1);
+      setError(s.error || null);
+    } catch (e) {
+      setError('refresh failed: ' + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Refresh';
+    }
+  };
+  btn.addEventListener('click', refresh);
+})();
+</script>
 
 </body>
 </html>

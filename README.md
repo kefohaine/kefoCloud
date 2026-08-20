@@ -1,6 +1,6 @@
 # jehpok.com
 
-Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Six public subdomains and one Tailscale-only subdomain. Ollama runs on the host as a systemd service for local LLM serving.
+Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Seven public subdomains and one Tailscale-only subdomain. Ollama runs on the host as a systemd service for local LLM serving.
 
 ## High-level overview
 

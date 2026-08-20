@@ -9,7 +9,7 @@ These are non-negotiable. Follow them on every task.
 1. **Never delete or disable any critical service or file without explicit operator approval.** Each project defines its own list — see `docs/GUIDE.md` for the project-specific protected resources. Do not `systemctl stop/disable`, remove unit files, `daemon-reload` after editing, or replace host services with containers unless the operator has explicitly told you to.
 2. **Stay silent while doing tasks.** Do not narrate progress, do not print status updates, do not summarize what you just did. Run commands, edit files, and only emit text when you need a decision from the user or are reporting a blocker. Output should be minimal — the work product speaks for itself.
 3. **Push at milestones, before destructive ops, and when the prompt is done.** Before any hard-to-reverse operation (deleting files, force-recreating containers, `systemctl` changes, DB/schema changes, firewall edits), first commit and push. After reaching a milestone (feature, resolved issue, doc sync) or completing the prompt, also commit and push. Don't wait for the operator to ask. If a push fails, fix it before proceeding. When completing a big sequence of tasks, first update every `.md` file to reflect the current system state, then commit and push.
-4. **Doc maintenance is first-class work, not a cleanup step.** Updating documentation is as important as working on the repo. Every system change, refactor, or operational decision MUST be followed by a doc audit: delete stale content (rules, sections, Solved entries, Intended rationales, file paths, commands, port numbers, hardening claims, container names — anything that no longer matches reality), correct every drift between docs and the executable source (compose files, Makefile, systemd units, config files), and reorganize duplicates so each fact lives in exactly one place (the lower file in the "Boundaries between docs" list). A push that leaves stale `.md` content is the same failure mode as a push that breaks the build — both mean the agent didn't finish the job. Never treat doc updates as optional "if I have time" work; treat them as the definition of done.
+4. **Doc maintenance is first-class work, not a cleanup step.** Updating documentation is as important as working on the repo. Every system change, refactor, or operational decision MUST be followed by a doc audit — see the doc-audit workflow in "Before finishing a task" for the concrete procedure (walk every `.md`, diff against source, apply the three prongs). A push that leaves stale `.md` content is the same failure mode as a push that breaks the build — both mean the agent didn't finish the job. Never treat doc updates as optional "if I have time" work; treat them as the definition of done.
 5. **Minimize token usage.** Be extremely efficient: short, accurate, and understanding. No filler, no preamble, no restating the question, no recaps of what you just did. Batch tool calls that can run in parallel. Read only the file regions you need. Prefer one precise edit over rewriting whole sections. Answer in as few words as the task allows without sacrificing correctness.
 6. **When an issue is explicitly intended by the operator or documented as a deliberate feature/design choice, document the rationale rather than treating it as a bug.** If a behaviour is "by design", record it so future agents don't "correct" it.
 7. **Minimize web searches.** Only fetch a URL when the answer is not already in the repo or the agent's own knowledge. Prefer reading local files and reasoning over network fetches.
@@ -34,6 +34,37 @@ Each `.md` file in the repo has a single purpose. Don't blur them.
 
 When a fact fits two files, it belongs in the lower one in this list. A future agent reading only `README.md` should understand the system; a future agent reading only `docs/AGENTS.md` should understand the rules; a future agent reading only `docs/GUIDE.md` should be able to deploy and operate the system.
 
+## Doc-audit directives
+
+These directives govern how agents detect and correct drift, stale content, and duplicates when updating docs. Apply them every time a `.md` file is edited — not only at the end of a task.
+
+**Drift** = a documented fact that disagrees with the executable source (compose files, Makefile, systemd units, Caddyfile, Dockerfile, app source). Examples: a wrong port, an old container name, a recipe name that no longer matches the Makefile, a Caddyfile matcher that has moved, a claimed "X is renamed to Y" in a `Solved` entry where the rename was never applied on disk.
+
+**Stale** = content that has lost its anchor in reality — paths that no longer exist, port numbers that changed, container names that were renamed, units that were retired, hardening claims that were weakened, "currently" / "right now" snapshots that drifted from the steady state.
+
+**Duplicate** = the same fact (sentence, command, port, path, claim) living in two or more `.md` files, or two paragraphs in the same file restating each other.
+
+### How to detect each one
+
+- **Drift** — diff-driven. For every concrete fact in the doc (port, path, command, container name, unit name, env var, image tag, log cap, route matcher, schema column, file reference), `grep` the executable source for the same fact and confirm they agree. If a doc says "Caddy matches `@not_tailnet`" but the Caddyfile no longer has that matcher, the doc is wrong. Don't paraphrase what's in the repo — point at the file (writing rule 11) and verify the file still says what you think it says.
+- **Stale** — path-of-existence check. For every path, port, hostname, container name, unit name, and file reference in the doc, confirm it still exists on disk (`ls`, `docker ps`, `systemctl list-units`). If the doc references `services/terminal/` but the directory is gone, the doc is stale. Treat `Solved` entries as historical but still anchored — they must accurately describe what changed and what replaced it.
+- **Duplicate** — same fact in two places. If a sentence appears verbatim or near-verbatim in two files, one of them is wrong; delete the higher-file instance per the boundaries list. If two `Solved` entries describe the same change from different angles, collapse them.
+
+### What to do when you find drift / stale / duplicate
+
+1. **The source wins.** The executable source (compose, Makefile, systemd unit, Caddyfile, app source) is the truth; the doc is wrong. Fix the doc, not the source (unless the source is what's broken — that's a separate bug, log it in `docs/ISSUES.md`).
+2. **Be specific in the fix.** Don't rewrite the surrounding paragraph — replace the drifted/stale/duplicated fact with the correct one in place. Preserve verified useful guidance around it (writing rule 9).
+3. **For `Solved` entries that claim a change was made but wasn't**, downgrade the claim to match reality (e.g. "claimed rename; never actually applied — see `Open`" or revert the entry until the rename is done for real). A `Solved` entry that lies is worse than no entry — future agents act on it.
+4. **For `Intended` rationales that no longer reflect the code**, rewrite the rationale or move the behaviour to `Open` if it's actually unintended now.
+5. **For duplicates across files**, delete the higher-file instance per the boundaries list. Each fact lives in exactly one place.
+
+### When to audit
+
+- After every system change, refactor, or operational decision (mandatory per safety rule 4).
+- At the end of every task — see "Before finishing a task" for the full checklist.
+- When picking up an old issue in `docs/ISSUES.md` whose root cause might no longer apply (the fix landed elsewhere; the entry is stale).
+- Before committing any doc-only change (verify the new content doesn't introduce its own drift).
+
 ## Workflow
 
 1. Read `README.md` to understand the system.
@@ -48,10 +79,10 @@ When a fact fits two files, it belongs in the lower one in this list. A future a
 ## Before finishing a task
 
 1. Verify the change works using the project's verification commands (see `docs/GUIDE.md`).
-2. **Doc audit — mandatory, not optional (Safety rule 4).** Walk every `.md` file in the repo and apply three prongs:
-   - **Delete stale** — anything that no longer matches the running system: outdated paths, ports, container names, unit names, hardened/locked-down claims, decommissioned services, retired rationale, "currently" / "right now" snapshots that have drifted.
-   - **Correct drift** — every fact in every `.md` (commands, ports, paths, file references, env vars, behaviour claims) must match the executable source (compose files, Makefile, systemd units, Caddyfile, daily.sh). Diff docs against the source; if they disagree, the source wins and the doc is wrong.
-   - **Organize duplicates** — each fact lives in exactly one place. If a sentence appears in two files, delete the one in the higher file. If a `Solved` entry is multi-line, collapse to one line. If a section restates the README, point at the README instead.
+2. **Doc audit — mandatory, not optional (Safety rule 4 + doc-audit directives).** Walk every `.md` file in the repo and apply the three prongs from the doc-audit directives:
+   - **Delete stale** — anything that no longer matches the running system: outdated paths, ports, container names, unit names, hardened/locked-down claims, decommissioned services, retired rationale, "currently" / "right now" snapshots that have drifted. For every path/port/hostname/unit/container in the doc, confirm it still exists on disk. For `Solved` entries, confirm the change they describe actually happened — a `Solved` entry that lies is worse than no entry.
+   - **Correct drift** — every fact in every `.md` (commands, ports, paths, file references, env vars, image tags, log caps, route matchers, behaviour claims) must match the executable source (compose files, Makefile, systemd units, Caddyfile, Dockerfile, app source). Diff docs against the source; if they disagree, the source wins and the doc is wrong. Use `grep` to verify each concrete fact.
+   - **Organize duplicates** — each fact lives in exactly one place. If a sentence appears in two files, delete the one in the higher file (per the boundaries list). If a `Solved` entry is multi-line, collapse to one line (writing rule 10). If a section restates another doc, point at the other doc instead.
 3. Update `README.md` if the architecture, request flow, or design choices changed.
 4. Update `docs/GUIDE.md` if the layout, commands, or per-service facts changed.
 5. Update or resolve items in `docs/ISSUES.md` if you fixed something listed there.
