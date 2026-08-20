@@ -12,14 +12,27 @@ cd /var/www/custom/projects/jehpok/repo
 # docker prune + apt autoremove + prune old backups.
 make refresh       >> "$LOG" 2>&1
 
-# Stop the game container so the world tar is consistent. Restart on exit
-# (trap covers any failure between stop and restart) and again at the end
-# so the server comes back up if backup-all ran cleanly.
-docker stop minecraft >> "$LOG" 2>&1 || echo "minecraft already stopped" >> "$LOG"
-trap 'docker start minecraft >> "$LOG" 2>&1 || echo "minecraft restart failed" >> "$LOG"' EXIT
+# Stop the game container so the world tar is consistent — but only if it
+# was running. If the operator had intentionally stopped the server
+# (e.g. before a maintenance window), don't restart it on them. Capture
+# the pre-backup state, then restart only if it was running.
+MC_WAS_RUNNING="false"
+if docker inspect --format='{{.State.Running}}' minecraft 2>/dev/null | grep -q true; then
+  MC_WAS_RUNNING="true"
+  docker stop minecraft >> "$LOG" 2>&1 || echo "minecraft stop failed" >> "$LOG"
+fi
+trap '
+  if [ "$MC_WAS_RUNNING" = "true" ]; then
+    docker start minecraft >> "$LOG" 2>&1 || echo "minecraft restart failed" >> "$LOG"
+  fi
+' EXIT
 make backup-all    >> "$LOG" 2>&1 || echo "backup-all failed" >> "$LOG"
 trap - EXIT
-docker start minecraft >> "$LOG" 2>&1 || echo "minecraft restart failed" >> "$LOG"
+# backup-all ran cleanly. Restore the pre-backup state. If the operator
+# had it running, restart it now.
+if [ "$MC_WAS_RUNNING" = "true" ]; then
+  docker start minecraft >> "$LOG" 2>&1 || echo "minecraft restart failed" >> "$LOG"
+fi
 
 make clean-all     >> "$LOG" 2>&1 || echo "clean-all failed" >> "$LOG"
 
