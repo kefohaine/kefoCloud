@@ -59,6 +59,11 @@ https://server.jehpok.com {
     handle @share {
         reverse_proxy share:5000
     }
+    @minecraft path /mc /mc/*
+    handle @minecraft {
+        uri strip_prefix /mc
+        reverse_proxy minecraft-web:5000
+    }
     @console path /console /console/*
     handle @console {
         uri strip_prefix /console
