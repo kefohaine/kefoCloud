@@ -36,17 +36,17 @@ LOGS_DIR = SERVER_DIR / "logs"
 LATEST_LOG = LOGS_DIR / "latest.log"
 PLUGINS_DIR = SERVER_DIR / "plugins"
 
-RCON_HOST = os.environ.get("RCON_HOST", "minecraft")
+RCON_HOST = os.environ.get("RCON_HOST", "mc")
 RCON_PORT = int(os.environ.get("RCON_PORT", "25575"))
 RCON_PASSWORD = os.environ.get("RCON_PASSWORD", "change-me-via-dashboard")
 
-CONTAINER = os.environ.get("MC_CONTAINER", "minecraft")
+CONTAINER = os.environ.get("MC_CONTAINER", "mc")
 
 # Backup directory for dashboard-created world snapshots. Lives inside the
-# game-data bind mount (/var/www/custom/projects/jehpok/minecraft/data
+# game-data bind mount (/var/www/custom/projects/jehpok/mc/data
 # → /server) as a sibling of `world/`, so the dashboard container can write
 # to it without an extra host mount. Makefile-driven backups (`make
-# backup-minecraft`) write to $(REPO) — i.e. the parent of `minecraft/` —
+# backup-mc`) write to $(REPO) — i.e. the parent of `mc/` —
 # and are independent of this directory.
 BACKUP_DIR = SERVER_DIR / ".backups"
 BACKUP_DIR.mkdir(parents=True, exist_ok=True)
@@ -1302,7 +1302,7 @@ def api_world_regenerate():
     Returns the backup path so the UI can offer a download link."""
     if container_running():
         return jsonify(error="stop the server first"), 409
-    backup_name = f"minecraft-backup-{time.strftime('%Y%m%d-%H%M%S')}.tar.gz"
+    backup_name = f"mc-backup-{time.strftime('%Y%m%d-%H%M%S')}.tar.gz"
     backup_path = BACKUP_DIR / backup_name
     # 1. Tar the bind-mounted world.
     try:
@@ -1331,7 +1331,7 @@ def api_world_backup():
     only via daily.sh, which stops the container first."""
     if container_running():
         return jsonify(error="stop the server first"), 409
-    backup_name = f"minecraft-backup-{time.strftime('%Y%m%d-%H%M%S')}.tar.gz"
+    backup_name = f"mc-backup-{time.strftime('%Y%m%d-%H%M%S')}.tar.gz"
     backup_path = BACKUP_DIR / backup_name
     if not WORLD_DIR.exists():
         return jsonify(error="world directory not found"), 404
@@ -1351,7 +1351,7 @@ def api_world_backups():
     """List existing world backups in the dashboard's backup directory."""
     out = []
     if BACKUP_DIR.exists():
-        for p in BACKUP_DIR.glob("minecraft-backup-*.tar.gz"):
+        for p in BACKUP_DIR.glob("mc-backup-*.tar.gz"):
             try:
                 st = p.stat()
                 out.append({
@@ -1372,7 +1372,7 @@ def api_world_backup_download():
     if not name or "/" in name or ".." in name:
         return jsonify(error="bad name"), 400
     p = BACKUP_DIR / name
-    if not p.exists() or not p.name.startswith("minecraft-backup-"):
+    if not p.exists() or not p.name.startswith("mc-backup-"):
         return jsonify(error="not found"), 404
     return send_file(str(p), as_attachment=True)
 

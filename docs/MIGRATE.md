@@ -10,7 +10,7 @@ Run all five backups in one shot:
 make backup-all
 ```
 
-This produces five artifacts at the project root (`$(REPO)`): a `cloud-backup-<date>` directory, a `share-backup-<date>.db` file, a `vault-backup-<date>.tar.gz` archive, a `secrets-backup/secrets-<date>.tar.gz` bundle, and a `minecraft-backup-<date>.tar.gz` world archive.
+This produces five artifacts at the project root (`$(REPO)`): a `cloud-backup-<date>` directory, a `share-backup-<date>.db` file, a `vault-backup-<date>.tar.gz` archive, a `secrets-backup/secrets-<date>.tar.gz` bundle, and a `mc-backup-<date>.tar.gz` world archive.
 
 ## 2. Download OFF the old VPS
 
@@ -20,7 +20,7 @@ Move the five artifacts off the VPS — the secrets bundle contains private keys
 - `$(REPO)/cloud-backup-<date>`
 - `$(REPO)/share-backup-<date>.db`
 - `$(REPO)/vault-backup-<date>.tar.gz`
-- `$(REPO)/minecraft-backup-<date>.tar.gz`
+- `$(REPO)/mc-backup-<date>.tar.gz`
 
 The CF API token is **not** in any backup — it lives at `$(REPO)/caddy_data/CF_API_TOKEN` on the active VPS. It's a single line `CF_API_TOKEN=<token>` (mode 0600, owner `debian`). Caddy renews certs from the token, so transferring it is the only thing needed to skip the first 0–90-day issuance window on the new host.
 
