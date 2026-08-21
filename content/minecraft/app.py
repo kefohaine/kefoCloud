@@ -51,6 +51,34 @@ CONTAINER = os.environ.get("MC_CONTAINER", "mc")
 BACKUP_DIR = Path(os.environ.get("BACKUP_DIR", "/backups"))
 BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
+# How many world backups to keep per pattern when pruning. Mirrors the
+# host-side `make clean-backups` policy (keep latest 3, drop the rest by
+# mtime). The dashboard applies the same rule after every successful
+# snapshot/regenerate so the two stay in sync without the dashboard
+# shelling out to `make` (which it can't — no make binary or sudo in the
+# mc-web image).
+_BACKUP_KEEP = 3
+
+
+def _prune_mc_backups():
+    """Keep the latest `_BACKUP_KEEP` mc-backup-*.tar.gz files in BACKUP_DIR,
+    delete older ones by mtime. Mirrors `make clean-backups`'s
+    `tail -n +4` policy. Best-effort: any error is swallowed (logged to
+    stderr only) so a prune failure can never break a snapshot."""
+    try:
+        backups = sorted(
+            BACKUP_DIR.glob("mc-backup-*.tar.gz"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+    except FileNotFoundError:
+        return
+    for old in backups[_BACKUP_KEEP:]:
+        try:
+            old.unlink()
+        except OSError as e:
+            print(f"[backup-prune] failed to delete {old}: {e}", flush=True)
+
 app = Flask(__name__,
             # Caddy's @mc path match forwards /mc/* without stripping
             # the prefix, so the dashboard is reached as /mc/... Flask's
@@ -188,6 +216,7 @@ def parse_tps(text):
 # load and reuse it. The client is thread-safe for the calls we make
 # (containers.get / container.start/stop/restart).
 import docker as _docker
+from docker.errors import NotFound
 _docker_client = _docker.DockerClient(base_url="unix:///var/run/docker.sock")
 
 
@@ -469,8 +498,14 @@ def container_action(action):
         return False, "unknown action"
     try:
         c = _docker_client.containers.get(CONTAINER)
+    except NotFound:
+        # The mc container may be absent (not yet provisioned on first
+        # boot, removed via `make recreate-mc` while stopped, or stopped
+        # and pruned). Surface a clear message instead of the full Docker
+        # SDK 404 traceback so the operator doesn't chase a non-bug.
+        return False, f"{CONTAINER} container is not running (was it recreated while stopped?)"
     except Exception as e:
-        return False, f"container not found: {e}"
+        return False, f"container lookup failed: {e}"
     if action == "stop":
         if c.status != "running":
             return True, "already stopped"
@@ -1326,6 +1361,7 @@ def api_world_regenerate():
         ok, msg = container_action("start")
     except Exception as e:
         return jsonify(backup=str(backup_path), error=f"start failed: {e}"), 500
+    _prune_mc_backups()
     return jsonify(ok=ok, backup=str(backup_path), container=msg)
 
 
@@ -1347,6 +1383,7 @@ def api_world_backup():
         )
     except subprocess.CalledProcessError as e:
         return jsonify(error=f"backup failed: {e}"), 500
+    _prune_mc_backups()
     return jsonify(ok=True, backup=str(backup_path))
 
 
