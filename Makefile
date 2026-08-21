@@ -8,17 +8,17 @@ SHELL := /bin/bash
 
 REPO     := /var/www/custom/projects/jehpok
 COMPOSE  := docker compose -f
-SERVICES := domain homer kuma share cloud vault mc
+CONTAINERS := domain homer kuma share cloud vault mc
 HOST     := ttyd dnsmasq ollama
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Per-container: up / restart / logs
-# One set of rules, expanded across $(SERVICES).
+# One set of rules, expanded across $(CONTAINERS).
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: $(addprefix up-,$(SERVICES)) up-all
-.PHONY: $(addprefix restart-,$(SERVICES)) restart-all
-.PHONY: $(addprefix logs-,$(SERVICES)) logs-all
+.PHONY: $(addprefix up-,$(CONTAINERS)) up-all
+.PHONY: $(addprefix restart-,$(CONTAINERS)) restart-all
+.PHONY: $(addprefix logs-,$(CONTAINERS)) logs-all
 
 # share + domain rebuild their image locally; the rest just pull.
 # share = custom Dockerfile for the link shortener.
@@ -30,22 +30,22 @@ define up_rule
 up-$1:
 >$(COMPOSE) $(REPO)/repo/services/$1/docker-compose.yml up -d --force-recreate$(if $(filter share domain,$1), --build)
 endef
-$(foreach s,$(SERVICES),$(eval $(call up_rule,$s)))
+$(foreach s,$(CONTAINERS),$(eval $(call up_rule,$s)))
 
 define restart_rule
 restart-$1:
-># Some compose files declare more than one service (e.g. mc has
-# `mc` + `mc-web`). Restarting the named service alone would
+># Some compose files declare more than one container (e.g. mc has
+# `mc` + `mc-web`). Restarting the named container alone would
 # leave the other untouched and surprise the next edit, so restart every
-# service in the file.
+# container in the file.
 >$(COMPOSE) $(REPO)/repo/services/$1/docker-compose.yml restart
 endef
-$(foreach s,$(SERVICES),$(eval $(call restart_rule,$s)))
+$(foreach s,$(CONTAINERS),$(eval $(call restart_rule,$s)))
 
 define logs_rule
 logs-$1:
-># Tail the service container named after the directory; for compose files
-# with multiple services (mc: mc + mc-web), tail both
+># Tail the container named after the directory; for compose files
+# with multiple containers (mc: mc + mc-web), tail both
 # with a [container] prefix so they don't interleave silently.
 >if [ "$1" = "mc" ]; then \
     docker logs mc --tail 50 -f 2>&1 | stdbuf -oL sed "s/^/[mc] /" & \
@@ -55,13 +55,13 @@ logs-$1:
     docker logs $1 --tail 50 -f; \
   fi
 endef
-$(foreach s,$(SERVICES),$(eval $(call logs_rule,$s)))
+$(foreach s,$(CONTAINERS),$(eval $(call logs_rule,$s)))
 
-up-all: $(addprefix up-,$(SERVICES))
-restart-all: $(addprefix restart-,$(SERVICES)) restart-dnsmasq restart-ttyd
+up-all: $(addprefix up-,$(CONTAINERS))
+restart-all: $(addprefix restart-,$(CONTAINERS)) restart-dnsmasq restart-ttyd
 
 logs-all:
->@stdbuf -oL bash -c 'for c in $(SERVICES); do \
+>@stdbuf -oL bash -c 'for c in $(CONTAINERS); do \
     docker logs $$c --tail 50 -f 2>&1 | stdbuf -oL sed "s/^/[$$c] /" & \
   done; wait'
 
@@ -87,7 +87,7 @@ logs-dnsmasq:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: status clean-docker clean-apt clean-backups clean-all refresh setup help
+.PHONY: status clean-docker clean-apt clean-backups clean-all update install-config bkp-config help
 
 status:
 >@echo "--- containers ---"
@@ -111,16 +111,18 @@ clean-apt:
 >@sudo apt-get -qq autoremove -y
 
 # Keep the 3 most recent artifacts per backup pattern; delete older.
+# The mc-backup pattern also matches the old minecraft-backup-* names so
+# artifacts orphaned by the rename age out instead of accumulating forever.
 clean-backups:
->@for pattern in cloud-backup-* share-backup-*.db vault-backup-*.tar.gz secrets-backup/secrets-*.tar.gz mc-backup-*.tar.gz; do \
+>@for pattern in cloud-backup-* share-backup-*.db vault-backup-*.tar.gz secrets-bundle-*.tar.gz 'mc-backup-*.tar.gz minecraft-backup-*.tar.gz'; do \
     sudo ls -1dt $(REPO)/$$pattern 2>/dev/null | tail -n +4 | sudo xargs -r rm -rf; \
   done
->@echo "Pruned backups older than the 3 most recent."
+>@echo "Pruned backups older than the 3 most recent per pattern."
 
 clean-all: clean-docker clean-apt clean-backups
 
 # Pull every image that isn't built locally, then bring everything up.
-refresh:
+update:
 >sudo apt-get update
 >sudo apt-get upgrade -y
 >@for f in $(REPO)/repo/services/*/docker-compose.yml; do \
@@ -132,9 +134,15 @@ refresh:
   done
 >cd $(REPO)/repo && $(MAKE) up-all
 
-# One-shot bootstrap: install ttyd, install reference configs, enable units,
+# ─────────────────────────────────────────────────────────────────────────────
+# config/ (live <-> repo)
+# config/ holds tracked copies of every host-level config. install-config
+# pushes them to live; bkp-config snapshots live back into config/.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# One-shot bootstrap: install ttyd, copy config/ to live, enable units,
 # restore Claude settings, open the UFW rule for ttyd. Idempotent.
-setup:
+install-config:
 >@if ! command -v ttyd >/dev/null 2>&1; then \
     echo "Installing ttyd..."; \
     curl -fsSL -o /tmp/ttyd.tar.gz https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64-linux-gnu-static.tar.gz; \
@@ -144,44 +152,104 @@ setup:
   else \
     echo "ttyd already installed at $$(command -v ttyd)"; \
   fi
->sudo cp $(REPO)/repo/setup/ollama/ollama.service /etc/systemd/system/ollama.service
->sudo cp $(REPO)/repo/setup/ssh/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf
->sudo cp $(REPO)/repo/setup/dnsmasq/10-tailnet.conf /etc/dnsmasq.d/10-tailnet.conf
+>sudo cp $(REPO)/repo/config/ollama/ollama.service /etc/systemd/system/ollama.service
+>sudo cp $(REPO)/repo/config/ssh/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf
+>sudo cp $(REPO)/repo/config/dnsmasq/10-tailnet.conf /etc/dnsmasq.d/10-tailnet.conf
 >sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
->sudo cp $(REPO)/repo/setup/dnsmasq/dnsmasq.service.conf /etc/systemd/system/dnsmasq.service.d/override.conf
->sudo cp $(REPO)/repo/setup/sysctl/99-jehpok.conf /etc/sysctl.d/99-jehpok.conf
+>sudo cp $(REPO)/repo/config/dnsmasq/dnsmasq.service.conf /etc/systemd/system/dnsmasq.service.d/override.conf
+>sudo cp $(REPO)/repo/config/sysctl/99-jehpok.conf /etc/sysctl.d/99-jehpok.conf
 >sudo sysctl --system >/dev/null
->@if ! diff -q /etc/docker/daemon.json $(REPO)/repo/setup/docker/daemon.json >/dev/null 2>&1; then \
+>@if ! diff -q /etc/docker/daemon.json $(REPO)/repo/config/docker/daemon.json >/dev/null 2>&1; then \
     echo "Installing /etc/docker/daemon.json (Docker daemon restart required to take effect)."; \
     sudo mkdir -p /etc/docker; \
-    sudo cp $(REPO)/repo/setup/docker/daemon.json /etc/docker/daemon.json; \
+    sudo cp $(REPO)/repo/config/docker/daemon.json /etc/docker/daemon.json; \
     echo "Run: sudo systemctl restart docker  (containers stay up via live-restore)."; \
   else \
     echo "Docker daemon config already up to date."; \
   fi
->sudo cp $(REPO)/repo/setup/maintenance/daily.sh /usr/local/bin/jehpok-daily.sh
+>sudo cp $(REPO)/repo/config/maintenance/daily.sh /usr/local/bin/jehpok-daily.sh
 >sudo chmod +x /usr/local/bin/jehpok-daily.sh
->sudo cp $(REPO)/repo/setup/maintenance/daily.service /etc/systemd/system/jehpok-daily.service
->sudo cp $(REPO)/repo/setup/maintenance/daily.timer /etc/systemd/system/jehpok-daily.timer
+>sudo cp $(REPO)/repo/config/maintenance/daily.service /etc/systemd/system/jehpok-daily.service
+>sudo cp $(REPO)/repo/config/maintenance/daily.timer /etc/systemd/system/jehpok-daily.timer
 >sudo touch /var/log/jehpok-daily.log
 >sudo chown debian:debian /var/log/jehpok-daily.log
->sudo cp $(REPO)/repo/setup/ttyd/ttyd.service /etc/systemd/system/ttyd.service
+>sudo cp $(REPO)/repo/config/ttyd/ttyd.service /etc/systemd/system/ttyd.service
 >mkdir -p $(REPO)/repo/.claude
->cp $(REPO)/repo/setup/claude/settings.local.json $(REPO)/repo/.claude/settings.local.json
+>cp $(REPO)/repo/config/claude/settings.local.json $(REPO)/repo/.claude/settings.local.json
 >chmod 0644 $(REPO)/repo/.claude/settings.local.json
 >sudo ufw allow from 172.22.0.0/16 to any port 7681 proto tcp
 >sudo systemctl daemon-reload
 >sudo systemctl enable --now ollama jehpok-daily.timer ttyd
 >sudo systemctl restart sshd dnsmasq
->@echo "Host setup complete: ollama + ttyd + dnsmasq + sshd + daily timer enabled, Claude settings restored."
+>@echo "Host install-config complete: ollama + ttyd + dnsmasq + sshd + daily timer enabled, Claude settings restored."
+
+# Snapshot the live host configs into config/. Overwrites anything that
+# diverged. Run before committing so changes are tracked in git.
+bkp-config:
+>@echo "Snapshotting live configs into config/..."
+>@for d in ollama ssh dnsmasq docker maintenance ttyd claude sysctl; do \
+    sudo install -d -m 0755 -o debian -g debian $(REPO)/repo/config/$$d; \
+  done
+>sudo install -m 0644 -o debian -g debian /etc/systemd/system/ollama.service           $(REPO)/repo/config/ollama/ollama.service
+>sudo install -m 0644 -o debian -g debian /etc/systemd/system/ttyd.service             $(REPO)/repo/config/ttyd/ttyd.service
+>sudo install -m 0600 -o debian -g debian /etc/ssh/sshd_config.d/50-cloud-init.conf     $(REPO)/repo/config/ssh/50-cloud-init.conf
+>sudo install -m 0644 -o debian -g debian /etc/dnsmasq.d/10-tailnet.conf                $(REPO)/repo/config/dnsmasq/10-tailnet.conf
+>sudo install -m 0644 -o debian -g debian /etc/systemd/system/dnsmasq.service.d/override.conf $(REPO)/repo/config/dnsmasq/dnsmasq.service.conf
+>sudo install -m 0644 -o debian -g debian /etc/docker/daemon.json                       $(REPO)/repo/config/docker/daemon.json
+>sudo install -m 0755 -o debian -g debian /usr/local/bin/jehpok-daily.sh                 $(REPO)/repo/config/maintenance/daily.sh
+>sudo install -m 0644 -o debian -g debian /etc/systemd/system/jehpok-daily.service      $(REPO)/repo/config/maintenance/daily.service
+>sudo install -m 0644 -o debian -g debian /etc/systemd/system/jehpok-daily.timer        $(REPO)/repo/config/maintenance/daily.timer
+>sudo install -m 0644 -o debian -g debian /etc/sysctl.d/99-jehpok.conf                  $(REPO)/repo/config/sysctl/99-jehpok.conf
+>@echo "Done. Review changes with: cd $(REPO)/repo && git diff --stat config/"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Backups
+# Bundles (live <-> secrets tarball)
+# bundle-secrets collects live secrets into a tar.gz; install-secrets
+# extracts one back over the live paths. Not chained into bkp-all —
+# secrets need a deliberate operator decision each time.
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: backup-cloud backup-share backup-vault backup-secrets backup-mc backup-all
+.PHONY: bundle-secrets install-secrets
 
-backup-cloud:
+bundle-secrets:
+>@dest=$(REPO)/secrets-bundle-$$(date +%Y%m%d).tar.gz; \
+  sudo tar czf "$$dest" \
+    --warning=no-absolute-names \
+    /home/debian/.ssh/github_key \
+    /home/debian/.ssh/github_key.pub \
+    /home/debian/.ssh/config \
+    /home/debian/.ssh/authorized_keys \
+    /etc/systemd/system/ollama.service \
+    /etc/systemd/system/ttyd.service \
+    /etc/ssh/sshd_config.d/50-cloud-init.conf \
+    /etc/dnsmasq.d/10-tailnet.conf \
+    /etc/systemd/system/dnsmasq.service.d/override.conf \
+    /var/lib/tailscale
+>@echo "Secrets bundle at $$dest"
+
+# Extract a secrets bundle tar.gz to the live paths. Defaults to the
+# newest secrets-bundle-*.tar.gz under $(REPO); override with BUNDLE=<path>.
+install-secrets:
+>@if [ -z "$(BUNDLE)" ]; then \
+    BUNDLE="$$(ls -1t $(REPO)/secrets-bundle-*.tar.gz 2>/dev/null | head -1)"; \
+    if [ -z "$$BUNDLE" ]; then \
+      echo "No secrets-bundle-*.tar.gz found in $(REPO)."; \
+      exit 1; \
+    fi; \
+    echo "Using latest bundle: $$BUNDLE"; \
+  fi
+>sudo tar xzf "$$BUNDLE" -C / --warning=no-absolute-names
+>@echo "Installed $$BUNDLE to live paths."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Backups (rename: backup-* → bkp-*)
+# bkp-all chains the four bkp-* recipes in order (no bundle-secrets —
+# secrets need a deliberate decision).
+# ─────────────────────────────────────────────────────────────────────────────
+
+.PHONY: bkp-cloud bkp-share bkp-vault bkp-mc bkp-all
+
+bkp-cloud:
 >@dest=$(REPO)/cloud-backup-$$(date +%Y%m%d); \
   sudo mkdir -p "$$dest"; \
   sudo chown debian:debian "$$dest"; \
@@ -193,44 +261,28 @@ backup-cloud:
   docker exec -w /var/www/html cloud php occ maintenance:mode --off; \
   echo "Backup at $$dest"
 
-backup-share:
+bkp-share:
 >@sudo cp $(REPO)/share/db/links.db $(REPO)/share-backup-$$(date +%Y%m%d).db
 >@echo "Backup at $(REPO)/share-backup-$$(date +%Y%m%d).db"
 
-backup-vault:
+bkp-vault:
 >@sudo bash -c 'tar czf $(REPO)/vault-backup-$$(date +%Y%m%d).tar.gz -C $(REPO)/vault data'
 >@echo "Backup at $(REPO)/vault-backup-$$(date +%Y%m%d).tar.gz"
 
-backup-secrets:
->@sudo mkdir -p $(REPO)/secrets-backup
->@sudo tar czf $(REPO)/secrets-backup/secrets-$$(date +%Y%m%d).tar.gz \
-  --warning=no-absolute-names \
-  /home/debian/.ssh/github_key \
-  /home/debian/.ssh/github_key.pub \
-  /home/debian/.ssh/config \
-  /home/debian/.ssh/authorized_keys \
-  /etc/systemd/system/ollama.service \
-  /etc/systemd/system/ttyd.service \
-  /etc/ssh/sshd_config.d/50-cloud-init.conf \
-  /etc/dnsmasq.d/10-tailnet.conf \
-  /etc/systemd/system/dnsmasq.service.d/override.conf \
-  /var/lib/tailscale
->@echo "Secrets bundle at $(REPO)/secrets-backup/secrets-$$(date +%Y%m%d).tar.gz"
-
 # Snapshot just the Minecraft world data folder as a timestamped .tar.gz.
-# Differs from `backup-all` (which snapshots everything): this one is for
+# Differs from `bkp-all` (which snapshots everything): this one is for
 # world data only, intended to be run before destructive ops (regenerate,
 # world import) so a recovery path exists. Does NOT auto-run by itself.
-# When run from `backup-all`, daily.sh stops the mc container first
+# When run from `bkp-all`, daily.sh stops the mc container first
 # so tar reads a quiescent filesystem; running this standalone while the
 # server is up is unsafe (regions may be partially written).
-backup-mc:
+bkp-mc:
 >@dest=$(REPO)/mc-backup-$$(date +%Y%m%d-%H%M%S).tar.gz; \
   sudo tar czf "$$dest" -C $(REPO)/mc/data world; \
   sudo chown debian:debian "$$dest"; \
   echo "World backup at $$dest"
 
-backup-all: backup-cloud backup-share backup-vault backup-secrets backup-mc
+bkp-all: bkp-cloud bkp-share bkp-vault bkp-mc
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Migration
@@ -280,16 +332,16 @@ help:
 >@echo ""
 >@echo "  jehpok.com — make recipes"
 >@echo ""
->@echo "  Docker Containers  (one of: $(SERVICES))"
->@echo "    make up-<svc>         force-recreate container (share also rebuilds)"
->@echo "    make restart-<svc>    reload container without recreating"
->@echo "    make logs-<svc>       follow container logs"
+>@echo "  Docker containers  (one of: $(CONTAINERS))"
+>@echo "    make up-<ctn>         force-recreate container (share also rebuilds)"
+>@echo "    make restart-<ctn>    reload container without recreating"
+>@echo "    make logs-<ctn>       follow container logs"
 >@echo ""
 >@echo "  Bulk"
 >@echo "    make restart-all      restart all containers + dnsmasq + ttyd"
 >@echo "    make up-all           recreate all containers in order"
 >@echo "    make logs-all         tail all container logs in one stream"
->@echo "    make backup-all       run all five backup recipes in order (stops the mc container via daily.sh)"
+>@echo "    make bkp-all          run all four bkp-* recipes (no bundle-secrets)"
 >@echo "    make clean-all        chain: clean-docker + clean-apt + clean-backups"
 >@echo "    make git-all MSG=\"…\"  stage + commit + push (shortcut for the 3 below)"
 >@echo ""
@@ -306,19 +358,23 @@ help:
 >@echo ""
 >@echo "  Maintenance"
 >@echo "    make status           containers + host services + disk + memory"
->@echo "    make refresh          apt update/upgrade + pull images + up-all"
->@echo "    make setup            one-shot host bootstrap (configs, units, UFW, Claude)"
+>@echo "    make update           apt update/upgrade + pull images + up-all"
+>@echo "    make install-config   copy config/ to live (was make setup)"
+>@echo "    make bkp-config       snapshot live host configs back into config/"
 >@echo "    make migrate          cat docs/MIGRATE.md (full VPS-to-VPS runbook)"
 >@echo ""
->@echo "  Backups"
->@echo "    make backup-cloud     Nextcloud snapshot (maintenance mode during copy)"
->@echo "    make backup-share     shortener SQLite DB"
->@echo "    make backup-vault     Vaultwarden data tar"
->@echo "    make backup-secrets   bundle certs + keys + Tailscale state"
->@echo "    make backup-mc Minecraft world tar (stops the container via daily.sh when chained)"
+>@echo "  Backups (bkp-*)"
+>@echo "    make bkp-cloud        Nextcloud snapshot (maintenance mode during copy)"
+>@echo "    make bkp-share        shortener SQLite DB"
+>@echo "    make bkp-vault        Vaultwarden data tar"
+>@echo "    make bkp-mc           Minecraft world tar (stops the container via daily.sh when chained)"
+>@echo ""
+>@echo "  Bundles"
+>@echo "    make bundle-secrets   collect live secrets into \$$REPO/secrets-bundle-<date>.tar.gz"
+>@echo "    make install-secrets  extract a bundle to live paths (BUNDLE=<path> to override)"
 >@echo ""
 >@echo "  Cleanup"
 >@echo "    make clean-docker     prune builder / image / container"
 >@echo "    make clean-apt        apt autoremove + clean"
->@echo "    make clean-backups    keep latest 3 backups per pattern, delete older"
+>@echo "    make clean-backups    keep latest 3 per pattern, delete older"
 >@echo ""
