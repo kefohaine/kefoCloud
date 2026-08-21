@@ -188,12 +188,6 @@ install-config:
 >sudo systemctl restart sshd dnsmasq
 >@echo "Host install-config complete: ollama + ttyd + dnsmasq + sshd + daily timer enabled, Claude settings restored."
 
-# Snapshot the live host configs into config/. Overwrites anything that
-# diverged. Run before committing so changes are tracked in git.
-# (bkp-config recipe removed by operator request; live→config sync now
-# happens only via `bundle-config` — git-tracked config/ remains the
-# canonical source for new installs via `install-config`.)
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Per-file install (config/<file> → live path)
 # One-file sync when install-config's blanket copy is more than needed.
