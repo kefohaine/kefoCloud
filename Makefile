@@ -203,6 +203,82 @@ bkp-config:
 >@echo "Done. Review changes with: cd $(REPO)/repo && git diff --stat config/"
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Per-file install (config/<file> → live path)
+# One-file sync when install-config's blanket copy is more than needed.
+# Each recipe just copies + applies any post-step (daemon-reload, restart,
+# chmod). Run `systemctl daemon-reload` manually if you stack systemd
+# units in one batch and want one reload at the end.
+# ─────────────────────────────────────────────────────────────────────────────
+
+.PHONY: install-config-ollama install-config-ttyd install-config-ssh \
+        install-config-dnsmasq-conf install-config-dnsmasq-override \
+        install-config-docker install-config-sysctl \
+        install-config-daily-sh install-config-daily-service install-config-daily-timer \
+        install-config-claude
+
+install-config-ollama:
+>@echo "install-config-ollama: ollama.service"
+>@sudo cp $(REPO)/repo/config/ollama/ollama.service /etc/systemd/system/ollama.service
+>@sudo systemctl daemon-reload
+>@sudo systemctl restart ollama
+
+install-config-ttyd:
+>@echo "install-config-ttyd: ttyd.service"
+>@sudo cp $(REPO)/repo/config/ttyd/ttyd.service /etc/systemd/system/ttyd.service
+>@sudo systemctl daemon-reload
+>@sudo systemctl restart ttyd
+
+install-config-ssh:
+>@echo "install-config-ssh: 50-cloud-init.conf"
+>@sudo cp $(REPO)/repo/config/ssh/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf
+>@sudo sshd -t && sudo systemctl restart sshd
+
+install-config-dnsmasq-conf:
+>@echo "install-config-dnsmasq-conf: 10-tailnet.conf"
+>@sudo cp $(REPO)/repo/config/dnsmasq/10-tailnet.conf /etc/dnsmasq.d/10-tailnet.conf
+>@sudo systemctl restart dnsmasq
+
+install-config-dnsmasq-override:
+>@echo "install-config-dnsmasq-override: dnsmasq.service.d/override.conf"
+>@sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
+>@sudo cp $(REPO)/repo/config/dnsmasq/dnsmasq.service.conf /etc/systemd/system/dnsmasq.service.d/override.conf
+>@sudo systemctl daemon-reload
+>@sudo systemctl restart dnsmasq
+
+install-config-docker:
+>@echo "install-config-docker: /etc/docker/daemon.json (Docker daemon restart required)"
+>@sudo mkdir -p /etc/docker
+>@sudo cp $(REPO)/repo/config/docker/daemon.json /etc/docker/daemon.json
+>@echo "Run: sudo systemctl restart docker  (containers stay up via live-restore)."
+
+install-config-sysctl:
+>@echo "install-config-sysctl: 99-jehpok.conf"
+>@sudo cp $(REPO)/repo/config/sysctl/99-jehpok.conf /etc/sysctl.d/99-jehpok.conf
+>@sudo sysctl --system >/dev/null
+
+install-config-daily-sh:
+>@echo "install-config-daily-sh: /usr/local/bin/jehpok-daily.sh"
+>@sudo cp $(REPO)/repo/config/maintenance/daily.sh /usr/local/bin/jehpok-daily.sh
+>@sudo chmod +x /usr/local/bin/jehpok-daily.sh
+
+install-config-daily-service:
+>@echo "install-config-daily-service: jehpok-daily.service"
+>@sudo cp $(REPO)/repo/config/maintenance/daily.service /etc/systemd/system/jehpok-daily.service
+>@sudo systemctl daemon-reload
+
+install-config-daily-timer:
+>@echo "install-config-daily-timer: jehpok-daily.timer"
+>@sudo cp $(REPO)/repo/config/maintenance/daily.timer /etc/systemd/system/jehpok-daily.timer
+>@sudo systemctl daemon-reload
+>@sudo systemctl enable --now jehpok-daily.timer
+
+install-config-claude:
+>@echo "install-config-claude: .claude/settings.local.json"
+>@mkdir -p $(REPO)/repo/.claude
+>@cp $(REPO)/repo/config/claude/settings.local.json $(REPO)/repo/.claude/settings.local.json
+>@chmod 0644 $(REPO)/repo/.claude/settings.local.json
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Bundles (live <-> secrets tarball)
 # bundle-secrets collects live secrets into a tar.gz; install-secrets
 # extracts one back over the live paths. Not chained into bkp-all —
@@ -399,9 +475,22 @@ help:
 >@echo "  Maintenance"
 >@echo "    make status           containers + host services + disk + memory"
 >@echo "    make update           apt update/upgrade + pull images + up-all"
->@echo "    make install-config   copy config/ to live (was make setup)"
+>@echo "    make install-config   copy all of config/ to live (was make setup)"
 >@echo "    make bkp-config       snapshot live host configs back into config/"
 >@echo "    make migrate          cat docs/MIGRATE.md (full VPS-to-VPS runbook)"
+>@echo ""
+>@echo "  Per-file install (one file from config/ → live)"
+>@echo "    make install-config-ollama             /etc/systemd/system/ollama.service"
+>@echo "    make install-config-ttyd               /etc/systemd/system/ttyd.service"
+>@echo "    make install-config-ssh                /etc/ssh/sshd_config.d/50-cloud-init.conf"
+>@echo "    make install-config-dnsmasq-conf       /etc/dnsmasq.d/10-tailnet.conf"
+>@echo "    make install-config-dnsmasq-override   /etc/systemd/system/dnsmasq.service.d/override.conf"
+>@echo "    make install-config-docker             /etc/docker/daemon.json (restart docker to apply)"
+>@echo "    make install-config-sysctl             /etc/sysctl.d/99-jehpok.conf"
+>@echo "    make install-config-daily-sh           /usr/local/bin/jehpok-daily.sh"
+>@echo "    make install-config-daily-service      /etc/systemd/system/jehpok-daily.service"
+>@echo "    make install-config-daily-timer        /etc/systemd/system/jehpok-daily.timer"
+>@echo "    make install-config-claude             \$$REPO/repo/.claude/settings.local.json"
 >@echo ""
 >@echo "  Backups (bkp-*)"
 >@echo "    make bkp-cloud        Nextcloud snapshot (maintenance mode during copy)"
