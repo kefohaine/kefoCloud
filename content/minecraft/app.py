@@ -223,18 +223,18 @@ _version_lock = threading.Lock()
 _RCON_READY_BOOTSTRAP_RE = re.compile(
     r"\[(\d{2}:\d{2}:\d{2})\] \[ServerMain/INFO\]: \[bootstrap\]"
 )
-_RCON_READY_CLIENT_RE = re.compile(
-    r"\[(\d{2}:\d{2}:\d{2})\] \[RCON Listener #\d+/INFO\]: "
-    r"Thread RCON Client /"
+_RCON_READY_LISTENER_RE = re.compile(
+    r"\[(\d{2}:\d{2}:\d{2})\] \[Server thread/INFO\]: Thread RCON Listener started"
 )
 _rcon_ready_cache = {"started_at": None, "ts": None}
 _rcon_ready_lock = threading.Lock()
 
 
 def _rcon_ready_since(started_at_iso):
-    """Return the timestamp (epoch seconds) of the first RCON Client line
-    in the current session, or None if no client has connected yet.
-    `started_at_iso` is the container's State.StartedAt in ISO format."""
+    """Return the timestamp (epoch seconds) of the "RCON Listener started"
+    line in the current Paper session, or None if the current session
+    hasn't logged that line yet (still booting). `started_at_iso` is the
+    container's State.StartedAt in ISO format."""
     with _rcon_ready_lock:
         if _rcon_ready_cache["started_at"] == started_at_iso:
             return _rcon_ready_cache["ts"]
@@ -242,35 +242,39 @@ def _rcon_ready_since(started_at_iso):
         text = LATEST_LOG.read_text(errors="replace")
     except OSError:
         return None
-    # Find the last bootstrap line in the file — that's the start of the
-    # current session. Older log archives (rotated YYYY-MM-DD-N.log.gz)
-    # may also contain bootstrap lines from previous sessions; the LAST
-    # one in latest.log is the one we want.
+    from datetime import datetime, timezone
+    started_dt = datetime.fromisoformat(started_at_iso.replace("Z", "+00:00"))
+    started_hms = (started_dt.hour, started_dt.minute, started_dt.second)
+    # latest.log is appended-to across Paper restarts (rotation only on
+    # size or shutdown), so older session bootstrap lines can sit at the
+    # bottom of the file alongside the new session's lines. Walk all
+    # bootstrap lines; only the one whose HH:MM:SS matches the current
+    # container StartedAt belongs to the current session.
     bootstrap_match = None
     for m in _RCON_READY_BOOTSTRAP_RE.finditer(text):
-        bootstrap_match = m
+        bootstrap_match = m  # last one wins
     if bootstrap_match is None:
-        # No bootstrap line in the log yet — server still in early init.
+        # No bootstrap line at all yet — server still in very early init.
+        return None
+    boot_hms = tuple(int(x) for x in bootstrap_match.group(1).split(":"))
+    if boot_hms != started_hms:
+        # The latest bootstrap on disk is from an earlier session. Paper
+        # hasn't written this session's bootstrap yet — treat as still
+        # booting so we never return a stale timestamp from an old
+        # session (which is the uptime-reset bug).
         return None
     tail = text[bootstrap_match.end():]
-    client_match = _RCON_READY_CLIENT_RE.search(tail)
-    if client_match is None:
+    listener_match = _RCON_READY_LISTENER_RE.search(tail)
+    if listener_match is None:
+        # Current session's bootstrap is logged but the rcon listener
+        # hasn't bound yet. Still booting.
         return None
-    # Combine the bootstrap line's HH:MM:SS with the date from
-    # started_at_iso to form an absolute timestamp.
-    from datetime import datetime, timezone, timedelta
-    started_dt = datetime.fromisoformat(started_at_iso.replace("Z", "+00:00"))
-    hms = client_match.group(1)
-    # Bootstrap lines and rcon client lines use local-time HH:MM:SS,
-    # but we don't know the JVM's local TZ. The itzg image sets TZ=UTC
-    # (compose env), so local == UTC.
+    # Combine the listener-start line's HH:MM:SS with the date from
+    # started_at_iso to form an absolute timestamp. The itzg image sets
+    # TZ=UTC (compose env) so JVM local time == UTC.
+    hms = listener_match.group(1)
     h, m, s = (int(x) for x in hms.split(":"))
     online_dt = started_dt.replace(hour=h, minute=m, second=s, microsecond=0)
-    # Edge case: if the client connected shortly before midnight and the
-    # log shows a HH:MM:SS that looks earlier than the bootstrap time on
-    # a clock wrap, the day-rollover would give a wrong date. The itzg
-    # image guarantees TZ=UTC and the JVM rarely boots in <1s, so this
-    # is a non-issue in practice; document it as a known limitation.
     epoch = online_dt.timestamp()
     with _rcon_ready_lock:
         _rcon_ready_cache["started_at"] = started_at_iso

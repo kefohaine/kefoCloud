@@ -804,6 +804,10 @@
 <section class="tab-panel" id="tab-settings">
   <h2>server.properties</h2>
   <p class="hint">Save writes the file only — restart the container to apply changes Paper doesn't hot-reload.</p>
+  <div class="row" style="margin-bottom:8px;">
+    <input type="search" id="props-search" placeholder="Filter fields…" autocomplete="off"
+           style="flex:1; padding:6px 8px;">
+  </div>
   <table id="settings-props">
     <tr><th>Field</th><th>Value</th></tr>
   </table>
@@ -1258,14 +1262,31 @@
       tbl.innerHTML = '<tr><th>Field</th><th>Value</th></tr>';
       for (const [k, v] of Object.entries(props)) {
         const tr = document.createElement('tr');
+        tr.dataset.key = k.toLowerCase();
         tr.innerHTML = `<td class="field">${escapeHtml(k)}</td>
                         <td><input type="text" data-key="${escapeHtml(k)}" value="${escapeHtml(v)}"></td>`;
         tbl.appendChild(tr);
       }
+      // Apply any active filter to the freshly-rendered rows so reloading
+      // props keeps the search query visible.
+      filterProps();
     } catch (e) {
       setAck('props-ack', 'load failed: ' + e.message, true);
     }
   }
+  // Filter server.properties rows by case-insensitive substring match on
+  // the field name. Runs on every keystroke; the table is small (~70
+  // rows) so DOM toggling is cheap. Hidden rows aren't removed so Save
+  // still iterates every input the API expects.
+  function filterProps() {
+    const q = (document.getElementById('props-search').value || '').toLowerCase().trim();
+    const rows = document.querySelectorAll('#settings-props tr[data-key]');
+    rows.forEach(r => {
+      r.style.display = (!q || r.dataset.key.includes(q)) ? '' : 'none';
+    });
+  }
+  document.getElementById('props-search').addEventListener('input', filterProps);
+
   document.getElementById('btn-props-save').addEventListener('click', async () => {
     const inputs = document.querySelectorAll('#settings-props input[data-key]');
     const body = {};
