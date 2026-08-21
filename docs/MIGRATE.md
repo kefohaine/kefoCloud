@@ -1,22 +1,22 @@
 # Migration
 
-Step-by-step runbook for moving jehpok.com to a new VPS. The five `make backup-*` recipes and `make setup` are the only recipes this runbook calls; everything else is operator-issued shell. Run `make migrate` to print this file.
+Step-by-step runbook for moving jehpok.com to a new VPS. The five `make backup-*` recipes and `make install-config` are the only recipes this runbook calls; everything else is operator-issued shell. Run `make migrate` to print this file.
 
 ## 1. On the OLD VPS
 
 Run all five backups in one shot:
 
 ```
-make backup-all
+make bkp-all
 ```
 
-This produces five artifacts at the project root (`$(REPO)`): a `cloud-backup-<date>` directory, a `share-backup-<date>.db` file, a `vault-backup-<date>.tar.gz` archive, a `secrets-backup/secrets-<date>.tar.gz` bundle, and a `mc-backup-<date>.tar.gz` world archive.
+This produces five artifacts at the project root (`$(REPO)`): a `cloud-backup-<date>` directory, a `share-backup-<date>.db` file, a `vault-backup-<date>.tar.gz` archive, a `secrets-bundle-<date>.tar.gz` bundle, and a `mc-backup-<date>.tar.gz` world archive.
 
 ## 2. Download OFF the old VPS
 
 Move the five artifacts off the VPS — the secrets bundle contains private keys and the Tailscale identity state:
 
-- `$(REPO)/secrets-backup/secrets-<date>.tar.gz`
+- `$(REPO)/secrets-bundle-<date>.tar.gz`
 - `$(REPO)/cloud-backup-<date>`
 - `$(REPO)/share-backup-<date>.db`
 - `$(REPO)/vault-backup-<date>.tar.gz`
@@ -79,7 +79,7 @@ docker network create net
 make -C $(REPO)/repo setup
 ```
 
-`make setup` is idempotent: it installs ttyd, copies reference configs into host paths, enables the systemd units (ollama, ttyd, dnsmasq, sshd, jehpok-daily.timer), opens the UFW rule for ttyd, and deploys the project-level Claude Code safety rail from `setup/claude/settings.local.json`.
+`make install-config` is idempotent: it installs ttyd, copies reference configs into host paths, enables the systemd units (ollama, ttyd, dnsmasq, sshd, jehpok-daily.timer), opens the UFW rule for ttyd, and deploys the project-level Claude Code safety rail from `config/claude/settings.local.json`.
 
 Now create the Caddy data dir + restore the CF API token (so the per-vhost ACME certs can be issued on first request):
 
@@ -128,4 +128,4 @@ for h in www share vault cloud kuma api mc; do
 done
 ```
 
-The tailnet routes (`server.jehpok.com/{,/share,/mc,/shell}`) are unreachable from a fresh VPS without Tailscale; verify those after `make setup` from a tailnet-joined device, not from the VPS host itself.
+The tailnet routes (`server.jehpok.com/{,/share,/mc,/shell}`) are unreachable from a fresh VPS without Tailscale; verify those after `make install-config` from a tailnet-joined device, not from the VPS host itself.
