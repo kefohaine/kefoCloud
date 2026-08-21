@@ -11,7 +11,7 @@ services:
     # Pin the bridge IP so Caddy's @mc upstream (172.22.0.8:5000) stays valid
     # across recreates. Without this Docker assigns the next free /16 address,
     # and a container named `mc-flask` could land on .8 one run and .9 the
-    # next. The other pinned upstreams in services/domain/Caddyfile rely on
+    # next. The other pinned upstreams in services/vhosts/Caddyfile rely on
     # this convention too.
     networks:
       net:
