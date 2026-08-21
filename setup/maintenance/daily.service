@@ -1,9 +1,0 @@
-[Unit]
-Description=jehpok.com daily maintenance (make refresh + backup-all + clean-all)
-After=docker.service
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/jehpok-daily.sh
-User=debian
-Group=debian
