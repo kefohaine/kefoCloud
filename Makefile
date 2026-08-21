@@ -400,8 +400,12 @@ bkp-list:
 >@ls -lht "$(BKP_DIR)" 2>&1
 >@echo ""
 >@echo "Counts per pattern:"
+# Use -1d so directory matches (cloud-backup-*) are counted alongside files.
+# Without -d, `ls -1 <dir>` returns the directory itself as a single entry
+# (and `wc -l` then counts 0), so cloud backups silently disappear from the
+# count even though the directory is sitting on disk.
 >@for p in cloud-backup-* share-backup-*.db vault-backup-*.tar.gz secrets-bundle-*.tar.gz config-bundle-*.tar.gz 'mc-backup-*.tar.gz minecraft-backup-*.tar.gz'; do \
-    n="$$(ls -1 $(BKP_DIR)/$$p 2>/dev/null | wc -l)"; \
+    n="$$(ls -1d $(BKP_DIR)/$$p 2>/dev/null | wc -l)"; \
     printf "  %-45s %d\n" "$$p" "$$n"; \
   done
 
