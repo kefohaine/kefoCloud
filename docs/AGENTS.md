@@ -141,7 +141,7 @@ This project (`jehpok.com`) is a self-hosted Debian VPS. The full project guide 
 
 Safety rule 10 above is generic; the project-specific numbers live here:
 
-- The `vhosts` container (`services/domain/`) is the reverse proxy for every public vhost. Caddyfile edits live in `services/domain/vhosts/<host>.caddy`; the top-level `services/domain/Caddyfile` only holds snippets + imports.
+- The `vhosts` container (`services/vhosts/`) is the reverse proxy for every public vhost. Caddyfile edits live in `services/vhosts/vhosts/<host>.caddy`; the top-level `services/vhosts/Caddyfile` only holds snippets + imports.
 - The Minecraft game server (`mc-server`) and its dashboard (`mc-flask`) live in **separate compose files** — `services/mc/docker-compose.yml` (game) and `services/mc/docker-compose.mc-flask.yml` (dashboard). They can be recreated independently (`make recreate-mc` vs. `make recreate-mc-flask`); a dashboard-only change never restarts the game.
 - The `vhosts` container runs with `network_mode: host` so Caddy sees the real client source IP for the `@not_tailnet` matcher on `server.jehpok.com`. Don't "fix" that line.
 - The reload sequence is `make recreate-<ctn>` (or `make recreate-domain` for a single proxy edit); the post-reload smoke test must include: tailnet routes 200 from a tailnet device, 403 from non-tailnet, public vhosts 200/302 with `Issuer: Let's Encrypt`.

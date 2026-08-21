@@ -9,7 +9,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 ### Robustness
 
 #### Migrate SQLite → MariaDB  **[needs human approval]**
-- **File**: `services/cloud/docker-compose.yml`
+- **File**: `services/nextcloud/docker-compose.yml`
 - **Problem**: SQLite has file-level locking. Concurrent sync writes contend → intermittent 504s / "database is locked". Also the backup-corruption risk (copying an online SQLite file).
 - **Fix**: Add a MariaDB container on `net`, set `MYSQL_*` env vars, run `occ conversion:migrate` to move data, then back up with `mysqldump`.
 - **Why approval**: destructive migration; operator should pick a maintenance window and verify clients reconnect.
@@ -41,13 +41,13 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Why approval**: outside the repo; operator must decide which devices stay.
 
 #### `server.jehpok.com` has no auth beyond Tailscale membership  **[needs human approval]**
-- **File**: `services/domain/vhosts/server.jehpok.com.caddy`
+- **File**: `services/vhosts/vhosts/server.jehpok.com.caddy`
 - **Problem**: Any tailnet device can reach `server.jehpok.com` with no authentication. DNS-obscurity is the only access control — the link shortener admin UI at `/share` and the host ttyd shell at `/shell` (a host systemd unit running as `debian` with full host control) both sit behind `@not_tailnet` and nothing else.
 - **Fix**: Add Caddy `basic_auth` on the `/share*` and `/shell*` matchers (needs a username + bcrypt hash from the operator), or apply Tailscale ACLs in the admin console to restrict who can reach the VPS at all.
 - **Why approval**: requires a password / ACL policy from the operator.
 
 #### `server.jehpok.com/shell` gives a `debian` shell to any tailnet device  **[needs human approval]**
-- **File**: `services/domain/vhosts/server.jehpok.com.caddy`
+- **File**: `services/vhosts/vhosts/server.jehpok.com.caddy`
 - **Problem**: `/shell` is a host systemd unit (`ttyd.service`) running `/usr/local/bin/ttyd bash` as `debian` (uid 1000). The process is on the host, not in a container, so `sudo -i` reaches root and every host file is writable. The systemd unit has no filesystem sandbox (all `ProtectSystem`, `PrivateTmp`, etc. directives stripped — operator preference: no permission hunts). Tailscale membership alone gates it.
 - **Fix**: Add Caddy `basic_auth` on the `/shell*` matcher (needs a username + bcrypt hash), or apply Tailscale ACLs to restrict which devices can reach the VPS, or restrict the container with `cap_drop` + a read-only root mount + a write whitelist.
 - **Why approval**: requires a password / ACL policy from the operator.
@@ -67,12 +67,12 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 ### Efficiency
 
 #### PHP-FPM pool sizing under concurrent sync
-- **File**: `services/cloud/php-fpm.d/zz-custom.conf`
+- **File**: `services/nextcloud/php-fpm.d/zz-custom.conf`
 - **Problem**: `pm.max_children = 8` with 200s terminate timeout. Slow syncs can occupy all 8 children. (Already switched to `ondemand` — idle workers now free at rest.)
 - **Fix**: Monitor `docker exec -w /var/www/html cloud php occ status` and `docker stats cloud`. Raise `max_children` only if sync load grows; lower `request_terminate_timeout` if 504s appear.
 
 #### No Nextcloud distributed cache (Redis)
-- **File**: `services/cloud/docker-compose.yml`
+- **File**: `services/nextcloud/docker-compose.yml`
 - **Problem**: Only `memcache.local` (APCu) is set. No `memcache.distributed` or `memcache.locking` — file locking falls back to DB locks, which under SQLite is coarse.
 - **Fix**: Add a small Redis container on `net` and set `memcache.distributed` + `memcache.locking` to Redis. Skip at current traffic levels; revisit if sync contention appears.
 
@@ -83,7 +83,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Why approval**: operator convenience trade-off (cold start latency vs. idle RAM).
 
 #### Nextcloud Talk: no High-performance backend, no Client Push
-- **File**: `services/cloud/docker-compose.yml` (or new compose for HPB + push proxy)
+- **File**: `services/nextcloud/docker-compose.yml` (or new compose for HPB + push proxy)
 - **Problem**: Talk scales only to ~3 participants without an HPB container; Client Push proxy absent → delayed notifications. Currently a low-impact warning; grows if Talk is used.
 - **Fix**: Add a Talk HPB container on `net` + the `nextcloud-talk-hpb` image, set `TURN_SERVER` / `SIGNALING_*` env; install `nextcloud_announcements` or a separate push proxy. Both are out-of-scope unless Talk calls become a real use case.
 
@@ -123,7 +123,7 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Local LLM hosting removed, open resolver fixed, Caddy hardened.**
 - **Wildcard cert retired for per-vhost ACME** — every vhost now uses LE DNS-01; the `certs/` dir is no longer mounted.
 - **Per-vhost Caddyfiles replace the monolithic Caddyfile** — `vhosts/<host>.caddy` files own their own TLS blocks.
-- **Custom Caddy image with `caddy-dns/cloudflare`** — `services/domain/Dockerfile` builds `caddy-dns:local` via xcaddy.
+- **Custom Caddy image with `caddy-dns/cloudflare`** — `services/vhosts/Dockerfile` builds `caddy-dns:local` via xcaddy.
 - **SSH hardened** — password auth + root login disabled, `AllowUsers debian`.
 - **Log rotation deployed** — all 3 containers with `json-file` size caps.
 - **Image tags pinned** — `caddy:2.11.4`, `coredns:1.14.6`, `nextcloud:34.0.2-fpm`.
@@ -208,8 +208,8 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Fonts self-hosted to fix Safari ITP cross-origin block** — Safari (and Firefox with strict ETP) silently blocks Google Fonts CSS that crosses an opaque-proxy boundary, leaving the page in the fallback `monospace`. Downloaded latin-subset .woff2 files for Press Start 2P, VT323, Silkscreen (400/700), Pixelify Sans (variable, single file covers 400/500/700), and Major Mono Display into `content/minecraft/static/fonts/`. Replaced the `<link rel="stylesheet">` on both the dashboard and `/mc/fonts` with `@font-face` declarations pointing at `/mc/static/fonts/*.woff2`. Same-origin → no ITP issue, no third-party CDN. `static_url_path='/mc/static'` set on the Flask app because Caddy's `@mc path` matches `/mc/*` without stripping the prefix.
 - **`mc.jehpok.com` now serves a LE cert via DNS-01 ACME** — every vhost now uses LE DNS-01 via the `caddy-dns/cloudflare` plugin (token in `CF_API_TOKEN`). Wildcard cert retired (it was SNI-blocking the per-vhost automation policy).
 - **Per-vhost Caddyfiles replace the monolithic Caddyfile** — `vhosts/<host>.caddy` files own their own TLS blocks; the top-level `Caddyfile` only carries snippets + global options + imports.
-- **Custom Caddy image is rebuilt by `make recreate-vhosts`** — `services/domain/Dockerfile` builds `caddy-dns:local` via xcaddy (Go 1.25 + commit `a8737d0` of caddy-dns/cloudflare, which relaxed the API token regex from `{35,50}` to accept the new 53-char CF token format).
-- **Renamed six container names for clarity** — `vault` → `vaultwarden`, `cloud` → `nextcloud`, `share` → `share-flask`, `kuma` → `ut-kuma`, `domain` → `vhosts`, `mc-web` → `mc-flask`. Compose `container_name:` fields, Makefile `CONTAINERS` list (recipe labels follow: `make recreate-cloud` is now `make recreate-nextcloud` etc.), `bkp-cloud` recipe's `docker exec cloud` → `docker exec nextcloud`, Claude Code deny rules (`Bash(docker exec cloud ...)` → `Bash(docker exec nextcloud ...)`), `services/kuma/seed-monitors.sql` comments, and `docs/{GUIDE,AGENTS}.md` + `README.md` all updated. Caddy vhosts are unaffected: every upstream is a pinned bridge IP (`172.22.0.X:port`), not a container name. The `mc-web` compose file is renamed `services/mc/docker-compose.mc-flask.yml` to match the new recipe key (the other five keeps their `services/<ctn>/docker-compose.yml` paths; the directory name still conveys the service). Image registry tags and vhost hostnames stay.
+- **Custom Caddy image is rebuilt by `make recreate-vhosts`** — `services/vhosts/Dockerfile` builds `caddy-dns:local` via xcaddy (Go 1.25 + commit `a8737d0` of caddy-dns/cloudflare, which relaxed the API token regex from `{35,50}` to accept the new 53-char CF token format).
+- **Renamed six container names for clarity** — `vault` → `vaultwarden`, `cloud` → `nextcloud`, `share` → `share-flask`, `kuma` → `ut-kuma`, `domain` → `vhosts`, `mc-web` → `mc-flask`. Compose `container_name:` fields, Makefile `CONTAINERS` list (recipe labels follow: `make recreate-cloud` is now `make recreate-nextcloud` etc.), `bkp-cloud` recipe's `docker exec cloud` → `docker exec nextcloud`, Claude Code deny rules (`Bash(docker exec cloud ...)` → `Bash(docker exec nextcloud ...)`), `services/ut-kuma/seed-monitors.sql` comments, and `docs/{GUIDE,AGENTS}.md` + `README.md` all updated. Caddy vhosts are unaffected: every upstream is a pinned bridge IP (`172.22.0.X:port`), not a container name. The `mc-web` compose file is renamed `services/mc/docker-compose.mc-flask.yml` to match the new recipe key (the other five keeps their `services/<ctn>/docker-compose.yml` paths; the directory name still conveys the service). Image registry tags and vhost hostnames stay.
 
 ---
 
@@ -218,14 +218,14 @@ Resolved items grouped by month. One line per item, aggressively short.
 These are facts that were non-obvious during the `mc.jehpok.com` cert fix and only surfaced by grepping the repo. They're documented here so a future agent doesn't have to re-discover them. See `docs/GUIDE.md` § Operational gotchas for the operational checklist.
 
 - **A vhost with no `tls` directive does not "use ACME by default" — it picks up any loaded cert that matches the SNI.** The `mc.jehpok.com` vhost had no `tls` directive, intended to fall through to ACME, but Caddy served the wildcard `*.jehpok.com` CF Origin cert as a SNI fallback. The automation policy never had a reason to fire because the wildcard cert was always available. Symptom: `mc.jehpok.com` returned 200 OK from the first hit, but the cert issuer was `CloudFlare Origin CA`, not `Let's Encrypt`. To confirm ACME is actually firing, check the issuer on a fresh TLS handshake (`echo | openssl s_client -connect mc.jehpok.com:443 -servername mc.jehpok.com | openssl x509 -noout -issuer`) — not the HTTP response code.
-- **Caddy stock `caddy:2.x` images do not include the `caddy-dns/cloudflare` plugin.** Symptom: `module not registered: dns.providers.cloudflare` on container startup. Fix: build a custom image with `xcaddy build --with github.com/caddy-dns/cloudflare@<commit>` (see `services/domain/Dockerfile`). The `caddy` Docker Hub image only includes the core modules plus the conventional ACME issuer.
+- **Caddy stock `caddy:2.x` images do not include the `caddy-dns/cloudflare` plugin.** Symptom: `module not registered: dns.providers.cloudflare` on container startup. Fix: build a custom image with `xcaddy build --with github.com/caddy-dns/cloudflare@<commit>` (see `services/vhosts/Dockerfile`). The `caddy` Docker Hub image only includes the core modules plus the conventional ACME issuer.
 - **The `caddy-dns/cloudflare` v0.2.3 tagged release rejects the new 53-char CF API tokens** with a confusing "API token ... appears invalid; ensure it's correctly entered and not wrapped in braces nor quotes" error. The provider's regex is `^[A-Za-z0-9_-]{35,50}$` (40–50 character token range) — the new CF tokens are 53 chars. PR #123 on `caddy-dns/cloudflare` relaxed the regex; pull from `a8737d0` (master) until a tagged release lands.
 - **`caddy:2.11.4` requires Go ≥ 1.25.1 to build.** The `golang:1.25-bookworm` image satisfies this. Older builder images (`golang:1.24-bookworm` and earlier) fail with `go: github.com/caddyserver/caddy/v2@v2.11.4 requires go >= 1.25.1`. If you bump Caddy later, check the `go` directive in `caddy/v2/go.mod` and bump the builder image accordingly.
 - **The cert's issuer is the only reliable indicator of which path it took.** When debugging Caddy TLS, `curl -sk` returning 200 means "the listener responded" — not "the right cert was served." Always check `openssl x509 -noout -issuer` on a fresh `-no-keepalive` request. The CF Origin CA cert, the LE cert, and the staging LE cert all return 200 to `curl`; only the issuer tells you which path served it.
 - **The `mc.jehpok.com` vhost is the only one that *had* to use DNS-01** — the game ports (25565 Java, 19132 Bedrock) are published directly on the VPS and bypass the CF proxy at the port layer, so `mc.jehpok.com` is DNS-only at CF. Turning the CF proxy on would break the game ports. The other vhosts use DNS-01 now too for consistency, but HTTP-01 would have worked for them.
-- **`network_mode: host` is required for `@not_tailnet` to work** — Caddy needs to see the real client source IP, and Docker DNAT on the bridge network rewrites every packet to `172.22.0.1` (the gateway). Without `network_mode: host`, the `100.64.0.0/10` matcher matches nothing and every tailnet request gets 403. This is set in `services/domain/docker-compose.yml` — do not "fix" it by removing the `hosts: network_mode`.
+- **`network_mode: host` is required for `@not_tailnet` to work** — Caddy needs to see the real client source IP, and Docker DNAT on the bridge network rewrites every packet to `172.22.0.1` (the gateway). Without `network_mode: host`, the `100.64.0.0/10` matcher matches nothing and every tailnet request gets 403. This is set in `services/vhosts/docker-compose.yml` — do not "fix" it by removing the `hosts: network_mode`.
 - **The CF API token file at `$(REPO)/caddy_data/CF_API_TOKEN` is the only thing the operator needs to migrate to a new VPS** — Caddy renews certs from the token, so transferring it skips the 0–90-day issuance window. The token file is not in `bundle-secrets` (Caddy regenerates the certs from the token on the new host, so off-VPS cert copies aren't needed). The `bundle-secrets` recipe was reduced to drop the retired `$(REPO)/certs` reference.
-- **The Caddy data dir lives at `$(REPO)/caddy_data/`, OUTSIDE the repo, and `git status` will never mention it** — surprising because every other secret in this project (`services/cloud/.env`, the Vaultwarden admin token, etc.) sits inside `services/<ctn>/.env` and shows up under `git status` as a tracked-or-ignored file. Caddy's is the opposite: it lives one directory above the project root, is never tracked, never ignored, and is invisible to `git` until you specifically `ls /var/www/custom/projects/jehpok/`. A grep for `CF_API_TOKEN` across `repo/services/` returns nothing — the env wiring happens entirely via the `env_file:` directive in `services/domain/docker-compose.yml`.
+- **The Caddy data dir lives at `$(REPO)/caddy_data/`, OUTSIDE the repo, and `git status` will never mention it** — surprising because every other secret in this project (`services/nextcloud/.env`, the Vaultwarden admin token, etc.) sits inside `services/<ctn>/.env` and shows up under `git status` as a tracked-or-ignored file. Caddy's is the opposite: it lives one directory above the project root, is never tracked, never ignored, and is invisible to `git` until you specifically `ls /var/www/custom/projects/jehpok/`. A grep for `CF_API_TOKEN` across `repo/services/` returns nothing — the env wiring happens entirely via the `env_file:` directive in `services/vhosts/docker-compose.yml`.
 - **`docker compose env_file:` reads the file as the UID running `make recreate-domain`, NOT as the UID inside the container** — surprising because most Docker env handling happens at container start. Compose parses `env_file:` at the host side and injects the variables into the container spec; the file just needs to be readable by the user running the compose command (the `debian` user via `make`, NOT uid 201 inside the Caddy container). `chown 201:201` on the file actually breaks the read for `make` and Caddy ends up with no token — the right ownership is `debian:debian` mode 0644. Discovered when `chown 201:201` (matching the persistent `/data` dir) silently left Caddy unable to read the token at first hit.
 - **Caddy's `import` directive resolves relative paths against the *containing file's directory*, not the process working dir** — surprising because `import vhosts/server.jehpok.com.caddy` "looks like" a relative path from `/etc/caddy` but only works if the file lives at `/etc/caddy/vhosts/server.jehpok.com.caddy`. The compose file mounts `./` to `/etc/caddy:ro` (not `./Caddyfile`) precisely so the imports resolve. Mounting only the Caddyfile leaves every `import` failing with `File to import not found`.
 - **`make recreate-domain` (or `make recreate-all`) takes ~3 minutes on a fresh VPS and prints zero progress** — `docker compose up --build` runs `docker build` in a streaming-tty mode that buffers until the step finishes, so a future agent on a cold cache will think the command hung. The actual build chain is `golang:1.25-bookworm` → `go install xcaddy` → `xcaddy build --with caddy-dns/cloudflare@a8737d0 v2.11.4` → `FROM caddy:2.11.4` + `COPY --from=builder`. Each step is fast but they queue. `docker build --progress=plain` or `docker compose build --progress=plain` shows the steps; the default JSON-progress mode swallows them.

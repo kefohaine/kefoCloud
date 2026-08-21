@@ -46,7 +46,7 @@ sudo chown -R debian:debian /home/debian/.ssh
 sudo chmod 600 /home/debian/.ssh/github_key
 ```
 
-Restore the Nextcloud data directory to the host bind-mount path the `cloud` compose file expects (see `services/cloud/docker-compose.yml` for the bind source; the destination inside the container is `/data`):
+Restore the Nextcloud data directory to the host bind-mount path the `cloud` compose file expects (see `services/nextcloud/docker-compose.yml` for the bind source; the destination inside the container is `/data`):
 
 ```
 sudo mkdir -p $(REPO)/cloud/html $(REPO)/cloud/users
@@ -75,7 +75,7 @@ Drop to the `debian` user, clone the repo, drop the Nextcloud `.env` in place, c
 
 ```
 git clone git@github.com:friedutch/jehpok.com.git $(REPO)/repo
-cp <your-.env> $(REPO)/repo/services/cloud/.env
+cp <your-.env> $(REPO)/repo/services/nextcloud/.env
 docker network create net
 make -C $(REPO)/repo install-config
 ```
@@ -98,7 +98,7 @@ Then bring up the containers:
 make -C $(REPO)/repo recreate-all
 ```
 
-`make recreate-all` brings up the containers in dependency order. The `domain` container is built locally from `services/domain/Dockerfile` (Caddy + caddy-dns/cloudflare plugin) — that adds ~3 minutes the first time.
+`make recreate-all` brings up the containers in dependency order. The `domain` container is built locally from `services/vhosts/Dockerfile` (Caddy + caddy-dns/cloudflare plugin) — that adds ~3 minutes the first time.
 
 ## 4. Update Cloudflare DNS
 
