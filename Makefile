@@ -520,7 +520,7 @@ help:
 >@echo "  Maintenance"
 >@echo "    make status           containers + host services + disk + memory"
 >@echo "    make update           apt update/upgrade + pull images + recreate-all"
->@echo "    make install-config   copy all of config/ to live (was make setup)"
+>@echo "    make install-config   copy all of config/ to live"
 >@echo "    make migrate          cat docs/MIGRATE.md (full VPS-to-VPS runbook)"
 >@echo ""
 >@echo "  Per-file install (one file from config/ → live)"

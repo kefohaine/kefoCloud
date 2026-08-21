@@ -1,26 +1,27 @@
 # Migration
 
-Step-by-step runbook for moving jehpok.com to a new VPS. The five `make backup-*` recipes and `make install-config` are the only recipes this runbook calls; everything else is operator-issued shell. Run `make migrate` to print this file.
+Step-by-step runbook for moving jehpok.com to a new VPS. The `make bkp-*` recipes, `make bundle-secrets`, and `make install-config` are the only recipes this runbook calls; everything else is operator-issued shell. Run `make migrate` to print this file.
 
 ## 1. On the OLD VPS
 
-Run all five backups in one shot:
+Run the four `bkp-*` recipes and the secrets bundle in one shot:
 
 ```
-make bkp-all
+make bkp-all          # cloud + share + vault + mc (under backups/)
+make bundle-secrets   # collects the SSH key, systemd units, dnsmasq, tailscale state into backups/secrets-bundle-<date>.tar.gz
 ```
 
-This produces five artifacts at the project root (`$(REPO)`): a `cloud-backup-<date>` directory, a `share-backup-<date>.db` file, a `vault-backup-<date>.tar.gz` archive, a `secrets-bundle-<date>.tar.gz` bundle, and a `mc-backup-<date>.tar.gz` world archive.
+This produces five artifacts under `$(REPO)/backups/`: a `cloud-backup-<date>` directory, a `share-backup-<date>.db` file, a `vault-backup-<date>.tar.gz` archive, a `secrets-bundle-<date>.tar.gz` bundle, and a `mc-backup-<date>.tar.gz` world archive.
 
 ## 2. Download OFF the old VPS
 
 Move the five artifacts off the VPS — the secrets bundle contains private keys and the Tailscale identity state:
 
-- `$(REPO)/secrets-bundle-<date>.tar.gz`
-- `$(REPO)/cloud-backup-<date>`
-- `$(REPO)/share-backup-<date>.db`
-- `$(REPO)/vault-backup-<date>.tar.gz`
-- `$(REPO)/mc-backup-<date>.tar.gz`
+- `$(REPO)/backups/secrets-bundle-<date>.tar.gz`
+- `$(REPO)/backups/cloud-backup-<date>`
+- `$(REPO)/backups/share-backup-<date>.db`
+- `$(REPO)/backups/vault-backup-<date>.tar.gz`
+- `$(REPO)/backups/mc-backup-<date>.tar.gz`
 
 The CF API token is **not** in any backup — it lives at `$(REPO)/caddy_data/CF_API_TOKEN` on the active VPS. It's a single line `CF_API_TOKEN=<token>` (mode 0600, owner `debian`). Caddy renews certs from the token, so transferring it is the only thing needed to skip the first 0–90-day issuance window on the new host.
 
@@ -76,7 +77,7 @@ Drop to the `debian` user, clone the repo, drop the Nextcloud `.env` in place, c
 git clone git@github.com:friedutch/jehpok.com.git $(REPO)/repo
 cp <your-.env> $(REPO)/repo/services/cloud/.env
 docker network create net
-make -C $(REPO)/repo setup
+make -C $(REPO)/repo install-config
 ```
 
 `make install-config` is idempotent: it installs ttyd, copies reference configs into host paths, enables the systemd units (ollama, ttyd, dnsmasq, sshd, jehpok-daily.timer), opens the UFW rule for ttyd, and deploys the project-level Claude Code safety rail from `config/claude/settings.local.json`.

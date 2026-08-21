@@ -112,7 +112,7 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Initial site + Docker** — `index.html`, first `docker-compose.yml`.
 - **Caddy setup** — first vhost config.
 - **GitHub Actions deploy** — `.github/workflows/deploy.yml` with SSH-key deploys; later retired.
-- **AI/LLM API service** — `containers/ai/app.py` on a separate network, Ollama-backed; later removed.
+- **AI/LLM API service** — `services/ai/app.py` on a separate network, Ollama-backed; later removed.
 
 ### Aug 2026 — Nextcloud, TLS, hardening, ops
 - **Nextcloud integration** — first hosted on the VPS, migrated to `app.jehpok.com/cloud`, reverted, then linked via PHP-FPM.
@@ -134,7 +134,7 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Nextcloud `trusted_proxies`** — `172.22.0.0/16` (Caddy's `net` subnet).
 - **Nextcloud `overwrite.cli.url` → https**.
 - **Static site placeholders** — non-blank `index.html` on www/app/vps.
-- **Healthchecks** — domain + cloud healthy; tailnet `NONE` (`FROM scratch`).
+- **Healthchecks** — domain + cloud healthy.
 - **Security headers** — HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy on all vhosts.
 - **Claude Code project safety rail** — `config/claude/settings.local.json` (deny-only, AGENTS.md-protected resources + user-data bind mounts) deployed by `make install-config`.
 - **Backup + migrate recipes broken as `debian`** — root-owned `/var/www/custom/projects/jehpok/` blocked `cp/tar/mkdir` destinations; `bkp-cloud` source was unreachable (`cloud/users` is `770 www-data:www-data`); `migrate` recipe was deleted by `582b789` and only its help line survived. Now: bkp-share/vault/secrets use `sudo` for destinations; bkp-cloud streams via `docker exec cloud tar cf - -C /data . | sudo tar xf -`; `migrate` recipe restored verbatim.
@@ -155,9 +155,9 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Sensitive files purged from git history** — `config/web/certs/key.pem`, `cert.pem`, `.github/workflows/deploy.yml`, `install.sh`, `app.py` removed via `git filter-repo`; `origin` remote (PAT-embedded) removed; history rewritten, force-pushed.
 - **CoreDNS → dnsmasq** — container removed; host dnsmasq on `100.81.245.77:53`.
 - **`tailnet_default` gone** — spare bridge removed with the container.
-- **URL shortener** — Flask + SQLite; `link.jehpok.com` public, `ops.jehpok.com/link` admin.
+- **URL shortener** — Flask + SQLite; `share.jehpok.com` public, `server.jehpok.com/share` admin.
 - **Nextcloud bind mount fixed** — `datadirectory` moved to `/data`, no nesting.
-- **`link.jehpok.com` admin leak closed** — Caddy `@admin` matcher returns 404 for `/link`, `/api/*`, `/healthz`, `/` on public vhost; admin still reachable via `ops.jehpok.com/link`.
+- **`share.jehpok.com` admin leak closed** — Caddy `@admin` matcher returns 404 for `/share`, `/api/*`, `/healthz`, `/` on public vhost; admin still reachable via `server.jehpok.com/share`.
 - **Cloudflare 100 MB body cap aligned** — all vhosts `max_size 100m` to match CF free-tier; inconsistent 10G on cloud vhost removed.
 - **Nextcloud `maintenance_window_start`** — set to `4` (04:00) so heavy background jobs don't run during peak.
 - **Nextcloud DB missing indices** — `mail_*` table indices added via `occ db:add-missing-indices`.
@@ -166,27 +166,26 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Homer + Uptime Kuma added** — `www.jehpok.com` serves Homer (static landing page retired); `kuma.jehpok.com` serves Uptime Kuma; both reverse-proxied via Caddy, no published ports.
 - **Docs split into four** — `README.md` (visitor), `docs/AGENTS.md` (portable agent rules), `docs/GUIDE.md` (project operator guide), `docs/ISSUES.md` (task tracker + Intended section).
 - **Log tightening** — Caddy global `log -> /dev/null` (no per-request access logs); dnsmasq `log-queries` removed; `share` container cap raised to 10m×3 to match the other 5.
-- **`ops.jehpok.com/terminal`** — ttyd-backed host shell; bind-mounts `/` rw + Docker socket; container `privileged`, runs as the host path-aware bash from `/var/www/custom/projects/jehpok/repo`.
+- **`server.jehpok.com/shell`** — ttyd-backed host shell; bind-mounts `/` rw + Docker socket; container `privileged`, runs as the host path-aware bash from `/var/www/custom/projects/jehpok/repo`.
 - **`status.jehpok.com` → `kuma.jehpok.com`** — hostname rename to match the container name; Cloudflare + Caddy + Homer YAML updated.
 - **Kuma monitor set trimmed** — `tcp: vps 443` (unreachable from Kuma's netns), `ping: vps` (redundant), `docker: kuma` (self-check) dropped; `docker: *` monitors moved to 3600s; HTTP monitors stay at 60s.
 - **Kuma `seed-monitors.sql`** — idempotent SQL for the 9 monitors + 2 groups; applied once via `docker exec -i kuma sqlite3 ... < seed-monitors.sql`.
 - **Homer config bind tightened** — bind only `services/homer/config/config.yml` → `/www/assets/config.yml` so the bundled icons/themes/manifest stay intact.
 - **Repo relocated** — moved from `/var/www/github/jehpok.com` to `/var/www/custom/projects/jehpok`; `/var/www/github/` deleted; all compose/Makefile/.md/live-`jehpok-daily.sh` paths rewritten; `cloud/html` + `cloud/users` chowned to uid 33.
-- **Hostname `vps.jehpok.com` → `ops.jehpok.com`** — Caddyfile + dnsmasq + Homer config + 3 .md docs renamed; live dnsmasq + Caddy reloaded; vps.jehpok.com now unmentioned anywhere.
-- **`ops.jehpok.com/terminal` runs as `debian`** — ttyd entrypoint switched from `exec bash` (root in container) to `exec runuser -u debian -- bash`; container also bind-mounts `/etc/passwd` + `/etc/group` so runuser can resolve uid 1000.
-- **Homer dashboard expanded** — Files (`share.jehpok.com/files`) and Terminal (`ops.jehpok.com/terminal`) added; API added to the top links bar.
+- **Hostname `vps.jehpok.com` → `ops.jehpok.com` → `server.jehpok.com`** — Caddyfile + dnsmasq + Homer config + 3 .md docs renamed twice; live dnsmasq + Caddy reloaded; vps.jehpok.com + ops.jehpok.com now unmentioned anywhere.
+- **`server.jehpok.com/shell` runs as `debian`** — ttyd entrypoint switched from `exec bash` (root in container) to `exec runuser -u debian -- bash`; container also bind-mounts `/etc/passwd` + `/etc/group` so runuser can resolve uid 1000.
+- **Homer dashboard expanded** — Files (`share.jehpok.com/files`) and Terminal (`server.jehpok.com/shell`) added; API added to the top links bar.
 - **Terminal `host-exec` shim** — Alpine ttyd container can't run host glibc binaries (`smem`, `sudo`, etc.) directly. Added `/usr/local/bin/host-exec` that `chroot`s to `/host` and runs the command under the host shell. Use `host-exec 'smem'` from inside the ttyd session.
 - **`browser` user dropped from sshd, `runner` user deleted** — `AllowUsers debian browser` → `AllowUsers debian`; `userdel -r runner`. Both were unused leftovers; host now has `debian` as the sole human account.
 - **Uniform 404 format** — every Caddy-controlled 404 now returns plain text `not found` (no JSON, no HTML). Flask `not_found` handler switched from `jsonify(error=...)` to `Response("not found", mimetype="text/plain")`; cloud `@blocked` matcher now responds with body. Vaultwarden / Homer / Nextcloud 404s left as their own upstream pages.
 - **`www.jehpok.com` keeps Homer's HTML 404** — explicit operator call: upstream containers with their own 404 page (Homer, Vaultwarden, Nextcloud) keep that page; only Caddy-controlled paths (share, api, ops, cloud `@blocked`) return plain text `not found`.
-- **`make` from terminal needs `host-exec`** — the docker compose plugin at `/host/usr/libexec/docker/cli-plugins/docker-compose` is glibc-linked and fails in the Alpine ttyd container with a cryptic `unknown shorthand flag: 'f' in -f`. Run any make recipe via `host-exec 'make ...'` from inside `ops.jehpok.com/terminal`.
+- **`make` from terminal needs `host-exec`** — the docker compose plugin at `/host/usr/libexec/docker/cli-plugins/docker-compose` is glibc-linked and fails in the Alpine ttyd container with a cryptic `unknown shorthand flag: 'f' in -f`. Run any make recipe via `host-exec 'make ...'` from inside `server.jehpok.com/shell` (the Alpine container has since been replaced by a host systemd ttyd, so this is no longer needed but kept for history).
 - **Terminal migrated to host systemd ttyd** — `services/terminal/` removed; `ttyd.service` runs as `debian` on the host, binds `172.22.0.1:7681` (not `0.0.0.0`), gated by Caddy `@not_tailnet` + UFW INPUT allow from the `net` bridge. Caddy proxies to `172.22.0.1:7681` with `transport http { versions 1.1 }`. `host-exec` / `runuser` shims are gone — the shell is a real host shell directly.
-- **`ops.jehpok.com/terminal` → `ops.jehpok.com/server`** — claimed rename; never actually applied. Caddyfile still has `@shell path /shell /shell/*`, Homer still links `server.jehpok.com/shell`, GUIDE still says `/shell`. The Solved entry was logged without the on-disk changes; revert the Solved entry until the rename is done for real. systemd unit stays `ttyd.service` (it's the runtime, not the URL).
 - **Hostname `vps-742a45f9` → `server`** — system hostname + `/etc/hosts` updated; SSH host keys regenerated so the old `root@vps-742a45f9` comment is gone from the `.pub` files; cloud-init stale state (`/var/lib/cloud/data/{previous,set}-hostname`) deleted.
 - **`debian` has passwordless sudo** — `/etc/sudoers.d/debian-passwordless` (`NOPASSWD:ALL`, mode 0440). Reduces permission prompts during normal agent operations; still requires sudo for anything privileged.
 - **Claude Code allow-list curated + backed up** — `.claude/settings.local.json` is gitignored (per-operator); tracked template lives at `config/claude/settings.local.json`; `make install-config` deploys it. Allow-list covers ollama/maintenance commands; destructive ops still prompt. Later superseded by the project-level deny-only safety rail (see Claude Code project safety rail).
 - **ttyd hardening removed** — `ProtectSystem`, `PrivateTmp`, `MemoryDenyWriteExecute`, `PrivateDevices`, `RestrictAddressFamilies`, `LockPersonality`, `RestrictRealtime`, `ProtectControlGroups` all stripped from `ttyd.service` (operator preference: no permission hunts); access control stays at Tailscale + `Caddy @not_tailnet`.
-- **Minecraft server** — Paper + Geyser/Floodgate at `mc.jehpok.com` (Java `:25565`, Bedrock `:19132`); tailnet-only tabbed Flask+rcon dashboard at `server.jehpok.com/mc` (Status / Console / Players / Settings / Files / World; 2 s polling; per-player stats + actions; file browser + YAML editor; world download/upload/regenerate). World data bind-mounted under `$(REPO)/mc/data`; world backups at `$(REPO)/mc-backup-<date>.tar.gz` (`make bkp-mc`).
+- **Minecraft server** — Paper + Geyser/Floodgate at `mc.jehpok.com` (Java `:25565`, Bedrock `:19132`); tailnet-only tabbed Flask+rcon dashboard at `server.jehpok.com/mc` (Status / Console / Players / Settings / Files / World; 2 s polling; per-player stats + actions; file browser + YAML editor; world download/upload/regenerate). World data bind-mounted under `$(REPO)/mc/data`; world backups at `$(REPO)/backups/mc-backup-<date>.tar.gz` (`make bkp-mc`).
 - **Minecraft dashboard TPS fixed** — rcon was calling `/debug` (vanilla JFR profiler, no TPS section), so the regex never matched and the card rendered `—`. Now calls `/tps` and strips `§X` color codes from the response before regex.
 - **Minecraft dashboard deprecated fields removed** — `pvp` (vanilla 1.21.2+), `spawn-protection` (Paper ignores enforcement since 1.16.5), `enable-command-block` (canonical toggle moved to `paper-world-defaults.yml → gameplay.allow-command-blocks` in Paper 1.19+). Added `enforce-whitelist` (complementary to `white-list`).
 - **Minecraft container IP drift fixed** — `mc` and `mc-web` pinned to `172.22.0.7` and `172.22.0.8` via `networks.net.ipv4_address`; Caddy `@mc` upstream (`172.22.0.8:5000`) stays valid across recreates. Same pinning applied to the other 5 upstreams (homer `.2`, share `.3`, vault `.4`, cloud `.5`, kuma `.6`) so no recreate can drift a Caddy upstream.
