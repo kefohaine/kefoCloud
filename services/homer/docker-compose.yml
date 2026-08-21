@@ -26,7 +26,7 @@ services:
         max-size: "10m"
         max-file: "3"
 
-    # Pin the bridge IP — services/domain/Caddyfile hardcodes
+    # Pin the bridge IP — services/vhosts/Caddyfile hardcodes
     # 172.22.0.2:8080 for the Homer upstream.
     networks:
       net:
