@@ -285,6 +285,46 @@ bkp-mc:
 bkp-all: bkp-cloud bkp-share bkp-vault bkp-mc
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Tmux sessions
+# Persistent terminal sessions on the host — detach (Ctrl-b d) and the
+# shell + whatever's running inside it stays alive; reattach from any
+# terminal with `make tmux-open NAME=<n>` (or `tmux attach -t <n>`).
+# ─────────────────────────────────────────────────────────────────────────────
+
+.PHONY: tmux-new tmux-open tmux-kill tmux-list
+
+tmux-new:
+>@if [ -z "$(NAME)" ]; then \
+    echo "Usage: make tmux-new NAME=<session>   (NAME is required)"; \
+    exit 1; \
+  fi
+>@if tmux has-session -t "$(NAME)" 2>/dev/null; then \
+    echo "Session '$(NAME)' already exists. Attach with: make tmux-open NAME=$(NAME)"; \
+    exit 1; \
+  fi
+>@tmux new -s "$(NAME)" -d
+>@echo "Created detached session '$(NAME)'. Attach with: make tmux-open NAME=$(NAME)"
+>@echo "  (or: tmux attach -t $(NAME))"
+
+tmux-open:
+>@if [ -z "$(NAME)" ]; then \
+    echo "Usage: make tmux-open NAME=<session>"; \
+    exit 1; \
+  fi
+>@tmux attach -t "$(NAME)"
+
+tmux-kill:
+>@if [ -z "$(NAME)" ]; then \
+    echo "Usage: make tmux-kill NAME=<session>"; \
+    exit 1; \
+  fi
+>@tmux kill-session -t "$(NAME)"
+>@echo "Killed session '$(NAME)'"
+
+tmux-list:
+>@tmux ls
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Migration
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -372,6 +412,12 @@ help:
 >@echo "  Bundles"
 >@echo "    make bundle-secrets   collect live secrets into \$$REPO/secrets-bundle-<date>.tar.gz"
 >@echo "    make install-secrets  extract a bundle to live paths (BUNDLE=<path> to override)"
+>@echo ""
+>@echo "  Tmux sessions"
+>@echo "    make tmux-new NAME=<n>    create detached session <n>"
+>@echo "    make tmux-open NAME=<n>   attach to session <n> (Ctrl-b d to detach)"
+>@echo "    make tmux-kill NAME=<n>   kill session <n>"
+>@echo "    make tmux-list            list sessions"
 >@echo ""
 >@echo "  Cleanup"
 >@echo "    make clean-docker     prune builder / image / container"
