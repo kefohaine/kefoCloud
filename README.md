@@ -13,13 +13,13 @@ Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Six CF-p
                                   ▼
                            ┌──────────────┐
                            │    Caddy     │  port 80 → 308 redirect
-                           │  (domain)    │  port 443 (per-vhost LE)
+                           │  (vhosts)    │  port 443 (per-vhost LE)
                            └──────┬───────┘  custom image with the
                 ┌─────────────────┼─────────────────┐     caddy-dns/
                 │                 │                 │     cloudflare
                 ▼                 ▼                 ▼     plugin
            reverse_proxy    reverse_proxy      php_fastcgi
-           server / api     share / vault      cloud:9000
+           server / api     share / vault      nextcloud:9000
                              / kuma            (Nextcloud FPM)
                              / www (Homer)
 
@@ -92,7 +92,7 @@ The trade-off: browser traffic is bot-challenged. For terminal `curl` or Nextclo
 
 ### Why a docker network called `net`
 
-- All inter-container DNS (e.g. Caddy reverse-proxying to `cloud:9000`) needs a user-defined bridge network.
+- All inter-container DNS (e.g. Caddy reverse-proxying to `nextcloud:9000`) needs a user-defined bridge network.
 - Docker's embedded DNS at `127.0.0.11` resolves container names on user-defined networks automatically — no Consul, no extra service registry.
 - One network keeps Caddy and Nextcloud on the same subnet.
 - Marked `external: true` so the same network is reused across compose files (Compose would otherwise create a private one).

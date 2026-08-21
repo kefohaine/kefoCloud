@@ -80,7 +80,7 @@ services:
         max-size: "10m"
         max-file: "3"
 
-    # Pin both bridge IPs. Caddy's @mc upstream (mc-web @ .8) is one
+    # Pin both bridge IPs. Caddy's @mc upstream (mc-flask @ .8) is one
     # reason; the other is that mc itself sits on .7 by convention —
     # nothing else in the repo hardcodes this IP, but pinning it makes
     # `docker network inspect net` output deterministic across recreates
