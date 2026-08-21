@@ -1,11 +1,11 @@
 services:
   cloud:
     image: nextcloud:34.0.2-fpm
-    container_name: cloud
+    container_name: nextcloud
     restart: unless-stopped
 
     # No published ports — only Caddy (on the 'net' bridge) reaches this container.
-    # If you ever need to debug from the host: `docker exec -it cloud bash`.
+    # If you ever need to debug from the host: `docker exec -it nextcloud bash`.
     expose:
       - "9000"
 
