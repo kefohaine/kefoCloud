@@ -25,7 +25,7 @@ services:
       start_period: 10s
 
     environment:
-      RCON_HOST: mc
+      RCON_HOST: mc-server
       RCON_PORT: "25575"
       RCON_PASSWORD: "change-me-via-dashboard"
       SERVER_DIR: /server

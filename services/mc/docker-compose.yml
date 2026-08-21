@@ -1,7 +1,7 @@
 services:
   mc:
     image: itzg/minecraft-server:latest
-    container_name: mc
+    container_name: mc-server
     restart: unless-stopped
 
     environment:
