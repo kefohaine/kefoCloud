@@ -40,7 +40,6 @@ make logs-ttyd         # follow the ttyd journal
 make status            # show a table of all running containers + host systemd units
 make update            # apt update/upgrade + pull all images + make recreate-all
 make install-config    # one-shot host bootstrap: install ttyd, copy config/ to live, enable Ollama + ttyd + sshd + dnsmasq + daily maintenance timer, open UFW rule, restore Claude settings
-make bkp-config        # REMOVED — use bundle-config for offline copy, install-config for one-shot live push
 make bundle-secrets    # collect live secrets into $(REPO)/backups/secrets-bundle-<date>.tar.gz (not chained into bkp-all)
 make install-secrets   # extract a secrets bundle to live paths (BUNDLE=<path> to override)
 make bundle-config     # snapshot $(REPO)/repo/config/ into $(REPO)/backups/config-bundle-<date>.tar.gz (offline copy)

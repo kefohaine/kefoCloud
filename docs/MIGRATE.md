@@ -94,10 +94,10 @@ sudo chmod 0644 $(REPO)/caddy_data/CF_API_TOKEN
 Then bring up the containers:
 
 ```
-make -C $(REPO)/repo up-all
+make -C $(REPO)/repo recreate-all
 ```
 
-`make up-all` brings up the six containers in dependency order. The `domain` container is built locally from `services/domain/Dockerfile` (Caddy + caddy-dns/cloudflare plugin) — that adds ~3 minutes the first time.
+`make recreate-all` brings up the containers in dependency order. The `domain` container is built locally from `services/domain/Dockerfile` (Caddy + caddy-dns/cloudflare plugin) — that adds ~3 minutes the first time.
 
 ## 4. Update Cloudflare DNS
 
@@ -108,7 +108,7 @@ Point `jehpok.com` (and any subdomains serving traffic) at the new VPS IP. Each 
 Tail each container's logs to confirm clean startup:
 
 ```
-make logs-all
+make d-logs-all
 ```
 
 Hit each public vhost to trigger ACME issuance (one cert per hit, ~seconds total):

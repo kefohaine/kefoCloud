@@ -143,7 +143,7 @@ Safety rule 10 above is generic; the project-specific numbers live here:
 
 - The `domain` container (`services/domain/`) is the reverse proxy for every public vhost. Caddyfile edits live in `services/domain/vhosts/<host>.caddy`; the top-level `services/domain/Caddyfile` only holds snippets + imports.
 - The `domain` container runs with `network_mode: host` so Caddy sees the real client source IP for the `@not_tailnet` matcher on `server.jehpok.com`. Don't "fix" that line.
-- The reload sequence is `make up-<ctn>` (or `make up-domain` for a single proxy edit); the post-reload smoke test must include: tailnet routes 200 from a tailnet device, 403 from non-tailnet, public vhosts 200/302 with `Issuer: Let's Encrypt`.
+- The reload sequence is `make recreate-<ctn>` (or `make recreate-domain` for a single proxy edit); the post-reload smoke test must include: tailnet routes 200 from a tailnet device, 403 from non-tailnet, public vhosts 200/302 with `Issuer: Let's Encrypt`.
 - The cert mode is per-vhost DNS-01 ACME via `caddy-dns/cloudflare`; each vhost carries its own `tls { dns cloudflare { env.CF_API_TOKEN } }` block. Replacing one with `tls internal` / `tls off` / `tls self_signed` will drop browser connections to that hostname.
 - The CF API token is at `$(REPO)/caddy_data/CF_API_TOKEN` (created by the operator, not in the repo, not in `bundle-secrets`). Caddy renews certs from the token; the token is the only thing that needs to migrate to a new VPS.
 
