@@ -1,7 +1,7 @@
 services:
   vault:
     image: vaultwarden/server:latest
-    container_name: vault
+    container_name: vaultwarden
     restart: unless-stopped
 
     environment:
