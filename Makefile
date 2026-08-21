@@ -8,8 +8,14 @@ SHELL := /bin/bash
 
 REPO     := /var/www/custom/projects/jehpok
 COMPOSE  := docker compose -f
-CONTAINERS := domain homer kuma share cloud vault mc
+CONTAINERS := domain homer kuma share cloud vault mc mc-web
 HOST     := ttyd dnsmasq ollama
+
+# Per-container compose file map. Default is `services/<ctn>/docker-compose.yml`;
+# overrides list each `<ctn>:path` for compose files that live alongside the
+# default name (e.g. mc-web's dashboard is in services/mc/docker-compose.mc-web.yml
+# so the game container and the dashboard can be recreated independently).
+COMPOSE_FILES := mc-web:services/mc/docker-compose.mc-web.yml
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Per-container: recreate / d-restart / d-logs
@@ -23,40 +29,46 @@ HOST     := ttyd dnsmasq ollama
 .PHONY: $(addprefix d-restart-,$(CONTAINERS)) d-restart-all
 .PHONY: $(addprefix d-logs-,$(CONTAINERS)) d-logs-all
 
-# share + domain rebuild their image locally; the rest just pull.
+# share + domain (and mc-web) rebuild their image locally; the rest just pull.
 # share = custom Dockerfile for the link shortener.
 # domain = custom Dockerfile adds caddy-dns/cloudflare so the
 #   mc.jehpok.com vhost can use ACME DNS-01 (HTTP-01 is blocked because
 #   the game ports require CF proxy to stay off, but CF proxy is what
 #   would carry the HTTP-01 challenge traffic from the public internet).
+# mc-web = custom Dockerfile for the Flask+rcon dashboard.
+
+# Set per-container compose file paths. Default is `services/<ctn>/docker-compose.yml`;
+# overrides from COMPOSE_FILES above take precedence.
+$(foreach s,$(CONTAINERS),$(eval COMPOSE_FILE_$s := services/$s/docker-compose.yml))
+$(foreach m,$(COMPOSE_FILES),$(eval COMPOSE_FILE_$(word 1,$(subst :, ,$(m))) := $(word 2,$(subst :, ,$(m)))))
+
+# Helper: $(compose-file-of $1) returns the absolute compose file path for
+# the named service. Recipes use this directly instead of $(COMPOSE_FILE_$1)
+# so the expansion happens at recipe-expansion time, not recipe-execution time.
+compose-file-of = $(REPO)/repo/$(COMPOSE_FILE_$1)
+
 define recreate_rule
 recreate-$1:
->$(COMPOSE) $(REPO)/repo/services/$1/docker-compose.yml up -d --force-recreate$(if $(filter share domain,$1), --build)
+>$(COMPOSE) $(call compose-file-of,$1) up -d --force-recreate$(if $(filter share domain mc-web,$1), --build)
 endef
 $(foreach s,$(CONTAINERS),$(eval $(call recreate_rule,$s)))
 
 define drestart_rule
 d-restart-$1:
-># Some compose files declare more than one container (e.g. mc has
-# `mc` + `mc-web`). Restarting the named container alone would
-# leave the other untouched and surprise the next edit, so restart every
-# container in the file.
->$(COMPOSE) $(REPO)/repo/services/$1/docker-compose.yml restart
+># Restart every container declared in this service's compose file. mc and
+# mc-web live in separate compose files now (see COMPOSE_FILES), so
+# `d-restart-mc` only restarts the game server and `d-restart-mc-web` only
+# restarts the dashboard — no surprise side-effects on the other container.
+>$(COMPOSE) $(call compose-file-of,$1) restart
 endef
 $(foreach s,$(CONTAINERS),$(eval $(call drestart_rule,$s)))
 
 define dlogs_rule
 d-logs-$1:
-># Tail the container named after the directory; for compose files
-# with multiple containers (mc: mc + mc-web), tail both
-# with a [container] prefix so they don't interleave silently.
->if [ "$1" = "mc" ]; then \
-    docker logs mc --tail 50 -f 2>&1 | stdbuf -oL sed "s/^/[mc] /" & \
-    docker logs mc-web --tail 50 -f 2>&1 | stdbuf -oL sed "s/^/[mc-web] /" & \
-    wait; \
-  else \
-    docker logs $1 --tail 50 -f; \
-  fi
+># Tail the container named after the service. mc + mc-web have their own
+# recipes (`d-logs-mc`, `d-logs-mc-web`) since they live in separate compose
+# files now; this generic rule only sees the primary container.
+>docker logs $1 --tail 50 -f
 endef
 $(foreach s,$(CONTAINERS),$(eval $(call dlogs_rule,$s)))
 
@@ -353,7 +365,7 @@ install-config-bundle:
 BKP_DIR := $(REPO)/backups
 
 bkp-cloud:
->@dest=$(BKP_DIR)/cloud-backup-$$(date +%Y%m%d); \
+>@dest=$(BKP_DIR)/cloud-backup-$$(date +%Y%m%d-%H%M%S); \
   sudo mkdir -p "$(BKP_DIR)" "$$dest"; \
   sudo chown debian:debian "$$dest"; \
   docker exec -w /var/www/html cloud php occ maintenance:mode --on; \
@@ -366,13 +378,13 @@ bkp-cloud:
 
 bkp-share:
 >@sudo mkdir -p "$(BKP_DIR)"; \
-  sudo cp $(REPO)/share/db/links.db $(BKP_DIR)/share-backup-$$(date +%Y%m%d).db
->@echo "Backup at $(BKP_DIR)/share-backup-$$(date +%Y%m%d).db"
+  sudo cp $(REPO)/share/db/links.db $(BKP_DIR)/share-backup-$$(date +%Y%m%d-%H%M%S).db
+>@echo "Backup at $(BKP_DIR)/share-backup-$$(date +%Y%m%d-%H%M%S).db"
 
 bkp-vault:
 >@sudo mkdir -p "$(BKP_DIR)"; \
-  sudo bash -c 'tar czf $(BKP_DIR)/vault-backup-$$(date +%Y%m%d).tar.gz -C $(REPO)/vault data'
->@echo "Backup at $(BKP_DIR)/vault-backup-$$(date +%Y%m%d).tar.gz"
+  sudo bash -c 'tar czf $(BKP_DIR)/vault-backup-$$(date +%Y%m%d-%H%M%S).tar.gz -C $(REPO)/vault data'
+>@echo "Backup at $(BKP_DIR)/vault-backup-$$(date +%Y%m%d-%H%M%S).tar.gz"
 
 # Snapshot just the Minecraft world data folder as a timestamped .tar.gz.
 # Differs from `bkp-all` (which snapshots everything): this one is for
