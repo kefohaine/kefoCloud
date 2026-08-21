@@ -12,13 +12,16 @@ CONTAINERS := domain homer kuma share cloud vault mc
 HOST     := ttyd dnsmasq ollama
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Per-container: up / restart / logs
+# Per-container: recreate / d-restart / d-logs
+# `d-` prefix marks container (docker) actions so they don't collide
+# visually with host systemd actions (restart-ttyd, restart-dnsmasq,
+# logs-ttyd, logs-dnsmasq below).
 # One set of rules, expanded across $(CONTAINERS).
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: $(addprefix up-,$(CONTAINERS)) up-all
-.PHONY: $(addprefix restart-,$(CONTAINERS)) restart-all
-.PHONY: $(addprefix logs-,$(CONTAINERS)) logs-all
+.PHONY: $(addprefix recreate-,$(CONTAINERS)) recreate-all
+.PHONY: $(addprefix d-restart-,$(CONTAINERS)) d-restart-all
+.PHONY: $(addprefix d-logs-,$(CONTAINERS)) d-logs-all
 
 # share + domain rebuild their image locally; the rest just pull.
 # share = custom Dockerfile for the link shortener.
@@ -26,24 +29,24 @@ HOST     := ttyd dnsmasq ollama
 #   mc.jehpok.com vhost can use ACME DNS-01 (HTTP-01 is blocked because
 #   the game ports require CF proxy to stay off, but CF proxy is what
 #   would carry the HTTP-01 challenge traffic from the public internet).
-define up_rule
-up-$1:
+define recreate_rule
+recreate-$1:
 >$(COMPOSE) $(REPO)/repo/services/$1/docker-compose.yml up -d --force-recreate$(if $(filter share domain,$1), --build)
 endef
-$(foreach s,$(CONTAINERS),$(eval $(call up_rule,$s)))
+$(foreach s,$(CONTAINERS),$(eval $(call recreate_rule,$s)))
 
-define restart_rule
-restart-$1:
+define drestart_rule
+d-restart-$1:
 ># Some compose files declare more than one container (e.g. mc has
 # `mc` + `mc-web`). Restarting the named container alone would
 # leave the other untouched and surprise the next edit, so restart every
 # container in the file.
 >$(COMPOSE) $(REPO)/repo/services/$1/docker-compose.yml restart
 endef
-$(foreach s,$(CONTAINERS),$(eval $(call restart_rule,$s)))
+$(foreach s,$(CONTAINERS),$(eval $(call drestart_rule,$s)))
 
-define logs_rule
-logs-$1:
+define dlogs_rule
+d-logs-$1:
 ># Tail the container named after the directory; for compose files
 # with multiple containers (mc: mc + mc-web), tail both
 # with a [container] prefix so they don't interleave silently.
@@ -55,12 +58,12 @@ logs-$1:
     docker logs $1 --tail 50 -f; \
   fi
 endef
-$(foreach s,$(CONTAINERS),$(eval $(call logs_rule,$s)))
+$(foreach s,$(CONTAINERS),$(eval $(call dlogs_rule,$s)))
 
-up-all: $(addprefix up-,$(CONTAINERS))
-restart-all: $(addprefix restart-,$(CONTAINERS)) restart-dnsmasq restart-ttyd
+recreate-all: $(addprefix recreate-,$(CONTAINERS))
+d-restart-all: $(addprefix d-restart-,$(CONTAINERS)) restart-dnsmasq restart-ttyd
 
-logs-all:
+d-logs-all:
 >@stdbuf -oL bash -c 'for c in $(CONTAINERS); do \
     docker logs $$c --tail 50 -f 2>&1 | stdbuf -oL sed "s/^/[$$c] /" & \
   done; wait'
@@ -87,7 +90,7 @@ logs-dnsmasq:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: status clean-docker clean-apt clean-backups clean-all update install-config bkp-config help
+.PHONY: status clean-docker clean-apt clean-backups clean-all update install-config help
 
 status:
 >@echo "--- containers ---"
@@ -139,7 +142,7 @@ update:
 # ─────────────────────────────────────────────────────────────────────────────
 # config/ (live <-> repo)
 # config/ holds tracked copies of every host-level config. install-config
-# pushes them to live; bkp-config snapshots live back into config/.
+# pushes them to live.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # One-shot bootstrap: install ttyd, copy config/ to live, enable units,
@@ -187,22 +190,9 @@ install-config:
 
 # Snapshot the live host configs into config/. Overwrites anything that
 # diverged. Run before committing so changes are tracked in git.
-bkp-config:
->@echo "Snapshotting live configs into config/..."
->@for d in ollama ssh dnsmasq docker maintenance ttyd claude sysctl; do \
-    sudo install -d -m 0755 -o debian -g debian $(REPO)/repo/config/$$d; \
-  done
->sudo install -m 0644 -o debian -g debian /etc/systemd/system/ollama.service           $(REPO)/repo/config/ollama/ollama.service
->sudo install -m 0644 -o debian -g debian /etc/systemd/system/ttyd.service             $(REPO)/repo/config/ttyd/ttyd.service
->sudo install -m 0600 -o debian -g debian /etc/ssh/sshd_config.d/50-cloud-init.conf     $(REPO)/repo/config/ssh/50-cloud-init.conf
->sudo install -m 0644 -o debian -g debian /etc/dnsmasq.d/10-tailnet.conf                $(REPO)/repo/config/dnsmasq/10-tailnet.conf
->sudo install -m 0644 -o debian -g debian /etc/systemd/system/dnsmasq.service.d/override.conf $(REPO)/repo/config/dnsmasq/dnsmasq.service.conf
->sudo install -m 0644 -o debian -g debian /etc/docker/daemon.json                       $(REPO)/repo/config/docker/daemon.json
->sudo install -m 0755 -o debian -g debian /usr/local/bin/jehpok-daily.sh                 $(REPO)/repo/config/maintenance/daily.sh
->sudo install -m 0644 -o debian -g debian /etc/systemd/system/jehpok-daily.service      $(REPO)/repo/config/maintenance/daily.service
->sudo install -m 0644 -o debian -g debian /etc/systemd/system/jehpok-daily.timer        $(REPO)/repo/config/maintenance/daily.timer
->sudo install -m 0644 -o debian -g debian /etc/sysctl.d/99-jehpok.conf                  $(REPO)/repo/config/sysctl/99-jehpok.conf
->@echo "Done. Review changes with: cd $(REPO)/repo && git diff --stat config/"
+# (bkp-config recipe removed by operator request; live→config sync now
+# happens only via `bundle-config` — git-tracked config/ remains the
+# canonical source for new installs via `install-config`.)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Per-file install (config/<file> → live path)
@@ -212,82 +202,86 @@ bkp-config:
 # units in one batch and want one reload at the end.
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: install-config-ollama install-config-ttyd install-config-ssh \
-        install-config-dnsmasq-conf install-config-dnsmasq-override \
-        install-config-docker install-config-sysctl \
-        install-config-daily-sh install-config-daily-service install-config-daily-timer \
-        install-config-claude
+.PHONY: install-ollama install-ttyd install-ssh \
+        install-dnsmasq-conf install-dnsmasq-override \
+        install-docker install-sysctl \
+        install-daily-sh install-daily-service install-daily-timer \
+        install-claude
 
-install-config-ollama:
->@echo "install-config-ollama: ollama.service"
+install-ollama:
+>@echo "install-ollama: ollama.service"
 >@sudo cp $(REPO)/repo/config/ollama/ollama.service /etc/systemd/system/ollama.service
 >@sudo systemctl daemon-reload
 >@sudo systemctl restart ollama
 
-install-config-ttyd:
->@echo "install-config-ttyd: ttyd.service"
+install-ttyd:
+>@echo "install-ttyd: ttyd.service"
 >@sudo cp $(REPO)/repo/config/ttyd/ttyd.service /etc/systemd/system/ttyd.service
 >@sudo systemctl daemon-reload
 >@sudo systemctl restart ttyd
 
-install-config-ssh:
->@echo "install-config-ssh: 50-cloud-init.conf"
+install-ssh:
+>@echo "install-ssh: 50-cloud-init.conf"
 >@sudo cp $(REPO)/repo/config/ssh/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf
 >@sudo sshd -t && sudo systemctl restart sshd
 
-install-config-dnsmasq-conf:
->@echo "install-config-dnsmasq-conf: 10-tailnet.conf"
+install-dnsmasq-conf:
+>@echo "install-dnsmasq-conf: 10-tailnet.conf"
 >@sudo cp $(REPO)/repo/config/dnsmasq/10-tailnet.conf /etc/dnsmasq.d/10-tailnet.conf
 >@sudo systemctl restart dnsmasq
 
-install-config-dnsmasq-override:
->@echo "install-config-dnsmasq-override: dnsmasq.service.d/override.conf"
+install-dnsmasq-override:
+>@echo "install-dnsmasq-override: dnsmasq.service.d/override.conf"
 >@sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
 >@sudo cp $(REPO)/repo/config/dnsmasq/dnsmasq.service.conf /etc/systemd/system/dnsmasq.service.d/override.conf
 >@sudo systemctl daemon-reload
 >@sudo systemctl restart dnsmasq
 
-install-config-docker:
->@echo "install-config-docker: /etc/docker/daemon.json (Docker daemon restart required)"
+install-docker:
+>@echo "install-docker: /etc/docker/daemon.json (Docker daemon restart required)"
 >@sudo mkdir -p /etc/docker
 >@sudo cp $(REPO)/repo/config/docker/daemon.json /etc/docker/daemon.json
 >@echo "Run: sudo systemctl restart docker  (containers stay up via live-restore)."
 
-install-config-sysctl:
->@echo "install-config-sysctl: 99-jehpok.conf"
+install-sysctl:
+>@echo "install-sysctl: 99-jehpok.conf"
 >@sudo cp $(REPO)/repo/config/sysctl/99-jehpok.conf /etc/sysctl.d/99-jehpok.conf
 >@sudo sysctl --system >/dev/null
 
-install-config-daily-sh:
->@echo "install-config-daily-sh: /usr/local/bin/jehpok-daily.sh"
+install-daily-sh:
+>@echo "install-daily-sh: /usr/local/bin/jehpok-daily.sh"
 >@sudo cp $(REPO)/repo/config/maintenance/daily.sh /usr/local/bin/jehpok-daily.sh
 >@sudo chmod +x /usr/local/bin/jehpok-daily.sh
 
-install-config-daily-service:
->@echo "install-config-daily-service: jehpok-daily.service"
+install-daily-service:
+>@echo "install-daily-service: jehpok-daily.service"
 >@sudo cp $(REPO)/repo/config/maintenance/daily.service /etc/systemd/system/jehpok-daily.service
 >@sudo systemctl daemon-reload
 
-install-config-daily-timer:
->@echo "install-config-daily-timer: jehpok-daily.timer"
+install-daily-timer:
+>@echo "install-daily-timer: jehpok-daily.timer"
 >@sudo cp $(REPO)/repo/config/maintenance/daily.timer /etc/systemd/system/jehpok-daily.timer
 >@sudo systemctl daemon-reload
 >@sudo systemctl enable --now jehpok-daily.timer
 
-install-config-claude:
->@echo "install-config-claude: .claude/settings.local.json"
+install-claude:
+>@echo "install-claude: .claude/settings.local.json"
 >@mkdir -p $(REPO)/repo/.claude
 >@cp $(REPO)/repo/config/claude/settings.local.json $(REPO)/repo/.claude/settings.local.json
 >@chmod 0644 $(REPO)/repo/.claude/settings.local.json
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Bundles (live <-> secrets tarball)
+# Bundles (live <-> tarball)
 # bundle-secrets collects live secrets into a tar.gz; install-secrets
-# extracts one back over the live paths. Not chained into bkp-all —
-# secrets need a deliberate operator decision each time.
+# extracts one back over the live paths. bundle-config snapshots the
+# whole config/ tree into a tarball — useful as an offline copy when
+# moving to a fresh host that doesn't have the repo cloned yet (the
+# git-tracked copy is the canonical one when the repo is present).
+# Neither chained into bkp-all — both need a deliberate operator
+# decision each time.
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: bundle-secrets install-secrets
+.PHONY: bundle-secrets install-secrets bundle-config install-config-bundle
 
 bundle-secrets:
 >@dest=$(BKP_DIR)/secrets-bundle-$$(date +%Y%m%d).tar.gz; \
@@ -319,6 +313,38 @@ install-secrets:
   fi
 >sudo tar xzf "$$BUNDLE" -C / --warning=no-absolute-names
 >@echo "Installed $$BUNDLE to live paths."
+
+# Snapshot the whole config/ tree into a single tarball under backups/.
+# The git-tracked copy is canonical when the repo is present; this
+# exists for offline handoff (cold VPS, no clone yet). Symmetric to
+# bundle-secrets: collect → tarball; install-config-bundle → extract.
+bundle-config:
+>@dest=$(BKP_DIR)/config-bundle-$$(date +%Y%m%d).tar.gz; \
+  sudo mkdir -p "$(BKP_DIR)"; \
+  sudo tar czf "$$dest" -C $(REPO)/repo config; \
+  sudo chown debian:debian "$$dest"; \
+  echo "Config bundle at $$dest"
+
+# Extract a config bundle tarball over $(REPO)/repo/config/. Defaults
+# to the newest config-bundle-*.tar.gz under $(BKP_DIR); override with
+# BUNDLE=<path>. Use when bootstrapping a fresh host: clone the repo
+# (or just create the dir), then `make install-config-bundle` to
+# populate config/ before running `make install-config`.
+install-config-bundle:
+>@if [ -z "$(BUNDLE)" ]; then \
+    BUNDLE="$$(ls -1t $(BKP_DIR)/config-bundle-*.tar.gz 2>/dev/null | head -1)"; \
+    if [ -z "$$BUNDLE" ]; then \
+      echo "No config-bundle-*.tar.gz found in $(BKP_DIR)."; \
+      exit 1; \
+    fi; \
+    echo "Using latest bundle: $$BUNDLE"; \
+  fi
+>@if [ ! -d "$(REPO)/repo" ]; then \
+    echo "$(REPO)/repo does not exist. Create it first (clone the repo, or mkdir)."; \
+    exit 1; \
+  fi
+>@tar xzf "$$BUNDLE" -C $(REPO)/repo
+>@echo "Installed $$BUNDLE into $(REPO)/repo/config/"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Backups (rename: backup-* → bkp-*)
@@ -380,7 +406,7 @@ bkp-list:
 >@ls -lht "$(BKP_DIR)" 2>&1
 >@echo ""
 >@echo "Counts per pattern:"
->@for p in cloud-backup-* share-backup-*.db vault-backup-*.tar.gz secrets-bundle-*.tar.gz 'mc-backup-*.tar.gz minecraft-backup-*.tar.gz'; do \
+>@for p in cloud-backup-* share-backup-*.db vault-backup-*.tar.gz secrets-bundle-*.tar.gz config-bundle-*.tar.gz 'mc-backup-*.tar.gz minecraft-backup-*.tar.gz'; do \
     n="$$(ls -1 $(BKP_DIR)/$$p 2>/dev/null | wc -l)"; \
     printf "  %-45s %d\n" "$$p" "$$n"; \
   done
@@ -474,14 +500,14 @@ help:
 >@echo "  jehpok.com — make recipes"
 >@echo ""
 >@echo "  Docker containers  (one of: $(CONTAINERS))"
->@echo "    make up-<ctn>         force-recreate container (share also rebuilds)"
->@echo "    make restart-<ctn>    reload container without recreating"
->@echo "    make logs-<ctn>       follow container logs"
+>@echo "    make recreate-<ctn>   force-recreate container (share also rebuilds)"
+>@echo "    make d-restart-<ctn>  reload container without recreating"
+>@echo "    make d-logs-<ctn>     follow container logs"
 >@echo ""
 >@echo "  Bulk"
->@echo "    make restart-all      restart all containers + dnsmasq + ttyd"
->@echo "    make up-all           recreate all containers in order"
->@echo "    make logs-all         tail all container logs in one stream"
+>@echo "    make d-restart-all    restart all containers + dnsmasq + ttyd"
+>@echo "    make recreate-all     recreate all containers in order"
+>@echo "    make d-logs-all       tail all container logs in one stream"
 >@echo "    make bkp-all          run all four bkp-* recipes (no bundle-secrets)"
 >@echo "    make clean-all        chain: clean-docker + clean-apt + clean-backups"
 >@echo "    make git-all MSG=\"…\"  stage + commit + push (shortcut for the 3 below)"
@@ -499,23 +525,22 @@ help:
 >@echo ""
 >@echo "  Maintenance"
 >@echo "    make status           containers + host services + disk + memory"
->@echo "    make update           apt update/upgrade + pull images + up-all"
+>@echo "    make update           apt update/upgrade + pull images + recreate-all"
 >@echo "    make install-config   copy all of config/ to live (was make setup)"
->@echo "    make bkp-config       snapshot live host configs back into config/"
 >@echo "    make migrate          cat docs/MIGRATE.md (full VPS-to-VPS runbook)"
 >@echo ""
 >@echo "  Per-file install (one file from config/ → live)"
->@echo "    make install-config-ollama             /etc/systemd/system/ollama.service"
->@echo "    make install-config-ttyd               /etc/systemd/system/ttyd.service"
->@echo "    make install-config-ssh                /etc/ssh/sshd_config.d/50-cloud-init.conf"
->@echo "    make install-config-dnsmasq-conf       /etc/dnsmasq.d/10-tailnet.conf"
->@echo "    make install-config-dnsmasq-override   /etc/systemd/system/dnsmasq.service.d/override.conf"
->@echo "    make install-config-docker             /etc/docker/daemon.json (restart docker to apply)"
->@echo "    make install-config-sysctl             /etc/sysctl.d/99-jehpok.conf"
->@echo "    make install-config-daily-sh           /usr/local/bin/jehpok-daily.sh"
->@echo "    make install-config-daily-service      /etc/systemd/system/jehpok-daily.service"
->@echo "    make install-config-daily-timer        /etc/systemd/system/jehpok-daily.timer"
->@echo "    make install-config-claude             \$$REPO/repo/.claude/settings.local.json"
+>@echo "    make install-ollama             /etc/systemd/system/ollama.service"
+>@echo "    make install-ttyd               /etc/systemd/system/ttyd.service"
+>@echo "    make install-ssh                /etc/ssh/sshd_config.d/50-cloud-init.conf"
+>@echo "    make install-dnsmasq-conf       /etc/dnsmasq.d/10-tailnet.conf"
+>@echo "    make install-dnsmasq-override   /etc/systemd/system/dnsmasq.service.d/override.conf"
+>@echo "    make install-docker             /etc/docker/daemon.json (restart docker to apply)"
+>@echo "    make install-sysctl             /etc/sysctl.d/99-jehpok.conf"
+>@echo "    make install-daily-sh           /usr/local/bin/jehpok-daily.sh"
+>@echo "    make install-daily-service      /etc/systemd/system/jehpok-daily.service"
+>@echo "    make install-daily-timer        /etc/systemd/system/jehpok-daily.timer"
+>@echo "    make install-claude             \$$REPO/repo/.claude/settings.local.json"
 >@echo ""
 >@echo "  Backups (bkp-*) — all artifacts land in \$$REPO/backups/"
 >@echo "    make bkp-cloud        Nextcloud snapshot (maintenance mode during copy)"
@@ -526,7 +551,9 @@ help:
 >@echo ""
 >@echo "  Bundles"
 >@echo "    make bundle-secrets   collect live secrets into \$$REPO/backups/secrets-bundle-<date>.tar.gz"
->@echo "    make install-secrets  extract a bundle to live paths (BUNDLE=<path> to override)"
+>@echo "    make install-secrets  extract a secrets bundle to live paths (BUNDLE=<path> to override)"
+>@echo "    make bundle-config    snapshot \$$REPO/repo/config/ into \$$REPO/backups/config-bundle-<date>.tar.gz"
+>@echo "    make install-config-bundle  extract a config bundle into \$$REPO/repo/config/ (BUNDLE=<path> to override)"
 >@echo ""
 >@echo "  Tmux sessions"
 >@echo "    make tmux-new NAME=<n>    create detached session <n>"

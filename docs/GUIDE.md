@@ -9,8 +9,8 @@ For system architecture and design rationale, see `README.md`. For agent rules, 
 The repo splits into four directories. `ls` is the source of truth — what's described here is the intent, not the full inventory.
 
 - `services/<ctn>/docker-compose.yml` — one per running container. Compose files are the source of truth for images, env vars, ports, volumes, healthchecks, and logging.
-- `config/` — reference copies of host-level configs (Ollama systemd unit, SSH hardening, dnsmasq, maintenance timer + script, Claude Code deny-list). Restored to live paths by `make install-config`; snapshotted from live by `make bkp-config`.
-- `content/` — app sources and static files mounted into containers. Container app source lives here, not under `services/`, so edits take effect with `make restart-<ctn>` and the image only carries the runtime.
+- `config/` — reference copies of host-level configs (Ollama systemd unit, SSH hardening, dnsmasq, maintenance timer + script, Claude Code deny-list). Restored to live paths by `make install-config`. For an offline copy of the whole `config/` tree, use `make bundle-config`.
+- `content/` — app sources and static files mounted into containers. Container app source lives here, not under `services/`, so edits take effect with `make d-restart-<ctn>` and the image only carries the runtime.
 - `docs/` — `AGENTS.md`, `GUIDE.md` (this file), `ISSUES.md`, `MIGRATE.md` (runbook for moving to a new VPS; printed by `make migrate`).
 
 ## Deployment
@@ -25,33 +25,35 @@ Manual — no CI/CD, pushes to `main` trigger nothing. Use the `Makefile` recipe
 
 ```bash
 make                   # default: print help with categories
-make restart-all       # restart every container + dnsmasq + ttyd — same order as up-all
-make up-all            # start/recreate all containers in order (share, domain, cloud, vault, kuma, homer, mc)
-make logs-all          # tail all container logs in one stream, each line prefixed with [container]
+make d-restart-all     # restart every container + dnsmasq + ttyd — same order as recreate-all
+make recreate-all      # start/recreate all containers in order (share, domain, cloud, vault, kuma, homer, mc)
+make d-logs-all        # tail all container logs in one stream, each line prefixed with [container]
 make bkp-all           # run all four bkp-* recipes in order (cloud, share, vault, mc)
 make clean-all         # chain: clean-docker + clean-apt + clean-backups
-make up-<ctn>          # force-recreate one container — up-domain | up-cloud | up-share | up-vault | up-kuma | up-homer | up-mc
-make restart-<ctn>     # restart every container in the compose file — after editing a mounted config; mc restarts both mc and mc-web
+make recreate-<ctn>    # force-recreate one container — recreate-domain | recreate-cloud | recreate-share | recreate-vault | recreate-kuma | recreate-homer | recreate-mc
+make d-restart-<ctn>   # restart every container in the compose file — after editing a mounted config; mc restarts both mc and mc-web
 make restart-dnsmasq   # restart the host dnsmasq resolver — after editing config/dnsmasq/10-tailnet.conf
 make restart-ttyd      # restart the host ttyd service — after editing config/ttyd/ttyd.service
-make logs-<ctn>        # follow one container's logs — logs-domain | logs-cloud | logs-share | logs-vault | logs-kuma | logs-homer | logs-mc
+make d-logs-<ctn>      # follow one container's logs — d-logs-domain | d-logs-cloud | d-logs-share | d-logs-vault | d-logs-kuma | d-logs-homer | d-logs-mc
 make logs-dnsmasq      # follow the dnsmasq journal
 make logs-ttyd         # follow the ttyd journal
 make status            # show a table of all running containers + host systemd units
-make update            # apt update/upgrade + pull all images + make up-all
+make update            # apt update/upgrade + pull all images + make recreate-all
 make install-config    # one-shot host bootstrap: install ttyd, copy config/ to live, enable Ollama + ttyd + sshd + dnsmasq + daily maintenance timer, open UFW rule, restore Claude settings
-make bkp-config        # snapshot live host configs back into config/
-make bundle-secrets    # collect live secrets into $(REPO)/secrets-bundle-<date>.tar.gz (not chained into bkp-all)
+make bkp-config        # REMOVED — use bundle-config for offline copy, install-config for one-shot live push
+make bundle-secrets    # collect live secrets into $(REPO)/backups/secrets-bundle-<date>.tar.gz (not chained into bkp-all)
 make install-secrets   # extract a secrets bundle to live paths (BUNDLE=<path> to override)
+make bundle-config     # snapshot $(REPO)/repo/config/ into $(REPO)/backups/config-bundle-<date>.tar.gz (offline copy)
+make install-config-bundle  # extract a config bundle into $(REPO)/repo/config/ (BUNDLE=<path> to override)
 make migrate           # cat docs/MIGRATE.md — the full VPS-to-VPS migration runbook
 make git-add           # git add -A in $(REPO)/repo
 make git-com MSG="…"   # git commit -m MSG (MSG required)
 make git-push          # git push jehpok.com main
 make git-all MSG="…"   # shortcut: stage + commit + push
 make bkp-cloud         # snapshot Nextcloud data (maintenance mode on during the copy)
-make bkp-share         # copy the shortener SQLite DB to /var/www/custom/projects/jehpok/share-backup-<date>.db
-make bkp-vault         # tar the Vaultwarden data dir to /var/www/custom/projects/jehpok/vault-backup-<date>.tar.gz
-make bkp-mc            # tar just the Minecraft world folder to /var/www/custom/projects/jehpok/mc-backup-<date>.tar.gz (daily.sh stops the container first when chained through bkp-all)
+make bkp-share         # copy the shortener SQLite DB to $(REPO)/backups/share-backup-<date>.db
+make bkp-vault         # tar the Vaultwarden data dir to $(REPO)/backups/vault-backup-<date>.tar.gz
+make bkp-mc            # tar just the Minecraft world folder to $(REPO)/backups/mc-backup-<date>.tar.gz (daily.sh stops the container first when chained through bkp-all)
 make clean-docker      # prune builder / image / container
 make clean-apt         # apt autoremove + clean
 make clean-backups     # keep latest 3 backups per pattern, delete older
@@ -80,15 +82,15 @@ The compose files are the source of truth. This table is the one-line reference 
 
 | Service  | Compose                                 | Container | Edit mounted config          | After compose / image change |
 |----------|-----------------------------------------|-----------|------------------------------|------------------------------|
-| domain   | `services/domain/docker-compose.yml`    | `domain`  | `make restart-domain`        | `make up-domain` (builds `caddy-dns:local` from `services/domain/Dockerfile`) |
-| cloud    | `services/cloud/docker-compose.yml`     | `cloud`   | `make restart-cloud`         | `make up-cloud`              |
-| share    | `services/share/docker-compose.yml`     | `share`   | `make restart-share`         | `make up-share`              |
-| vault    | `services/vault/docker-compose.yml`     | `vault`   | `make restart-vault`         | `make up-vault`              |
-| kuma     | `services/kuma/docker-compose.yml`      | `kuma`    | `make restart-kuma`          | `make up-kuma`               |
-| homer    | `services/homer/docker-compose.yml`     | `homer`   | `make restart-homer`         | `make up-homer`              |
-| mc      | `services/mc/docker-compose.yml`        | `mc`+`mc-web`             | `make restart-mc`           | `make up-mc` (builds `mc-web` locally)              |
+| domain   | `services/domain/docker-compose.yml`    | `domain`  | `make d-restart-domain`      | `make recreate-domain` (builds `caddy-dns:local` from `services/domain/Dockerfile`) |
+| cloud    | `services/cloud/docker-compose.yml`     | `cloud`   | `make d-restart-cloud`       | `make recreate-cloud`        |
+| share    | `services/share/docker-compose.yml`     | `share`   | `make d-restart-share`       | `make recreate-share`        |
+| vault    | `services/vault/docker-compose.yml`     | `vault`   | `make d-restart-vault`       | `make recreate-vault`        |
+| kuma     | `services/kuma/docker-compose.yml`      | `kuma`    | `make d-restart-kuma`        | `make recreate-kuma`         |
+| homer    | `services/homer/docker-compose.yml`     | `homer`   | `make d-restart-homer`       | `make recreate-homer`        |
+| mc      | `services/mc/docker-compose.yml`        | `mc`+`mc-web`             | `make d-restart-mc`         | `make recreate-mc` (builds `mc-web` locally)              |
 | terminal | n/a (host systemd; see Protected host resources) | n/a | `make restart-ttyd`          | `make install-config` (reinstall)     |
-| dnsmasq  | n/a (host systemd)                      | n/a       | `make restart-dns`           | n/a                          |
+| dnsmasq  | n/a (host systemd)                      | n/a       | `make restart-dnsmasq`       | n/a                          |
 | ollama   | n/a (host systemd; see Protected host resources) | n/a | `systemctl restart ollama`   | n/a                          |
 
 The `net` Docker network is `external: true` — create once with `docker network create net` on a fresh host. All inter-container services use `expose`, not `ports`. The exception is `domain`: it runs with `network_mode: host` so Caddy sees the real client source IP — without host networking, Docker DNAT rewrites every packet to `172.22.0.1` (the bridge gateway) before Caddy sees it, which breaks the `@not_tailnet` remote_ip matcher on `https://server.jehpok.com`. The host network namespace is on the `net` bridge at `172.22.0.0/16`, so Caddy still dials upstream containers by their bridge IP (see Caddyfile). dnsmasq binds to the Tailscale IP only, not `0.0.0.0`.
@@ -102,7 +104,7 @@ When you need to know "what does X do / where do I edit Y", read the file at the
 - **`share`** — Flask routes: `content/share/app.py`. Compose + DB bind mount: `services/share/docker-compose.yml`.
 - **`vault`** — env, bind mount, admin token: `services/vault/docker-compose.yml`.
 - **`kuma`** — image, bind mount, healthcheck: `services/kuma/docker-compose.yml`. Monitor definitions live in Kuma's SQLite, edited via the UI on first run.
-- **`homer`** — dashboard YAML: `services/homer/config/config.yml` (in-repo, bind-mounted live). Homer doesn't auto-reload: edit the YAML, then `make restart-homer` and refresh the browser.
+- **`homer`** — dashboard YAML: `services/homer/config/config.yml` (in-repo, bind-mounted live). Homer doesn't auto-reload: edit the YAML, then `make d-restart-homer` and refresh the browser.
 - **`mc`** — Paper server (Java) with Geyser + Floodgate so Bedrock clients can join the same instance. Game ports `25565` (Java) + `19132` TCP+UDP (Bedrock) are published directly on the host (see compose) and bypass Cloudflare at the port layer — Caddy only serves `:80`/`:443`. The dashboard at `server.jehpok.com/mc` (tailnet-only, no auth beyond Tailscale) is a tabbed Flask app (Status / Console / Players / Settings / Files / World) styled with a Bedrock-inspired design system — Press Start 2P for headings/buttons/pills, VT323 for body/logs, 3D beveled block primitives (no smoothing, hard 90° corners), and color-coded emphasis cards: `.nether` (obsidian + lava) wraps Container actions and the Regenerate zone; `.end` (end-stone + purple) wraps Backups and the Player Roster. Status shows `booting` (gold pill) until the rcon listener accepts its first client — uptime is anchored to that moment, so Paper's startup time isn't counted. The font showcase at `server.jehpok.com/mc/fonts` lets the operator compare pixel-font candidates before committing to a swap. The dashboard polls rcon every 2 s while the page is visible — no page reloads between updates. It edits `server.properties`, the Paper/Bukkit/Spigot YAML configs (PyYAML-validated before save), and `/plugins/` (`.jar` upload), and it handles world download / upload / regenerate (refuses all world writes while the game container is running). Rcon uses an in-process persistent connection pool (thread-safe, 30 s idle timeout, auto-reconnect) to avoid the per-poll log spam of open/close pairs; `/version` is cached keyed on the container `StartedAt` so the version string is fetched once per game-container restart. Player cards show source IP parsed from `latest.log` join/leave lines; per-player stats + actions expand inline (no side drawer). Compose + bind mount: `services/mc/docker-compose.yml`. Dashboard source: `content/minecraft/` (Flask; rcon implemented inline with `socket` + `struct` rather than the `mcrcon` PyPI package, which uses `signal.alarm` and breaks under Flask's worker threads). World data: `/var/www/custom/projects/jehpok/mc/data` (bind-mounted at `/data` inside the game container; uid 1000).
 - **`terminal`** — ttyd at `server.jehpok.com/shell`, runs as a host systemd unit (not a container). Binary at `/usr/local/bin/ttyd`, unit at `/etc/systemd/system/ttyd.service` (reference copy in `config/ttyd/ttyd.service`). No systemd sandbox: `ProtectSystem`, `PrivateTmp`, `MemoryDenyWriteExecute`, `PrivateDevices`, `RestrictAddressFamilies`, `LockPersonality`, `RestrictRealtime`, `ProtectControlGroups` are all unset — the operator can write anywhere on the host without a permission hunt. Runs as `debian` (uid 1000) with NOPASSWD sudo, so full host control from the shell. Access control is at the network layer (Tailscale membership + Caddy `@not_tailnet`), not the unit sandbox. Tailscale-only like the rest of `server.jehpok.com`. `make install-config` installs the binary (static 1.7.7 from upstream) and the unit; the unit-restoration step is idempotent so re-running `make install-config` doesn't break it. Caddy proxies to the host bridge IP `172.22.0.1:7681` with `transport http { versions 1.1 }` (ttyd only speaks HTTP/1.1); the UFW INPUT allow from `172.22.0.0/16 → 7681/tcp` is added by `make install-config` and is what makes the bridge → host reach work. ttyd itself binds `172.22.0.1:7681` (host bridge IP, not `0.0.0.0`), so the port is unreachable even from the host's public IP — only via the bridge.
 - **dnsmasq** — config: `config/dnsmasq/10-tailnet.conf` (live path: `/etc/dnsmasq.d/10-tailnet.conf`). systemd drop-in: `config/dnsmasq/dnsmasq.service.conf` (live path: `/etc/systemd/system/dnsmasq.service.d/override.conf`).
@@ -110,7 +112,7 @@ When you need to know "what does X do / where do I edit Y", read the file at the
 
 ## Daily maintenance
 
-A systemd timer (`jehpok-daily.timer`, enabled) runs the script in `config/maintenance/daily.sh` once per day. The script chains three `make` recipes: `make update` (apt + image pull + `make up-all`), `make bkp-all` (all four bkp-* recipes in order, with the mc container stopped before the run and restarted after), then `make clean-all` (docker prune + apt autoremove + prune old backups). Run manually with `sudo systemctl start jehpok-daily.service`. Logs to `/var/log/jehpok-daily.log`.
+A systemd timer (`jehpok-daily.timer`, enabled) runs the script in `config/maintenance/daily.sh` once per day. The script chains three `make` recipes: `make update` (apt + image pull + `make recreate-all`), `make bkp-all` (all four bkp-* recipes in order, with the mc container stopped before the run and restarted after), then `make clean-all` (docker prune + apt autoremove + prune old backups). Run manually with `sudo systemctl start jehpok-daily.service`. Logs to `/var/log/jehpok-daily.log`.
 
 ## File ownership
 
@@ -126,7 +128,7 @@ git push jehpok.com main
 
 ## Operational gotchas
 
-- A deliberate `systemctl stop dnsmasq` takes all tailnet-side `*.jehpok.com` resolution down. Restart with `make restart-dns`.
+- A deliberate `systemctl stop dnsmasq` takes all tailnet-side `*.jehpok.com` resolution down. Restart with `make restart-dnsmasq`.
 - The Makefile sets `SHELL := /bin/bash` explicitly. Without it, recipes run under `/bin/sh` (dash on Debian) and `set -eu` semantics differ — `dash` aborts on any unset variable reference, while `bash` only aborts on expansion failures. If you see `parameter not set` from a recipe, the Makefile shell setting is the first place to look.
 - Cloudflare's free tier rate-limits rate-limit rules to a 10s min window. Plan ahead if a public endpoint ends up attracting more traffic than expected.
 - **Every Caddy vhost has its own TLS block** — don't reintroduce a shared wildcard cert. The wildcard CF Origin cert at `$(REPO)/certs/` covered `*.jehpok.com`, so when the `mc.jehpok.com` vhost didn't declare its own `tls` directive, Caddy served the wildcard as a SNI fallback and the per-vhost ACME automation policy never had a reason to fire. Lesson: a vhost with no `tls` directive appears to "use ACME by default" but actually picks up any loaded cert that matches the SNI.
