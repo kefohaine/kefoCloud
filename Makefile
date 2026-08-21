@@ -8,14 +8,14 @@ SHELL := /bin/bash
 
 REPO     := /var/www/custom/projects/jehpok
 COMPOSE  := docker compose -f
-CONTAINERS := domain homer kuma share cloud vault mc mc-web
+CONTAINERS := vhosts homer ut-kuma share-flask nextcloud vaultwarden mc mc-flask
 HOST     := ttyd dnsmasq ollama
 
 # Per-container compose file map. Default is `services/<ctn>/docker-compose.yml`;
 # overrides list each `<ctn>:path` for compose files that live alongside the
-# default name (e.g. mc-web's dashboard is in services/mc/docker-compose.mc-web.yml
+# default name (e.g. mc-flask's dashboard is in services/mc/docker-compose.mc-flask.yml
 # so the game container and the dashboard can be recreated independently).
-COMPOSE_FILES := mc-web:services/mc/docker-compose.mc-web.yml
+COMPOSE_FILES := mc-flask:services/mc/docker-compose.mc-flask.yml
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Per-container: recreate / d-restart / d-logs
@@ -29,13 +29,13 @@ COMPOSE_FILES := mc-web:services/mc/docker-compose.mc-web.yml
 .PHONY: $(addprefix d-restart-,$(CONTAINERS)) d-restart-all
 .PHONY: $(addprefix d-logs-,$(CONTAINERS)) d-logs-all
 
-# share + domain (and mc-web) rebuild their image locally; the rest just pull.
-# share = custom Dockerfile for the link shortener.
-# domain = custom Dockerfile adds caddy-dns/cloudflare so the
+# share-flask + vhosts (and mc-flask) rebuild their image locally; the rest just pull.
+# share-flask = custom Dockerfile for the link shortener.
+# vhosts = custom Dockerfile adds caddy-dns/cloudflare so the
 #   mc.jehpok.com vhost can use ACME DNS-01 (HTTP-01 is blocked because
 #   the game ports require CF proxy to stay off, but CF proxy is what
 #   would carry the HTTP-01 challenge traffic from the public internet).
-# mc-web = custom Dockerfile for the Flask+rcon dashboard.
+# mc-flask = custom Dockerfile for the Flask+rcon dashboard.
 
 # Set per-container compose file paths. Default is `services/<ctn>/docker-compose.yml`;
 # overrides from COMPOSE_FILES above take precedence.
@@ -49,15 +49,15 @@ compose-file-of = $(REPO)/repo/$(COMPOSE_FILE_$1)
 
 define recreate_rule
 recreate-$1:
->$(COMPOSE) $(call compose-file-of,$1) up -d --force-recreate$(if $(filter share domain mc-web,$1), --build)
+>$(COMPOSE) $(call compose-file-of,$1) up -d --force-recreate$(if $(filter share-flask vhosts mc-flask,$1), --build)
 endef
 $(foreach s,$(CONTAINERS),$(eval $(call recreate_rule,$s)))
 
 define drestart_rule
 d-restart-$1:
 ># Restart every container declared in this service's compose file. mc and
-# mc-web live in separate compose files now (see COMPOSE_FILES), so
-# `d-restart-mc` only restarts the game server and `d-restart-mc-web` only
+# mc-flask live in separate compose files now (see COMPOSE_FILES), so
+# `d-restart-mc` only restarts the game server and `d-restart-mc-flask` only
 # restarts the dashboard — no surprise side-effects on the other container.
 >$(COMPOSE) $(call compose-file-of,$1) restart
 endef
@@ -65,8 +65,8 @@ $(foreach s,$(CONTAINERS),$(eval $(call drestart_rule,$s)))
 
 define dlogs_rule
 d-logs-$1:
-># Tail the container named after the service. mc + mc-web have their own
-# recipes (`d-logs-mc`, `d-logs-mc-web`) since they live in separate compose
+># Tail the container named after the service. mc + mc-flask have their own
+# recipes (`d-logs-mc`, `d-logs-mc-flask`) since they live in separate compose
 # files now; this generic rule only sees the primary container.
 >docker logs $1 --tail 50 -f
 endef
@@ -368,12 +368,12 @@ bkp-cloud:
 >@dest=$(BKP_DIR)/cloud-backup-$$(date +%Y%m%d-%H%M%S); \
   sudo mkdir -p "$(BKP_DIR)" "$$dest"; \
   sudo chown debian:debian "$$dest"; \
-  docker exec -w /var/www/html cloud php occ maintenance:mode --on; \
-  trap 'docker exec -w /var/www/html cloud php occ maintenance:mode --off' EXIT; \
-  docker exec -i cloud tar cf - -C /data . | sudo tar xf - -C "$$dest"; \
+  docker exec -w /var/www/html nextcloud php occ maintenance:mode --on; \
+  trap 'docker exec -w /var/www/html nextcloud php occ maintenance:mode --off' EXIT; \
+  docker exec -i nextcloud tar cf - -C /data . | sudo tar xf - -C "$$dest"; \
   sudo chown -R 33:33 "$$dest"; \
   trap - EXIT; \
-  docker exec -w /var/www/html cloud php occ maintenance:mode --off; \
+  docker exec -w /var/www/html nextcloud php occ maintenance:mode --off; \
   echo "Backup at $$dest"
 
 bkp-share:
@@ -510,7 +510,7 @@ help:
 >@echo "  jehpok.com — make recipes"
 >@echo ""
 >@echo "  Docker containers  (one of: $(CONTAINERS))"
->@echo "    make recreate-<ctn>   force-recreate container (share also rebuilds)"
+>@echo "    make recreate-<ctn>   force-recreate container (share-flask, vhosts, mc-flask rebuild)"
 >@echo "    make d-restart-<ctn>  reload container without recreating"
 >@echo "    make d-logs-<ctn>     follow container logs"
 >@echo ""
