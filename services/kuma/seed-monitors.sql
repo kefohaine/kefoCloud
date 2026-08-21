@@ -1,9 +1,9 @@
 -- First-time Kuma monitor seed. Idempotent — safe to re-run.
 -- Apply with:
---   docker exec -i kuma sqlite3 /app/data/kuma.db < services/kuma/seed-monitors.sql
+--   docker exec -i ut-kuma sqlite3 /app/data/kuma.db < services/kuma/seed-monitors.sql
 --
 -- Adjust user_id (1) if your admin is not id=1
--- (check: docker exec kuma sqlite3 /app/data/kuma.db "SELECT id,username FROM user;").
+-- (check: docker exec ut-kuma sqlite3 /app/data/kuma.db "SELECT id,username FROM user;").
 --
 -- Schema differences vs older Kuma: docker_host has user_id/docker_type/docker_daemon
 -- (no endpoint/type), group has no user_id. If your schema differs, edit the columns.

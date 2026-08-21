@@ -1,7 +1,7 @@
 services:
   kuma:
     image: louislam/uptime-kuma:1
-    container_name: kuma
+    container_name: ut-kuma
     restart: unless-stopped
 
     expose:
