@@ -1,0 +1,20 @@
+# api.jehpok.com — placeholder. Currently just a 200 OK on / so the
+# hostname stays alive for any external integrations that resolve it.
+# TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/mc.jehpok.com.caddy).
+
+https://api.jehpok.com {
+    tls {
+        dns cloudflare {env.CF_API_TOKEN}
+    }
+    import compress
+    request_body {
+        max_size 100m
+    }
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+    }
+    @root path /
+    respond @root "ok"
+    respond "not found" 404
+}

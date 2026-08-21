@@ -1,0 +1,40 @@
+# share.jehpok.com — URL shortener + file browser. Two upstream paths:
+# /share/* proxies to the Flask app (links creation, OAuth, etc) and
+# /files/* is a static file_server over the share/files bind mount
+# (the actual uploaded binaries). The Flask app also handles /api/*.
+#
+# TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/mc.jehpok.com.caddy).
+
+https://share.jehpok.com {
+    tls {
+        dns cloudflare {env.CF_API_TOKEN}
+    }
+    import compress
+    request_body {
+        max_size 100m
+    }
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+    }
+    @admin path /share /share/* /api /api/* /healthz
+    respond @admin "not found" 404
+    @browse path /files /files/*
+    handle @browse {
+        root * /files
+        uri strip_prefix /files
+        file_server browse {
+            precompressed zstd gzip
+        }
+    }
+    handle_errors 404 {
+        respond "not found"
+    }
+    reverse_proxy 172.22.0.3:5000 {
+        @notfound status 404
+        handle_response @notfound {
+            respond "not found" 404
+        }
+    }
+}
