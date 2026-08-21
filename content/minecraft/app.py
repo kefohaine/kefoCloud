@@ -42,13 +42,13 @@ RCON_PASSWORD = os.environ.get("RCON_PASSWORD", "change-me-via-dashboard")
 
 CONTAINER = os.environ.get("MC_CONTAINER", "mc")
 
-# Backup directory for dashboard-created world snapshots. Lives inside the
-# game-data bind mount (/var/www/custom/projects/jehpok/mc/data
-# → /server) as a sibling of `world/`, so the dashboard container can write
-# to it without an extra host mount. Makefile-driven backups (`make
-# make bkp-mc`) write to $(REPO) — i.e. the parent of `mc/` —
-# and are independent of this directory.
-BACKUP_DIR = SERVER_DIR / ".backups"
+# Backup directory for dashboard-created world snapshots. Bound into
+# the container at /backups (see services/mc/docker-compose.mc-web.yml
+# `BACKUP_DIR` env + volume mount), which is $(REPO)/backups on the host
+# — the same place `make bkp-mc` writes. Unifying the two locations
+# means dashboard snapshots get the existing `clean-backups` rotation
+# (keep latest 3) instead of accumulating forever.
+BACKUP_DIR = Path(os.environ.get("BACKUP_DIR", "/backups"))
 BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
 app = Flask(__name__,
