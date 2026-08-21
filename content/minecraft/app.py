@@ -36,11 +36,11 @@ LOGS_DIR = SERVER_DIR / "logs"
 LATEST_LOG = LOGS_DIR / "latest.log"
 PLUGINS_DIR = SERVER_DIR / "plugins"
 
-RCON_HOST = os.environ.get("RCON_HOST", "mc")
+RCON_HOST = os.environ.get("RCON_HOST", "mc-server")
 RCON_PORT = int(os.environ.get("RCON_PORT", "25575"))
 RCON_PASSWORD = os.environ.get("RCON_PASSWORD", "change-me-via-dashboard")
 
-CONTAINER = os.environ.get("MC_CONTAINER", "mc")
+CONTAINER = os.environ.get("MC_CONTAINER", "mc-server")
 
 # Backup directory for dashboard-created world snapshots. Bound into
 # the container at /backups (see services/mc/docker-compose.mc-web.yml
@@ -273,37 +273,26 @@ def _rcon_ready_since(started_at_iso):
         return None
     from datetime import datetime, timezone
     started_dt = datetime.fromisoformat(started_at_iso.replace("Z", "+00:00"))
-    started_hms = (started_dt.hour, started_dt.minute, started_dt.second)
-    # latest.log is appended-to across Paper restarts (rotation only on
-    # size or shutdown), so older session bootstrap lines can sit at the
-    # bottom of the file alongside the new session's lines. Walk all
-    # bootstrap lines; only the one whose HH:MM:SS matches the current
-    # container StartedAt belongs to the current session.
-    bootstrap_match = None
-    for m in _RCON_READY_BOOTSTRAP_RE.finditer(text):
-        bootstrap_match = m  # last one wins
-    if bootstrap_match is None:
-        # No bootstrap line at all yet — server still in very early init.
-        return None
-    boot_hms = tuple(int(x) for x in bootstrap_match.group(1).split(":"))
-    if boot_hms != started_hms:
-        # The latest bootstrap on disk is from an earlier session. Paper
-        # hasn't written this session's bootstrap yet — treat as still
-        # booting so we never return a stale timestamp from an old
-        # session (which is the uptime-reset bug).
-        return None
-    tail = text[bootstrap_match.end():]
-    listener_match = _RCON_READY_LISTENER_RE.search(tail)
+    # Paper logs `[bootstrap] ...` from the JVM process clock, which can
+    # be anywhere from a few hundred ms to ~30 s after Docker's
+    # State.StartedAt (depends on how long image init + Java startup
+    # takes before Paper's Main thread writes the first line). We can't
+    # rely on HH:MM:SS equality; instead, find the listener line and
+    # trust it if it's after the container's StartedAt. The latest
+    # listener line in the file is the most recent session boundary.
+    listener_match = None
+    for m in _RCON_READY_LISTENER_RE.finditer(text):
+        listener_match = m  # last one wins
     if listener_match is None:
-        # Current session's bootstrap is logged but the rcon listener
-        # hasn't bound yet. Still booting.
         return None
-    # Combine the listener-start line's HH:MM:SS with the date from
-    # started_at_iso to form an absolute timestamp. The itzg image sets
-    # TZ=UTC (compose env) so JVM local time == UTC.
     hms = listener_match.group(1)
     h, m, s = (int(x) for x in hms.split(":"))
     online_dt = started_dt.replace(hour=h, minute=m, second=s, microsecond=0)
+    if online_dt < started_dt:
+        # Listener line is from before this container started — old
+        # session residue in latest.log. Paper hasn't logged the new
+        # session's listener line yet, so still booting.
+        return None
     epoch = online_dt.timestamp()
     with _rcon_ready_lock:
         _rcon_ready_cache["started_at"] = started_at_iso
@@ -499,7 +488,7 @@ def container_action(action):
     try:
         c = _docker_client.containers.get(CONTAINER)
     except NotFound:
-        # The mc container may be absent (not yet provisioned on first
+        # The mc-server container may be absent (not yet provisioned on first
         # boot, removed via `make recreate-mc` while stopped, or stopped
         # and pruned). Surface a clear message instead of the full Docker
         # SDK 404 traceback so the operator doesn't chase a non-bug.
