@@ -113,9 +113,11 @@ clean-apt:
 # Keep the 3 most recent artifacts per backup pattern; delete older.
 # The mc-backup pattern also matches the old minecraft-backup-* names so
 # artifacts orphaned by the rename age out instead of accumulating forever.
+# All backups live under $(REPO)/backups/ since the bkp-<src> recipes were
+# moved there; pre-migration top-level artifacts were also moved there.
 clean-backups:
 >@for pattern in cloud-backup-* share-backup-*.db vault-backup-*.tar.gz secrets-bundle-*.tar.gz 'mc-backup-*.tar.gz minecraft-backup-*.tar.gz'; do \
-    sudo ls -1dt $(REPO)/$$pattern 2>/dev/null | tail -n +4 | sudo xargs -r rm -rf; \
+    sudo ls -1dt $(REPO)/backups/$$pattern 2>/dev/null | tail -n +4 | sudo xargs -r rm -rf; \
   done
 >@echo "Pruned backups older than the 3 most recent per pattern."
 
@@ -288,7 +290,8 @@ install-config-claude:
 .PHONY: bundle-secrets install-secrets
 
 bundle-secrets:
->@dest=$(REPO)/secrets-bundle-$$(date +%Y%m%d).tar.gz; \
+>@dest=$(BKP_DIR)/secrets-bundle-$$(date +%Y%m%d).tar.gz; \
+  sudo mkdir -p "$(BKP_DIR)"; \
   sudo tar czf "$$dest" \
     --warning=no-absolute-names \
     /home/debian/.ssh/github_key \
@@ -304,12 +307,12 @@ bundle-secrets:
 >@echo "Secrets bundle at $$dest"
 
 # Extract a secrets bundle tar.gz to the live paths. Defaults to the
-# newest secrets-bundle-*.tar.gz under $(REPO); override with BUNDLE=<path>.
+# newest secrets-bundle-*.tar.gz under $(BKP_DIR); override with BUNDLE=<path>.
 install-secrets:
 >@if [ -z "$(BUNDLE)" ]; then \
-    BUNDLE="$$(ls -1t $(REPO)/secrets-bundle-*.tar.gz 2>/dev/null | head -1)"; \
+    BUNDLE="$$(ls -1t $(BKP_DIR)/secrets-bundle-*.tar.gz 2>/dev/null | head -1)"; \
     if [ -z "$$BUNDLE" ]; then \
-      echo "No secrets-bundle-*.tar.gz found in $(REPO)."; \
+      echo "No secrets-bundle-*.tar.gz found in $(BKP_DIR)."; \
       exit 1; \
     fi; \
     echo "Using latest bundle: $$BUNDLE"; \
@@ -323,11 +326,15 @@ install-secrets:
 # secrets need a deliberate decision).
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: bkp-cloud bkp-share bkp-vault bkp-mc bkp-all
+.PHONY: bkp-cloud bkp-share bkp-vault bkp-mc bkp-all bkp-list
+
+# All bkp-* recipes write under $(REPO)/backups/. bkp-list enumerates that
+# dir so the operator has one place to see what's been snapshotted.
+BKP_DIR := $(REPO)/backups
 
 bkp-cloud:
->@dest=$(REPO)/cloud-backup-$$(date +%Y%m%d); \
-  sudo mkdir -p "$$dest"; \
+>@dest=$(BKP_DIR)/cloud-backup-$$(date +%Y%m%d); \
+  sudo mkdir -p "$(BKP_DIR)" "$$dest"; \
   sudo chown debian:debian "$$dest"; \
   docker exec -w /var/www/html cloud php occ maintenance:mode --on; \
   trap 'docker exec -w /var/www/html cloud php occ maintenance:mode --off' EXIT; \
@@ -338,12 +345,14 @@ bkp-cloud:
   echo "Backup at $$dest"
 
 bkp-share:
->@sudo cp $(REPO)/share/db/links.db $(REPO)/share-backup-$$(date +%Y%m%d).db
->@echo "Backup at $(REPO)/share-backup-$$(date +%Y%m%d).db"
+>@sudo mkdir -p "$(BKP_DIR)"; \
+  sudo cp $(REPO)/share/db/links.db $(BKP_DIR)/share-backup-$$(date +%Y%m%d).db
+>@echo "Backup at $(BKP_DIR)/share-backup-$$(date +%Y%m%d).db"
 
 bkp-vault:
->@sudo bash -c 'tar czf $(REPO)/vault-backup-$$(date +%Y%m%d).tar.gz -C $(REPO)/vault data'
->@echo "Backup at $(REPO)/vault-backup-$$(date +%Y%m%d).tar.gz"
+>@sudo mkdir -p "$(BKP_DIR)"; \
+  sudo bash -c 'tar czf $(BKP_DIR)/vault-backup-$$(date +%Y%m%d).tar.gz -C $(REPO)/vault data'
+>@echo "Backup at $(BKP_DIR)/vault-backup-$$(date +%Y%m%d).tar.gz"
 
 # Snapshot just the Minecraft world data folder as a timestamped .tar.gz.
 # Differs from `bkp-all` (which snapshots everything): this one is for
@@ -353,12 +362,28 @@ bkp-vault:
 # so tar reads a quiescent filesystem; running this standalone while the
 # server is up is unsafe (regions may be partially written).
 bkp-mc:
->@dest=$(REPO)/mc-backup-$$(date +%Y%m%d-%H%M%S).tar.gz; \
+>@dest=$(BKP_DIR)/mc-backup-$$(date +%Y%m%d-%H%M%S).tar.gz; \
+  sudo mkdir -p "$(BKP_DIR)"; \
   sudo tar czf "$$dest" -C $(REPO)/mc/data world; \
   sudo chown debian:debian "$$dest"; \
   echo "World backup at $$dest"
 
 bkp-all: bkp-cloud bkp-share bkp-vault bkp-mc
+
+# Show every backup artifact currently on disk, newest first. Includes
+# secrets bundles — the names/contents are not enumerated, just listed.
+bkp-list:
+>@if [ ! -d "$(BKP_DIR)" ]; then \
+    echo "$(BKP_DIR) does not exist yet. Run any bkp-* recipe first."; \
+    exit 0; \
+  fi
+>@ls -lht "$(BKP_DIR)" 2>&1
+>@echo ""
+>@echo "Counts per pattern:"
+>@for p in cloud-backup-* share-backup-*.db vault-backup-*.tar.gz secrets-bundle-*.tar.gz 'mc-backup-*.tar.gz minecraft-backup-*.tar.gz'; do \
+    n="$$(ls -1 $(BKP_DIR)/$$p 2>/dev/null | wc -l)"; \
+    printf "  %-45s %d\n" "$$p" "$$n"; \
+  done
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Tmux sessions
@@ -492,14 +517,15 @@ help:
 >@echo "    make install-config-daily-timer        /etc/systemd/system/jehpok-daily.timer"
 >@echo "    make install-config-claude             \$$REPO/repo/.claude/settings.local.json"
 >@echo ""
->@echo "  Backups (bkp-*)"
+>@echo "  Backups (bkp-*) — all artifacts land in \$$REPO/backups/"
 >@echo "    make bkp-cloud        Nextcloud snapshot (maintenance mode during copy)"
 >@echo "    make bkp-share        shortener SQLite DB"
 >@echo "    make bkp-vault        Vaultwarden data tar"
 >@echo "    make bkp-mc           Minecraft world tar (stops the container via daily.sh when chained)"
+>@echo "    make bkp-list         list every artifact under \$$REPO/backups/ + count per pattern"
 >@echo ""
 >@echo "  Bundles"
->@echo "    make bundle-secrets   collect live secrets into \$$REPO/secrets-bundle-<date>.tar.gz"
+>@echo "    make bundle-secrets   collect live secrets into \$$REPO/backups/secrets-bundle-<date>.tar.gz"
 >@echo "    make install-secrets  extract a bundle to live paths (BUNDLE=<path> to override)"
 >@echo ""
 >@echo "  Tmux sessions"
