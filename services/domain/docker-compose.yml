@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
     image: caddy-dns:local
-    container_name: domain
+    container_name: vhosts
     restart: unless-stopped
 
     # Host network so Caddy sees the real client source IP — without it,
