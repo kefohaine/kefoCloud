@@ -46,7 +46,7 @@ CONTAINER = os.environ.get("MC_CONTAINER", "mc")
 # game-data bind mount (/var/www/custom/projects/jehpok/mc/data
 # → /server) as a sibling of `world/`, so the dashboard container can write
 # to it without an extra host mount. Makefile-driven backups (`make
-# backup-mc`) write to $(REPO) — i.e. the parent of `mc/` —
+# make bkp-mc`) write to $(REPO) — i.e. the parent of `mc/` —
 # and are independent of this directory.
 BACKUP_DIR = SERVER_DIR / ".backups"
 BACKUP_DIR.mkdir(parents=True, exist_ok=True)
