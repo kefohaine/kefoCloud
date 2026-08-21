@@ -1,0 +1,68 @@
+services:
+  mc-web:
+    build: .
+    image: jehpok/minecraft-web:1
+    container_name: mc-web
+    restart: unless-stopped
+
+    expose:
+      - "5000"
+
+    # Pin the bridge IP so Caddy's @mc upstream (172.22.0.8:5000) stays valid
+    # across recreates. Without this Docker assigns the next free /16 address,
+    # and a container named `mc-web` could land on .8 one run and .9 the
+    # next. The other pinned upstreams in services/domain/Caddyfile rely on
+    # this convention too.
+    networks:
+      net:
+        ipv4_address: 172.22.0.8
+
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/mc/healthz').read()\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    environment:
+      RCON_HOST: mc
+      RCON_PORT: "25575"
+      RCON_PASSWORD: "change-me-via-dashboard"
+      SERVER_DIR: /server
+      # Unified mc backup location. Host bind mount below puts
+      # $(REPO)/backups at /backups inside the container so dashboard
+      # snapshots land alongside `make bkp-mc` artifacts and get the
+      # existing clean-backups rotation for free.
+      BACKUP_DIR: /backups
+
+    volumes:
+      # Bind the game server's data dir rw so the dashboard can edit
+      # server.properties, YAML config files, and handle world downloads,
+      # uploads, and regeneration. The dashboard is the only writer of
+      # /data/server.properties, /data/config/, /data/bukkit.yml,
+      # /data/spigot.yml, /data/commands.yml, and /data/plugins/ — Paper
+      # itself never touches those files while running. The dashboard
+      # refuses world writes (download / upload / regenerate) while the
+      # game container is running, so /data/world is only mutated when the
+      # server is stopped. Game data safety still relies on the game
+      # container being the only writer of /data/world at runtime.
+      - /var/www/custom/projects/jehpok/mc/data:/server:rw
+      - ../../content/minecraft:/app/src:ro
+      # Unified backup dir. Dashboard snapshots land at /backups (env var
+      # BACKUP_DIR above), which on the host is $(REPO)/backups — the
+      # same place `make bkp-mc` writes. Mounted rw so the dashboard can
+      # create / list / delete tarballs there.
+      - /var/www/custom/projects/jehpok/backups:/backups:rw
+      # Docker socket so the dashboard can start/stop/restart the game
+      # container via the Python docker SDK (see services/mc/Dockerfile).
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  net:
+    external: true
