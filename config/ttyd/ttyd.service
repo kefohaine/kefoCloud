@@ -8,7 +8,7 @@ Wants=network-online.target
 Type=simple
 User=debian
 Group=debian
-WorkingDirectory=/var/www/custom/projects/jehpok/repo
+WorkingDirectory=/var/www/custom/projects/homelab/repo
 
 # macOS Terminal "Pro" theme — colors from Apple's Terminal.app Pro
 # profile (Settings > Profiles > Pro). Font: Menlo 13pt (macOS
