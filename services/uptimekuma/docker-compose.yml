@@ -4,6 +4,10 @@ services:
     container_name: uptimekuma
     restart: unless-stopped
 
+    # Hard RAM cap (no container swap) — survives recreates, unlike `docker update`.
+    mem_limit: 512m
+    memswap_limit: 512m
+
     expose:
       - "3001"
 
