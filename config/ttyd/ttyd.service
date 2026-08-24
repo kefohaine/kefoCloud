@@ -6,8 +6,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=debian
-Group=debian
+User=op
+Group=op
 WorkingDirectory=/var/www/custom/projects/homelab/repo
 
 # macOS Terminal "Pro" theme — colors from Apple's Terminal.app Pro
