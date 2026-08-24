@@ -254,10 +254,14 @@ EOF
 }
 
 prep_dirs() {
-  cd "$REPO" || exit 1
-  mkdir -p cloud/html cloud/users vault/data kuma/data
-  sudo chown -R 33:33 cloud/html cloud/users
-  sudo chown -R 1000:1000 vault/data
+  # Data dirs live at $(REPO)/... (sibling of the clone), matching the
+  # compose bind mounts — not inside repo/.
+  sudo mkdir -p /var/www/custom/projects/homelab/cloud/html \
+               /var/www/custom/projects/homelab/cloud/users \
+               /var/www/custom/projects/homelab/vault/data \
+               /var/www/custom/projects/homelab/kuma/data
+  sudo chown -R 33:33 /var/www/custom/projects/homelab/cloud/html /var/www/custom/projects/homelab/cloud/users
+  sudo chown -R 1000:1000 /var/www/custom/projects/homelab/vault/data
 }
 
 renames() {
@@ -388,7 +392,8 @@ WHERE g.name = 'Containers' AND m.name LIKE 'docker: %'
 EOF
   log "  goose service secret"
   if ! grep -q GOOSE_SERVER__SECRET_KEY config/goose/goose.service; then
-    echo "Environment=GOOSE_SERVER__SECRET_KEY=$(openssl rand -hex 32)" >> config/goose/goose.service
+    # insert into [Service] (after ExecStart) — a plain append lands after [Install] and is ignored
+    sed -i "/^ExecStart=/a Environment=GOOSE_SERVER__SECRET_KEY=$(openssl rand -hex 32)" config/goose/goose.service
   fi
   git add -A && git -c user.name="$OP_USER" -c user.email="$OP_USER@$DOMAIN" \
     commit -q -m "install: domain $DOMAIN, user $OP_USER, shell., 4 containers" 2>/dev/null || true
@@ -428,20 +433,6 @@ containers_up() {
   make recreate-nextcloud   >>"$LOG" 2>&1 || fail nextcloud
   make recreate-vaultwarden >>"$LOG" 2>&1 || fail vaultwarden
   make recreate-ut-kuma     >>"$LOG" 2>&1 || fail kuma
-}
-
-nextcloud_fix() {
-  local i=0
-  while [ $i -lt 120 ]; do
-    docker exec -w /var/www/html nextcloud php occ status >/dev/null 2>&1 && break
-    sleep 2; i=$((i+2))
-  done
-  local dd
-  dd=$(docker exec -w /var/www/html nextcloud php occ config:system:get datadirectory 2>/dev/null | tr -d '\n')
-  if [ "$dd" != "/data" ]; then
-    docker exec -w /var/www/html nextcloud php occ config:system:set datadirectory --value /data >>"$LOG" 2>&1 \
-      || fail datadirectory
-  fi
 }
 
 kuma_seed() {
@@ -524,7 +515,6 @@ phase2_op() {
   caddy_data
   host_services
   containers_up
-  nextcloud_fix
   kuma_seed
   cf_dns
   issue_certs
