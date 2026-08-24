@@ -139,7 +139,7 @@ Resolved items grouped by month. One line per item, aggressively short.
 
 ### Aug 2026 — Nextcloud, TLS, hardening, ops
 - **ufw status broken** — `sudo ufw status` works now (only benign "unable to resolve host server" warning); backend mismatch never re-investigated.
-- **MC game port opened** — `ufw allow 25565/tcp` (host-net Paper server); 19132 intentionally NOT opened (Geyser absent).
+- **MC game ports opened** — `ufw allow 25565/tcp` + `19132/udp` (host-net Paper server; 19132 pre-opened for planned Geyser, no listener yet).
 - **Nextcloud integration** — first hosted on the VPS, migrated to `app.homelab.com/cloud`, reverted, then linked via PHP-FPM.
 - **Nextcloud backend upgrade** — image bump.
 - **CoreDNS isolated** — split into its own directory; config renamed.

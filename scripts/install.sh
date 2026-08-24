@@ -203,10 +203,12 @@ EOF
   fi
   ufw allow 80/tcp >/dev/null 2>&1
   ufw allow 443/tcp >/dev/null 2>&1
-  # Minecraft Java game port — the PufferPanel Paper server runs host-net
-  # (binds 0.0.0.0:25565 on the public IP). Bedrock 19132 is NOT opened:
-  # Geyser is not installed on the current server, nothing listens there.
+  # Minecraft game ports — the PufferPanel Paper server runs host-net
+  # (binds 0.0.0.0:25565 on the public IP). Bedrock 19132/udp is opened
+  # preemptively for the planned Geyser bridge (not installed yet; no
+  # listener until Geyser is added).
   ufw allow 25565/tcp >/dev/null 2>&1
+  ufw allow 19132/udp >/dev/null 2>&1
   echo y | ufw enable >/dev/null 2>&1 || true
 
   save_state
