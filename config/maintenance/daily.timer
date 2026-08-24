@@ -1,5 +1,5 @@
 [Unit]
-Description=homelab.com daily maintenance timer
+Description=fxmq.net daily maintenance timer
 
 [Timer]
 OnCalendar=daily
