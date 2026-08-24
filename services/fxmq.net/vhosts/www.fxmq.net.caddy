@@ -1,0 +1,13 @@
+# www.fxmq.net — basic health/landing stub: responds "ok" on /.
+# TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/cloud.fxmq.net.caddy).
+
+https://www.fxmq.net {
+    tls {
+        dns cloudflare {env.CF_API_TOKEN}
+    }
+    import compress
+    header {
+        import security_headers
+    }
+    respond "ok" 200
+}
