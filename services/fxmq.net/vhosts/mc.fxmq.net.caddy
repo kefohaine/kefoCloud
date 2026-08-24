@@ -18,6 +18,13 @@ https://mc.fxmq.net {
     handle @register {
         respond 403
     }
+    # PufferPanel sends max-age=60 on its JS/wasm chunks, so the browser
+    # revalidates the whole SPA every minute. Hashed chunk names mean a
+    # panel upgrade self-invalidates; 86400 kills the refetch churn and
+    # lets Cloudflare edge-cache the assets (Vary so each encoding is cached).
+    @static path /js/* /wasm/* /css/* /img/* /fonts/*
+    header @static Cache-Control "public, max-age=86400"
+    header @static Vary "Accept-Encoding"
     handle {
         reverse_proxy 172.22.0.8:8080
     }
