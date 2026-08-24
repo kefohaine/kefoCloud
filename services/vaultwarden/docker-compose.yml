@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
 
     environment:
-      DOMAIN: https://vault.homelab.com
+      DOMAIN: https://vault.fxmq.net
       SIGNUPS_ALLOWED: "false"
       INVITATIONS_ALLOWED: "false"
       SHOW_PASSWORD_HINT: "false"
