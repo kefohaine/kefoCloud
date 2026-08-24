@@ -153,7 +153,7 @@ EOF
   systemctl restart docker
 
   if ! command -v goose >/dev/null 2>&1 && [ ! -x /usr/local/bin/goose ]; then
-    curl -fsSL https://github.com/block/goose/install.sh | sh >/dev/null 2>&1 || true
+    curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | sh >/dev/null 2>&1 || true
   fi
   if command -v goose >/dev/null 2>&1; then
     install -m 0755 "$(command -v goose)" /usr/local/bin/goose || true
@@ -172,6 +172,11 @@ EOF
   [ -n "$TS_IP" ] && log "tailscale IP: $TS_IP" || fail ts_ip
 
   ufw allow from 100.64.0.0/10 to any port 22 proto tcp >/dev/null 2>&1
+  # Keep the current SSH client reachable even before it joins the tailnet,
+  # so enabling ufw never locks the operator out mid-install.
+  if [ -n "${SSH_CLIENT:-}" ]; then
+    ufw allow from "$(echo "$SSH_CLIENT" | awk '{print $1}')" to any port 22 proto tcp >/dev/null 2>&1 || true
+  fi
   ufw allow 80/tcp >/dev/null 2>&1
   ufw allow 443/tcp >/dev/null 2>&1
   echo y | ufw enable >/dev/null 2>&1 || true
@@ -478,7 +483,7 @@ problem() {
 hint() {
   case "$1" in
     apt)            echo "install git curl make sudo dnsmasq ufw jq apache2-utils, plus docker with the compose plugin (docker-ce from download.docker.com on trixie), then re-check" ;;
-    goose)          echo "run: curl -fsSL https://github.com/block/goose/install.sh | sh, then re-check" ;;
+    goose)          echo "run: curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | sh, then re-check" ;;
     user)           echo "run: adduser --disabled-password --gecos '' $OP_USER && usermod -aG sudo,docker $OP_USER, then re-check" ;;
     ssh_keys)       echo "add a public key to /root/.ssh/authorized_keys and copy it to /home/$OP_USER/.ssh/authorized_keys, then re-check" ;;
     tailscale)      echo "run: curl -fsSL https://tailscale.com/install.sh | sh, then re-check" ;;
