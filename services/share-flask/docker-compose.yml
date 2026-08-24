@@ -1,7 +1,7 @@
 services:
   share:
     build: .
-    image: jehpok/share:1
+    image: homelab/share:1
     container_name: share-flask
     restart: unless-stopped
 
@@ -16,8 +16,8 @@ services:
       start_period: 10s
 
     volumes:
-      - /var/www/custom/projects/jehpok/share/db:/data
-      - /var/www/custom/projects/jehpok/share/files:/data/files
+      - /var/www/custom/projects/homelab/share/db:/data
+      - /var/www/custom/projects/homelab/share/files:/data/files
       - ../../content/share:/app/src:ro
 
     logging:
@@ -27,8 +27,8 @@ services:
         max-file: "3"
 
     # Pin the bridge IP — services/vhosts/Caddyfile hardcodes
-    # 172.22.0.3:5000 for the share-flask upstream (both @share on server.jehpok.com
-    # and the main reverse_proxy on share.jehpok.com).
+    # 172.22.0.3:5000 for the share-flask upstream (both @share on server.homelab.com
+    # and the main reverse_proxy on share.homelab.com).
     networks:
       net:
         ipv4_address: 172.22.0.3
