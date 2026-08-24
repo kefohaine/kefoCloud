@@ -1,0 +1,24 @@
+https://shell.fxmq.net {
+    tls {
+        dns cloudflare {env.CF_API_TOKEN}
+    }
+    import compress
+    @not_tailnet not remote_ip 100.64.0.0/10
+    handle @not_tailnet {
+        respond 403
+    }
+    @shell path /shell /shell/*
+    handle @shell {
+        uri strip_prefix /shell
+        reverse_proxy 172.22.0.1:7681 {
+            transport http {
+                versions 1.1
+            }
+        }
+    }
+    handle {
+        @root path /
+        respond @root "ok"
+        respond "not found" 404
+    }
+}

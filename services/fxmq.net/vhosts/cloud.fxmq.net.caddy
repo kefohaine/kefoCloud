@@ -1,0 +1,38 @@
+# cloud.fxmq.net — Nextcloud. PHP-FPM at 172.22.0.5:9000 serves all
+# .php requests; everything else is file_server from the static html
+# root at /nextcloud. The @blocked matcher denies direct access to
+# internal NC paths (data, config, lib, 3rdparty, templates, occ,
+# db, updater) so a misconfigured upload can't expose them. The two
+# /.well-known redirects let CardDAV/CalDAV auto-discovery work
+# without exposing the long /remote.php/dav URL.
+#
+# TLS: Let's Encrypt DNS-01 via Cloudflare. Switched from the CF
+# Origin CA wildcard cert because the wildcard cert was serving as
+# a SNI fallback for mc.fxmq.net, blocking the mc.fxmq.net
+# automation policy from firing. Per-vhost ACME keeps each cert
+# scoped to its own SNI.
+
+https://cloud.fxmq.net {
+    tls {
+        dns cloudflare {env.CF_API_TOKEN}
+    }
+    root * /nextcloud
+    request_body {
+        max_size 100m
+    }
+    @blocked path /data/* /config/* /lib/* /3rdparty/* /templates/* /occ /console.php /db/* /updater/*
+    respond @blocked "not found" 404
+    redir /.well-known/carddav /remote.php/dav 301
+    redir /.well-known/caldav /remote.php/dav 301
+    php_fastcgi 172.22.0.5:9000 {
+        root /var/www/html
+        dial_timeout 10s
+        read_timeout 300s
+        write_timeout 300s
+    }
+    encode zstd gzip
+    header {
+        import security_headers
+    }
+    file_server
+}
