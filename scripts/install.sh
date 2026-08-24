@@ -95,25 +95,27 @@ phase1_root() {
   log "Phase 1 (root): packages, users, ssh, docker, tailscale, firewall"
   touch "$LOG" && chmod 666 "$LOG"
 
-  DEBIAN_FRONTEND=noninteractive apt-get update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get update -qq >>"$LOG" 2>&1
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     docker.io docker-compose-plugin git curl make sudo dnsmasq ufw jq \
-    apache2-utils >/dev/null 2>&1 || fail apt
+    apache2-utils >>"$LOG" 2>&1 || fail apt
 
   if ! id -u "$OP_USER" >/dev/null 2>&1; then
     adduser --disabled-password --gecos "" "$OP_USER" || fail user
   fi
   usermod -aG sudo,docker "$OP_USER"
+  mkdir -p /etc/sudoers.d
   echo "$OP_USER ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/$OP_USER-passwordless
   chmod 0440 /etc/sudoers.d/$OP_USER-passwordless
 
   # SSH: root and op both log in with keys. root keeps its own keys; op
   # gets a copy. Password auth stays off; root is key-only.
   mkdir -p /home/$OP_USER/.ssh /root/.ssh
+  chown -R $OP_USER:$OP_USER /home/$OP_USER/.ssh
+  chmod 700 /home/$OP_USER/.ssh
   if [ -s /root/.ssh/authorized_keys ]; then
     cp /root/.ssh/authorized_keys /home/$OP_USER/.ssh/authorized_keys
-    chown -R $OP_USER:$OP_USER /home/$OP_USER/.ssh
-    chmod 700 /home/$OP_USER/.ssh && chmod 600 /home/$OP_USER/.ssh/authorized_keys
+    chmod 600 /home/$OP_USER/.ssh/authorized_keys
   else
     fail ssh_keys
   fi
@@ -122,6 +124,7 @@ phase1_root() {
   systemctl restart sshd
 
   systemctl enable --now docker
+  mkdir -p /etc/docker
   cat > /etc/docker/daemon.json <<'EOF'
 {
     "log-driver": "json-file",
@@ -170,8 +173,8 @@ EOF
 
 ensure_repo() {
   if [ -d "$REPO/.git" ]; then log "repo present at $REPO"; return; fi
-  mkdir -p /var/www/custom/projects/homelab
-  chown $OP_USER:$OP_USER /var/www/custom/projects/homelab
+  sudo mkdir -p /var/www/custom/projects/homelab
+  sudo chown $OP_USER:$OP_USER /var/www/custom/projects/homelab
   if [ ! -f ~/.ssh/github_key ]; then
     ssh-keygen -t ed25519 -N "" -f ~/.ssh/github_key -C "$OP_USER@$DOMAIN" >/dev/null
     cat > ~/.ssh/config <<EOF
