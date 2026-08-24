@@ -487,7 +487,7 @@ git-com:
 >cd $(REPO)/repo && git commit -m "$(MSG)"
 
 git-push:
->cd $(REPO)/repo && git push homelab.com main
+>cd $(REPO)/repo && git push homelab main
 
 # Bulk: stage + commit (MSG required) + push in one shot. Same as the
 # old 'make push', kept as a shortcut for the common case.
@@ -496,7 +496,7 @@ git-all: git-add
     echo "Usage: make git-all MSG=\"...\"  (MSG is required)"; \
     exit 1; \
   fi
->cd $(REPO)/repo && git commit -m "$(MSG)" && git push homelab.com main
+>cd $(REPO)/repo && git commit -m "$(MSG)" && git push homelab main
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Help (default goal)
@@ -531,7 +531,7 @@ help:
 >@echo "  Git"
 >@echo "    make git-add          git add -A in $(REPO)/repo"
 >@echo "    make git-com MSG=\"…\"  git commit -m MSG (MSG required)"
->@echo "    make git-push         git push homelab.com main"
+>@echo "    make git-push         git push homelab main"
 >@echo ""
 >@echo "  Maintenance"
 >@echo "    make status           containers + host services + disk + memory"

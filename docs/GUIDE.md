@@ -47,7 +47,7 @@ make install-config-bundle  # extract a config bundle into $(REPO)/repo/config/ 
 make migrate           # cat docs/MIGRATE.md — the full VPS-to-VPS migration runbook
 make git-add           # git add -A in $(REPO)/repo
 make git-com MSG="…"   # git commit -m MSG (MSG required)
-make git-push          # git push homelab.com main
+make git-push          # git push homelab main
 make git-all MSG="…"   # shortcut: stage + commit + push
 make bkp-cloud         # snapshot Nextcloud data (maintenance mode on during the copy)
 make bkp-share         # copy the shortener SQLite DB to $(REPO)/backups/share-backup-<date>.db
@@ -125,10 +125,10 @@ The repo is owned by `debian:debian` (the SSH/login user). Edit directly when si
 
 ## Git remotes
 
-- `homelab.com` — SSH remote (`git@github.com:friedutch/homelab.git`). The only remote; use for pushes and pulls.
+- `homelab` — SSH remote (`git@github.com:friedutch/homelab.git`). The only remote; use for pushes and pulls.
 
 ```bash
-git push homelab.com main
+git push homelab main
 ```
 
 ## Operational gotchas
