@@ -8,7 +8,7 @@ SHELL := /bin/bash
 
 REPO     := /var/www/custom/projects/homelab
 COMPOSE  := docker compose -f
-CONTAINERS := fxmq.net ut-kuma nextcloud vaultwarden
+CONTAINERS := fxmq.net ut-kuma nextcloud vaultwarden pufferpanel
 HOST     := ttyd dnsmasq goose
 
 # Per-container compose file map. Default is `services/<ctn>/docker-compose.yml`;
@@ -92,7 +92,7 @@ logs-dnsmasq:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: status clean-docker clean-apt clean-backups clean-all update install-config help
+.PHONY: status clean-docker clean-apt clean-backups clean-all update install-config kuma-import help
 
 status:
 >@echo "--- containers ---"
@@ -148,6 +148,9 @@ update:
 
 # One-shot bootstrap: install ttyd, copy config/ to live, enable units,
 # restore Claude settings, open the UFW rule for ttyd. Idempotent.
+kuma-import:
+>sudo scripts/kuma-import.sh $(KUMA_DB)
+
 install-config:
 >@if ! command -v ttyd >/dev/null 2>&1; then \
     echo "Installing ttyd..."; \
