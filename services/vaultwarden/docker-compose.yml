@@ -4,6 +4,10 @@ services:
     container_name: vaultwarden
     restart: unless-stopped
 
+    # Hard RAM cap (no container swap) — survives recreates, unlike `docker update`.
+    mem_limit: 512m
+    memswap_limit: 512m
+
     environment:
       DOMAIN: https://vault.fxmq.net
       SIGNUPS_ALLOWED: "false"
