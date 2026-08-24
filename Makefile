@@ -8,7 +8,7 @@ SHELL := /bin/bash
 
 REPO     := /var/www/custom/projects/homelab
 COMPOSE  := docker compose -f
-CONTAINERS := fxmq.net ut-kuma nextcloud vaultwarden pufferpanel
+CONTAINERS := fxmq.net uptimekuma nextcloud vaultwarden pufferpanel
 HOST     := ttyd dnsmasq goose
 
 # Per-container compose file map. Default is `services/<ctn>/docker-compose.yml`;
