@@ -6,7 +6,7 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -c
 
-REPO     := /var/www/custom/projects/jehpok
+REPO     := /var/www/custom/projects/homelab
 COMPOSE  := docker compose -f
 CONTAINERS := vhosts homer ut-kuma share-flask nextcloud vaultwarden mc mc-flask
 HOST     := ttyd dnsmasq ollama
@@ -32,7 +32,7 @@ COMPOSE_FILES := mc-flask:services/mc/docker-compose.mc-flask.yml
 # share-flask + vhosts (and mc-flask) rebuild their image locally; the rest just pull.
 # share-flask = custom Dockerfile for the link shortener.
 # vhosts = custom Dockerfile adds caddy-dns/cloudflare so the
-#   mc.jehpok.com vhost can use ACME DNS-01 (HTTP-01 is blocked because
+#   mc.homelab.com vhost can use ACME DNS-01 (HTTP-01 is blocked because
 #   the game ports require CF proxy to stay off, but CF proxy is what
 #   would carry the HTTP-01 challenge traffic from the public internet).
 # mc-flask = custom Dockerfile for the Flask+rcon dashboard.
@@ -174,7 +174,7 @@ install-config:
 >sudo cp $(REPO)/repo/config/dnsmasq/10-tailnet.conf /etc/dnsmasq.d/10-tailnet.conf
 >sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
 >sudo cp $(REPO)/repo/config/dnsmasq/dnsmasq.service.conf /etc/systemd/system/dnsmasq.service.d/override.conf
->sudo cp $(REPO)/repo/config/sysctl/99-jehpok.conf /etc/sysctl.d/99-jehpok.conf
+>sudo cp $(REPO)/repo/config/sysctl/99-homelab.conf /etc/sysctl.d/99-homelab.conf
 >sudo sysctl --system >/dev/null
 >@if ! diff -q /etc/docker/daemon.json $(REPO)/repo/config/docker/daemon.json >/dev/null 2>&1; then \
     echo "Installing /etc/docker/daemon.json (Docker daemon restart required to take effect)."; \
@@ -184,19 +184,19 @@ install-config:
   else \
     echo "Docker daemon config already up to date."; \
   fi
->sudo cp $(REPO)/repo/config/maintenance/daily.sh /usr/local/bin/jehpok-daily.sh
->sudo chmod +x /usr/local/bin/jehpok-daily.sh
->sudo cp $(REPO)/repo/config/maintenance/daily.service /etc/systemd/system/jehpok-daily.service
->sudo cp $(REPO)/repo/config/maintenance/daily.timer /etc/systemd/system/jehpok-daily.timer
->sudo touch /var/log/jehpok-daily.log
->sudo chown debian:debian /var/log/jehpok-daily.log
+>sudo cp $(REPO)/repo/config/maintenance/daily.sh /usr/local/bin/homelab-daily.sh
+>sudo chmod +x /usr/local/bin/homelab-daily.sh
+>sudo cp $(REPO)/repo/config/maintenance/daily.service /etc/systemd/system/homelab-daily.service
+>sudo cp $(REPO)/repo/config/maintenance/daily.timer /etc/systemd/system/homelab-daily.timer
+>sudo touch /var/log/homelab-daily.log
+>sudo chown debian:debian /var/log/homelab-daily.log
 >sudo cp $(REPO)/repo/config/ttyd/ttyd.service /etc/systemd/system/ttyd.service
 >mkdir -p $(REPO)/repo/.claude
 >cp $(REPO)/repo/config/claude/settings.local.json $(REPO)/repo/.claude/settings.local.json
 >chmod 0644 $(REPO)/repo/.claude/settings.local.json
 >sudo ufw allow from 172.22.0.0/16 to any port 7681 proto tcp
 >sudo systemctl daemon-reload
->sudo systemctl enable --now ollama jehpok-daily.timer ttyd
+>sudo systemctl enable --now ollama homelab-daily.timer ttyd
 >sudo systemctl restart sshd dnsmasq
 >@echo "Host install-config complete: ollama + ttyd + dnsmasq + sshd + daily timer enabled, Claude settings restored."
 
@@ -250,25 +250,25 @@ install-docker:
 >@echo "Run: sudo systemctl restart docker  (containers stay up via live-restore)."
 
 install-sysctl:
->@echo "install-sysctl: 99-jehpok.conf"
->@sudo cp $(REPO)/repo/config/sysctl/99-jehpok.conf /etc/sysctl.d/99-jehpok.conf
+>@echo "install-sysctl: 99-homelab.conf"
+>@sudo cp $(REPO)/repo/config/sysctl/99-homelab.conf /etc/sysctl.d/99-homelab.conf
 >@sudo sysctl --system >/dev/null
 
 install-daily-sh:
->@echo "install-daily-sh: /usr/local/bin/jehpok-daily.sh"
->@sudo cp $(REPO)/repo/config/maintenance/daily.sh /usr/local/bin/jehpok-daily.sh
->@sudo chmod +x /usr/local/bin/jehpok-daily.sh
+>@echo "install-daily-sh: /usr/local/bin/homelab-daily.sh"
+>@sudo cp $(REPO)/repo/config/maintenance/daily.sh /usr/local/bin/homelab-daily.sh
+>@sudo chmod +x /usr/local/bin/homelab-daily.sh
 
 install-daily-service:
->@echo "install-daily-service: jehpok-daily.service"
->@sudo cp $(REPO)/repo/config/maintenance/daily.service /etc/systemd/system/jehpok-daily.service
+>@echo "install-daily-service: homelab-daily.service"
+>@sudo cp $(REPO)/repo/config/maintenance/daily.service /etc/systemd/system/homelab-daily.service
 >@sudo systemctl daemon-reload
 
 install-daily-timer:
->@echo "install-daily-timer: jehpok-daily.timer"
->@sudo cp $(REPO)/repo/config/maintenance/daily.timer /etc/systemd/system/jehpok-daily.timer
+>@echo "install-daily-timer: homelab-daily.timer"
+>@sudo cp $(REPO)/repo/config/maintenance/daily.timer /etc/systemd/system/homelab-daily.timer
 >@sudo systemctl daemon-reload
->@sudo systemctl enable --now jehpok-daily.timer
+>@sudo systemctl enable --now homelab-daily.timer
 
 install-claude:
 >@echo "install-claude: .claude/settings.local.json"
@@ -487,7 +487,7 @@ git-com:
 >cd $(REPO)/repo && git commit -m "$(MSG)"
 
 git-push:
->cd $(REPO)/repo && git push jehpok.com main
+>cd $(REPO)/repo && git push homelab.com main
 
 # Bulk: stage + commit (MSG required) + push in one shot. Same as the
 # old 'make push', kept as a shortcut for the common case.
@@ -496,7 +496,7 @@ git-all: git-add
     echo "Usage: make git-all MSG=\"...\"  (MSG is required)"; \
     exit 1; \
   fi
->cd $(REPO)/repo && git commit -m "$(MSG)" && git push jehpok.com main
+>cd $(REPO)/repo && git commit -m "$(MSG)" && git push homelab.com main
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Help (default goal)
@@ -507,7 +507,7 @@ git-all: git-add
 
 help:
 >@echo ""
->@echo "  jehpok.com — make recipes"
+>@echo "  homelab.com — make recipes"
 >@echo ""
 >@echo "  Docker containers  (one of: $(CONTAINERS))"
 >@echo "    make recreate-<ctn>   force-recreate container (share-flask, vhosts, mc-flask rebuild)"
@@ -531,7 +531,7 @@ help:
 >@echo "  Git"
 >@echo "    make git-add          git add -A in $(REPO)/repo"
 >@echo "    make git-com MSG=\"…\"  git commit -m MSG (MSG required)"
->@echo "    make git-push         git push jehpok.com main"
+>@echo "    make git-push         git push homelab.com main"
 >@echo ""
 >@echo "  Maintenance"
 >@echo "    make status           containers + host services + disk + memory"
@@ -546,10 +546,10 @@ help:
 >@echo "    make install-dnsmasq-conf       /etc/dnsmasq.d/10-tailnet.conf"
 >@echo "    make install-dnsmasq-override   /etc/systemd/system/dnsmasq.service.d/override.conf"
 >@echo "    make install-docker             /etc/docker/daemon.json (restart docker to apply)"
->@echo "    make install-sysctl             /etc/sysctl.d/99-jehpok.conf"
->@echo "    make install-daily-sh           /usr/local/bin/jehpok-daily.sh"
->@echo "    make install-daily-service      /etc/systemd/system/jehpok-daily.service"
->@echo "    make install-daily-timer        /etc/systemd/system/jehpok-daily.timer"
+>@echo "    make install-sysctl             /etc/sysctl.d/99-homelab.conf"
+>@echo "    make install-daily-sh           /usr/local/bin/homelab-daily.sh"
+>@echo "    make install-daily-service      /etc/systemd/system/homelab-daily.service"
+>@echo "    make install-daily-timer        /etc/systemd/system/homelab-daily.timer"
 >@echo "    make install-claude             \$$REPO/repo/.claude/settings.local.json"
 >@echo ""
 >@echo "  Backups (bkp-*) — all artifacts land in \$$REPO/backups/"
