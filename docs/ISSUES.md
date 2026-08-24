@@ -235,7 +235,7 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **`bkp-vault` echo fixed** — the trailing echo computed a different timestamp than the tar it named; now one shell with a shared `dest`.
 - **Docs audited for the fxmq.net migration** — README/GUIDE/AGENTS/ISSUES/MIGRATE now describe the 4-container fxmq.net system (homer/share/mc/vhosts content dropped or moved to history).
 - **`shell.fxmq.net` root serves the ttyd terminal** — `/` proxies to the host ttyd; `/shell` route removed with operator approval; non-tailnet still 403.
-- **PufferPanel container** — `services/pufferpanel/` on `net` at 172.22.0.8 (web 8080, SFTP 5657), admin created, no MC server, no public vhost (none requested).
+- **PufferPanel container + `mc.fxmq.net` vhost** — `services/pufferpanel/` on `net` at 172.22.0.8 (web 8080, SFTP 5657), admin created, no MC server; public vhost `mc.fxmq.net` (CF-proxied A record + LE cert).
 - **`kuma-import` script + recipe** — imports a jehpok kuma.db, adapts URLs/container names, re-seeds the current monitor set.
 
 ---
