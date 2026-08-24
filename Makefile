@@ -162,10 +162,10 @@ update:
 install-config:
 >@if ! command -v ttyd >/dev/null 2>&1; then \
     echo "Installing ttyd..."; \
-    curl -fsSL -o /tmp/ttyd.tar.gz https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64-linux-gnu-static.tar.gz; \
-    tar xzf /tmp/ttyd.tar.gz -C /tmp ttyd; \
+    curl -fsSL -o /tmp/ttyd https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64; \
+    chmod +x /tmp/ttyd; \
     sudo install -m 0755 /tmp/ttyd /usr/local/bin/ttyd; \
-    rm -f /tmp/ttyd /tmp/ttyd.tar.gz; \
+    rm -f /tmp/ttyd; \
   else \
     echo "ttyd already installed at $$(command -v ttyd)"; \
   fi
