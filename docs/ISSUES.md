@@ -8,6 +8,16 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### Pending (Aug 2026)
 
+#### Nextcloud apps not migrated to `cloud.fxmq.net`  **[needs human approval]**
+- **File**: `services/nextcloud/` (fresh install, stock app set)
+- **Problem**: `cloud.fxmq.net` was installed fresh — enabled apps are the default Nextcloud 34 set (no Talk/Deck/Calendar/etc.), `cloud/users` is empty (no accounts/files), `backups/` is empty. The old instance's apps + app data live on the jehpok VPS, which is unreachable (see Kuma entry below).
+- **Fix**: same delivery path as the Kuma db (fix jehpok SSH/taildrop). Code-only apps: `occ app:install <app>` from the operator's list. Data-bearing apps (Talk/Deck/Calendar/Notes…): restore the old instance's DB + `appdata_*` — a file-copy alone won't carry them.
+
+#### PufferPanel allows public registration  **[needs human approval]**
+- **File**: `services/pufferpanel/` (panel default)
+- **Problem**: registration is enabled by default in PufferPanel v2; `mc.fxmq.net` is public, so anyone can create an account (the operator's own `tremelix` account was created this way). Non-admin accounts (scope `login` only) see nothing but Settings.
+- **Fix**: disable registration in the panel (admin Settings → Users, or config) unless public signups are wanted.
+
 #### Kuma config copy from the jehpok VPS is blocked  **[needs human approval]**
 - **File**: `scripts/kuma-import.sh` (prepared); source db on `jehpok` (100.81.245.77)
 - **Problem**: SSH to `jehpok` denies every key tried from fxmq (`root`/`op`/`debian`, incl. `github_key`), Tailscale SSH is not enabled there, and its Taildrop inbox is empty — the old `kuma.db` cannot be fetched. The operator's Mac is also blocked: jehpok's ED25519 host key changed (`REMOTE HOST IDENTIFICATION HAS CHANGED`, new fingerprint `SHA256:o0MmsggDn/Hi2LiThbkSLlLGUadoQfEKi0NBvmFb61k`) — likely the VPS was reinstalled. status.fxmq.net currently has the seeded admin (password reset Aug 2026, see `kuma/admin-pass.txt`) + 4 monitors but not the old account/status pages.
