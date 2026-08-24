@@ -174,7 +174,7 @@ EOF
 
   if ! command -v goose >/dev/null 2>&1 && [ ! -x /usr/local/bin/goose ]; then
     curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh \
-      | CONFIGURE=false GOOSE_BIN_DIR=/usr/local/bin sh >/dev/null 2>&1 || true
+      | CONFIGURE=false GOOSE_BIN_DIR=/usr/local/bin bash >/dev/null 2>&1 || true
   fi
   if command -v goose >/dev/null 2>&1; then
     install -m 0755 "$(command -v goose)" /usr/local/bin/goose || true
@@ -512,7 +512,7 @@ problem() {
 hint() {
   case "$1" in
     apt)            echo "install git curl make sudo dnsmasq ufw jq apache2-utils, plus docker with the compose plugin (docker-ce from download.docker.com on trixie), then re-check" ;;
-    goose)          echo "run: curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | sh, then re-check" ;;
+    goose)          echo "run: curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | CONFIGURE=false GOOSE_BIN_DIR=/usr/local/bin bash, then re-check" ;;
     user)           echo "run: adduser --disabled-password --gecos '' $OP_USER && usermod -aG sudo,docker $OP_USER, then re-check" ;;
     ssh_keys)       echo "add a public key to /root/.ssh/authorized_keys and copy it to /home/$OP_USER/.ssh/authorized_keys, then re-check" ;;
     tailscale)      echo "run: curl -fsSL https://tailscale.com/install.sh | sh, then re-check" ;;
