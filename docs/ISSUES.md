@@ -109,6 +109,11 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Fix**: `systemctl stop goose` when not in use; `systemctl start goose` before use.
 - **Why approval**: operator convenience trade-off (cold start latency vs. idle RAM).
 
+#### PufferPanel template library stalls ~1s on first open + missing minecraft README
+- **File**: `services/pufferpanel/docker-compose.yml` (runtime data under `/var/www/custom/projects/homelab/puffer/data/cache/template-repos/`)
+- **Problem**: opening Templates triggers an on-demand git checkout of the community repo (`Checking out repo community: cache/template-repos/1`) — the only >100ms request in the panel log (`GET /api/templates/1` = 936ms; every other request is sub-ms). Also the community `minecraft` template dir contains only `data.json` + `minecraft.json` (no `README.md`, upstream), so every view logs `Error reading readme cache/template-repos/1/minecraft/README.md: no such file or directory`.
+- **Fix**: cosmetic/stall only — the checkout is cached after first run (subsequent opens are ~1ms). For the README error, delete the repo dir and let PufferPanel re-checkout, or accept it as an upstream data gap. Not worth action unless template browsing is a daily use case.
+
 #### Nextcloud Talk: no High-performance backend, no Client Push
 - **File**: `services/nextcloud/docker-compose.yml` (or new compose for HPB + push proxy)
 - **Problem**: Talk scales only to ~3 participants without an HPB container; Client Push proxy absent → delayed notifications. Currently a low-impact warning; grows if Talk is used.
