@@ -25,7 +25,7 @@ from flask import (
     stream_with_context,
 )
 
-# The mc dashboard is served at https://server.jehpok.com/mc/ — Caddy's
+# The mc dashboard is served at https://server.homelab.com/mc/ — Caddy's
 # `@mc` matcher routes the /mc/* prefix without stripping, so every route
 # here lives under /mc/. (Share's admin uses the same pattern: /share
 # routes in the app, no strip_prefix in Caddy.)
