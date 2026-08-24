@@ -97,8 +97,21 @@ phase1_root() {
 
   DEBIAN_FRONTEND=noninteractive apt-get update -qq >>"$LOG" 2>&1
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-    docker.io docker-compose-plugin git curl make sudo dnsmasq ufw jq \
-    apache2-utils >>"$LOG" 2>&1 || fail apt
+    git curl make sudo dnsmasq ufw jq apache2-utils >>"$LOG" 2>&1 || fail apt
+  # Docker: Debian packages first (bookworm ships docker-compose-plugin).
+  # trixie does not, so fall back to Docker's official repo (docker-ce).
+  if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io docker-compose-plugin >>"$LOG" 2>&1; then
+    log "  docker-compose-plugin not in distro — installing docker-ce from Docker's repo"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates curl gnupg >>"$LOG" 2>&1
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg 2>>"$LOG"
+    chmod a+r /etc/apt/keyrings/docker.gpg
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+      > /etc/apt/sources.list.d/docker.list
+    DEBIAN_FRONTEND=noninteractive apt-get update -qq >>"$LOG" 2>&1
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >>"$LOG" 2>&1 || fail apt
+  fi
+  command -v docker >/dev/null 2>&1 || fail apt
 
   if ! id -u "$OP_USER" >/dev/null 2>&1; then
     adduser --disabled-password --gecos "" "$OP_USER" || fail user
@@ -461,7 +474,7 @@ problem() {
 
 hint() {
   case "$1" in
-    apt)            echo "run: apt-get install -y docker.io docker-compose-plugin git curl make sudo dnsmasq ufw jq apache2-utils, then re-check" ;;
+    apt)            echo "install git curl make sudo dnsmasq ufw jq apache2-utils, plus docker with the compose plugin (docker-ce from download.docker.com on trixie), then re-check" ;;
     goose)          echo "run: curl -fsSL https://github.com/block/goose/install.sh | sh, then re-check" ;;
     user)           echo "run: adduser --disabled-password --gecos '' $OP_USER && usermod -aG sudo,docker $OP_USER, then re-check" ;;
     ssh_keys)       echo "add a public key to /root/.ssh/authorized_keys and copy it to /home/$OP_USER/.ssh/authorized_keys, then re-check" ;;
@@ -487,7 +500,7 @@ hint() {
 
 recheck() {
   case "$1" in
-    apt)  dpkg -s docker.io docker-compose-plugin git curl make sudo dnsmasq ufw jq apache2-utils >/dev/null 2>&1 ;;
+    apt) command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 && dpkg -s git curl make sudo dnsmasq ufw jq apache2-utils >/dev/null 2>&1 ;;
     goose) command -v goose >/dev/null 2>&1 || [ -x /usr/local/bin/goose ] ;;
     user) id -u "$OP_USER" >/dev/null 2>&1 ;;
     ssh_keys) sudo test -s /root/.ssh/authorized_keys && [ -s /home/$OP_USER/.ssh/authorized_keys ] ;;
