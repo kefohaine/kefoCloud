@@ -74,5 +74,5 @@ SQL
 echo "-> seeding current container monitors"
 docker exec -i ut-kuma sqlite3 /app/data/kuma.db < "$REPO/services/ut-kuma/seed-monitors.sql"
 
-echo "done. verify at https://kuma.fxmq.net — old account/status pages are in;"
+echo "done. verify at https://status.fxmq.net — old account/status pages are in;"
 echo "backup of the pre-import db: $IMPORT_DIR/kuma.db.pre-import-$STAMP"
