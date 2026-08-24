@@ -41,8 +41,8 @@ http:// {
 # ── vhosts ──────────────────────────────────────────────────────────────────
 # Each vhost declares its own `tls { dns cloudflare { ... } }` block so the
 # ACME cert is scoped to that vhost's SNI. The wildcard cert that used to
-# back all vhosts is no longer referenced — see ./vhosts/mc.fxmq.net.caddy
-# for the SNI-fallback rationale.
+# back all vhosts is no longer referenced — per-vhost ACME certs are scoped
+# to their own SNI (see ./vhosts/cloud.fxmq.net.caddy for the rationale).
 
 import vhosts/shell.fxmq.net.caddy
 import vhosts/vault.fxmq.net.caddy

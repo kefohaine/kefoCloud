@@ -12,7 +12,7 @@
 # `@latest` so an upstream breaking change can't silently stop the
 # Caddyfile from parsing.
 #
-# Build is invoked by `make recreate-vhosts` (the compose file's `build:`
+# Build is invoked by `make d-recreate-fxmq.net` (the compose file's `build:`
 # triggers a rebuild when this Dockerfile changes). On a fresh host
 # the first `up-vhosts` pulls the xcaddy + golang base images, which
 # is a one-time ~1 GB download; subsequent builds are <30 s.

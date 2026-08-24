@@ -135,16 +135,15 @@ This section is project-defined and not part of the portable agent rulebook abov
 
 <!-- project-specific content begins here -->
 
-This project (`homelab.com`) is a self-hosted Debian VPS. The full project guide lives in `docs/GUIDE.md`. The protected host resources, the canonical `make` recipe names, and any per-project safety constraints are listed there — never assume what they are without reading `docs/GUIDE.md`.
+This project (`fxmq.net`) is a self-hosted Debian VPS. The full project guide lives in `docs/GUIDE.md`. The protected host resources, the canonical `make` recipe names, and any per-project safety constraints are listed there — never assume what they are without reading `docs/GUIDE.md`.
 
 ### Project-specific listener / route safety details
 
 Safety rule 10 above is generic; the project-specific numbers live here:
 
-- The `vhosts` container (`services/vhosts/`) is the reverse proxy for every public vhost. Caddyfile edits live in `services/vhosts/vhosts/<host>.caddy`; the top-level `services/vhosts/Caddyfile` only holds snippets + imports.
-- The Minecraft game server (`mc-server`) and its dashboard (`mc-flask`) live in **separate compose files** — `services/mc/docker-compose.yml` (game) and `services/mc/docker-compose.mc-flask.yml` (dashboard). They can be recreated independently (`make recreate-mc` vs. `make recreate-mc-flask`); a dashboard-only change never restarts the game.
-- The `vhosts` container runs with `network_mode: host` so Caddy sees the real client source IP for the `@not_tailnet` matcher on `server.homelab.com`. Don't "fix" that line.
-- The reload sequence is `make recreate-<ctn>` (or `make recreate-domain` for a single proxy edit); the post-reload smoke test must include: tailnet routes 200 from a tailnet device, 403 from non-tailnet, public vhosts 200/302 with `Issuer: Let's Encrypt`.
+- The Caddy container (`services/fxmq.net/`) is the reverse proxy for every vhost. Caddyfile edits live in `services/fxmq.net/vhosts/<host>.caddy`; the top-level `services/fxmq.net/Caddyfile` only holds snippets + imports.
+- The `fxmq.net` container runs with `network_mode: host` so Caddy sees the real client source IP for the `@not_tailnet` matcher on `shell.fxmq.net`. Don't "fix" that line.
+- The reload sequence is `make d-recreate-<ctn>` (or `make d-recreate-fxmq.net` for a single proxy edit); the post-reload smoke test must include: tailnet routes 200 from a tailnet device, 403 from non-tailnet, public vhosts 200/302 with `Issuer: Let's Encrypt`.
 - The cert mode is per-vhost DNS-01 ACME via `caddy-dns/cloudflare`; each vhost carries its own `tls { dns cloudflare { env.CF_API_TOKEN } }` block. Replacing one with `tls internal` / `tls off` / `tls self_signed` will drop browser connections to that hostname.
 - The CF API token is at `$(REPO)/caddy_data/CF_API_TOKEN` (created by the operator, not in the repo, not in `bundle-secrets`). Caddy renews certs from the token; the token is the only thing that needs to migrate to a new VPS.
 

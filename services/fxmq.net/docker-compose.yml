@@ -31,7 +31,7 @@ services:
       # Bound at /data, which is the caddy:2.x default base directory —
       # the built-in ACME issuer writes under /data/caddy and renewal
       # simply updates the same files, so the cert survives a container
-      # recreate. Without this bind every `make recreate-domain` would force
+      # recreate. Without this bind every `make d-recreate-fxmq.net` would force
       # a fresh issuance and a 90-day clock restart.
       - /var/www/custom/projects/homelab/caddy_data:/data
 

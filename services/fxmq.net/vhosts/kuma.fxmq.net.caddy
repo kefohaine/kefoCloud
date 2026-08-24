@@ -1,5 +1,5 @@
 # kuma.fxmq.net — Uptime Kuma status monitor.
-# TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/mc.fxmq.net.caddy).
+# TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/cloud.fxmq.net.caddy).
 
 https://kuma.fxmq.net {
     tls {
