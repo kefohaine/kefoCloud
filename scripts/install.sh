@@ -36,7 +36,12 @@ ERR_TAGS=()
 declare -A ERR_DETAIL=()
 
 log()  { echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG"; }
-fail() { ERR_TAGS+=("$1"); ERR_DETAIL[$1]="${2:-}"; echo "  ERROR: $(problem "$1")${2:+ ($2)}" >>"$LOG"; }
+fail() {
+  local t
+  for t in "${ERR_TAGS[@]}"; do [ "$t" = "$1" ] && return 0; done  # no duplicates across runs
+  ERR_TAGS+=("$1"); ERR_DETAIL[$1]="${2:-}"
+  echo "  ERROR: $(problem "$1")${2:+ ($2)}" >>"$LOG"
+}
 
 banner() {
 cat <<'EOF'
@@ -58,7 +63,14 @@ WARNING: SSH (port 22) is tailnet-only — your current session stays alive, but
 EOF
 }
 
-load_state() { [ -f "$STATE" ] && . "$STATE"; }
+load_state() {
+  [ -f "$STATE" ] && . "$STATE"
+  local uniq=() t
+  for t in "${ERR_TAGS[@]:-}"; do
+    [[ " ${uniq[*]:-} " == *" $t "* ]] || uniq+=("$t")
+  done
+  ERR_TAGS=("${uniq[@]}")
+}
 
 save_state() {
   umask 077
@@ -141,18 +153,24 @@ phase1_root() {
     log "no SSH key yet — sshd hardening skipped so password login still works; add a key, then re-check"
   fi
 
-  systemctl enable --now docker
+  systemctl enable --now docker >>"$LOG" 2>&1 || log "docker enable/start failed (re-checks will catch it)"
   mkdir -p /etc/docker
-  cat > /etc/docker/daemon.json <<'EOF'
+  # Write the daemon config only if it differs — never clobber a working one.
+  cat > /etc/docker/daemon.json.new <<'EOF'
 {
     "log-driver": "json-file",
     "log-opts": {"max-size": "10m", "max-file": "3"},
-    "storage-driver": "overlayfs",
+    "storage-driver": "overlay2",
     "default-runtime": "runc",
     "live-restore": true
 }
 EOF
-  systemctl restart docker
+  if ! diff -q /etc/docker/daemon.json /etc/docker/daemon.json.new >/dev/null 2>&1; then
+    mv /etc/docker/daemon.json.new /etc/docker/daemon.json
+    systemctl restart docker >>"$LOG" 2>&1 || log "docker restart failed (re-checks will catch it)"
+  else
+    rm -f /etc/docker/daemon.json.new
+  fi
 
   if ! command -v goose >/dev/null 2>&1 && [ ! -x /usr/local/bin/goose ]; then
     curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | sh >/dev/null 2>&1 || true
