@@ -124,7 +124,15 @@ phase1_root() {
 EOF
   systemctl restart docker
 
-  curl -fsSL https://ollama.com/install.sh | sh >/dev/null 2>&1 || log "ollama install skipped"
+  if ! command -v goose >/dev/null 2>&1 && [ ! -x /usr/local/bin/goose ]; then
+    curl -fsSL https://github.com/block/goose/install.sh | sh >/dev/null 2>&1 || true
+  fi
+  if command -v goose >/dev/null 2>&1; then
+    install -m 0755 "$(command -v goose)" /usr/local/bin/goose || true
+  elif [ -x "$HOME/.local/bin/goose" ]; then
+    install -m 0755 "$HOME/.local/bin/goose" /usr/local/bin/goose || true
+  fi
+  command -v goose >/dev/null 2>&1 || [ -x /usr/local/bin/goose ] || fail goose
 
   if ! command -v tailscale >/dev/null 2>&1; then
     curl -fsSL https://tailscale.com/install.sh | sh || fail tailscale
@@ -416,6 +424,7 @@ phase2_op() {
 problem() {
   case "$1" in
     apt)            echo "apt packages not installed" ;;
+    goose)          echo "goose binary not installed" ;;
     user)           echo "user '$OP_USER' not created" ;;
     ssh_keys)       echo "no SSH keys for root or $OP_USER" ;;
     tailscale)      echo "tailscale binary not installed" ;;
@@ -441,6 +450,7 @@ problem() {
 hint() {
   case "$1" in
     apt)            echo "run: apt-get install -y docker.io docker-compose-plugin git curl make sudo dnsmasq ufw jq apache2-utils, then re-check" ;;
+    goose)          echo "run: curl -fsSL https://github.com/block/goose/install.sh | sh, then re-check" ;;
     user)           echo "run: adduser --disabled-password --gecos '' $OP_USER && usermod -aG sudo,docker $OP_USER, then re-check" ;;
     ssh_keys)       echo "add a public key to /root/.ssh/authorized_keys and copy it to /home/$OP_USER/.ssh/authorized_keys, then re-check" ;;
     tailscale)      echo "run: curl -fsSL https://tailscale.com/install.sh | sh, then re-check" ;;
@@ -466,12 +476,13 @@ hint() {
 recheck() {
   case "$1" in
     apt)  dpkg -s docker.io docker-compose-plugin git curl make sudo dnsmasq ufw jq apache2-utils >/dev/null 2>&1 ;;
+    goose) command -v goose >/dev/null 2>&1 || [ -x /usr/local/bin/goose ] ;;
     user) id -u "$OP_USER" >/dev/null 2>&1 ;;
     ssh_keys) sudo test -s /root/.ssh/authorized_keys && [ -s /home/$OP_USER/.ssh/authorized_keys ] ;;
     tailscale) command -v tailscale >/dev/null 2>&1 ;;
     tailscale_up) tailscale ip -4 >/dev/null 2>&1 ;;
     ts_ip) [ -n "$(tailscale ip -4 2>/dev/null | head -1)" ] ;;
-    install_config) systemctl is-active --quiet ttyd dnsmasq && systemctl is-enabled --quiet homelab-daily.timer ;;
+    install_config) systemctl is-active --quiet ttyd dnsmasq goose && systemctl is-enabled --quiet homelab-daily.timer ;;
     caddy) docker ps --format '{{.Names}}' | grep -qx "$DOMAIN" ;;
     nextcloud) docker ps --format '{{.Names}}' | grep -qx nextcloud ;;
     vaultwarden) docker ps --format '{{.Names}}' | grep -qx vaultwarden ;;
