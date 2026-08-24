@@ -1,7 +1,7 @@
 services:
   mc-flask:
     build: .
-    image: jehpok/minecraft-web:1
+    image: homelab/minecraft-web:1
     container_name: mc-flask
     restart: unless-stopped
 
@@ -46,13 +46,13 @@ services:
       # game container is running, so /data/world is only mutated when the
       # server is stopped. Game data safety still relies on the game
       # container being the only writer of /data/world at runtime.
-      - /var/www/custom/projects/jehpok/mc/data:/server:rw
+      - /var/www/custom/projects/homelab/mc/data:/server:rw
       - ../../content/minecraft:/app/src:ro
       # Unified backup dir. Dashboard snapshots land at /backups (env var
       # BACKUP_DIR above), which on the host is $(REPO)/backups — the
       # same place `make bkp-mc` writes. Mounted rw so the dashboard can
       # create / list / delete tarballs there.
-      - /var/www/custom/projects/jehpok/backups:/backups:rw
+      - /var/www/custom/projects/homelab/backups:/backups:rw
       # Docker socket so the dashboard can start/stop/restart the game
       # container via the Python docker SDK (see services/mc/Dockerfile).
       - /var/run/docker.sock:/var/run/docker.sock

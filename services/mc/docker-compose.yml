@@ -55,11 +55,11 @@ services:
     # fresh volume still ends up Java + Bedrock on one server.
     entrypoint: ["/bin/sh", "-c", "bash /etc/mc-plugins/init.sh && exec /start"]
     volumes:
-      - /var/www/custom/projects/jehpok/mc/data:/data
+      - /var/www/custom/projects/homelab/mc/data:/data
       - ./plugins:/etc/mc-plugins:ro
 
     ports:
-      # Game traffic — DNS A record on mc.jehpok.com points to VPS IP.
+      # Game traffic — DNS A record on mc.homelab.com points to VPS IP.
       # Cloudflare is not involved for game traffic.
       - "25565:25565"   # Java edition (TCP)
       - "19132:19132"   # Bedrock edition (TCP+UDP)
