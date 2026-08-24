@@ -28,7 +28,7 @@ Enter the domain, CF token, and TS auth key when prompted. The script hands off 
 
 ## After the script finishes
 
-1. Tailscale admin console → DNS: add split-DNS `$DOMAIN` → the new VPS Tailscale IP (makes `shell.$DOMAIN` resolve for tailnet devices; the script cannot do this with just an auth key).
+1. The installer lists the Tailscale split-DNS entry (`$DOMAIN` → the new VPS Tailscale IP) as an **expected** manual step in its error/re-check loop — it cannot be set with just an auth key. Confirm it in the admin console and the loop clears it; without it `shell.$DOMAIN` won't resolve for tailnet devices.
 2. Optional: Cloudflare WAF rule skip for `cloud.$DOMAIN` — Nextcloud desktop sync is bot-challenged otherwise (see `Intended` in `docs/ISSUES.md`).
 3. Doc pass: `docs/` still carry the canonical names (`vhosts`, `debian`, `server.`) until the post-migration doc audit.
 

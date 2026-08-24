@@ -406,6 +406,8 @@ phase2_op() {
   cf_dns
   issue_certs
   sweep
+  # Expected manual step — blocks SUCCESS until the operator confirms it.
+  fail splitdns "manual step: Tailscale admin console -> DNS: split-DNS $DOMAIN -> ${TS_IP:-<tailscale IP>}"
 }
 
 # ──────────────────────── error descriptions + rechecks ────────────────────
@@ -430,6 +432,7 @@ describe() {
     dns_*)         echo "DNS record for ${1#dns_}.$DOMAIN missing";;
     cert_*)        echo "cert for ${1#cert_}.$DOMAIN not Let's Encrypt";;
     sweep)         echo "old project name still referenced in the repo tree";;
+    splitdns)      echo "manual step: Tailscale admin console -> DNS: split-DNS $DOMAIN -> ${TS_IP:-<tailscale IP>}";;
     *)             echo "$1";;
   esac
 }
@@ -454,7 +457,15 @@ recheck() {
     dns_*) local h=${1#dns_}; [ -n "$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$h.$DOMAIN" | jq -r '.result[0].id // empty')" ] ;;
     cert_*) local h=${1#cert_}; echo | timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$h.$DOMAIN" 2>/dev/null | openssl x509 -noout -issuer 2>/dev/null | grep -q "Let's Encrypt" ;;
     sweep) ! grep -rl 'jehpok' "$REPO" --exclude-dir=.git 2>/dev/null | grep -qv "^$REPO/scripts/install.sh$" ;;
+    splitdns) read -rp "    Confirmed split-DNS set in the Tailscale admin console? (y/N): " c && [[ "$c" =~ ^[yY]$ ]] ;;
     *) false ;;
+  esac
+}
+
+is_expected() {
+  case "$1" in
+    splitdns|zone|ssh_keys|kuma_admin) return 0 ;;  # manual dashboard / UI steps
+    *) return 1 ;;
   esac
 }
 
@@ -462,11 +473,19 @@ resolve_errors() {
   local remaining=("${ERR_TAGS[@]}")
   while [ ${#remaining[@]} -gt 0 ]; do
     echo ""
-    echo " Remaining issues (${#remaining[@]}):"
-    for i in "${!remaining[@]}"; do
-      echo "   $((i+1)). ${remaining[$i]} — $(describe "${remaining[$i]}")"
+    local exp=() unexp=()
+    for tag in "${remaining[@]}"; do
+      if is_expected "$tag"; then exp+=("$tag"); else unexp+=("$tag"); fi
     done
-    read -rp "Fix the issues above, then press Enter to re-check (Ctrl-C aborts): " input \
+    if [ ${#exp[@]} -gt 0 ]; then
+      echo " Manual steps (expected):"
+      for i in "${!exp[@]}"; do echo "   $((i+1)). ${exp[$i]} — $(describe "${exp[$i]}")"; done
+    fi
+    if [ ${#unexp[@]} -gt 0 ]; then
+      echo " Unexpected errors (${#unexp[@]}):"
+      for i in "${!unexp[@]}"; do echo "   $((i+1)). ${unexp[$i]} — $(describe "${unexp[$i]}")"; done
+    fi
+    read -rp "Fix / complete the items above, then press Enter to re-check (Ctrl-C aborts): " input \
       || { echo "No terminal input — aborting."; exit 1; }
     local still=()
     for tag in "${remaining[@]}"; do
@@ -495,22 +514,29 @@ success_block() {
   echo " SSH: root and '$OP_USER' both log in with keys (tailnet-only, port 22)."
   echo ""
   echo " Manual follow-ups:"
-  echo "   1. Tailscale admin console -> DNS: add split-DNS $DOMAIN -> ${TS_IP:-<tailscale IP>}"
-  echo "      (makes shell.$DOMAIN resolve for tailnet devices)"
-  echo "   2. (optional) Cloudflare WAF rule skip for cloud.$DOMAIN (desktop sync)"
-  echo "   3. Git remote 'homelab' points at git@github.com:friedutch/homelab.git —"
+  echo "   1. (optional) Cloudflare WAF rule skip for cloud.$DOMAIN (desktop sync)"
+  echo "   2. Git remote 'homelab' points at git@github.com:friedutch/homelab.git —"
   echo "      rename the GitHub repo to match, or push will fail"
-  echo "   4. Post-migration doc pass: docs/ still name vhosts/debian until audited"
+  echo "   3. Post-migration doc pass: docs/ still name vhosts/debian until audited"
   echo "=============================================================="
 }
 
 summary() {
   if [ ${#ERR_TAGS[@]} -gt 0 ]; then
     echo ""
-    echo " ERROR(S) — no success until every issue below is resolved:"
-    for i in "${!ERR_TAGS[@]}"; do
-      echo "   $((i+1)). ${ERR_TAGS[$i]} — $(describe "${ERR_TAGS[$i]}")"
+    echo " ERROR(S) — no success until every item below is resolved:"
+    local exp=() unexp=()
+    for tag in "${ERR_TAGS[@]}"; do
+      if is_expected "$tag"; then exp+=("$tag"); else unexp+=("$tag"); fi
     done
+    if [ ${#exp[@]} -gt 0 ]; then
+      echo " Manual steps (expected):"
+      for i in "${!exp[@]}"; do echo "   $((i+1)). ${exp[$i]} — $(describe "${exp[$i]}")"; done
+    fi
+    if [ ${#unexp[@]} -gt 0 ]; then
+      echo " Unexpected errors (${#unexp[@]}):"
+      for i in "${!unexp[@]}"; do echo "   $((i+1)). ${unexp[$i]} — $(describe "${unexp[$i]}")"; done
+    fi
   fi
 }
 trap summary EXIT
