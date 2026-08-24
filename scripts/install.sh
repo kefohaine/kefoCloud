@@ -1,11 +1,15 @@
 #!/bin/bash
-# jehpok install.sh — plug-and-play new-VPS installer.
+# homelab install.sh — plug-and-play new-VPS installer.
 #
 # Prompts for three values (domain, Cloudflare API token, Tailscale auth
 # key), then runs unattended: host services, docker, tailscale, the four
 # containers (Caddy renamed to $DOMAIN, nextcloud, vaultwarden, ut-kuma),
 # Cloudflare DNS records, and LE cert issuance. Errors are collected and
 # printed numbered at the end, followed by a success summary.
+#
+# Old-project references are renamed or deleted by this script; a sweep
+# at the end verifies none reappear on the new host (the script itself is
+# the only allowed carrier).
 #
 # Usage:
 #   scp scripts/install.sh root@<new-vps>:
@@ -18,9 +22,9 @@
 set -uo pipefail
 
 OP_USER=op
-REPO=/var/www/custom/projects/jehpok/repo
-STATE=/var/tmp/jehpok-install.state
-LOG=/var/log/jehpok-install.log
+REPO=/var/www/custom/projects/homelab/repo
+STATE=/var/tmp/homelab-setup.state
+LOG=/var/log/homelab-install.log
 ERR=()
 
 log()  { echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG"; }
@@ -29,7 +33,7 @@ err()  { ERR+=("$*"); echo "  ERROR: $*" >>"$LOG"; }
 banner() {
 cat <<'EOF'
 ============================================================
-  jehpok VPS installer
+  homelab VPS installer
   Nextcloud + Vaultwarden + Uptime Kuma + Caddy ($DOMAIN)
   Prompts once, then runs unattended. Errors listed at the end.
 ============================================================
@@ -135,8 +139,8 @@ EOF
 
 ensure_repo() {
   if [ -d "$REPO/.git" ]; then log "repo present at $REPO"; return; fi
-  mkdir -p /var/www/custom/projects/jehpok
-  chown $OP_USER:$OP_USER /var/www/custom/projects/jehpok
+  mkdir -p /var/www/custom/projects/homelab
+  chown $OP_USER:$OP_USER /var/www/custom/projects/homelab
   if [ ! -f ~/.ssh/github_key ]; then
     ssh-keygen -t ed25519 -N "" -f ~/.ssh/github_key -C "$OP_USER@$DOMAIN" >/dev/null
     cat > ~/.ssh/config <<EOF
@@ -150,11 +154,19 @@ EOF
     cat ~/.ssh/github_key.pub
     echo "============================================================"
   fi
+  # Clone from the renamed repo first; fall back to the pre-rename URL
+  # (this script is the only place the old name is allowed to appear).
   if ! GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new" \
-       git clone git@github.com:friedutch/jehpok.com.git "$REPO" >>"$LOG" 2>&1; then
-    err "repo clone failed — add the pubkey above to GitHub, then re-run"
-    exit 1
+       git clone git@github.com:friedutch/homelab.git "$REPO" >>"$LOG" 2>&1; then
+    if ! GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new" \
+         git clone git@github.com:friedutch/jehpok.com.git "$REPO" >>"$LOG" 2>&1; then
+      err "repo clone failed — add the pubkey above to GitHub, then re-run"
+      exit 1
+    fi
+    log "cloned from the pre-rename repo; remote will point at the renamed one"
   fi
+  git -C "$REPO" remote rename origin homelab
+  git -C "$REPO" remote set-url homelab git@github.com:friedutch/homelab.git
 }
 
 prep_dirs() {
@@ -166,8 +178,8 @@ prep_dirs() {
 
 renames() {
   cd "$REPO" || exit 1
-  log "  domain swap: jehpok.com -> $DOMAIN"
-  grep -rl 'jehpok\.com' services/ config/ | xargs sed -i "s/jehpok\.com/$DOMAIN/g"
+  log "  domain swap: homelab.com -> $DOMAIN"
+  grep -rl 'homelab\.com' services/ config/ | xargs sed -i "s/homelab\.com/$DOMAIN/g"
   log "  server.$DOMAIN -> shell.$DOMAIN"
   grep -rl "server\.$DOMAIN" services/ config/ | xargs sed -i "s/server\.$DOMAIN/shell.$DOMAIN/g"
   log "  debian -> $OP_USER"
@@ -178,8 +190,8 @@ renames() {
   mv services/vhosts "services/$DOMAIN"
   log "  renaming + trimming per-vhost files"
   cd "services/$DOMAIN/vhosts" || exit 1
-  rm -f www.jehpok.com.caddy share.jehpok.com.caddy api.jehpok.com.caddy mc.jehpok.com.caddy
-  for f in *.jehpok.com.caddy; do [ -e "$f" ] && mv "$f" "${f/jehpok.com/$DOMAIN}"; done
+  rm -f www.homelab.com.caddy share.homelab.com.caddy api.homelab.com.caddy mc.homelab.com.caddy
+  for f in *.homelab.com.caddy; do [ -e "$f" ] && mv "$f" "${f/homelab.com/$DOMAIN}"; done
   mv "server.$DOMAIN.caddy" "shell.$DOMAIN.caddy"
   cd ../../..
   log "  patching caddy compose, Caddyfile, Makefile"
@@ -234,10 +246,10 @@ EOF
 #!/bin/bash
 set -euo pipefail
 
-LOG=/var/log/jehpok-daily.log
+LOG=/var/log/homelab-daily.log
 echo "=== $(date) ===" >> "$LOG"
 
-cd /var/www/custom/projects/jehpok/repo
+cd /var/www/custom/projects/homelab/repo
 
 make update        >> "$LOG" 2>&1
 make bkp-all       >> "$LOG" 2>&1 || echo "bkp-all failed" >> "$LOG"
@@ -246,7 +258,7 @@ make clean-all     >> "$LOG" 2>&1 || echo "clean-all failed" >> "$LOG"
 echo "--- done ---" >> "$LOG"
 EOF
   log "  kuma seed SQL (4-container set)"
-  sed -i "/'docker'/ s/'cloud'/'nextcloud'/g; /'docker'/ s/'vault'/'vaultwarden'/g; /'docker'/ s/'share'/'share-flask'/g; /'docker'/ s/'domain'/'$DOMAIN'/g" services/ut-kuma/seed-monitors.sql
+  sed -i "/'docker'/ s/'cloud'/'nextcloud'/g; /'docker'/ s/'vault'/'vaultwarden'/g; /'docker'/ s/'share'/'share-flask'/g; /'docker'/ s/'vhosts'/'$DOMAIN'/g" services/ut-kuma/seed-monitors.sql
   sed -i "/docker: share/d; /docker: homer/d; /http: www/d; /http: share/d; /http: api/d" services/ut-kuma/seed-monitors.sql
   git add -A && git -c user.name="$OP_USER" -c user.email="$OP_USER@$DOMAIN" \
     commit -q -m "install: domain $DOMAIN, user $OP_USER, shell., 4 containers" 2>/dev/null || true
@@ -356,6 +368,16 @@ issue_certs() {
   done
 }
 
+sweep() {
+  # Old-project references must not survive anywhere except this script.
+  local hits
+  hits=$(grep -rl 'jehpok' "$REPO" --exclude-dir=.git 2>/dev/null \
+    | grep -v "^$REPO/scripts/install.sh$" || true)
+  if [ -n "$hits" ]; then
+    err "old project name still referenced in: $(echo "$hits" | tr '\n' ' ')"
+  fi
+}
+
 phase2_op() {
   log "Phase 2 ($OP_USER): repo, renames, host config, containers, DNS, certs"
   ensure_repo
@@ -369,6 +391,7 @@ phase2_op() {
   kuma_seed
   cf_dns
   issue_certs
+  sweep
 }
 
 summary() {
@@ -392,7 +415,9 @@ summary() {
   echo "   1. Tailscale admin console -> DNS: add split-DNS $DOMAIN -> ${TS_IP:-<tailscale IP>}"
   echo "      (makes shell.$DOMAIN resolve for tailnet devices)"
   echo "   2. (optional) Cloudflare WAF rule skip for cloud.$DOMAIN (desktop sync)"
-  echo "   3. Post-migration doc pass: docs/ still name vhosts/debian until audited"
+  echo "   3. Git remote 'homelab' points at git@github.com:friedutch/homelab.git —"
+  echo "      rename the GitHub repo to match, or push will fail"
+  echo "   4. Post-migration doc pass: docs/ still name vhosts/debian until audited"
   echo "=============================================================="
 }
 trap summary EXIT
