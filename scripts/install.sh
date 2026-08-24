@@ -198,7 +198,7 @@ renames() {
   log "  server.$DOMAIN -> shell.$DOMAIN"
   grep -rl "server\.$DOMAIN" services/ config/ | xargs sed -i "s/server\.$DOMAIN/shell.$DOMAIN/g"
   log "  debian -> $OP_USER"
-  sed -i "s/debian/$OP_USER/g" Makefile config/
+  grep -rl 'debian' Makefile config/ | xargs sed -i "s/debian/$OP_USER/g"
   log "  trimming to 4 services"
   rm -rf services/homer services/share-flask services/mc content/share content/minecraft
   log "  renaming caddy service dir vhosts -> $DOMAIN"
@@ -273,7 +273,7 @@ make clean-all     >> "$LOG" 2>&1 || echo "clean-all failed" >> "$LOG"
 echo "--- done ---" >> "$LOG"
 EOF
   log "  kuma seed SQL (4-container set)"
-  sed -i "/'docker'/ s/'cloud'/'nextcloud'/g; /'docker'/ s/'vault'/'vaultwarden'/g; /'docker'/ s/'share'/'share-flask'/g; /'docker'/ s/'vhosts'/'$DOMAIN'/g" services/ut-kuma/seed-monitors.sql
+  sed -i "s/'docker: vhosts'/'docker: $DOMAIN'/g; /'docker'/ s/'vhosts'/'$DOMAIN'/g" services/ut-kuma/seed-monitors.sql
   sed -i "/docker: share/d; /docker: homer/d; /http: www/d; /http: share/d; /http: api/d" services/ut-kuma/seed-monitors.sql
   git add -A && git -c user.name="$OP_USER" -c user.email="$OP_USER@$DOMAIN" \
     commit -q -m "install: domain $DOMAIN, user $OP_USER, shell., 4 containers" 2>/dev/null || true
