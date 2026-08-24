@@ -4,7 +4,7 @@
         "max-size": "10m",
         "max-file": "3"
     },
-    "storage-driver": "overlayfs",
+    "storage-driver": "overlay2",
     "default-runtime": "runc",
     "live-restore": true
 }
