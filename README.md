@@ -1,6 +1,6 @@
 # homelab.com
 
-Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Six CF-proxied public subdomains, one DNS-only public subdomain (game server), and one Tailscale-only subdomain. Ollama runs on the host as a systemd service for local LLM serving.
+Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Six CF-proxied public subdomains, one DNS-only public subdomain (game server), and one Tailscale-only subdomain. Goose (the agent CLI) runs on the host as a systemd service (`goose serve`).
 
 ## High-level overview
 

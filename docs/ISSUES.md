@@ -81,10 +81,10 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Problem**: Only `memcache.local` (APCu) is set. No `memcache.distributed` or `memcache.locking` — file locking falls back to DB locks, which under SQLite is coarse.
 - **Fix**: Add a small Redis container on `net` and set `memcache.distributed` + `memcache.locking` to Redis. Skip at current traffic levels; revisit if sync contention appears.
 
-#### Stop Ollama when idle  **[needs human approval]**
-- **File**: `/etc/systemd/system/ollama.service`
-- **Problem**: Ollama holds ~44 MB RSS idle with no models loaded. Protected by `docs/AGENTS.md` safety rules (must not delete), but temporary `systemctl stop` between sessions would free RAM.
-- **Fix**: `systemctl stop ollama` when not in use; `systemctl start ollama` before use.
+#### Stop goose when idle  **[needs human approval]**
+- **File**: `/etc/systemd/system/goose.service`
+- **Problem**: The goose agent service (`goose serve`) holds memory idle when no session is active. Protected by `docs/AGENTS.md` safety rules (must not delete), but temporary `systemctl stop` between sessions would free RAM.
+- **Fix**: `systemctl stop goose` when not in use; `systemctl start goose` before use.
 - **Why approval**: operator convenience trade-off (cold start latency vs. idle RAM).
 
 #### Nextcloud Talk: no High-performance backend, no Client Push

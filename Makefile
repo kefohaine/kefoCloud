@@ -9,7 +9,7 @@ SHELL := /bin/bash
 REPO     := /var/www/custom/projects/homelab
 COMPOSE  := docker compose -f
 CONTAINERS := vhosts homer ut-kuma share-flask nextcloud vaultwarden mc mc-flask
-HOST     := ttyd dnsmasq ollama
+HOST     := ttyd dnsmasq goose
 
 # Per-container compose file map. Default is `services/<ctn>/docker-compose.yml`;
 # overrides list each `<ctn>:path` for compose files that live alongside the
@@ -169,7 +169,7 @@ install-config:
   else \
     echo "ttyd already installed at $$(command -v ttyd)"; \
   fi
->sudo cp $(REPO)/repo/config/ollama/ollama.service /etc/systemd/system/ollama.service
+>sudo cp $(REPO)/repo/config/goose/goose.service /etc/systemd/system/goose.service
 >sudo cp $(REPO)/repo/config/ssh/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf
 >sudo cp $(REPO)/repo/config/dnsmasq/10-tailnet.conf /etc/dnsmasq.d/10-tailnet.conf
 >sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
@@ -196,9 +196,9 @@ install-config:
 >chmod 0644 $(REPO)/repo/.claude/settings.local.json
 >sudo ufw allow from 172.22.0.0/16 to any port 7681 proto tcp
 >sudo systemctl daemon-reload
->sudo systemctl enable --now ollama homelab-daily.timer ttyd
+>sudo systemctl enable --now goose homelab-daily.timer ttyd
 >sudo systemctl restart sshd dnsmasq
->@echo "Host install-config complete: ollama + ttyd + dnsmasq + sshd + daily timer enabled, Claude settings restored."
+>@echo "Host install-config complete: goose + ttyd + dnsmasq + sshd + daily timer enabled, Claude settings restored."
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Per-file install (config/<file> → live path)
@@ -208,17 +208,17 @@ install-config:
 # units in one batch and want one reload at the end.
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: install-ollama install-ttyd install-ssh \
+.PHONY: install-goose install-ttyd install-ssh \
         install-dnsmasq-conf install-dnsmasq-override \
         install-docker install-sysctl \
         install-daily-sh install-daily-service install-daily-timer \
         install-claude
 
-install-ollama:
->@echo "install-ollama: ollama.service"
->@sudo cp $(REPO)/repo/config/ollama/ollama.service /etc/systemd/system/ollama.service
+install-goose:
+>@echo "install-goose: goose.service"
+>@sudo cp $(REPO)/repo/config/goose/goose.service /etc/systemd/system/goose.service
 >@sudo systemctl daemon-reload
->@sudo systemctl restart ollama
+>@sudo systemctl restart goose
 
 install-ttyd:
 >@echo "install-ttyd: ttyd.service"
@@ -298,7 +298,7 @@ bundle-secrets:
     /home/debian/.ssh/github_key.pub \
     /home/debian/.ssh/config \
     /home/debian/.ssh/authorized_keys \
-    /etc/systemd/system/ollama.service \
+    /etc/systemd/system/goose.service \
     /etc/systemd/system/ttyd.service \
     /etc/ssh/sshd_config.d/50-cloud-init.conf \
     /etc/dnsmasq.d/10-tailnet.conf \
@@ -540,7 +540,7 @@ help:
 >@echo "    make migrate          cat docs/MIGRATE.md (full VPS-to-VPS runbook)"
 >@echo ""
 >@echo "  Per-file install (one file from config/ → live)"
->@echo "    make install-ollama             /etc/systemd/system/ollama.service"
+>@echo "    make install-goose             /etc/systemd/system/goose.service"
 >@echo "    make install-ttyd               /etc/systemd/system/ttyd.service"
 >@echo "    make install-ssh                /etc/ssh/sshd_config.d/50-cloud-init.conf"
 >@echo "    make install-dnsmasq-conf       /etc/dnsmasq.d/10-tailnet.conf"
