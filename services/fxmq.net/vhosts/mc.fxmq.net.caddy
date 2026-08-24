@@ -1,5 +1,7 @@
 # mc.fxmq.net — PufferPanel game server panel (web UI on 172.22.0.8:8080).
 # TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/cloud.fxmq.net.caddy).
+# /register is blocked (403) at the edge — public account creation closed
+# by operator request; accounts are admin-created in the panel.
 
 https://mc.fxmq.net {
     tls {
@@ -12,5 +14,11 @@ https://mc.fxmq.net {
     header {
         import security_headers
     }
-    reverse_proxy 172.22.0.8:8080
+    @register path /register*
+    handle @register {
+        respond 403
+    }
+    handle {
+        reverse_proxy 172.22.0.8:8080
+    }
 }
