@@ -7,6 +7,10 @@ services:
     container_name: fxmq.net
     restart: unless-stopped
 
+    # Hard RAM cap (no container swap) — survives recreates, unlike `docker update`.
+    mem_limit: 256m
+    memswap_limit: 256m
+
     # Host network so Caddy sees the real client source IP — without it,
     # Docker DNAT rewrites every packet to 172.22.0.1 (the bridge gateway)
     # before Caddy sees it, which breaks the @not_tailnet remote_ip matcher

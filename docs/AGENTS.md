@@ -147,6 +147,10 @@ Safety rule 10 above is generic; the project-specific numbers live here:
 - The cert mode is per-vhost DNS-01 ACME via `caddy-dns/cloudflare`; each vhost carries its own `tls { dns cloudflare { env.CF_API_TOKEN } }` block. Replacing one with `tls internal` / `tls off` / `tls self_signed` will drop browser connections to that hostname.
 - The CF API token is at `$(REPO)/caddy_data/CF_API_TOKEN` (created by the operator, not in the repo, not in `bundle-secrets`). Caddy renews certs from the token; the token is the only thing that needs to migrate to a new VPS.
 
+### Minecraft server — restart/config changes strictly forbidden
+
+- The Minecraft server (PufferPanel-managed Paper server `2ecfbe8c`; server config at `/var/www/custom/projects/homelab/puffer/data/servers/2ecfbe8c.json`, container created by the PufferPanel daemon) must **never** be started, stopped, restarted, recreated, or have its config / launch args / `-Xmx` / container limits edited without explicit operator approval. The operator has strictly forbidden this. Only read-only inspection (`jcmd`, `jstat`, `docker stats`, `docker inspect`, reading the server JSON) is allowed without approval.
+
 ### `caddy_data/` is a runtime data dir, not source
 
 The Caddy container bind-mounts `/var/www/custom/projects/homelab/caddy_data` at `/data` for persistent cert/account storage. It also contains the `CF_API_TOKEN` file (token for the ACME DNS-01 challenge). The token file is created by the operator outside the repo (see `docs/MIGRATE.md`), lives under `caddy_data/` so container recreates don't lose the cert, and is excluded from `make bundle-secrets` (DNS-01 ACME doesn't need off-VPS cert copies — the cert is renewed by Caddy from the CF token). Do not commit anything from `caddy_data/`.
