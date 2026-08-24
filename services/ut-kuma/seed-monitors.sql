@@ -17,23 +17,17 @@ WHERE NOT EXISTS (SELECT 1 FROM docker_host WHERE name = 'local');
 -- ── HTTP monitors (public hostnames via Cloudflare → VPS → Caddy) ────────
 
 INSERT INTO monitor (name, type, url, interval, retry_interval, maxretries, active, user_id, description)
-SELECT 'http: www', 'http', 'https://www.homelab.com', 60, 60, 0, 1, 1, 'Homer dashboard'
-WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'http: www');
 
 INSERT INTO monitor (name, type, url, interval, retry_interval, maxretries, active, user_id, description)
-SELECT 'http: share', 'http', 'https://share.homelab.com', 60, 60, 0, 1, 1, 'URL shortener + file sharing'
-WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'http: share');
 
 INSERT INTO monitor (name, type, url, interval, retry_interval, maxretries, active, user_id, description)
-SELECT 'http: api', 'http', 'https://api.homelab.com', 60, 60, 0, 1, 1, 'API placeholder vhost'
-WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'http: api');
 
 INSERT INTO monitor (name, type, url, interval, retry_interval, maxretries, active, user_id, description)
-SELECT 'http: vault', 'http', 'https://vault.homelab.com', 60, 60, 0, 1, 1, 'Vaultwarden'
+SELECT 'http: vault', 'http', 'https://vault.fxmq.net', 60, 60, 0, 1, 1, 'Vaultwarden'
 WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'http: vault');
 
 INSERT INTO monitor (name, type, url, interval, retry_interval, maxretries, active, user_id, description)
-SELECT 'http: cloud', 'http', 'https://cloud.homelab.com', 60, 60, 0, 1, 1, 'Nextcloud'
+SELECT 'http: cloud', 'http', 'https://cloud.fxmq.net', 60, 60, 0, 1, 1, 'Nextcloud'
 WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'http: cloud');
 
 -- http: status omitted — Kuma's own status page is the dashboard; self-check is noise.
@@ -45,9 +39,9 @@ WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'http: cloud');
 -- ── Docker container monitors ───────────────────────────────────────────
 
 INSERT INTO monitor (name, type, interval, retry_interval, maxretries, active, user_id, docker_host, docker_container, description)
-SELECT 'docker: vhosts', 'docker', 3600, 60, 0, 1, 1, d.id, 'vhosts', 'Caddy reverse proxy'
+SELECT 'docker: fxmq.net', 'docker', 3600, 60, 0, 1, 1, d.id, 'fxmq.net', 'Caddy reverse proxy'
 FROM docker_host d WHERE d.name = 'local'
-  AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: vhosts');
+  AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: fxmq.net');
 
 INSERT INTO monitor (name, type, interval, retry_interval, maxretries, active, user_id, docker_host, docker_container, description)
 SELECT 'docker: nextcloud', 'docker', 3600, 60, 0, 1, 1, d.id, 'nextcloud', 'Nextcloud PHP-FPM'
@@ -55,9 +49,7 @@ FROM docker_host d WHERE d.name = 'local'
   AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: nextcloud');
 
 INSERT INTO monitor (name, type, interval, retry_interval, maxretries, active, user_id, docker_host, docker_container, description)
-SELECT 'docker: share-flask', 'docker', 3600, 60, 0, 1, 1, d.id, 'share-flask', 'Flask shortener'
 FROM docker_host d WHERE d.name = 'local'
-  AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: share-flask');
 
 INSERT INTO monitor (name, type, interval, retry_interval, maxretries, active, user_id, docker_host, docker_container, description)
 SELECT 'docker: vaultwarden', 'docker', 3600, 60, 0, 1, 1, d.id, 'vaultwarden', 'Vaultwarden'
@@ -65,9 +57,7 @@ FROM docker_host d WHERE d.name = 'local'
   AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: vaultwarden');
 
 INSERT INTO monitor (name, type, interval, retry_interval, maxretries, active, user_id, docker_host, docker_container, description)
-SELECT 'docker: homer', 'docker', 3600, 60, 0, 1, 1, d.id, 'homer', 'Homer dashboard'
 FROM docker_host d WHERE d.name = 'local'
-  AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: homer');
 
 -- docker: kuma omitted — Kuma's own container; self-check is noise (the
 -- dashboard is the result you care about).
@@ -81,7 +71,6 @@ INSERT INTO monitor_group (monitor_id, group_id)
 SELECT m.id, g.id
 FROM monitor m, "group" g
 WHERE g.name = 'Public'
-  AND m.name IN ('http: www','http: share','http: api','http: vault','http: cloud')
   AND NOT EXISTS (SELECT 1 FROM monitor_group mg WHERE mg.monitor_id = m.id AND mg.group_id = g.id);
 
 INSERT INTO monitor_group (monitor_id, group_id)
