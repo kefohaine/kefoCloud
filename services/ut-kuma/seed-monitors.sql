@@ -45,24 +45,24 @@ WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'http: cloud');
 -- ── Docker container monitors ───────────────────────────────────────────
 
 INSERT INTO monitor (name, type, interval, retry_interval, maxretries, active, user_id, docker_host, docker_container, description)
-SELECT 'docker: domain', 'docker', 3600, 60, 0, 1, 1, d.id, 'vhosts', 'Caddy reverse proxy'
+SELECT 'docker: vhosts', 'docker', 3600, 60, 0, 1, 1, d.id, 'vhosts', 'Caddy reverse proxy'
 FROM docker_host d WHERE d.name = 'local'
-  AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: domain');
+  AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: vhosts');
 
 INSERT INTO monitor (name, type, interval, retry_interval, maxretries, active, user_id, docker_host, docker_container, description)
-SELECT 'docker: cloud', 'docker', 3600, 60, 0, 1, 1, d.id, 'nextcloud', 'Nextcloud PHP-FPM'
+SELECT 'docker: nextcloud', 'docker', 3600, 60, 0, 1, 1, d.id, 'nextcloud', 'Nextcloud PHP-FPM'
 FROM docker_host d WHERE d.name = 'local'
-  AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: cloud');
+  AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: nextcloud');
 
 INSERT INTO monitor (name, type, interval, retry_interval, maxretries, active, user_id, docker_host, docker_container, description)
-SELECT 'docker: share', 'docker', 3600, 60, 0, 1, 1, d.id, 'share-flask', 'Flask shortener'
+SELECT 'docker: share-flask', 'docker', 3600, 60, 0, 1, 1, d.id, 'share-flask', 'Flask shortener'
 FROM docker_host d WHERE d.name = 'local'
-  AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: share');
+  AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: share-flask');
 
 INSERT INTO monitor (name, type, interval, retry_interval, maxretries, active, user_id, docker_host, docker_container, description)
-SELECT 'docker: vault', 'docker', 3600, 60, 0, 1, 1, d.id, 'vaultwarden', 'Vaultwarden'
+SELECT 'docker: vaultwarden', 'docker', 3600, 60, 0, 1, 1, d.id, 'vaultwarden', 'Vaultwarden'
 FROM docker_host d WHERE d.name = 'local'
-  AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: vault');
+  AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: vaultwarden');
 
 INSERT INTO monitor (name, type, interval, retry_interval, maxretries, active, user_id, docker_host, docker_container, description)
 SELECT 'docker: homer', 'docker', 3600, 60, 0, 1, 1, d.id, 'homer', 'Homer dashboard'
