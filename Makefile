@@ -8,14 +8,13 @@ SHELL := /bin/bash
 
 REPO     := /var/www/custom/projects/homelab
 COMPOSE  := docker compose -f
-CONTAINERS := vhosts homer ut-kuma share-flask nextcloud vaultwarden mc mc-flask
+CONTAINERS := fxmq.net ut-kuma nextcloud vaultwarden
 HOST     := ttyd dnsmasq goose
 
 # Per-container compose file map. Default is `services/<ctn>/docker-compose.yml`;
 # overrides list each `<ctn>:path` for compose files that live alongside the
 # default name (e.g. mc-flask's dashboard is in services/mc/docker-compose.mc-flask.yml
 # so the game container and the dashboard can be recreated independently).
-COMPOSE_FILES := mc-flask:services/mc/docker-compose.mc-flask.yml
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Per-container: recreate / d-restart / d-logs
@@ -49,7 +48,7 @@ compose-file-of = $(REPO)/repo/$(COMPOSE_FILE_$1)
 
 define recreate_rule
 recreate-$1:
->$(COMPOSE) $(call compose-file-of,$1) up -d --force-recreate$(if $(filter share-flask vhosts mc-flask,$1), --build)
+>$(COMPOSE) $(call compose-file-of,$1) up -d --force-recreate$(if $(filter fxmq.net,$1), --build)
 endef
 $(foreach s,$(CONTAINERS),$(eval $(call recreate_rule,$s)))
 
@@ -189,7 +188,7 @@ install-config:
 >sudo cp $(REPO)/repo/config/maintenance/daily.service /etc/systemd/system/homelab-daily.service
 >sudo cp $(REPO)/repo/config/maintenance/daily.timer /etc/systemd/system/homelab-daily.timer
 >sudo touch /var/log/homelab-daily.log
->sudo chown debian:debian /var/log/homelab-daily.log
+>sudo chown op:op /var/log/homelab-daily.log
 >sudo cp $(REPO)/repo/config/ttyd/ttyd.service /etc/systemd/system/ttyd.service
 >mkdir -p $(REPO)/repo/.claude
 >cp $(REPO)/repo/config/claude/settings.local.json $(REPO)/repo/.claude/settings.local.json
@@ -294,10 +293,10 @@ bundle-secrets:
   sudo mkdir -p "$(BKP_DIR)"; \
   sudo tar czf "$$dest" \
     --warning=no-absolute-names \
-    /home/debian/.ssh/github_key \
-    /home/debian/.ssh/github_key.pub \
-    /home/debian/.ssh/config \
-    /home/debian/.ssh/authorized_keys \
+    /home/op/.ssh/github_key \
+    /home/op/.ssh/github_key.pub \
+    /home/op/.ssh/config \
+    /home/op/.ssh/authorized_keys \
     /etc/systemd/system/goose.service \
     /etc/systemd/system/ttyd.service \
     /etc/ssh/sshd_config.d/50-cloud-init.conf \
@@ -328,7 +327,7 @@ bundle-config:
 >@dest=$(BKP_DIR)/config-bundle-$$(date +%Y%m%d).tar.gz; \
   sudo mkdir -p "$(BKP_DIR)"; \
   sudo tar czf "$$dest" -C $(REPO)/repo config; \
-  sudo chown debian:debian "$$dest"; \
+  sudo chown op:op "$$dest"; \
   echo "Config bundle at $$dest"
 
 # Extract a config bundle tarball over $(REPO)/repo/config/. Defaults
@@ -367,7 +366,7 @@ BKP_DIR := $(REPO)/backups
 bkp-cloud:
 >@dest=$(BKP_DIR)/cloud-backup-$$(date +%Y%m%d-%H%M%S); \
   sudo mkdir -p "$(BKP_DIR)" "$$dest"; \
-  sudo chown debian:debian "$$dest"; \
+  sudo chown op:op "$$dest"; \
   docker exec -w /var/www/html nextcloud php occ maintenance:mode --on; \
   trap 'docker exec -w /var/www/html nextcloud php occ maintenance:mode --off' EXIT; \
   docker exec -i nextcloud tar cf - -C /data . | sudo tar xf - -C "$$dest"; \
@@ -375,11 +374,6 @@ bkp-cloud:
   trap - EXIT; \
   docker exec -w /var/www/html nextcloud php occ maintenance:mode --off; \
   echo "Backup at $$dest"
-
-bkp-share:
->@sudo mkdir -p "$(BKP_DIR)"; \
-  sudo cp $(REPO)/share/db/links.db $(BKP_DIR)/share-backup-$$(date +%Y%m%d-%H%M%S).db
->@echo "Backup at $(BKP_DIR)/share-backup-$$(date +%Y%m%d-%H%M%S).db"
 
 bkp-vault:
 >@sudo mkdir -p "$(BKP_DIR)"; \
@@ -393,14 +387,7 @@ bkp-vault:
 # When run from `bkp-all`, daily.sh stops the mc container first
 # so tar reads a quiescent filesystem; running this standalone while the
 # server is up is unsafe (regions may be partially written).
-bkp-mc:
->@dest=$(BKP_DIR)/mc-backup-$$(date +%Y%m%d-%H%M%S).tar.gz; \
-  sudo mkdir -p "$(BKP_DIR)"; \
-  sudo tar czf "$$dest" -C $(REPO)/mc/data world; \
-  sudo chown debian:debian "$$dest"; \
-  echo "World backup at $$dest"
-
-bkp-all: bkp-cloud bkp-share bkp-vault bkp-mc
+bkp-all: bkp-cloud bkp-vault
 
 # Show every backup artifact currently on disk, newest first. Includes
 # secrets bundles — the names/contents are not enumerated, just listed.
