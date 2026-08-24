@@ -173,7 +173,8 @@ EOF
   fi
 
   if ! command -v goose >/dev/null 2>&1 && [ ! -x /usr/local/bin/goose ]; then
-    curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | sh >/dev/null 2>&1 || true
+    curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh \
+      | CONFIGURE=false GOOSE_BIN_DIR=/usr/local/bin sh >/dev/null 2>&1 || true
   fi
   if command -v goose >/dev/null 2>&1; then
     install -m 0755 "$(command -v goose)" /usr/local/bin/goose || true
@@ -215,6 +216,8 @@ EOF
 ensure_repo() {
   if [ -d "$REPO/.git" ]; then log "repo present at $REPO"; return; fi
   sudo mkdir -p /var/www/custom/projects/homelab
+  # root umask may be 077: force parents traversable so op can clone into it
+  sudo chmod 0755 /var/www /var/www/custom /var/www/custom/projects 2>/dev/null || true
   sudo chown $OP_USER:$OP_USER /var/www/custom/projects/homelab
   if [ ! -f ~/.ssh/github_key ]; then
     ssh-keygen -t ed25519 -N "" -f ~/.ssh/github_key -C "$OP_USER@$DOMAIN" >/dev/null
