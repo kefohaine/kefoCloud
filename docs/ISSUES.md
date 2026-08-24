@@ -8,15 +8,10 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### Pending (Aug 2026)
 
-#### `shell.jxmq.net` cert won't issue — no `jxmq.net` zone in the Cloudflare account  **[needs human approval]**
-- **File**: `services/fxmq.net/vhosts/shell.jxmq.net.caddy`
-- **Problem**: vhost is live and Caddy serves it, but ACME DNS-01 fails — no cert is obtained (TLS handshake errors on the hostname). The CF token (`caddy_data/CF_API_TOKEN`) covers the `fxmq.net` zone; `jxmq.net` either isn't a zone in the account yet or the token lacks DNS access to it. Other vhosts are unaffected (verified: cloud/vault/kuma/shell.fxmq.net all still serve LE certs).
-- **Fix**: add the `jxmq.net` zone to the Cloudflare account (scope the token to it if needed); Caddy retries issuance in the background, no reload required. Also enable Tailscale split-DNS `jxmq.net` → `100.117.144.0` in the admin console before tailnet devices can resolve `shell.jxmq.net`.
-
 #### Kuma config copy from the jehpok VPS is blocked  **[needs human approval]**
 - **File**: `scripts/kuma-import.sh` (prepared); source db on `jehpok` (100.81.245.77)
-- **Problem**: SSH to `jehpok` denies every key tried (`root`/`op`/`debian`, incl. `github_key`), Tailscale SSH is not enabled there, and its Taildrop inbox is empty — the old `kuma.db` cannot be fetched. kuma.fxmq.net currently has the seeded admin + 4 monitors but not the old account/status pages.
-- **Fix**: operator delivers the db — on jehpok run `tailscale file cp kuma.db fxmq:` (then on fxmq `tailscale file get /var/www/custom/projects/homelab/kuma/import`), or add the fxmq `op` SSH key to jehpok's `authorized_keys`. Then `make kuma-import` swaps it in, adapts it (jehpok.com→fxmq.net URLs, old container names, deactivates retired-service monitors) and re-seeds the current monitor set.
+- **Problem**: SSH to `jehpok` denies every key tried from fxmq (`root`/`op`/`debian`, incl. `github_key`), Tailscale SSH is not enabled there, and its Taildrop inbox is empty — the old `kuma.db` cannot be fetched. The operator's Mac is also blocked: jehpok's ED25519 host key changed (`REMOTE HOST IDENTIFICATION HAS CHANGED`, new fingerprint `SHA256:o0MmsggDn/Hi2LiThbkSLlLGUadoQfEKi0NBvmFb61k`) — likely the VPS was reinstalled. kuma.fxmq.net currently has the seeded admin + 4 monitors but not the old account/status pages.
+- **Fix**: on the Mac run `ssh-keygen -R 100.81.245.77` (clears the stale host key), then `ssh debian@100.81.245.77` — if the box was reinstalled the old key may no longer be authorized; re-add it. Deliver the db either by taildrop from jehpok (`tailscale file cp kuma.db fxmq:`, then on fxmq `tailscale file get /var/www/custom/projects/homelab/kuma/import`) or by adding the fxmq `op` SSH key to jehpok's `authorized_keys`. Then `make kuma-import` swaps it in, adapts it (jehpok.com→fxmq.net URLs, old container names, deactivates retired-service monitors) and re-seeds the current monitor set.
 
 ### Robustness
 
@@ -239,10 +234,9 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Stale `bkp-share`/`bkp-mc` recipes removed** — .PHONY entries with no recipe silently "did nothing" after the 4-container migration; help + bkp-all comment updated.
 - **`bkp-vault` echo fixed** — the trailing echo computed a different timestamp than the tar it named; now one shell with a shared `dest`.
 - **Docs audited for the fxmq.net migration** — README/GUIDE/AGENTS/ISSUES/MIGRATE now describe the 4-container fxmq.net system (homer/share/mc/vhosts content dropped or moved to history).
-- **`shell.jxmq.net` tailnet-only ttyd vhost** — mirror of shell.fxmq.net/shell proxying the same host ttyd; shell.fxmq.net kept until operator approves removal.
+- **`shell.fxmq.net` root serves the ttyd terminal** — `/` and `/shell` both proxy to the same host ttyd; non-tailnet still 403.
 - **PufferPanel container** — `services/pufferpanel/` on `net` at 172.22.0.8 (web 8080, SFTP 5657), admin created, no MC server, no public vhost (none requested).
 - **`kuma-import` script + recipe** — imports a jehpok kuma.db, adapts URLs/container names, re-seeds the current monitor set.
-- **dnsmasq `address=/shell.jxmq.net`** — resolver line ready for the new tailnet-only hostname (split-DNS still a manual step).
 
 ---
 

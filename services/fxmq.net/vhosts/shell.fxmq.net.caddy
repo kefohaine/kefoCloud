@@ -1,3 +1,9 @@
+# shell.fxmq.net — tailnet-only ttyd terminal. Both https://shell.fxmq.net/
+# and https://shell.fxmq.net/shell serve the same host ttyd: the root
+# proxies straight to the terminal, /shell is kept as the historical path.
+# Non-tailnet sources get 403 on every path (Tailscale membership is the
+# access control — see README "Domains and access model").
+
 https://shell.fxmq.net {
     tls {
         dns cloudflare {env.CF_API_TOKEN}
@@ -17,8 +23,10 @@ https://shell.fxmq.net {
         }
     }
     handle {
-        @root path /
-        respond @root "ok"
-        respond "not found" 404
+        reverse_proxy 172.22.0.1:7681 {
+            transport http {
+                versions 1.1
+            }
+        }
     }
 }
