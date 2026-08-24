@@ -466,6 +466,23 @@ kuma_seed() {
     >>"$LOG" 2>&1 || fail kuma_seed
 }
 
+ssl_mode_full() {
+  # API first (needs Zone Settings read on the token); fall back to a
+  # behavior probe — Flexible/Off makes CF reach the origin over HTTP and
+  # Caddy answers a 308 back to the same https URL (redirect loop).
+  local mode hdrs code loc
+  mode=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
+    "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/settings/ssl" 2>/dev/null \
+    | jq -r '.result.value // empty' 2>/dev/null)
+  case "$mode" in full|strict) return 0 ;; esac
+  [ -n "$mode" ] && return 1
+  hdrs=$(curl -sI --max-time 15 "https://cloud.$DOMAIN" 2>/dev/null | tr -d '\r')
+  code=$(echo "$hdrs" | awk 'NR==1{print $2}')
+  loc=$(echo "$hdrs" | awk 'tolower($1)=="location:"{print $2; exit}')
+  [ "$code" = "308" ] && [[ "$loc" == *"cloud.$DOMAIN"* ]] && return 1
+  return 0
+}
+
 cf_dns() {
   VPS_IP=$(curl -s4 ifconfig.me)
   ZONE_ID=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
@@ -487,6 +504,10 @@ cf_dns() {
   done
   curl -s -X PATCH -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
     "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/settings/ssl" -d '{"value":"full"}' >>"$LOG" 2>&1 || true
+  # DNS-only tokens can't set SSL mode; surface it as an expected manual step.
+  if ! ssl_mode_full; then
+    fail sslmode
+  fi
 }
 
 issue_certs() {
@@ -556,6 +577,7 @@ problem() {
     cert_*)         echo "cert for ${1#cert_}.$DOMAIN is not issued by Let's Encrypt" ;;
     sweep)          echo "old project name is still referenced in the repo tree" ;;
     splitdns)       echo "tailscale split-DNS for $DOMAIN is not configured" ;;
+    sslmode)        echo "Cloudflare SSL/TLS mode is not Full (or strict)" ;;
     clone)          echo "repo clone failed" ;;
     *)              echo "$1" ;;
   esac
@@ -583,6 +605,7 @@ hint() {
     cert_*)         echo "hit https://${1#cert_}.$DOMAIN once to trigger ACME, wait a few seconds, then re-check" ;;
     sweep)          echo "rename or remove the files listed by: grep -rl jehpok $REPO --exclude-dir=.git" ;;
     splitdns)       echo "Tailscale admin console -> DNS: add split-DNS $DOMAIN -> ${TS_IP:-<tailscale IP>}, then confirm (y)" ;;
+    sslmode)        echo "Cloudflare dashboard -> SSL/TLS -> Overview -> set mode to Full (or Full strict), then re-check" ;;
     clone)          echo "add the key printed above to GitHub (Settings -> SSH keys), then re-run the script" ;;
     *)              echo "" ;;
   esac
@@ -610,13 +633,14 @@ recheck() {
     cert_*) local h=${1#cert_}; echo | timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$h.$DOMAIN" 2>/dev/null | openssl x509 -noout -issuer 2>/dev/null | grep -q "Let's Encrypt" ;;
     sweep) ! grep -rl 'jehpok' "$REPO" --exclude-dir=.git 2>/dev/null | grep -qv "^$REPO/scripts/install.sh$" ;;
     splitdns) read -rp "    Confirmed split-DNS set in the Tailscale admin console? (y/N): " c && [[ "$c" =~ ^[yY]$ ]] ;;
+    sslmode) ssl_mode_full ;;
     *) false ;;
   esac
 }
 
 is_expected() {
   case "$1" in
-    splitdns|zone|ssh_keys|kuma_admin|clone) return 0 ;;  # manual dashboard / UI steps
+    splitdns|zone|ssh_keys|kuma_admin|clone|sslmode) return 0 ;;  # manual dashboard / UI steps
     *) return 1 ;;
   esac
 }
@@ -685,12 +709,10 @@ success_block() {
   echo " SSH: root and '$OP_USER' both log in with keys (tailnet-only, port 22)."
   echo ""
   echo " Manual follow-ups:"
-  echo "   1. Cloudflare SSL/TLS mode must be Full (or strict) — the DNS-only API token"
-  echo "      cannot set it; do it in the dashboard or sites redirect-loop."
-  echo "   2. (optional) Cloudflare WAF rule skip for cloud.$DOMAIN (desktop sync)"
-  echo "   3. Git remote 'homelab' points at git@github.com:friedutch/homelab.git —"
+  echo "   1. (optional) Cloudflare WAF rule skip for cloud.$DOMAIN (desktop sync)"
+  echo "   2. Git remote 'homelab' points at git@github.com:friedutch/homelab.git —"
   echo "      rename the GitHub repo to match, or push will fail"
-  echo "   4. Post-migration doc pass: docs/ still name vhosts/debian until audited"
+  echo "   3. Post-migration doc pass: docs/ still name vhosts/debian until audited"
   echo "=============================================================="
 }
 
