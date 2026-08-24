@@ -4,6 +4,10 @@ services:
     container_name: pufferpanel
     restart: unless-stopped
 
+    # Hard RAM cap (no container swap) — survives recreates, unlike `docker update`.
+    mem_limit: 256m
+    memswap_limit: 256m
+
     # Web UI on 8080, built-in SFTP on 5657 (file manager for servers).
     # Exposed on the `net` bridge only — no host port publish, no Caddy
     # vhost yet (no hostname assigned by the operator). Reachable from
