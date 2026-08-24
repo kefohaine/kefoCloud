@@ -49,14 +49,14 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 #### `shell.fxmq.net` has no auth beyond Tailscale membership  **[needs human approval]**
 - **File**: `services/fxmq.net/vhosts/shell.fxmq.net.caddy`
-- **Problem**: Any tailnet device can reach `shell.fxmq.net` with no authentication. DNS-obscurity is the only access control — the host ttyd shell at `/shell` (a host systemd unit running as `op` with full host control) sits behind `@not_tailnet` and nothing else.
-- **Fix**: Add Caddy `basic_auth` on the `/shell*` matcher (needs a username + bcrypt hash from the operator), or apply Tailscale ACLs in the admin console to restrict who can reach the VPS at all.
+- **Problem**: Any tailnet device can reach `shell.fxmq.net` with no authentication. DNS-obscurity is the only access control — the host ttyd shell at the vhost root (a host systemd unit running as `op` with full host control) sits behind `@not_tailnet` and nothing else.
+- **Fix**: Add Caddy `basic_auth` on the vhost (needs a username + bcrypt hash from the operator), or apply Tailscale ACLs in the admin console to restrict who can reach the VPS at all.
 - **Why approval**: requires a password / ACL policy from the operator.
 
-#### `shell.fxmq.net/shell` gives an `op` shell to any tailnet device  **[needs human approval]**
+#### `shell.fxmq.net` gives an `op` shell to any tailnet device  **[needs human approval]**
 - **File**: `services/fxmq.net/vhosts/shell.fxmq.net.caddy`
-- **Problem**: `/shell` is a host systemd unit (`ttyd.service`) running `/usr/local/bin/ttyd bash` as `op`. The process is on the host, not in a container, so `sudo -i` reaches root and every host file is writable. The systemd unit has no filesystem sandbox (all `ProtectSystem`, `PrivateTmp`, etc. directives stripped — operator preference: no permission hunts). Tailscale membership alone gates it.
-- **Fix**: Add Caddy `basic_auth` on the `/shell*` matcher (needs a username + bcrypt hash), or apply Tailscale ACLs to restrict which devices can reach the VPS, or restrict the container with `cap_drop` + a read-only root mount + a write whitelist.
+- **Problem**: the vhost root is a host systemd unit (`ttyd.service`) running `/usr/local/bin/ttyd bash` as `op`. The process is on the host, not in a container, so `sudo -i` reaches root and every host file is writable. The systemd unit has no filesystem sandbox (all `ProtectSystem`, `PrivateTmp`, etc. directives stripped — operator preference: no permission hunts). Tailscale membership alone gates it.
+- **Fix**: Add Caddy `basic_auth` on the vhost (needs a username + bcrypt hash), or apply Tailscale ACLs to restrict which devices can reach the VPS, or restrict the container with `cap_drop` + a read-only root mount + a write whitelist.
 - **Why approval**: requires a password / ACL policy from the operator.
 
 #### Tailscale ACLs not configured  **[needs human approval]**
@@ -111,7 +111,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 Behaviours that look like bugs but are deliberate. Do not fix; the rationale is the answer.
 
 ### `shell.fxmq.net` is unresolvable from the public internet
-Looks like: DNS lookup fails for `shell.fxmq.net` outside Tailscale, *or* a `curl` against `https://shell.fxmq.net/...` (or any path under it: `/shell`) from a non-tailnet source times out, returns 403, or connection-refuses — including from the VPS host itself if the host isn't on the tailnet resolver. Reality: this is the only access control — see the access model table in `README.md`. The Caddy `@not_tailnet` matcher requires the `fxmq.net` container to be on the host network namespace (`network_mode: host`) so Caddy sees the real source IP — Docker DNAT through the bridge would rewrite it to `172.22.0.1` and break the matcher. **A failed curl is `@not_tailnet` working, not a service outage** — verify from a tailnet device or by SSH'ing in and curling from a tailnet-joined source.
+Looks like: DNS lookup fails for `shell.fxmq.net` outside Tailscale, *or* a `curl` against `https://shell.fxmq.net/` (any path) from a non-tailnet source times out, returns 403, or connection-refuses — including from the VPS host itself if the host isn't on the tailnet resolver. Reality: this is the only access control — see the access model table in `README.md`. The Caddy `@not_tailnet` matcher requires the `fxmq.net` container to be on the host network namespace (`network_mode: host`) so Caddy sees the real source IP — Docker DNAT through the bridge would rewrite it to `172.22.0.1` and break the matcher. **A failed curl is `@not_tailnet` working, not a service outage** — verify from a tailnet device or by SSH'ing in and curling from a tailnet-joined source.
 
 ### Cloudflare Bot Fight Mode blocks `curl` against `cloud.fxmq.net`
 Looks like: Cloudflare rejects `curl`/scripts hitting `cloud.fxmq.net` with a 403 / challenge. Reality: terminal traffic cannot solve the Browser Integrity Check. The intended fix is a per-hostname WAF rule skip on `cloud.fxmq.net` (desktop sync is bot-challenged otherwise); the goal is to keep Cloudflare's full protection on everywhere else.
@@ -234,7 +234,7 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Stale `bkp-share`/`bkp-mc` recipes removed** — .PHONY entries with no recipe silently "did nothing" after the 4-container migration; help + bkp-all comment updated.
 - **`bkp-vault` echo fixed** — the trailing echo computed a different timestamp than the tar it named; now one shell with a shared `dest`.
 - **Docs audited for the fxmq.net migration** — README/GUIDE/AGENTS/ISSUES/MIGRATE now describe the 4-container fxmq.net system (homer/share/mc/vhosts content dropped or moved to history).
-- **`shell.fxmq.net` root serves the ttyd terminal** — `/` and `/shell` both proxy to the same host ttyd; non-tailnet still 403.
+- **`shell.fxmq.net` root serves the ttyd terminal** — `/` proxies to the host ttyd; `/shell` route removed with operator approval; non-tailnet still 403.
 - **PufferPanel container** — `services/pufferpanel/` on `net` at 172.22.0.8 (web 8080, SFTP 5657), admin created, no MC server, no public vhost (none requested).
 - **`kuma-import` script + recipe** — imports a jehpok kuma.db, adapts URLs/container names, re-seeds the current monitor set.
 
