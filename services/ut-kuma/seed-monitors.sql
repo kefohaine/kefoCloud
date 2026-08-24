@@ -17,23 +17,23 @@ WHERE NOT EXISTS (SELECT 1 FROM docker_host WHERE name = 'local');
 -- ── HTTP monitors (public hostnames via Cloudflare → VPS → Caddy) ────────
 
 INSERT INTO monitor (name, type, url, interval, retry_interval, maxretries, active, user_id, description)
-SELECT 'http: www', 'http', 'https://www.jehpok.com', 60, 60, 0, 1, 1, 'Homer dashboard'
+SELECT 'http: www', 'http', 'https://www.homelab.com', 60, 60, 0, 1, 1, 'Homer dashboard'
 WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'http: www');
 
 INSERT INTO monitor (name, type, url, interval, retry_interval, maxretries, active, user_id, description)
-SELECT 'http: share', 'http', 'https://share.jehpok.com', 60, 60, 0, 1, 1, 'URL shortener + file sharing'
+SELECT 'http: share', 'http', 'https://share.homelab.com', 60, 60, 0, 1, 1, 'URL shortener + file sharing'
 WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'http: share');
 
 INSERT INTO monitor (name, type, url, interval, retry_interval, maxretries, active, user_id, description)
-SELECT 'http: api', 'http', 'https://api.jehpok.com', 60, 60, 0, 1, 1, 'API placeholder vhost'
+SELECT 'http: api', 'http', 'https://api.homelab.com', 60, 60, 0, 1, 1, 'API placeholder vhost'
 WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'http: api');
 
 INSERT INTO monitor (name, type, url, interval, retry_interval, maxretries, active, user_id, description)
-SELECT 'http: vault', 'http', 'https://vault.jehpok.com', 60, 60, 0, 1, 1, 'Vaultwarden'
+SELECT 'http: vault', 'http', 'https://vault.homelab.com', 60, 60, 0, 1, 1, 'Vaultwarden'
 WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'http: vault');
 
 INSERT INTO monitor (name, type, url, interval, retry_interval, maxretries, active, user_id, description)
-SELECT 'http: cloud', 'http', 'https://cloud.jehpok.com', 60, 60, 0, 1, 1, 'Nextcloud'
+SELECT 'http: cloud', 'http', 'https://cloud.homelab.com', 60, 60, 0, 1, 1, 'Nextcloud'
 WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'http: cloud');
 
 -- http: status omitted — Kuma's own status page is the dashboard; self-check is noise.

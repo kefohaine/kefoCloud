@@ -15,7 +15,7 @@ services:
       start_period: 30s
 
     volumes:
-      - /var/www/custom/projects/jehpok/kuma/data:/app/data:rw
+      - /var/www/custom/projects/homelab/kuma/data:/app/data:rw
       # Read-only docker socket so Kuma can monitor running containers.
       # Risk: compromised Kuma container = host root. Kuma is a single-user
       # dashboard behind Tailscale + Cloudflare; acceptable for this setup.
