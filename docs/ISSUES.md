@@ -106,7 +106,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 #### PufferPanel Statistics tab never shows RAM (upstream #1482)
 - **File**: `services/pufferpanel/docker-compose.yml` (panel `pufferpanel/pufferpanel:latest` = 3.0.9, Jul 2026)
 - **Problem**: Server Statistics page shows no memory usage for the Minecraft (Paper) server. Matches upstream [pufferpanel/pufferpanel#1482](https://github.com/pufferpanel/pufferpanel/issues/1482) (open): RAM metric missing for Minecraft servers on `:latest`; a PaperMC reporter confirms it worked on the unmaintained `pufferpanel/pufferpanel:java` image. No fix released (3.0.9 is latest); maintainer asked for the reporter's server JSON (never provided).
-- **Fix**: wait for upstream release, or contribute our server JSON to #1482 (maintainer explicitly requested it). Monitoring unaffected — use `docker exec 2ecfbe8c jcmd 1 GC.heap_info` / `jstat` / `docker stats` (see earlier session notes). Do NOT pin the old `:java` image (unmaintained, no Java 25).
+- **Fix**: wait for upstream release only — operator decision: no GitHub issue interaction (do not open, comment, or send anything). Monitoring unaffected — use `docker exec 2ecfbe8c jcmd 1 GC.heap_info` / `jstat` / `docker stats` (see earlier session notes). Do NOT pin the old `:java` image (unmaintained, no Java 25).
 
 #### PufferPanel template library stalls ~1s on first open + missing minecraft README
 - **File**: `services/pufferpanel/docker-compose.yml` (runtime data under `/var/www/custom/projects/homelab/puffer/data/cache/template-repos/`)
