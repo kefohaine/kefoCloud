@@ -676,10 +676,12 @@ success_block() {
   echo " SSH: root and '$OP_USER' both log in with keys (tailnet-only, port 22)."
   echo ""
   echo " Manual follow-ups:"
-  echo "   1. (optional) Cloudflare WAF rule skip for cloud.$DOMAIN (desktop sync)"
-  echo "   2. Git remote 'homelab' points at git@github.com:friedutch/homelab.git —"
+  echo "   1. Cloudflare SSL/TLS mode must be Full (or strict) — the DNS-only API token"
+  echo "      cannot set it; do it in the dashboard or sites redirect-loop."
+  echo "   2. (optional) Cloudflare WAF rule skip for cloud.$DOMAIN (desktop sync)"
+  echo "   3. Git remote 'homelab' points at git@github.com:friedutch/homelab.git —"
   echo "      rename the GitHub repo to match, or push will fail"
-  echo "   3. Post-migration doc pass: docs/ still name vhosts/debian until audited"
+  echo "   4. Post-migration doc pass: docs/ still name vhosts/debian until audited"
   echo "=============================================================="
 }
 
