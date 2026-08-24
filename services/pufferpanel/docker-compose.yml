@@ -1,0 +1,35 @@
+services:
+  pufferpanel:
+    image: pufferpanel/pufferpanel:latest
+    container_name: pufferpanel
+    restart: unless-stopped
+
+    # Web UI on 8080, built-in SFTP on 5657 (file manager for servers).
+    # Exposed on the `net` bridge only — no host port publish, no Caddy
+    # vhost yet (no hostname assigned by the operator). Reachable from
+    # the host at http://172.22.0.8:8080 until a route is chosen.
+    expose:
+      - "8080"
+      - "5657"
+
+    volumes:
+      - /var/www/custom/projects/homelab/puffer/data:/var/lib/pufferpanel
+      - /var/www/custom/projects/homelab/puffer/config:/etc/pufferpanel
+      # PufferPanel's daemon needs the Docker socket to run game servers.
+      # Risk: compromised panel = host root. Same trade-off as ut-kuma's
+      # socket mount; required for the panel to start at all.
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      net:
+        ipv4_address: 172.22.0.8
+
+networks:
+  net:
+    external: true
