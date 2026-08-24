@@ -145,7 +145,7 @@ Resolved items grouped by month. One line per item, aggressively short.
 ### Aug 2026 — Nextcloud, TLS, hardening, ops
 - **ufw status broken** — `sudo ufw status` works now (only benign "unable to resolve host server" warning); backend mismatch never re-investigated.
 - **MC game ports opened** — `ufw allow 25565/tcp` + `19132/udp` (host-net Paper server; 19132 pre-opened for planned Geyser, no listener yet).
-- **MC server optimized** — Xmx 8G→4G + Aikar flags in `jvmArgs`, sim-distance 4 / view-distance 8 / spawn-protection 8, Paper culling, plugins Chunky + StackMob; lazymc + container RAM limit pending operator review.
+- **MC server optimized** — Xmx 8G→4G + Aikar flags + native caps (MaxMetaspace/CodeCache/DirectMemory → total ≤5 G, container limit dropped per operator), sim-distance 4 / view-distance 8 / spawn-protection 0, Paper culling, plugins Chunky + StackMob; lazymc pending operator review.
 - **Nextcloud integration** — first hosted on the VPS, migrated to `app.homelab.com/cloud`, reverted, then linked via PHP-FPM.
 - **Nextcloud backend upgrade** — image bump.
 - **CoreDNS isolated** — split into its own directory; config renamed.
