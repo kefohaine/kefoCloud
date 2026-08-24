@@ -16,7 +16,7 @@ services:
       - /var/www/custom/projects/homelab/puffer/data:/var/lib/pufferpanel
       - /var/www/custom/projects/homelab/puffer/config:/etc/pufferpanel
       # PufferPanel's daemon needs the Docker socket to run game servers.
-      # Risk: compromised panel = host root. Same trade-off as ut-kuma's
+      # Risk: compromised panel = host root. Same trade-off as uptimekuma's
       # socket mount; required for the panel to start at all.
       - /var/run/docker.sock:/var/run/docker.sock
 
