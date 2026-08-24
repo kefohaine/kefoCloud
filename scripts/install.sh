@@ -124,20 +124,22 @@ phase1_root() {
   echo "$OP_USER ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/$OP_USER-passwordless
   chmod 0440 /etc/sudoers.d/$OP_USER-passwordless
 
-  # SSH: root and op both log in with keys. root keeps its own keys; op
-  # gets a copy. Password auth stays off; root is key-only.
+  # SSH: root and op both log in with keys. Hardening (password off, root
+  # key-only) is applied only when a key exists — never lock the operator
+  # out of password SSH on a box that has no keys yet.
   mkdir -p /home/$OP_USER/.ssh /root/.ssh
   chown -R $OP_USER:$OP_USER /home/$OP_USER/.ssh
   chmod 700 /home/$OP_USER/.ssh
   if [ -s /root/.ssh/authorized_keys ]; then
     cp /root/.ssh/authorized_keys /home/$OP_USER/.ssh/authorized_keys
     chmod 600 /home/$OP_USER/.ssh/authorized_keys
+    printf 'PasswordAuthentication no\nPermitRootLogin prohibit-password\nAllowUsers %s root\n' "$OP_USER" \
+      > /etc/ssh/sshd_config.d/50-cloud-init.conf
+    systemctl restart sshd
   else
     fail ssh_keys
+    log "no SSH key yet — sshd hardening skipped so password login still works; add a key, then re-check"
   fi
-  printf 'PasswordAuthentication no\nPermitRootLogin prohibit-password\nAllowUsers %s root\n' "$OP_USER" \
-    > /etc/ssh/sshd_config.d/50-cloud-init.conf
-  systemctl restart sshd
 
   systemctl enable --now docker
   mkdir -p /etc/docker
@@ -205,21 +207,26 @@ Host github.com
 EOF
     chmod 600 ~/.ssh/config
     echo "============================================================"
-    echo " ADD THIS KEY TO GITHUB, THEN RE-RUN THE SCRIPT:"
+    echo " NEW KEY — ADD IT TO GITHUB (Settings -> SSH keys):"
     cat ~/.ssh/github_key.pub
     echo "============================================================"
   fi
   # Clone from the renamed repo first; fall back to the pre-rename URL
   # (this script is the only place the old name is allowed to appear).
-  if ! GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new" \
+  if GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new" \
        git clone git@github.com:friedutch/homelab.git "$REPO" >>"$LOG" 2>&1; then
-    if ! GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new" \
-         git clone git@github.com:friedutch/jehpok.com.git "$REPO" >>"$LOG" 2>&1; then
-      echo "  ERROR: repo clone failed" >>"$LOG"
-      echo "Repo clone failed. Add the SSH key printed above to GitHub, then re-run the script."
-      exit 1
-    fi
+    :
+  elif GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new" \
+       git clone git@github.com:friedutch/jehpok.com.git "$REPO" >>"$LOG" 2>&1; then
     log "cloned from the pre-rename repo; remote will point at the renamed one"
+  else
+    echo "============================================================"
+    echo " REPO CLONE FAILED. Add this key to GitHub (Settings -> SSH keys),"
+    echo " then re-run the script:"
+    cat ~/.ssh/github_key.pub
+    echo "============================================================"
+    fail clone "repo clone failed — add the key printed above to GitHub, then re-run"
+    exit 1
   fi
   git -C "$REPO" remote rename origin homelab
   git -C "$REPO" remote set-url homelab git@github.com:friedutch/homelab.git
@@ -476,6 +483,7 @@ problem() {
     cert_*)         echo "cert for ${1#cert_}.$DOMAIN is not issued by Let's Encrypt" ;;
     sweep)          echo "old project name is still referenced in the repo tree" ;;
     splitdns)       echo "tailscale split-DNS for $DOMAIN is not configured" ;;
+    clone)          echo "repo clone failed" ;;
     *)              echo "$1" ;;
   esac
 }
@@ -502,6 +510,7 @@ hint() {
     cert_*)         echo "hit https://${1#cert_}.$DOMAIN once to trigger ACME, wait a few seconds, then re-check" ;;
     sweep)          echo "rename or remove the files listed by: grep -rl jehpok $REPO --exclude-dir=.git" ;;
     splitdns)       echo "Tailscale admin console -> DNS: add split-DNS $DOMAIN -> ${TS_IP:-<tailscale IP>}, then confirm (y)" ;;
+    clone)          echo "add the key printed above to GitHub (Settings -> SSH keys), then re-run the script" ;;
     *)              echo "" ;;
   esac
 }
@@ -534,7 +543,7 @@ recheck() {
 
 is_expected() {
   case "$1" in
-    splitdns|zone|ssh_keys|kuma_admin) return 0 ;;  # manual dashboard / UI steps
+    splitdns|zone|ssh_keys|kuma_admin|clone) return 0 ;;  # manual dashboard / UI steps
     *) return 1 ;;
   esac
 }
@@ -576,7 +585,18 @@ resolve_errors() {
     remaining=("${still[@]}")
   done
   ERR_TAGS=()
+  finalize_hardening
   success_block
+}
+
+finalize_hardening() {
+  # Runs once every error is resolved: if keys exist now, harden sshd
+  # (phase 1 skipped it when no key was present at install time).
+  if sudo test -s /root/.ssh/authorized_keys && [ -s /home/$OP_USER/.ssh/authorized_keys ]; then
+    printf 'PasswordAuthentication no\nPermitRootLogin prohibit-password\nAllowUsers %s root\n' "$OP_USER" \
+      | sudo tee /etc/ssh/sshd_config.d/50-cloud-init.conf >/dev/null
+    sudo systemctl restart sshd >/dev/null 2>&1 || true
+  fi
 }
 
 success_block() {
