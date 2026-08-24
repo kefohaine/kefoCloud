@@ -13,28 +13,24 @@ HOST     := ttyd dnsmasq goose
 
 # Per-container compose file map. Default is `services/<ctn>/docker-compose.yml`;
 # overrides list each `<ctn>:path` for compose files that live alongside the
-# default name (e.g. mc-flask's dashboard is in services/mc/docker-compose.mc-flask.yml
-# so the game container and the dashboard can be recreated independently).
+# default name (used when a service has more than one compose file). No
+# overrides currently.
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Per-container: recreate / d-restart / d-logs
+# Per-container: d-recreate / d-restart / d-logs
 # `d-` prefix marks container (docker) actions so they don't collide
 # visually with host systemd actions (restart-ttyd, restart-dnsmasq,
 # logs-ttyd, logs-dnsmasq below).
 # One set of rules, expanded across $(CONTAINERS).
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: $(addprefix recreate-,$(CONTAINERS)) recreate-all
+.PHONY: $(addprefix d-recreate-,$(CONTAINERS)) d-recreate-all
 .PHONY: $(addprefix d-restart-,$(CONTAINERS)) d-restart-all
 .PHONY: $(addprefix d-logs-,$(CONTAINERS)) d-logs-all
 
-# share-flask + vhosts (and mc-flask) rebuild their image locally; the rest just pull.
-# share-flask = custom Dockerfile for the link shortener.
-# vhosts = custom Dockerfile adds caddy-dns/cloudflare so the
-#   mc.homelab.com vhost can use ACME DNS-01 (HTTP-01 is blocked because
-#   the game ports require CF proxy to stay off, but CF proxy is what
-#   would carry the HTTP-01 challenge traffic from the public internet).
-# mc-flask = custom Dockerfile for the Flask+rcon dashboard.
+# fxmq.net (Caddy) rebuilds its image locally; the rest just pull.
+# fxmq.net = custom Dockerfile adds caddy-dns/cloudflare for ACME DNS-01
+#   on every vhost; DNS-01 keeps cert issuance independent of the proxy.
 
 # Set per-container compose file paths. Default is `services/<ctn>/docker-compose.yml`;
 # overrides from COMPOSE_FILES above take precedence.
@@ -47,31 +43,26 @@ $(foreach m,$(COMPOSE_FILES),$(eval COMPOSE_FILE_$(word 1,$(subst :, ,$(m))) := 
 compose-file-of = $(REPO)/repo/$(COMPOSE_FILE_$1)
 
 define recreate_rule
-recreate-$1:
+d-recreate-$1:
 >$(COMPOSE) $(call compose-file-of,$1) up -d --force-recreate$(if $(filter fxmq.net,$1), --build)
 endef
 $(foreach s,$(CONTAINERS),$(eval $(call recreate_rule,$s)))
 
 define drestart_rule
 d-restart-$1:
-># Restart every container declared in this service's compose file. mc and
-# mc-flask live in separate compose files now (see COMPOSE_FILES), so
-# `d-restart-mc` only restarts the game server and `d-restart-mc-flask` only
-# restarts the dashboard — no surprise side-effects on the other container.
+># Restart every container declared in this service's compose file.
 >$(COMPOSE) $(call compose-file-of,$1) restart
 endef
 $(foreach s,$(CONTAINERS),$(eval $(call drestart_rule,$s)))
 
 define dlogs_rule
 d-logs-$1:
-># Tail the container named after the service. mc + mc-flask have their own
-# recipes (`d-logs-mc`, `d-logs-mc-flask`) since they live in separate compose
-# files now; this generic rule only sees the primary container.
+># Tail the container named after the service.
 >docker logs $1 --tail 50 -f
 endef
 $(foreach s,$(CONTAINERS),$(eval $(call dlogs_rule,$s)))
 
-recreate-all: $(addprefix recreate-,$(CONTAINERS))
+d-recreate-all: $(addprefix d-recreate-,$(CONTAINERS))
 d-restart-all: $(addprefix d-restart-,$(CONTAINERS)) restart-dnsmasq restart-ttyd
 
 d-logs-all:
@@ -125,10 +116,9 @@ clean-apt:
 >@sudo apt-get -qq autoremove -y
 
 # Keep the 3 most recent artifacts per backup pattern; delete older.
-# The mc-backup pattern also matches the old minecraft-backup-* names so
-# artifacts orphaned by the rename age out instead of accumulating forever.
-# All backups live under $(REPO)/backups/ since the bkp-<src> recipes were
-# moved there; pre-migration top-level artifacts were also moved there.
+# The share/mc patterns match legacy artifacts from the pre-migration
+# services (link shortener, Minecraft) so orphans age out instead of
+# accumulating forever. All backups live under $(REPO)/backups/.
 clean-backups:
 >@for pattern in cloud-backup-* share-backup-*.db vault-backup-*.tar.gz secrets-bundle-*.tar.gz 'mc-backup-*.tar.gz minecraft-backup-*.tar.gz'; do \
     sudo ls -1dt $(REPO)/backups/$$pattern 2>/dev/null | tail -n +4 | sudo xargs -r rm -rf; \
@@ -148,7 +138,7 @@ update:
       $(COMPOSE) "$$f" pull; \
     fi; \
   done
->cd $(REPO)/repo && $(MAKE) up-all
+>cd $(REPO)/repo && $(MAKE) d-recreate-all
 
 # ─────────────────────────────────────────────────────────────────────────────
 # config/ (live <-> repo)
@@ -315,9 +305,11 @@ install-secrets:
       exit 1; \
     fi; \
     echo "Using latest bundle: $$BUNDLE"; \
-  fi
->sudo tar xzf "$$BUNDLE" -C / --warning=no-absolute-names
->@echo "Installed $$BUNDLE to live paths."
+  else \
+    BUNDLE="$(BUNDLE)"; \
+  fi; \
+  sudo tar xzf "$$BUNDLE" -C / --warning=no-absolute-names; \
+  echo "Installed $$BUNDLE to live paths."
 
 # Snapshot the whole config/ tree into a single tarball under backups/.
 # The git-tracked copy is canonical when the repo is present; this
@@ -336,28 +328,30 @@ bundle-config:
 # (or just create the dir), then `make install-config-bundle` to
 # populate config/ before running `make install-config`.
 install-config-bundle:
->@if [ -z "$(BUNDLE)" ]; then \
+>@if [ ! -d "$(REPO)/repo" ]; then \
+    echo "$(REPO)/repo does not exist. Create it first (clone the repo, or mkdir)."; \
+    exit 1; \
+  fi; \
+  if [ -z "$(BUNDLE)" ]; then \
     BUNDLE="$$(ls -1t $(BKP_DIR)/config-bundle-*.tar.gz 2>/dev/null | head -1)"; \
     if [ -z "$$BUNDLE" ]; then \
       echo "No config-bundle-*.tar.gz found in $(BKP_DIR)."; \
       exit 1; \
     fi; \
     echo "Using latest bundle: $$BUNDLE"; \
-  fi
->@if [ ! -d "$(REPO)/repo" ]; then \
-    echo "$(REPO)/repo does not exist. Create it first (clone the repo, or mkdir)."; \
-    exit 1; \
-  fi
->@tar xzf "$$BUNDLE" -C $(REPO)/repo
->@echo "Installed $$BUNDLE into $(REPO)/repo/config/"
+  else \
+    BUNDLE="$(BUNDLE)"; \
+  fi; \
+  tar xzf "$$BUNDLE" -C $(REPO)/repo; \
+  echo "Installed $$BUNDLE into $(REPO)/repo/config/"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Backups (rename: backup-* → bkp-*)
-# bkp-all chains the four bkp-* recipes in order (no bundle-secrets —
-# secrets need a deliberate decision).
+# bkp-all chains the bkp-* recipes in order (no bundle-secrets — secrets
+# need a deliberate decision).
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: bkp-cloud bkp-share bkp-vault bkp-mc bkp-all bkp-list
+.PHONY: bkp-cloud bkp-vault bkp-all bkp-list
 
 # All bkp-* recipes write under $(REPO)/backups/. bkp-list enumerates that
 # dir so the operator has one place to see what's been snapshotted.
@@ -376,17 +370,11 @@ bkp-cloud:
   echo "Backup at $$dest"
 
 bkp-vault:
->@sudo mkdir -p "$(BKP_DIR)"; \
-  sudo bash -c 'tar czf $(BKP_DIR)/vault-backup-$$(date +%Y%m%d-%H%M%S).tar.gz -C $(REPO)/vault data'
->@echo "Backup at $(BKP_DIR)/vault-backup-$$(date +%Y%m%d-%H%M%S).tar.gz"
+>@dest=$(BKP_DIR)/vault-backup-$$(date +%Y%m%d-%H%M%S).tar.gz; \
+  sudo mkdir -p "$(BKP_DIR)"; \
+  sudo tar czf "$$dest" -C $(REPO)/vault data; \
+  echo "Backup at $$dest"
 
-# Snapshot just the Minecraft world data folder as a timestamped .tar.gz.
-# Differs from `bkp-all` (which snapshots everything): this one is for
-# world data only, intended to be run before destructive ops (regenerate,
-# world import) so a recovery path exists. Does NOT auto-run by itself.
-# When run from `bkp-all`, daily.sh stops the mc container first
-# so tar reads a quiescent filesystem; running this standalone while the
-# server is up is unsafe (regions may be partially written).
 bkp-all: bkp-cloud bkp-vault
 
 # Show every backup artifact currently on disk, newest first. Includes
@@ -435,6 +423,10 @@ tmux-open:
     echo "Usage: make tmux-open NAME=<session>"; \
     exit 1; \
   fi
+>@if ! tmux has-session -t "$(NAME)" 2>/dev/null; then \
+    echo "Session '$(NAME)' does not exist. Create it with: make tmux-new NAME=$(NAME)"; \
+    exit 1; \
+  fi
 >@tmux attach -t "$(NAME)"
 
 tmux-kill:
@@ -442,11 +434,15 @@ tmux-kill:
     echo "Usage: make tmux-kill NAME=<session>"; \
     exit 1; \
   fi
+>@if ! tmux has-session -t "$(NAME)" 2>/dev/null; then \
+    echo "Session '$(NAME)' does not exist."; \
+    exit 1; \
+  fi
 >@tmux kill-session -t "$(NAME)"
 >@echo "Killed session '$(NAME)'"
 
 tmux-list:
->@tmux ls
+>@tmux ls 2>/dev/null || echo "No tmux sessions."
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Migration
@@ -494,18 +490,18 @@ git-all: git-add
 
 help:
 >@echo ""
->@echo "  homelab.com — make recipes"
+>@echo "  fxmq.net — make recipes"
 >@echo ""
 >@echo "  Docker containers  (one of: $(CONTAINERS))"
->@echo "    make recreate-<ctn>   force-recreate container (share-flask, vhosts, mc-flask rebuild)"
->@echo "    make d-restart-<ctn>  reload container without recreating"
->@echo "    make d-logs-<ctn>     follow container logs"
+>@echo "    make d-recreate-<ctn>  force-recreate container (fxmq.net rebuilds locally)"
+>@echo "    make d-restart-<ctn>   reload container without recreating"
+>@echo "    make d-logs-<ctn>      follow container logs"
 >@echo ""
 >@echo "  Bulk"
+>@echo "    make d-recreate-all   recreate all containers in order"
 >@echo "    make d-restart-all    restart all containers + dnsmasq + ttyd"
->@echo "    make recreate-all     recreate all containers in order"
 >@echo "    make d-logs-all       tail all container logs in one stream"
->@echo "    make bkp-all          run all four bkp-* recipes (no bundle-secrets)"
+>@echo "    make bkp-all          chain bkp-cloud + bkp-vault (no bundle-secrets)"
 >@echo "    make clean-all        chain: clean-docker + clean-apt + clean-backups"
 >@echo "    make git-all MSG=\"…\"  stage + commit + push (shortcut for the 3 below)"
 >@echo ""
@@ -522,7 +518,7 @@ help:
 >@echo ""
 >@echo "  Maintenance"
 >@echo "    make status           containers + host services + disk + memory"
->@echo "    make update           apt update/upgrade + pull images + recreate-all"
+>@echo "    make update           apt update/upgrade + pull images + d-recreate-all"
 >@echo "    make install-config   copy all of config/ to live"
 >@echo "    make migrate          cat docs/MIGRATE.md (full VPS-to-VPS runbook)"
 >@echo ""
@@ -541,9 +537,7 @@ help:
 >@echo ""
 >@echo "  Backups (bkp-*) — all artifacts land in \$$REPO/backups/"
 >@echo "    make bkp-cloud        Nextcloud snapshot (maintenance mode during copy)"
->@echo "    make bkp-share        shortener SQLite DB"
 >@echo "    make bkp-vault        Vaultwarden data tar"
->@echo "    make bkp-mc           Minecraft world tar (stops the container via daily.sh when chained)"
 >@echo "    make bkp-list         list every artifact under \$$REPO/backups/ + count per pattern"
 >@echo ""
 >@echo "  Bundles"
