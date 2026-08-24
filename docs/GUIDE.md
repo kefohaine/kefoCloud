@@ -77,7 +77,7 @@ When a recipe covers the task, use the recipe. Raw `git`, `docker compose`, `doc
 
 ## SSH access
 
-SSH is restricted to the Tailscale network only — the public internet cannot reach port 22. Password auth is disabled, root login is disabled, `AllowUsers debian` only. Config: `/etc/ssh/sshd_config.d/50-cloud-init.conf`.
+SSH is restricted to the Tailscale network only — the public internet cannot reach port 22. Password auth is disabled; root login is key-only (`PermitRootLogin prohibit-password`); `AllowUsers debian root`. Config: `/etc/ssh/sshd_config.d/50-cloud-init.conf`. The installer (`scripts/install.sh`) rewrites this file for user `op` and keeps root key access.
 
 ## Service reference
 
