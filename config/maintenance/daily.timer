@@ -1,5 +1,5 @@
 [Unit]
-Description=jehpok.com daily maintenance timer
+Description=homelab.com daily maintenance timer
 
 [Timer]
 OnCalendar=daily

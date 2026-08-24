@@ -1,10 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-LOG=/var/log/jehpok-daily.log
+LOG=/var/log/homelab-daily.log
 echo "=== $(date) ===" >> "$LOG"
 
-cd /var/www/custom/projects/jehpok/repo
+cd /var/www/custom/projects/homelab/repo
 
 # update: apt + image pull + up-all. bkp-all: all four bkp-* recipes
 # (now includes bkp-mc, which tars the world folder — needs the

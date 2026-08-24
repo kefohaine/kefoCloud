@@ -1,9 +1,9 @@
 [Unit]
-Description=jehpok.com daily maintenance (make refresh + backup-all + clean-all)
+Description=homelab.com daily maintenance (make refresh + backup-all + clean-all)
 After=docker.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/jehpok-daily.sh
+ExecStart=/usr/local/bin/homelab-daily.sh
 User=debian
 Group=debian
