@@ -386,6 +386,10 @@ SELECT m.id, g.id FROM monitor m, "group" g
 WHERE g.name = 'Containers' AND m.name LIKE 'docker: %'
   AND NOT EXISTS (SELECT 1 FROM monitor_group mg WHERE mg.monitor_id = m.id AND mg.group_id = g.id);
 EOF
+  log "  goose service secret"
+  if ! grep -q GOOSE_SERVER__SECRET_KEY config/goose/goose.service; then
+    echo "Environment=GOOSE_SERVER__SECRET_KEY=$(openssl rand -hex 32)" >> config/goose/goose.service
+  fi
   git add -A && git -c user.name="$OP_USER" -c user.email="$OP_USER@$DOMAIN" \
     commit -q -m "install: domain $DOMAIN, user $OP_USER, shell., 4 containers" 2>/dev/null || true
 }
@@ -414,7 +418,13 @@ host_services() {
 
 containers_up() {
   log "  building Caddy image ($DOMAIN:local) — ~3 min on a cold cache"
-  make "recreate-$DOMAIN" >>"$LOG" 2>&1 || fail caddy
+  if ! make "recreate-$DOMAIN" >>"$LOG" 2>&1; then
+    # compose build on trixie requires buildx >= 0.17; fall back to plain docker build
+    log "  compose build failed — falling back to docker build + compose up"
+    docker build -t "$DOMAIN:local" "services/$DOMAIN" >>"$LOG" 2>&1 \
+      && docker compose -f "services/$DOMAIN/docker-compose.yml" up -d --force-recreate >>"$LOG" 2>&1 \
+      || fail caddy
+  fi
   make recreate-nextcloud   >>"$LOG" 2>&1 || fail nextcloud
   make recreate-vaultwarden >>"$LOG" 2>&1 || fail vaultwarden
   make recreate-ut-kuma     >>"$LOG" 2>&1 || fail kuma
