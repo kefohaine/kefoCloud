@@ -1,132 +1,185 @@
-# Migration
+# Migration (new VPS, new domain, 4 containers)
 
-Step-by-step runbook for moving jehpok.com to a new VPS. The `make bkp-*` recipes, `make bundle-secrets`, and `make install-config` are the only recipes this runbook calls; everything else is operator-issued shell. Run `make migrate` to print this file.
+Runbook for moving the setup to a fresh Debian VPS with a **new domain** and a reduced container set — **Nextcloud, Vaultwarden, Uptime Kuma, Caddy** only (no Homer, share-flask, Minecraft, or mc-flask). Nothing is copied from the old host's config files: the repo is cloned, the domain is swapped with `sed`, and every host service is written fresh. Data restore (Nextcloud files, Vaultwarden DB, Kuma DB) is optional and done with `rsync` — see §10.
 
-## 1. On the OLD VPS
+Placeholders: `$DOMAIN` = new domain, `$TS_IP` = new Tailscale IP, `$VPS_IP` = public IP, `$REPO=/var/www/custom/projects/jehpok`. Run the root sections as root, everything else as `debian`.
 
-Run the four `bkp-*` recipes and the secrets bundle in one shot:
+## 0. Cloudflare prep (browser)
 
-```
-make bkp-all          # cloud + share + vault + mc (under backups/)
-make bundle-secrets   # collects the SSH key, systemd units, dnsmasq, tailscale state into backups/secrets-bundle-<date>.tar.gz
-```
+- Add `$DOMAIN` as a new zone in Cloudflare.
+- Create an API token with `Zone > DNS > Edit` permission for that zone only (the `caddy-dns/cloudflare` plugin needs it for ACME DNS-01; the new 53-char `cfut_*` token format works with the pinned plugin commit in `services/vhosts/Dockerfile`).
+- Keep the token for §5.
 
-This produces five artifacts under `$(REPO)/backups/`: a `cloud-backup-<date>` directory, a `share-backup-<date>.db` file, a `vault-backup-<date>.tar.gz` archive, a `secrets-bundle-<date>.tar.gz` bundle, and a `mc-backup-<date>.tar.gz` world archive.
-
-## 2. Download OFF the old VPS
-
-Move the five artifacts off the VPS — the secrets bundle contains private keys and the Tailscale identity state:
-
-- `$(REPO)/backups/secrets-bundle-<date>.tar.gz`
-- `$(REPO)/backups/cloud-backup-<date>`
-- `$(REPO)/backups/share-backup-<date>.db`
-- `$(REPO)/backups/vault-backup-<date>.tar.gz`
-- `$(REPO)/backups/mc-backup-<date>.tar.gz`
-
-The CF API token is **not** in any backup — it lives at `$(REPO)/caddy_data/CF_API_TOKEN` on the active VPS. It's a single line `CF_API_TOKEN=<token>` (mode 0600, owner `debian`). Caddy renews certs from the token, so transferring it is the only thing needed to skip the first 0–90-day issuance window on the new host.
-
-## 3. On the NEW VPS (Debian)
-
-Become root for system installs and unit restoration, then drop to `debian` for the rest. Run as root:
-
-Install Debian packages, Ollama, and Tailscale:
+## 1. New VPS base (root)
 
 ```
-apt update && apt install -y docker.io docker-compose-plugin git curl make sudo dnsmasq ufw
-curl -fsSL https://ollama.com/install.sh | sh
+apt update && apt upgrade -y
+apt install -y docker.io docker-compose-plugin git curl make sudo dnsmasq ufw
+adduser debian && usermod -aG sudo,docker debian
+echo 'debian ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/debian-passwordless && chmod 0440 /etc/sudoers.d/debian-passwordless
+mkdir -p /home/debian/.ssh && echo '<your-pubkey>' > /home/debian/.ssh/authorized_keys
+printf 'PasswordAuthentication no\nPermitRootLogin no\nAllowUsers debian\n' > /etc/ssh/sshd_config.d/50-cloud-init.conf
+systemctl restart sshd
+```
+
+Log out and back in as `debian`.
+
+## 2. Docker
+
+```
+sudo systemctl enable --now docker
+sudo mkdir -p /etc/docker
+cat | sudo tee /etc/docker/daemon.json <<'EOF'
+{
+    "log-driver": "json-file",
+    "log-opts": {"max-size": "10m", "max-file": "3"},
+    "storage-driver": "overlayfs",
+    "default-runtime": "runc",
+    "live-restore": true
+}
+EOF
+sudo systemctl restart docker
+```
+
+## 3. Tailscale
+
+```
 curl -fsSL https://tailscale.com/install.sh | sh
-tailscale up
+sudo tailscale up
+tailscale ip -4          # note it → $TS_IP
 ```
 
-Restore the secrets bundle (drops unit files, SSH keys, dnsmasq config, and Tailscale state into place):
+In the Tailscale admin console: name the node, and add split-DNS for `$DOMAIN` → `$TS_IP`. This is what resolves `*.example.com` for tailnet devices; the VPS's own dnsmasq answers `server.$DOMAIN` (§6).
+
+## 4. Repo clone + domain swap (as debian)
+
+Add the new VPS SSH key to GitHub, then:
 
 ```
-sudo tar xzf secrets-<date>.tar.gz -C /
-sudo chown -R debian:debian /home/debian/.ssh
-sudo chmod 600 /home/debian/.ssh/github_key
+sudo mkdir -p /var/www/custom/projects/jehpok && sudo chown debian:debian /var/www/custom/projects/jehpok
+git clone git@github.com:friedutch/jehpok.com.git /var/www/custom/projects/jehpok/repo
+cd /var/www/custom/projects/jehpok/repo
+mkdir -p cloud/html cloud/users vault/data kuma/data
 ```
 
-Restore the Nextcloud data directory to the host bind-mount path the `cloud` compose file expects (see `services/nextcloud/docker-compose.yml` for the bind source; the destination inside the container is `/data`):
+Swap the domain in every config (Caddy vhosts + imports, dnsmasq, compose envs, Kuma seed SQL):
 
 ```
-sudo mkdir -p $(REPO)/cloud/html $(REPO)/cloud/users
-sudo cp -a cloud-backup-<date>/html/* $(REPO)/cloud/html/
-sudo cp -a cloud-backup-<date>/users/* $(REPO)/cloud/users/
-echo '# Nextcloud data directory' | sudo tee $(REPO)/cloud/users/.ncdata
-sudo chown -R 33:33 $(REPO)/cloud/html $(REPO)/cloud/users
+grep -rl 'jehpok\.com' services/ config/ | xargs sed -i 's/jehpok\.com/example.com/g'
 ```
 
-Restore the shortener SQLite DB:
+Trim to the 4 containers — delete the services that are no longer run and their vhosts, then rename the surviving vhost files to match the sed'd imports:
 
 ```
-sudo mkdir -p $(REPO)/share/db
-sudo cp share-backup-<date>.db $(REPO)/share/db/links.db
+rm -rf services/homer services/share-flask services/mc content/share content/minecraft
+rm services/vhosts/vhosts/www.jehpok.com.caddy services/vhosts/vhosts/share.jehpok.com.caddy services/vhosts/vhosts/api.jehpok.com.caddy services/vhosts/vhosts/mc.jehpok.com.caddy
+cd services/vhosts/vhosts && for f in *.jehpok.com.caddy; do mv "$f" "${f/jehpok.com/example.com}"; done && cd ../../..
 ```
 
-Restore the Vaultwarden data dir:
+Manual edits after the sed:
+- `services/vhosts/Caddyfile` — remove the `import` lines of the deleted vhosts (server/cloud/vault/kuma stay).
+- `services/vhosts/docker-compose.yml` — remove the dead `../..:/srv:ro` and `$(REPO)/share/files:/files:ro` mounts (share container is gone).
+- `Makefile` — `CONTAINERS := vhosts ut-kuma nextcloud vaultwarden`; remove the `bkp-share` / `bkp-mc` recipes (their data dirs are gone) and drop them from `bkp-all`.
+- `config/maintenance/daily.sh` — remove the mc-server stop/start block and the `bkp-share`/`bkp-mc` calls (harmless to leave, but they reference deleted paths and fail in `make bkp-all`).
+
+Create the Nextcloud admin env (gitignored, used only on first install):
 
 ```
-sudo mkdir -p $(REPO)/vault
-sudo tar xzf vault-backup-<date>.tar.gz -C $(REPO)/vault
-sudo chown -R 1000:1000 $(REPO)/vault/data
+cat > services/nextcloud/.env <<'EOF'
+NEXTCLOUD_ADMIN_USER=admin
+NEXTCLOUD_ADMIN_PASSWORD=<choose-a-strong-one>
+EOF
 ```
 
-Drop to the `debian` user, clone the repo, drop the Nextcloud `.env` in place, create the external Docker network, and bootstrap:
+## 5. Docker network + Caddy data
+
+The compose files pin bridge IPs `172.22.0.4/.5/.6` and the Caddyfile hardcodes the upstreams — the `net` network must be created with that subnet or the containers fail to attach:
 
 ```
-git clone git@github.com:friedutch/jehpok.com.git $(REPO)/repo
-cp <your-.env> $(REPO)/repo/services/nextcloud/.env
-docker network create net
-make -C $(REPO)/repo install-config
+docker network create net --subnet=172.22.0.0/16
 ```
 
-`make install-config` is idempotent: it installs ttyd, copies reference configs into host paths, enables the systemd units (ollama, ttyd, dnsmasq, sshd, jehpok-daily.timer), opens the UFW rule for ttyd, and deploys the project-level Claude Code safety rail from `config/claude/settings.local.json`.
-
-Now create the Caddy data dir + restore the CF API token (so the per-vhost ACME certs can be issued on first request):
+Caddy data dir + CF token. The token file is read by `docker compose` as the `debian` user (mode 0644, owner `debian`); the dir itself is uid 201 (Caddy's `/data`):
 
 ```
-sudo mkdir -p $(REPO)/caddy_data
-sudo chown -R 201:201 $(REPO)/caddy_data
-sudo install -m 0644 -o debian -g debian /dev/null $(REPO)/caddy_data/CF_API_TOKEN
-printf 'CF_API_TOKEN=%s\n' '<paste token here>' | sudo tee $(REPO)/caddy_data/CF_API_TOKEN > /dev/null
-sudo chmod 0644 $(REPO)/caddy_data/CF_API_TOKEN
+mkdir -p caddy_data && sudo chown -R 201:201 caddy_data
+printf 'CF_API_TOKEN=%s\n' '<token>' | sudo tee caddy_data/CF_API_TOKEN > /dev/null
+sudo chmod 0644 caddy_data/CF_API_TOKEN
 ```
 
-Then bring up the containers:
+## 6. Host services
+
+Point dnsmasq at the new Tailscale IP (the domain was already sed'd in §4):
 
 ```
-make -C $(REPO)/repo recreate-all
+sed -i "s/100\.81\.245\.77/$TS_IP/g" config/dnsmasq/10-tailnet.conf
 ```
 
-`make recreate-all` brings up the containers in dependency order. The `domain` container is built locally from `services/vhosts/Dockerfile` (Caddy + caddy-dns/cloudflare plugin) — that adds ~3 minutes the first time.
-
-## 4. Update Cloudflare DNS
-
-Point `jehpok.com` (and any subdomains serving traffic) at the new VPS IP. Each vhost will issue its own LE cert via DNS-01 — no CF Origin CA to copy.
-
-## 5. Verify
-
-Tail each container's logs to confirm clean startup:
+Open the firewall, then run the one-shot host bootstrap — installs ttyd, copies `config/` to live, enables dnsmasq/sshd/daily timer, applies sysctl, and opens the ttyd UFW rule:
 
 ```
-make d-logs-all
+sudo ufw allow from 100.64.0.0/10 to any port 22 proto tcp
+sudo ufw allow 80/tcp && sudo ufw allow 443/tcp
+sudo ufw enable
+make install-config
 ```
 
-Hit each public vhost to trigger ACME issuance (one cert per hit, ~seconds total):
+`make install-config` also enables the ollama unit — if you don't want the LLM service: `sudo systemctl disable --now ollama`.
+
+## 7. Containers
+
+Bring up Caddy first (the custom `caddy-dns:local` image builds locally, ~3 min on a cold cache), then the three upstreams:
 
 ```
-for h in www share vault cloud kuma api mc; do
-  curl -sk -o /dev/null -w "$h.jehpok.com: HTTP %{http_code}\n" https://$h.jehpok.com/
+make recreate-vhosts
+make recreate-nextcloud
+make recreate-vaultwarden
+make recreate-ut-kuma
+```
+
+Nextcloud finishes its install on first boot (admin from `.env`). If the datadirectory landed in `/var/www/html/data` instead of the `/data` bind (fresh install default), repoint it:
+
+```
+docker exec -w /var/www/html nextcloud php occ config:system:set datadirectory --value /data
+docker exec -w /var/www/html nextcloud php occ maintenance:repair
+```
+
+Kuma: create the admin account in the UI, then optionally seed monitors — `services/ut-kuma/seed-monitors.sql` was sed'd for the domain but still references deleted containers (`docker: share`, `docker: homer`, `docker: domain`), so edit it first or seed only the HTTP rows:
+
+```
+docker exec -i ut-kuma sqlite3 /app/data/kuma.db < services/ut-kuma/seed-monitors.sql
+```
+
+## 8. Cloudflare DNS
+
+Add proxied A records for the public vhosts → `$VPS_IP`: `cloud.$DOMAIN`, `vault.$DOMAIN`, `kuma.$DOMAIN`. Do **not** add `server.$DOMAIN` to public DNS — it is tailnet-only by design (see the access model in `README.md`).
+
+## 9. Verify
+
+Trigger ACME issuance (one cert per vhost) and check the issuer:
+
+```
+for h in cloud vault kuma; do
+  curl -sk -o /dev/null -w "$h.$DOMAIN: HTTP %{http_code}\n" https://$h.$DOMAIN/
+done
+for h in cloud vault kuma; do
+  echo -n "$h.$DOMAIN: "
+  echo | openssl s_client -connect $h.$DOMAIN:443 -servername $h.$DOMAIN 2>/dev/null | openssl x509 -noout -issuer | cut -d'=' -f2-
 done
 ```
 
-Verify the cert issuer is Let's Encrypt on every vhost:
+Every issuer must be Let's Encrypt, not Cloudflare Origin CA. From a tailnet device: `https://server.$DOMAIN/` → 200, `/shell` → ttyd. From the public internet: `server.$DOMAIN` must not resolve, and a forged `Host:` header against `$VPS_IP` must get 403.
+
+## 10. Optional: restore data
+
+If you want the old data (not required for the services to run), rsync it from the old VPS before first container start:
 
 ```
-for h in www share vault cloud kuma api mc; do
-  echo -n "$h.jehpok.com: "
-  echo | openssl s_client -connect $h.jehpok.com:443 -servername $h.jehpok.com 2>/dev/null | openssl x509 -noout -issuer 2>&1 | cut -d'=' -f2-
-done
+rsync -a debian@<old-vps>:$(REPO)/cloud/users/ cloud/users/
+rsync -a debian@<old-vps>:$(REPO)/vault/data/ vault/data/
+rsync -a debian@<old-vps>:$(REPO)/kuma/data/ kuma/data/
+sudo chown -R 33:33 cloud/users
+echo '# Nextcloud data directory' > cloud/users/.ncdata
 ```
 
-The tailnet routes (`server.jehpok.com/{,/share,/mc,/shell}`) are unreachable from a fresh VPS without Tailscale; verify those after `make install-config` from a tailnet-joined device, not from the VPS host itself.
+Then recreate `nextcloud` and `ut-kuma` so they pick up the restored data. If the old Nextcloud `config.php` (in `cloud/html/config/`) is restored too, its `datadirectory`/`trusted_domains`/`overwrite.cli.url` still point at the old domain — fix with `occ config:system:set` or accept the fresh-install defaults instead.
