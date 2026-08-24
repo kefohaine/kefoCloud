@@ -40,12 +40,21 @@ fail() { ERR_TAGS+=("$1"); ERR_DETAIL[$1]="${2:-}"; echo "  ERROR: $(problem "$1
 
 banner() {
 cat <<'EOF'
-============================================================
-  homelab VPS installer
-  Nextcloud + Vaultwarden + Uptime Kuma + Caddy ($DOMAIN)
-  Prompts once, then runs unattended. No success message
-  until every error is resolved (re-check loop at the end).
-============================================================
+██╗  ██╗ ██████╗ ███╗   ███╗███████╗██╗      █████╗ ██████╗
+██║  ██║██╔═══██╗████╗ ████║██╔════╝██║     ██╔══██╗██╔══██╗
+███████║██║   ██║██╔████╔██║█████╗  ██║     ███████║██████╔╝
+██╔══██║██║   ██║██║╚██╔╝██║██╔══╝  ██║     ██╔══██║██╔══██╗
+██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗███████╗██║  ██║██████╔╝
+╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝╚═════╝
+
+  One-shot setup for a fresh Debian VPS: Nextcloud, Vaultwarden,
+  Uptime Kuma and Caddy (named after your domain) behind Cloudflare,
+  with tailscale, ttyd, dnsmasq and goose as host services. Prompts
+  once (domain, Cloudflare API token, Tailscale auth key), then runs
+  unattended — errors are listed with a hint each and re-checked
+  until resolved, and success prints only when all are green.
+
+WARNING: SSH (port 22) is tailnet-only — your current session stays alive, but the next login must come from a Tailscale device.
 EOF
 }
 
