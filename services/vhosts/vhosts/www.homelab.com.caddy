@@ -1,9 +1,9 @@
-# www.jehpok.com — static GitHub Pages mirror, cached origin pulls only.
-# TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/mc.jehpok.com.caddy
+# www.homelab.com — static GitHub Pages mirror, cached origin pulls only.
+# TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/mc.homelab.com.caddy
 # for why all vhosts use DNS-01 — wildcard cert conflict prevented
 # per-vhost ACME automation policies from firing).
 
-https://www.jehpok.com {
+https://www.homelab.com {
     tls {
         dns cloudflare {env.CF_API_TOKEN}
     }

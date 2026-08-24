@@ -1,7 +1,7 @@
-# vault.jehpok.com — Vaultwarden password manager.
-# TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/mc.jehpok.com.caddy).
+# vault.homelab.com — Vaultwarden password manager.
+# TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/mc.homelab.com.caddy).
 
-https://vault.jehpok.com {
+https://vault.homelab.com {
     tls {
         dns cloudflare {env.CF_API_TOKEN}
     }

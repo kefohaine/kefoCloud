@@ -1,4 +1,4 @@
-# cloud.jehpok.com — Nextcloud. PHP-FPM at 172.22.0.5:9000 serves all
+# cloud.homelab.com — Nextcloud. PHP-FPM at 172.22.0.5:9000 serves all
 # .php requests; everything else is file_server from the static html
 # root at /nextcloud. The @blocked matcher denies direct access to
 # internal NC paths (data, config, lib, 3rdparty, templates, occ,
@@ -8,11 +8,11 @@
 #
 # TLS: Let's Encrypt DNS-01 via Cloudflare. Switched from the CF
 # Origin CA wildcard cert because the wildcard cert was serving as
-# a SNI fallback for mc.jehpok.com, blocking the mc.jehpok.com
+# a SNI fallback for mc.homelab.com, blocking the mc.homelab.com
 # automation policy from firing. Per-vhost ACME keeps each cert
 # scoped to its own SNI.
 
-https://cloud.jehpok.com {
+https://cloud.homelab.com {
     tls {
         dns cloudflare {env.CF_API_TOKEN}
     }

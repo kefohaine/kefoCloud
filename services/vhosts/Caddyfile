@@ -2,8 +2,8 @@
 # and are imported below. Each vhost declares its own TLS block — all
 # use Let's Encrypt DNS-01 via the Cloudflare plugin (token in
 # CF_API_TOKEN env var). The old CF Origin CA wildcard cert was
-# removed because its SNI wildcard (`*.jehpok.com`) covered every
-# vhost, so Caddy served it as a fallback for `mc.jehpok.com` SNI
+# removed because its SNI wildcard (`*.homelab.com`) covered every
+# vhost, so Caddy served it as a fallback for `mc.homelab.com` SNI
 # matches and the per-vhost ACME automation policy never fired.
 # Per-vhost LE certs keep each cert scoped to its own SNI.
 
@@ -41,14 +41,14 @@ http:// {
 # ── vhosts ──────────────────────────────────────────────────────────────────
 # Each vhost declares its own `tls { dns cloudflare { ... } }` block so the
 # ACME cert is scoped to that vhost's SNI. The wildcard cert that used to
-# back all vhosts is no longer referenced — see ./vhosts/mc.jehpok.com.caddy
+# back all vhosts is no longer referenced — see ./vhosts/mc.homelab.com.caddy
 # for the SNI-fallback rationale.
 
-import vhosts/server.jehpok.com.caddy
-import vhosts/share.jehpok.com.caddy
-import vhosts/vault.jehpok.com.caddy
-import vhosts/cloud.jehpok.com.caddy
-import vhosts/kuma.jehpok.com.caddy
-import vhosts/www.jehpok.com.caddy
-import vhosts/api.jehpok.com.caddy
-import vhosts/mc.jehpok.com.caddy
+import vhosts/server.homelab.com.caddy
+import vhosts/share.homelab.com.caddy
+import vhosts/vault.homelab.com.caddy
+import vhosts/cloud.homelab.com.caddy
+import vhosts/kuma.homelab.com.caddy
+import vhosts/www.homelab.com.caddy
+import vhosts/api.homelab.com.caddy
+import vhosts/mc.homelab.com.caddy

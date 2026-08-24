@@ -1,8 +1,8 @@
-# api.jehpok.com — placeholder. Currently just a 200 OK on / so the
+# api.homelab.com — placeholder. Currently just a 200 OK on / so the
 # hostname stays alive for any external integrations that resolve it.
-# TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/mc.jehpok.com.caddy).
+# TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/mc.homelab.com.caddy).
 
-https://api.jehpok.com {
+https://api.homelab.com {
     tls {
         dns cloudflare {env.CF_API_TOKEN}
     }

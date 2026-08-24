@@ -1,7 +1,7 @@
-# kuma.jehpok.com — Uptime Kuma status monitor.
-# TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/mc.jehpok.com.caddy).
+# kuma.homelab.com — Uptime Kuma status monitor.
+# TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/mc.homelab.com.caddy).
 
-https://kuma.jehpok.com {
+https://kuma.homelab.com {
     tls {
         dns cloudflare {env.CF_API_TOKEN}
     }

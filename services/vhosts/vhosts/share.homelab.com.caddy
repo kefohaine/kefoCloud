@@ -1,11 +1,11 @@
-# share.jehpok.com — URL shortener + file browser. Two upstream paths:
+# share.homelab.com — URL shortener + file browser. Two upstream paths:
 # /share/* proxies to the Flask app (links creation, OAuth, etc) and
 # /files/* is a static file_server over the share/files bind mount
 # (the actual uploaded binaries). The Flask app also handles /api/*.
 #
-# TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/mc.jehpok.com.caddy).
+# TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/mc.homelab.com.caddy).
 
-https://share.jehpok.com {
+https://share.homelab.com {
     tls {
         dns cloudflare {env.CF_API_TOKEN}
     }

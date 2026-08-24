@@ -10,7 +10,7 @@ services:
     # Host network so Caddy sees the real client source IP — without it,
     # Docker DNAT rewrites every packet to 172.22.0.1 (the bridge gateway)
     # before Caddy sees it, which breaks the @not_tailnet remote_ip matcher
-    # on https://server.jehpok.com. The host network namespace is on the
+    # on https://server.homelab.com. The host network namespace is on the
     # `net` bridge at 172.22.0.0/16, so Caddy can still reach upstream
     # containers by their bridge IP (172.22.0.2 .. .9 — see Caddyfile).
     network_mode: host
@@ -23,8 +23,8 @@ services:
 
     volumes:
       - ../..:/srv:ro
-      - /var/www/custom/projects/jehpok/cloud/html:/nextcloud:ro
-      - /var/www/custom/projects/jehpok/share/files:/files:ro
+      - /var/www/custom/projects/homelab/cloud/html:/nextcloud:ro
+      - /var/www/custom/projects/homelab/share/files:/files:ro
       # Top-level Caddyfile + per-vhost snippets. The dir is mounted so
       # the `import` directives in the top-level file resolve relative
       # paths (Caddy treats imports as relative to the importing file).
@@ -35,7 +35,7 @@ services:
       # simply updates the same files, so the cert survives a container
       # recreate. Without this bind every `make recreate-domain` would force
       # a fresh issuance and a 90-day clock restart.
-      - /var/www/custom/projects/jehpok/caddy_data:/data
+      - /var/www/custom/projects/homelab/caddy_data:/data
 
     # Cloudflare API token for ACME DNS-01. Sourced from a host file
     # (chmod 0600, owner uid 201 = caddy) so the literal token never
@@ -43,7 +43,7 @@ services:
     # every KEY=VAL line into the container's env at start, so the
     # `env.CF_API_TOKEN` reference in the Caddyfile resolves at runtime.
     env_file:
-      - /var/www/custom/projects/jehpok/caddy_data/CF_API_TOKEN
+      - /var/www/custom/projects/homelab/caddy_data/CF_API_TOKEN
 
     logging:
       driver: json-file

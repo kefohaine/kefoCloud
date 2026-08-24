@@ -10,11 +10,11 @@ ssh root@<new-vps>
 bash install.sh
 ```
 
-Enter the domain, CF token, and TS auth key when prompted. The script hands off to user `op` and runs unattended; full log at `/var/log/jehpok-install.log`. Errors are printed numbered at the end, then a success summary with credentials.
+Enter the domain, CF token, and TS auth key when prompted. The script hands off to user `op` and runs unattended; full log at `/var/log/homelab-install.log`. Errors are printed numbered at the end, then a success summary with credentials.
 
 ## What the script renames (on the new host's clone only — the repo keeps the canonical names)
 
-- `jehpok.com` → `$DOMAIN` — every Caddy vhost, dnsmasq, compose env, Kuma seed
+- `homelab.com` → `$DOMAIN` — every Caddy vhost, dnsmasq, compose env, Kuma seed
 - `server.$DOMAIN` → `shell.$DOMAIN` — the tailnet-only vhost and the dnsmasq `address=` line
 - `debian` → `op` — user, sudoers, sshd `AllowUsers`, ttyd/daily units, Makefile ownership
 - `services/vhosts` → `services/$DOMAIN` — caddy container + image renamed to `$DOMAIN`

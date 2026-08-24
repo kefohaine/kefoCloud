@@ -1,4 +1,4 @@
-# server.jehpok.com — Tailscale-only operator portal. Tailscale check
+# server.homelab.com — Tailscale-only operator portal. Tailscale check
 # is per-route via the @not_tailnet matcher; non-Tailscale clients get
 # 403 before any route handler runs. The matcher relies on the client
 # source IP surviving Docker NAT — see the docker-compose.yml note
@@ -7,9 +7,9 @@
 # Caddy sees it, and the @not_tailnet check would 403 every legitimate
 # tailnet client.
 #
-# TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/mc.jehpok.com.caddy).
+# TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/mc.homelab.com.caddy).
 
-https://server.jehpok.com {
+https://server.homelab.com {
     tls {
         dns cloudflare {env.CF_API_TOKEN}
     }
