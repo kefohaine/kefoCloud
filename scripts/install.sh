@@ -171,6 +171,9 @@ EOF
   else
     rm -f /etc/docker/daemon.json.new
   fi
+  if ! systemctl is-active --quiet docker; then
+    systemctl start docker >>"$LOG" 2>&1 || log "docker start failed (re-checks will catch it)"
+  fi
 
   if ! command -v goose >/dev/null 2>&1 && [ ! -x /usr/local/bin/goose ]; then
     curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh \
@@ -214,7 +217,13 @@ EOF
 # ────────────────────────────── Phase 2 (op) ──────────────────────────────
 
 ensure_repo() {
-  if [ -d "$REPO/.git" ]; then log "repo present at $REPO"; return; fi
+  if [ -d "$REPO/.git" ]; then
+    # Repo already present (re-run or pre-cloned): make sure the remote is wired.
+    git -C "$REPO" remote rename origin homelab 2>/dev/null || true
+    git -C "$REPO" remote set-url homelab git@github.com:friedutch/homelab.git 2>/dev/null || true
+    log "repo present at $REPO"
+    return
+  fi
   sudo mkdir -p /var/www/custom/projects/homelab
   # root umask may be 077: force parents traversable so op can clone into it
   sudo chmod 0755 /var/www /var/www/custom /var/www/custom/projects 2>/dev/null || true
@@ -593,7 +602,7 @@ recheck() {
     nextcloud) docker ps --format '{{.Names}}' | grep -qx nextcloud ;;
     vaultwarden) docker ps --format '{{.Names}}' | grep -qx vaultwarden ;;
     kuma) docker ps --format '{{.Names}}' | grep -qx ut-kuma ;;
-    datadirectory) [ "$(docker exec -w /var/www/html nextcloud php occ config:system:get datadirectory 2>/dev/null | tr -d '\n')" = "/data" ] ;;
+    datadirectory) if docker exec -w /var/www/html nextcloud php occ status 2>/dev/null | grep -q "installed: true"; then [ "$(docker exec -w /var/www/html nextcloud php occ config:system:get datadirectory 2>/dev/null | tr -d '\n')" = "/data" ]; else true; fi ;;
     kuma_admin) [ "$(docker exec ut-kuma sqlite3 /app/data/kuma.db "SELECT COUNT(*) FROM user WHERE username='admin';" 2>/dev/null | tr -d '\n')" = "1" ] ;;
     kuma_seed) [ "$(docker exec ut-kuma sqlite3 /app/data/kuma.db "SELECT COUNT(*) FROM monitor;" 2>/dev/null | tr -d '\n')" -gt 0 ] ;;
     zone) [ -n "$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" | jq -r '.result[0].id // empty')" ] ;;
