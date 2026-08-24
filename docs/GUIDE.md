@@ -19,7 +19,7 @@ Manual — no CI/CD, pushes to `main` trigger nothing. Use the `Makefile` recipe
 
 ### First-time setup and migration
 
-`make migrate` prints the full step-by-step runbook.
+`scripts/install.sh` is the plug-and-play path: it prompts for the domain, Cloudflare API token, and Tailscale auth key, then runs unattended — host services, docker, tailscale, the four containers (Caddy renamed `vhosts` → `$DOMAIN`), Cloudflare DNS records, and certs. On the new host's clone it renames `vhosts`→`$DOMAIN`, `debian`→`op`, `server.`→`shell.`; the canonical repo keeps the old names until the post-migration doc audit. `make migrate` prints the manual runbook (`docs/MIGRATE.md`).
 
 ### CMD Sheet
 

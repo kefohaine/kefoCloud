@@ -64,6 +64,11 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Fix**: Revoke the PAT at https://github.com/settings/tokens (or confirm it's already expired). Drop PAT usage entirely in favor of SSH.
 - **Why approval**: operator action on GitHub.
 
+#### Re-apply Cloudflare WAF skip on the new domain
+- **File**: Cloudflare dashboard (new zone)
+- **Problem**: after migrating to a new domain, `cloud.<new-domain>` Nextcloud desktop sync will be bot-challenged until the per-hostname WAF rule skip is re-created (same rationale as the `cloud.jehpok.com` `Intended` entry).
+- **Fix**: re-add the per-hostname WAF rule skip for `cloud.<new-domain>` after `scripts/install.sh` finishes.
+
 ### Efficiency
 
 #### PHP-FPM pool sizing under concurrent sync
@@ -210,6 +215,8 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Per-vhost Caddyfiles replace the monolithic Caddyfile** — `vhosts/<host>.caddy` files own their own TLS blocks; the top-level `Caddyfile` only carries snippets + global options + imports.
 - **Custom Caddy image is rebuilt by `make recreate-vhosts`** — `services/vhosts/Dockerfile` builds `caddy-dns:local` via xcaddy (Go 1.25 + commit `a8737d0` of caddy-dns/cloudflare, which relaxed the API token regex from `{35,50}` to accept the new 53-char CF token format).
 - **Renamed six container names for clarity** — `vault` → `vaultwarden`, `cloud` → `nextcloud`, `share` → `share-flask`, `kuma` → `ut-kuma`, `domain` → `vhosts`, `mc-web` → `mc-flask`. Compose `container_name:` fields, Makefile `CONTAINERS` list (recipe labels follow: `make recreate-cloud` is now `make recreate-nextcloud` etc.), `bkp-cloud` recipe's `docker exec cloud` → `docker exec nextcloud`, Claude Code deny rules (`Bash(docker exec cloud ...)` → `Bash(docker exec nextcloud ...)`), `services/ut-kuma/seed-monitors.sql` comments, and `docs/{GUIDE,AGENTS}.md` + `README.md` all updated. Caddy vhosts are unaffected: every upstream is a pinned bridge IP (`172.22.0.X:port`), not a container name. The `mc-web` compose file is renamed `services/mc/docker-compose.mc-flask.yml` to match the new recipe key (the other five keeps their `services/<ctn>/docker-compose.yml` paths; the directory name still conveys the service). Image registry tags and vhost hostnames stay.
+- **`scripts/install.sh` new-VPS installer** — plug-and-play: prompts domain / CF token / TS authkey, then unattended (host services, docker, tailscale, 4 containers, CF DNS records, certs, Kuma seed); renames `vhosts`→`$DOMAIN`, `debian`→`op`, `server.`→`shell.` on the new host's clone.
+- **Kuma `seed-monitors.sql` stale container names** — `docker: domain`/`cloud`/`share`/`vault` rows referenced pre-rename container names; fixed to `vhosts`/`nextcloud`/`share-flask`/`vaultwarden` (the installer rewrites them again for the 4-container set).
 
 ---
 
