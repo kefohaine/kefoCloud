@@ -6,6 +6,18 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ## Open
 
+### Pending (Aug 2026)
+
+#### `shell.jxmq.net` cert won't issue — no `jxmq.net` zone in the Cloudflare account  **[needs human approval]**
+- **File**: `services/fxmq.net/vhosts/shell.jxmq.net.caddy`
+- **Problem**: vhost is live and Caddy serves it, but ACME DNS-01 fails — no cert is obtained (TLS handshake errors on the hostname). The CF token (`caddy_data/CF_API_TOKEN`) covers the `fxmq.net` zone; `jxmq.net` either isn't a zone in the account yet or the token lacks DNS access to it. Other vhosts are unaffected (verified: cloud/vault/kuma/shell.fxmq.net all still serve LE certs).
+- **Fix**: add the `jxmq.net` zone to the Cloudflare account (scope the token to it if needed); Caddy retries issuance in the background, no reload required. Also enable Tailscale split-DNS `jxmq.net` → `100.117.144.0` in the admin console before tailnet devices can resolve `shell.jxmq.net`.
+
+#### Kuma config copy from the jehpok VPS is blocked  **[needs human approval]**
+- **File**: `scripts/kuma-import.sh` (prepared); source db on `jehpok` (100.81.245.77)
+- **Problem**: SSH to `jehpok` denies every key tried (`root`/`op`/`debian`, incl. `github_key`), Tailscale SSH is not enabled there, and its Taildrop inbox is empty — the old `kuma.db` cannot be fetched. kuma.fxmq.net currently has the seeded admin + 4 monitors but not the old account/status pages.
+- **Fix**: operator delivers the db — on jehpok run `tailscale file cp kuma.db fxmq:` (then on fxmq `tailscale file get /var/www/custom/projects/homelab/kuma/import`), or add the fxmq `op` SSH key to jehpok's `authorized_keys`. Then `make kuma-import` swaps it in, adapts it (jehpok.com→fxmq.net URLs, old container names, deactivates retired-service monitors) and re-seeds the current monitor set.
+
 ### Robustness
 
 #### Migrate SQLite → MariaDB  **[needs human approval]**
@@ -227,6 +239,10 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Stale `bkp-share`/`bkp-mc` recipes removed** — .PHONY entries with no recipe silently "did nothing" after the 4-container migration; help + bkp-all comment updated.
 - **`bkp-vault` echo fixed** — the trailing echo computed a different timestamp than the tar it named; now one shell with a shared `dest`.
 - **Docs audited for the fxmq.net migration** — README/GUIDE/AGENTS/ISSUES/MIGRATE now describe the 4-container fxmq.net system (homer/share/mc/vhosts content dropped or moved to history).
+- **`shell.jxmq.net` tailnet-only ttyd vhost** — mirror of shell.fxmq.net/shell proxying the same host ttyd; shell.fxmq.net kept until operator approves removal.
+- **PufferPanel container** — `services/pufferpanel/` on `net` at 172.22.0.8 (web 8080, SFTP 5657), admin created, no MC server, no public vhost (none requested).
+- **`kuma-import` script + recipe** — imports a jehpok kuma.db, adapts URLs/container names, re-seeds the current monitor set.
+- **dnsmasq `address=/shell.jxmq.net`** — resolver line ready for the new tailnet-only hostname (split-DNS still a manual step).
 
 ---
 
@@ -253,3 +269,7 @@ These are facts that were non-obvious during the `mc.homelab.com` cert fix and o
 - **Tailscale exit-node health error "IP forwarding is disabled" needs BOTH IPv4 and IPv6 forwarding** — `net.ipv4.ip_forward = 1` alone is not enough; the health check also reads `/proc/sys/net/ipv6/conf/all/forwarding`, which is 0 on Debian by default. The machine rename ("brain"→"server") that accompanied the report was a red herring — the real cause was `config/sysctl/99-homelab.conf` having no forwarding keys at all, so nothing survived a reboot. Fix: `net.ipv4.ip_forward = 1`, `net.ipv6.conf.all.forwarding = 1`, `net.ipv6.conf.default.forwarding = 1`, then `make install-sysctl`; verify with `tailscale status --json` → `Health: []`.
 - **The `net` Docker network must be created with an explicit `--subnet=172.22.0.0/16`** — `docker network create net` (what `docs/MIGRATE.md` and `docs/GUIDE.md` said before Aug 2026) creates the default `172.18.0.0/16` range; the compose files' pinned `ipv4_address: 172.22.0.x` then fail to attach with a subnet error on the first `make d-recreate-*`. The gateway `172.22.0.1` is also what ttyd binds and what the UFW ttyd rule allows — the whole scheme depends on the subnet.
 - **`ls -1 <dir>` returns 0 lines, not the directory's contents** — surprising because `ls -1d <dir>` returns exactly one line (the dir name) and `ls -1 <dir>/` returns the contents. Bare `ls -1 <dir>` is a listing of the *target* (the directory itself), which is one entry but `ls` formats it without a newline when the target is a directory path, so `wc -l` counts 0. Symptom in this repo: `make bkp-list` counted `cloud-backup-*` as 0 even though `cloud-backup-20260821/` was sitting on disk. Fix: use `ls -1d <glob>` in any "count matching entries" loop — `-d` lists directory entries without descending, so the count equals the match count regardless of file/dir.
+- **PufferPanel exits at startup unless `/var/run/docker.sock` is mounted** — the official `pufferpanel/pufferpanel` image always starts its daemon, which dials the local Docker socket; without the mount it logs `error starting daemon server: Cannot connect to the Docker daemon` and restart-loops. Mount the socket rw (it must create/start game containers); same risk note as ut-kuma's mount in `services/pufferpanel/docker-compose.yml`.
+- **`docker cp` into `ut-kuma` produces node-owned files that sqlite3 (run as container root) refuses to write** — sqlite3 reports `attempt to write a readonly database` on them, even after `chown root:root`; files created *inside* the container are writable. The live `/app/data/kuma.db` is root-owned, which is why `docker exec -i ut-kuma sqlite3 /app/data/kuma.db < file.sql` (the seed/import pattern) works. Don't inject db files via `docker cp` — write through the bind mount or pipe via stdin.
+- **Caddy's global log is `/dev/null`** (`admin off` + `log { output file /dev/null }` in `services/fxmq.net/Caddyfile`) — `docker logs fxmq.net` shows nothing when cert issuance fails. Diagnose per-vhost cert state with `openssl s_client -servername <host>` → empty issuer = no cert; a vhost without a cert answers TLS with `tlsv1 alert internal error` while the other vhosts keep serving.
+- **`make d-recreate-fxmq.net` fails on this host with `compose build requires buildx 0.17.0 or later`** — Debian trixie's compose plugin is older; use the install.sh fallback: `docker build -t fxmq.net:local services/fxmq.net && docker compose -f services/fxmq.net/docker-compose.yml up -d --force-recreate`.

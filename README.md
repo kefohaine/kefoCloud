@@ -1,6 +1,6 @@
 # fxmq.net
 
-Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Four containers: Caddy (`fxmq.net`, host-network reverse proxy), Nextcloud, Vaultwarden, and Uptime Kuma. Three of the four hostnames are public through Cloudflare; one (`shell.fxmq.net`) is Tailscale-only. Goose (the agent CLI) runs on the host as a systemd service (`goose serve`).
+Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Five containers: Caddy (`fxmq.net`, host-network reverse proxy), Nextcloud, Vaultwarden, Uptime Kuma, and PufferPanel (bridge-only, no public hostname yet). Three hostnames are public through Cloudflare; two (`shell.fxmq.net`, `shell.jxmq.net`) are Tailscale-only. Goose (the agent CLI) runs on the host as a systemd service (`goose serve`).
 
 ## High-level overview
 
@@ -50,6 +50,7 @@ One VPS, one host. Cloudflare fronts the three public hostnames; the Tailscale-o
 | vault.fxmq.net    | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Vaultwarden (Bitwarden-compatible password manager) |
 | kuma.fxmq.net     | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Uptime Kuma monitor dashboard |
 | shell.fxmq.net    | Not in Cloudflare, not in public DNS | Only devices on the Tailscale network | Responds `ok` on `/`; ttyd host shell at `/shell`. Caddy `@not_tailnet` returns 403 for any non-tailnet source IP, including forged Host headers against the public IP |
+| shell.jxmq.net    | Not in Cloudflare, not in public DNS | Only devices on the Tailscale network (once `jxmq.net` split-DNS is enabled) | Same tailnet-only ttyd terminal as `shell.fxmq.net/shell`; mirrors its vhost |
 
 The asymmetry on `shell.fxmq.net` is deliberate. By keeping it out of public DNS, the only way anyone can know its IP is by being inside the Tailscale network. Even a DNS leak on the user's device cannot reveal an address that public resolvers don't serve. As defense-in-depth, Caddy also rejects any request to the vhost whose source IP is not on the tailnet (`100.64.0.0/10`), so reaching it via the public IP with a forged Host header returns 403 on every path.
 

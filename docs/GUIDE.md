@@ -30,7 +30,7 @@ make d-restart-all     # restart every container + dnsmasq + ttyd
 make d-logs-all        # tail all container logs in one stream, each line prefixed with [container]
 make bkp-all           # chain bkp-cloud + bkp-vault in order
 make clean-all         # chain: clean-docker + clean-apt + clean-backups
-make d-recreate-<ctn>  # force-recreate one container — d-recreate-fxmq.net (rebuilds) | d-recreate-nextcloud | d-recreate-vaultwarden | d-recreate-ut-kuma
+make d-recreate-<ctn>  # force-recreate one container — d-recreate-fxmq.net (rebuilds) | d-recreate-nextcloud | d-recreate-vaultwarden | d-recreate-ut-kuma | d-recreate-pufferpanel
 make d-restart-<ctn>   # restart every container in the compose file — after editing a mounted config
 make restart-dnsmasq   # restart the host dnsmasq resolver — after editing config/dnsmasq/10-tailnet.conf
 make restart-ttyd      # restart the host ttyd service — after editing config/ttyd/ttyd.service
@@ -45,6 +45,7 @@ make install-secrets   # extract a secrets bundle to live paths (BUNDLE=<path> t
 make bundle-config     # snapshot $(REPO)/repo/config/ into $(REPO)/backups/config-bundle-<date>.tar.gz (offline copy)
 make install-config-bundle  # extract a config bundle into $(REPO)/repo/config/ (BUNDLE=<path> to override)
 make migrate           # cat docs/MIGRATE.md — the full VPS-to-VPS migration runbook
+make kuma-import       # import an adapted Uptime Kuma db from another host (KUMA_DB=/path)
 make git-add           # git add -A in $(REPO)/repo
 make git-com MSG="…"   # git commit -m MSG (MSG required)
 make git-push          # git push homelab main
@@ -92,6 +93,7 @@ The compose files are the source of truth. This table is the one-line reference 
 | cloud   | `services/nextcloud/docker-compose.yml` | `nextcloud` | `make d-restart-nextcloud` | `make d-recreate-nextcloud` |
 | vault   | `services/vaultwarden/docker-compose.yml` | `vaultwarden` | `make d-restart-vaultwarden` | `make d-recreate-vaultwarden` |
 | kuma    | `services/ut-kuma/docker-compose.yml` | `ut-kuma` | `make d-restart-ut-kuma` | `make d-recreate-ut-kuma` |
+| panel   | `services/pufferpanel/docker-compose.yml` | `pufferpanel` | `make d-restart-pufferpanel` | `make d-recreate-pufferpanel` |
 | terminal | n/a (host systemd; see Protected host resources) | n/a | `make restart-ttyd` | `make install-config` (reinstall) |
 | dnsmasq | n/a (host systemd) | n/a | `make restart-dnsmasq` | n/a |
 | goose   | n/a (host systemd; see Protected host resources) | n/a | `systemctl restart goose` | n/a |
@@ -102,10 +104,11 @@ The `net` Docker network is `external: true` — create once on a fresh host wit
 
 When you need to know "what does X do / where do I edit Y", read the file at the path below — the docs don't re-type the contents.
 
-- **`fxmq.net`** (Caddy) — vhosts, snippets, header policy: `services/fxmq.net/Caddyfile` (top-level config + per-vhost imports) and `services/fxmq.net/vhosts/*.caddy` (one per hostname: `cloud`, `kuma`, `shell`, `vault`). Compose + bind mounts + custom Dockerfile (Caddy built with the `caddy-dns/cloudflare` plugin for ACME DNS-01): `services/fxmq.net/docker-compose.yml`. Runs `network_mode: host` — see note above. Every vhost has its own `tls { dns cloudflare { env.CF_API_TOKEN } }` block; don't replace it with `tls internal` / `tls off` / `tls self_signed`.
+- **`fxmq.net`** (Caddy) — vhosts, snippets, header policy: `services/fxmq.net/Caddyfile` (top-level config + per-vhost imports) and `services/fxmq.net/vhosts/*.caddy` (one per hostname: `cloud`, `kuma`, `shell` (fxmq + jxmq), `vault`). Compose + bind mounts + custom Dockerfile (Caddy built with the `caddy-dns/cloudflare` plugin for ACME DNS-01): `services/fxmq.net/docker-compose.yml`. Runs `network_mode: host` — see note above. Every vhost has its own `tls { dns cloudflare { env.CF_API_TOKEN } }` block; don't replace it with `tls internal` / `tls off` / `tls self_signed`.
 - **`cloud`** — Nextcloud env, PHP-FPM pool tuning, bind mounts: `services/nextcloud/docker-compose.yml` + `services/nextcloud/php-fpm.d/zz-custom.conf`. Admin creds: `services/nextcloud/.env` (gitignored — read access only via the operator).
 - **`vault`** — env, bind mount, admin token: `services/vaultwarden/docker-compose.yml`.
 - **`kuma`** — image, bind mount, healthcheck: `services/ut-kuma/docker-compose.yml`. Monitor definitions live in Kuma's SQLite (`services/ut-kuma/seed-monitors.sql` seeds them; applied by the installer).
+- **`panel`** — PufferPanel game panel: `services/pufferpanel/docker-compose.yml`. Bridge-only at `172.22.0.8:8080` (web) + `:5657` (SFTP); mounts the Docker socket rw (required to start). No public vhost yet — no hostname assigned by the operator. Admin credentials: `/var/www/custom/projects/homelab/puffer/admin-pass.txt` (created at setup).
 - **`terminal`** — ttyd at `shell.fxmq.net/shell`, runs as a host systemd unit (not a container). Binary at `/usr/local/bin/ttyd`, unit at `/etc/systemd/system/ttyd.service` (reference copy in `config/ttyd/ttyd.service`). No systemd sandbox (operator preference: no permission hunts). Runs as `op` with NOPASSWD sudo, so full host control from the shell. Access control is at the network layer (Tailscale membership + Caddy `@not_tailnet`), not the unit sandbox. `make install-config` installs the binary (static 1.7.7 from upstream) and the unit; the step is idempotent. Caddy proxies to the host bridge IP `172.22.0.1:7681` with `transport http { versions 1.1 }` (ttyd only speaks HTTP/1.1); the UFW INPUT allow from `172.22.0.0/16 → 7681/tcp` is added by `make install-config`.
 - **dnsmasq** — config: `config/dnsmasq/10-tailnet.conf` (live path: `/etc/dnsmasq.d/10-tailnet.conf`). systemd drop-in: `config/dnsmasq/dnsmasq.service.conf` (live path: `/etc/systemd/system/dnsmasq.service.d/override.conf`).
 - **goose** — unit: `config/goose/goose.service` (live path: `/etc/systemd/system/goose.service`).

@@ -45,6 +45,7 @@ http:// {
 # to their own SNI (see ./vhosts/cloud.fxmq.net.caddy for the rationale).
 
 import vhosts/shell.fxmq.net.caddy
+import vhosts/shell.jxmq.net.caddy
 import vhosts/vault.fxmq.net.caddy
 import vhosts/cloud.fxmq.net.caddy
 import vhosts/kuma.fxmq.net.caddy
