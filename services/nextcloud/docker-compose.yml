@@ -4,6 +4,10 @@ services:
     container_name: nextcloud
     restart: unless-stopped
 
+    # Hard RAM cap (no container swap) — survives recreates, unlike `docker update`.
+    mem_limit: 1g
+    memswap_limit: 1g
+
     # No published ports — only Caddy (on the 'net' bridge) reaches this container.
     # If you ever need to debug from the host: `docker exec -it nextcloud bash`.
     expose:
