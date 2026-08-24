@@ -1,7 +1,9 @@
-# kuma.fxmq.net — Uptime Kuma status monitor.
+# status.fxmq.net — Uptime Kuma status monitor.
+# Renamed from kuma.fxmq.net (operator request, Aug 2026); the old
+# hostname's DNS record and vhost were removed.
 # TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/cloud.fxmq.net.caddy).
 
-https://kuma.fxmq.net {
+https://status.fxmq.net {
     tls {
         dns cloudflare {env.CF_API_TOKEN}
     }

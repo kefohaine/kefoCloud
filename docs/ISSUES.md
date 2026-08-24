@@ -10,7 +10,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 #### Kuma config copy from the jehpok VPS is blocked  **[needs human approval]**
 - **File**: `scripts/kuma-import.sh` (prepared); source db on `jehpok` (100.81.245.77)
-- **Problem**: SSH to `jehpok` denies every key tried from fxmq (`root`/`op`/`debian`, incl. `github_key`), Tailscale SSH is not enabled there, and its Taildrop inbox is empty — the old `kuma.db` cannot be fetched. The operator's Mac is also blocked: jehpok's ED25519 host key changed (`REMOTE HOST IDENTIFICATION HAS CHANGED`, new fingerprint `SHA256:o0MmsggDn/Hi2LiThbkSLlLGUadoQfEKi0NBvmFb61k`) — likely the VPS was reinstalled. kuma.fxmq.net currently has the seeded admin + 4 monitors but not the old account/status pages.
+- **Problem**: SSH to `jehpok` denies every key tried from fxmq (`root`/`op`/`debian`, incl. `github_key`), Tailscale SSH is not enabled there, and its Taildrop inbox is empty — the old `kuma.db` cannot be fetched. The operator's Mac is also blocked: jehpok's ED25519 host key changed (`REMOTE HOST IDENTIFICATION HAS CHANGED`, new fingerprint `SHA256:o0MmsggDn/Hi2LiThbkSLlLGUadoQfEKi0NBvmFb61k`) — likely the VPS was reinstalled. status.fxmq.net currently has the seeded admin (password reset Aug 2026, see `kuma/admin-pass.txt`) + 4 monitors but not the old account/status pages.
 - **Fix**: on the Mac run `ssh-keygen -R 100.81.245.77` (clears the stale host key), then `ssh debian@100.81.245.77` — if the box was reinstalled the old key may no longer be authorized; re-add it. Deliver the db either by taildrop from jehpok (`tailscale file cp kuma.db fxmq:`, then on fxmq `tailscale file get /var/www/custom/projects/homelab/kuma/import`) or by adding the fxmq `op` SSH key to jehpok's `authorized_keys`. Then `make kuma-import` swaps it in, adapts it (jehpok.com→fxmq.net URLs, old container names, deactivates retired-service monitors) and re-seeds the current monitor set.
 
 ### Robustness
@@ -236,6 +236,7 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Docs audited for the fxmq.net migration** — README/GUIDE/AGENTS/ISSUES/MIGRATE now describe the 4-container fxmq.net system (homer/share/mc/vhosts content dropped or moved to history).
 - **`shell.fxmq.net` root serves the ttyd terminal** — `/` proxies to the host ttyd; `/shell` route removed with operator approval; non-tailnet still 403.
 - **PufferPanel container + `mc.fxmq.net` vhost** — `services/pufferpanel/` on `net` at 172.22.0.8 (web 8080, SFTP 5657), admin created, no MC server; public vhost `mc.fxmq.net` (CF-proxied A record + LE cert).
+- **`kuma.fxmq.net` → `status.fxmq.net`** — vhost, DNS record and docs renamed; Kuma admin password reset (stored in `kuma/admin-pass.txt`).
 - **`kuma-import` script + recipe** — imports a jehpok kuma.db, adapts URLs/container names, re-seeds the current monitor set.
 
 ---

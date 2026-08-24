@@ -1,6 +1,6 @@
 # fxmq.net
 
-Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Five containers: Caddy (`fxmq.net`, host-network reverse proxy), Nextcloud, Vaultwarden, Uptime Kuma, and PufferPanel. Four hostnames are public through Cloudflare (cloud, vault, kuma, mc); one (`shell.fxmq.net`) is Tailscale-only. Goose (the agent CLI) runs on the host as a systemd service (`goose serve`).
+Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Five containers: Caddy (`fxmq.net`, host-network reverse proxy), Nextcloud, Vaultwarden, Uptime Kuma, and PufferPanel. Four hostnames are public through Cloudflare (cloud, vault, status, mc); one (`shell.fxmq.net`) is Tailscale-only. Goose (the agent CLI) runs on the host as a systemd service (`goose serve`).
 
 ## High-level overview
 
@@ -48,7 +48,7 @@ One VPS, one host. Cloudflare fronts the three public hostnames; the Tailscale-o
 |-------------------|-----------------------------|--------------------------------------|-------------------------------------------------|
 | cloud.fxmq.net    | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Nextcloud (file sync, calendar, photos); PHP-FPM behind Caddy |
 | vault.fxmq.net    | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Vaultwarden (Bitwarden-compatible password manager) |
-| kuma.fxmq.net     | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Uptime Kuma monitor dashboard |
+| status.fxmq.net   | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Uptime Kuma monitor dashboard (renamed from kuma.fxmq.net) |
 | mc.fxmq.net       | Cloudflare (proxied) → VPS IP | Anyone on the internet             | PufferPanel game server panel |
 | shell.fxmq.net    | Not in Cloudflare, not in public DNS | Only devices on the Tailscale network | ttyd host shell at `/`. Caddy `@not_tailnet` returns 403 for any non-tailnet source IP, including forged Host headers against the public IP |
 
