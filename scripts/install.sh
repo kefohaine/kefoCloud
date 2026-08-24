@@ -62,14 +62,17 @@ load_state() { [ -f "$STATE" ] && . "$STATE"; }
 
 save_state() {
   umask 077
-  cat > "$STATE" <<EOF
+  local tmp="$STATE.tmp.$$"
+  cat > "$tmp" <<EOF
 DOMAIN='$DOMAIN'
 CF_API_TOKEN='$CF_API_TOKEN'
 TS_AUTHKEY='$TS_AUTHKEY'
 TS_IP='${TS_IP:-}'
 ERR_TAGS=($(printf '%q ' "${ERR_TAGS[@]}"))
 EOF
-  chmod 600 "$STATE"
+  chmod 600 "$tmp"
+  mv -f "$tmp" "$STATE" 2>/dev/null || sudo mv -f "$tmp" "$STATE" || rm -f "$tmp"
+  chown $OP_USER:$OP_USER "$STATE" 2>/dev/null || true
 }
 
 ask_inputs() {
@@ -104,7 +107,7 @@ phase1_root() {
     log "  docker-compose-plugin not in distro — installing docker-ce from Docker's repo"
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates curl gnupg >>"$LOG" 2>&1
     install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg 2>>"$LOG"
+    curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --yes --dearmor -o /etc/apt/keyrings/docker.gpg 2>>"$LOG"
     chmod a+r /etc/apt/keyrings/docker.gpg
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
       > /etc/apt/sources.list.d/docker.list
