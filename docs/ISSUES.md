@@ -103,6 +103,11 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Fix**: `systemctl stop goose` when not in use; `systemctl start goose` before use.
 - **Why approval**: operator convenience trade-off (cold start latency vs. idle RAM).
 
+#### PufferPanel Statistics tab never shows RAM (upstream #1482)
+- **File**: `services/pufferpanel/docker-compose.yml` (panel `pufferpanel/pufferpanel:latest` = 3.0.9, Jul 2026)
+- **Problem**: Server Statistics page shows no memory usage for the Minecraft (Paper) server. Matches upstream [pufferpanel/pufferpanel#1482](https://github.com/pufferpanel/pufferpanel/issues/1482) (open): RAM metric missing for Minecraft servers on `:latest`; a PaperMC reporter confirms it worked on the unmaintained `pufferpanel/pufferpanel:java` image. No fix released (3.0.9 is latest); maintainer asked for the reporter's server JSON (never provided).
+- **Fix**: wait for upstream release, or contribute our server JSON to #1482 (maintainer explicitly requested it). Monitoring unaffected — use `docker exec 2ecfbe8c jcmd 1 GC.heap_info` / `jstat` / `docker stats` (see earlier session notes). Do NOT pin the old `:java` image (unmaintained, no Java 25).
+
 #### PufferPanel template library stalls ~1s on first open + missing minecraft README
 - **File**: `services/pufferpanel/docker-compose.yml` (runtime data under `/var/www/custom/projects/homelab/puffer/data/cache/template-repos/`)
 - **Problem**: opening Templates triggers an on-demand git checkout of the community repo (`Checking out repo community: cache/template-repos/1`) — the only >100ms request in the panel log (`GET /api/templates/1` = 936ms; every other request is sub-ms). Also the community `minecraft` template dir contains only `data.json` + `minecraft.json` (no `README.md`, upstream), so every view logs `Error reading readme cache/template-repos/1/minecraft/README.md: no such file or directory`.
