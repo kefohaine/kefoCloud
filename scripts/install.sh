@@ -6,11 +6,13 @@
 # containers (Caddy renamed to $DOMAIN, nextcloud, vaultwarden, ut-kuma),
 # Cloudflare DNS records, and LE cert issuance.
 #
-# Errors are collected with tags. No success message is printed until every
-# error is resolved: after the setup you get a numbered list of what's
-# still failing, and each time you press Enter the script re-checks them,
-# prints the solved ones once, and the remaining ones — until all are
-# green. Both 'root' and user 'op' can SSH in with keys automatically.
+# Errors are collected with tags, each shown as a "problem" plus a separate
+# "hint". Manual dashboard steps are grouped as expected; real failures as
+# unexpected. No success message is printed until every error is resolved:
+# after the setup you get a numbered list of what's still failing, and each
+# time you press Enter the script re-checks them, prints the solved ones
+# once, and the remaining ones — until all are green. Both 'root' and user
+# 'op' can SSH in with keys automatically.
 #
 # Old-project references are renamed or deleted by this script; a sweep
 # at the end verifies none reappear on the new host (the script itself is
@@ -31,10 +33,10 @@ REPO=/var/www/custom/projects/homelab/repo
 STATE=/var/tmp/homelab-setup.state
 LOG=/var/log/homelab-install.log
 ERR_TAGS=()
-ERR_MSGS=()
+declare -A ERR_DETAIL=()
 
 log()  { echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG"; }
-fail() { ERR_TAGS+=("$1"); ERR_MSGS+=("$2"); echo "  ERROR: $2" >>"$LOG"; }
+fail() { ERR_TAGS+=("$1"); ERR_DETAIL[$1]="${2:-}"; echo "  ERROR: $(problem "$1")${2:+ ($2)}" >>"$LOG"; }
 
 banner() {
 cat <<'EOF'
@@ -57,7 +59,6 @@ CF_API_TOKEN='$CF_API_TOKEN'
 TS_AUTHKEY='$TS_AUTHKEY'
 TS_IP='${TS_IP:-}'
 ERR_TAGS=($(printf '%q ' "${ERR_TAGS[@]}"))
-ERR_MSGS=($(printf '%q ' "${ERR_MSGS[@]}"))
 EOF
   chmod 600 "$STATE"
 }
@@ -88,10 +89,10 @@ phase1_root() {
   DEBIAN_FRONTEND=noninteractive apt-get update -qq
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     docker.io docker-compose-plugin git curl make sudo dnsmasq ufw jq \
-    apache2-utils >/dev/null 2>&1 || fail apt "apt packages not installed"
+    apache2-utils >/dev/null 2>&1 || fail apt
 
   if ! id -u "$OP_USER" >/dev/null 2>&1; then
-    adduser --disabled-password --gecos "" "$OP_USER" || fail user "user $OP_USER not created"
+    adduser --disabled-password --gecos "" "$OP_USER" || fail user
   fi
   usermod -aG sudo,docker "$OP_USER"
   echo "$OP_USER ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/$OP_USER-passwordless
@@ -105,7 +106,7 @@ phase1_root() {
     chown -R $OP_USER:$OP_USER /home/$OP_USER/.ssh
     chmod 700 /home/$OP_USER/.ssh && chmod 600 /home/$OP_USER/.ssh/authorized_keys
   else
-    fail ssh_keys "no SSH keys found — add a public key to /root/.ssh/authorized_keys (and copy it to /home/$OP_USER/.ssh/authorized_keys), then re-check"
+    fail ssh_keys
   fi
   printf 'PasswordAuthentication no\nPermitRootLogin prohibit-password\nAllowUsers %s root\n' "$OP_USER" \
     > /etc/ssh/sshd_config.d/50-cloud-init.conf
@@ -126,13 +127,13 @@ EOF
   curl -fsSL https://ollama.com/install.sh | sh >/dev/null 2>&1 || log "ollama install skipped"
 
   if ! command -v tailscale >/dev/null 2>&1; then
-    curl -fsSL https://tailscale.com/install.sh | sh || fail tailscale "tailscale binary not installed"
+    curl -fsSL https://tailscale.com/install.sh | sh || fail tailscale
   fi
   if ! tailscale ip -4 >/dev/null 2>&1; then
-    tailscale up --authkey="$TS_AUTHKEY" >>"$LOG" 2>&1 || fail tailscale_up "tailscale did not connect (check the auth key)"
+    tailscale up --authkey="$TS_AUTHKEY" >>"$LOG" 2>&1 || fail tailscale_up
   fi
   TS_IP=$(tailscale ip -4 2>/dev/null | head -1)
-  [ -n "$TS_IP" ] && log "tailscale IP: $TS_IP" || fail ts_ip "no tailscale IP assigned"
+  [ -n "$TS_IP" ] && log "tailscale IP: $TS_IP" || fail ts_ip
 
   ufw allow from 100.64.0.0/10 to any port 22 proto tcp >/dev/null 2>&1
   ufw allow 80/tcp >/dev/null 2>&1
@@ -173,7 +174,7 @@ EOF
        git clone git@github.com:friedutch/homelab.git "$REPO" >>"$LOG" 2>&1; then
     if ! GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new" \
          git clone git@github.com:friedutch/jehpok.com.git "$REPO" >>"$LOG" 2>&1; then
-      echo "  ERROR: repo clone failed — add the pubkey above to GitHub, then re-run" >>"$LOG"
+      echo "  ERROR: repo clone failed" >>"$LOG"
       echo "Repo clone failed. Add the SSH key printed above to GitHub, then re-run the script."
       exit 1
     fi
@@ -294,17 +295,17 @@ host_services() {
   if [ -n "${TS_IP:-}" ]; then
     sed -i "s/100\.81\.245\.77/$TS_IP/g" config/dnsmasq/10-tailnet.conf
   else
-    fail ts_ip "no tailscale IP — dnsmasq config left at the old IP"
+    fail ts_ip
   fi
-  make install-config >>"$LOG" 2>&1 || fail install_config "make install-config failed (host services not up)"
+  make install-config >>"$LOG" 2>&1 || fail install_config
 }
 
 containers_up() {
   log "  building Caddy image ($DOMAIN:local) — ~3 min on a cold cache"
-  make "recreate-$DOMAIN" >>"$LOG" 2>&1 || fail caddy "caddy container '$DOMAIN' not running"
-  make recreate-nextcloud   >>"$LOG" 2>&1 || fail nextcloud "nextcloud container not running"
-  make recreate-vaultwarden >>"$LOG" 2>&1 || fail vaultwarden "vaultwarden container not running"
-  make recreate-ut-kuma     >>"$LOG" 2>&1 || fail kuma "ut-kuma container not running"
+  make "recreate-$DOMAIN" >>"$LOG" 2>&1 || fail caddy
+  make recreate-nextcloud   >>"$LOG" 2>&1 || fail nextcloud
+  make recreate-vaultwarden >>"$LOG" 2>&1 || fail vaultwarden
+  make recreate-ut-kuma     >>"$LOG" 2>&1 || fail kuma
 }
 
 nextcloud_fix() {
@@ -317,7 +318,7 @@ nextcloud_fix() {
   dd=$(docker exec -w /var/www/html nextcloud php occ config:system:get datadirectory 2>/dev/null | tr -d '\n')
   if [ "$dd" != "/data" ]; then
     docker exec -w /var/www/html nextcloud php occ config:system:set datadirectory --value /data >>"$LOG" 2>&1 \
-      || fail datadirectory "nextcloud datadirectory != /data"
+      || fail datadirectory
   fi
 }
 
@@ -336,11 +337,11 @@ kuma_seed() {
     if [ -n "$HASH" ]; then
       docker exec ut-kuma sqlite3 /app/data/kuma.db \
         "INSERT INTO user (username,password,active,timezone,created_date) VALUES ('admin','$HASH',1,'UTC',strftime('%s','now'));" \
-        >>"$LOG" 2>&1 || fail kuma_admin "uptime kuma admin user missing"
+        >>"$LOG" 2>&1 || fail kuma_admin
     fi
   fi
   docker exec -i ut-kuma sqlite3 /app/data/kuma.db < services/ut-kuma/seed-monitors.sql \
-    >>"$LOG" 2>&1 || fail kuma_seed "uptime kuma monitors not seeded"
+    >>"$LOG" 2>&1 || fail kuma_seed
 }
 
 cf_dns() {
@@ -348,7 +349,7 @@ cf_dns() {
   ZONE_ID=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
     "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" | jq -r '.result[0].id // empty')
   if [ -z "$ZONE_ID" ]; then
-    fail zone "Cloudflare zone '$DOMAIN' not found (create it in the dashboard)"
+    fail zone
     return
   fi
   for h in cloud vault kuma; do
@@ -359,7 +360,7 @@ cf_dns() {
       curl -s -X POST -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
         "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
         -d "{\"type\":\"A\",\"name\":\"$h.$DOMAIN\",\"content\":\"$VPS_IP\",\"ttl\":1,\"proxied\":true}" \
-        >>"$LOG" 2>&1 || fail "dns_$h" "DNS record for $h.$DOMAIN missing"
+        >>"$LOG" 2>&1 || fail "dns_$h"
     fi
   done
   curl -s -X PATCH -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
@@ -377,7 +378,7 @@ issue_certs() {
       | openssl x509 -noout -issuer 2>/dev/null | cut -d'=' -f2-)
     case "$iss" in
       *"Let's Encrypt"*) ;;
-      *) fail "cert_$h" "cert for $h.$DOMAIN not Let's Encrypt (got: $iss)";;
+      *) fail "cert_$h" "issuer was: $iss";;
     esac
   done
 }
@@ -388,7 +389,7 @@ sweep() {
   hits=$(grep -rl 'jehpok' "$REPO" --exclude-dir=.git 2>/dev/null \
     | grep -v "^$REPO/scripts/install.sh$" || true)
   if [ -n "$hits" ]; then
-    fail sweep "old project name still referenced in: $(echo "$hits" | tr '\n' ' ')"
+    fail sweep
   fi
 }
 
@@ -407,33 +408,58 @@ phase2_op() {
   issue_certs
   sweep
   # Expected manual step — blocks SUCCESS until the operator confirms it.
-  fail splitdns "manual step: Tailscale admin console -> DNS: split-DNS $DOMAIN -> ${TS_IP:-<tailscale IP>}"
+  fail splitdns
 }
 
-# ──────────────────────── error descriptions + rechecks ────────────────────
+# ──────────────────────── error problems + hints ──────────────────────────
 
-describe() {
+problem() {
   case "$1" in
-    apt)           echo "apt packages not installed (docker.io, docker-compose-plugin, git, curl, make, sudo, dnsmasq, ufw, jq, apache2-utils)";;
-    user)          echo "user '$OP_USER' not created";;
-    ssh_keys)      echo "no SSH key for root/op — add one to /root/.ssh/authorized_keys and /home/$OP_USER/.ssh/authorized_keys";;
-    tailscale)     echo "tailscale binary not installed";;
-    tailscale_up)  echo "tailscale not connected (auth key invalid?)";;
-    ts_ip)         echo "no tailscale IP assigned";;
-    install_config) echo "host services not up (make install-config failed)";;
-    caddy)         echo "caddy container '$DOMAIN' not running";;
-    nextcloud)     echo "nextcloud container not running";;
-    vaultwarden)   echo "vaultwarden container not running";;
-    kuma)          echo "ut-kuma container not running";;
-    datadirectory) echo "nextcloud datadirectory != /data";;
-    kuma_admin)    echo "uptime kuma admin user missing (create it in the UI)";;
-    kuma_seed)     echo "uptime kuma monitors not seeded";;
-    zone)          echo "Cloudflare zone '$DOMAIN' not found (create it in the dashboard)";;
-    dns_*)         echo "DNS record for ${1#dns_}.$DOMAIN missing";;
-    cert_*)        echo "cert for ${1#cert_}.$DOMAIN not Let's Encrypt";;
-    sweep)         echo "old project name still referenced in the repo tree";;
-    splitdns)      echo "manual step: Tailscale admin console -> DNS: split-DNS $DOMAIN -> ${TS_IP:-<tailscale IP>}";;
-    *)             echo "$1";;
+    apt)            echo "apt packages not installed" ;;
+    user)           echo "user '$OP_USER' not created" ;;
+    ssh_keys)       echo "no SSH keys for root or $OP_USER" ;;
+    tailscale)      echo "tailscale binary not installed" ;;
+    tailscale_up)   echo "tailscale did not connect" ;;
+    ts_ip)          echo "no tailscale IP assigned" ;;
+    install_config) echo "host services are not up (make install-config failed)" ;;
+    caddy)          echo "caddy container '$DOMAIN' is not running" ;;
+    nextcloud)      echo "nextcloud container is not running" ;;
+    vaultwarden)    echo "vaultwarden container is not running" ;;
+    kuma)           echo "ut-kuma container is not running" ;;
+    datadirectory)  echo "nextcloud datadirectory is not /data" ;;
+    kuma_admin)     echo "uptime kuma admin user is missing" ;;
+    kuma_seed)      echo "uptime kuma monitors are not seeded" ;;
+    zone)           echo "Cloudflare zone '$DOMAIN' not found" ;;
+    dns_*)          echo "DNS record for ${1#dns_}.$DOMAIN is missing" ;;
+    cert_*)         echo "cert for ${1#cert_}.$DOMAIN is not issued by Let's Encrypt" ;;
+    sweep)          echo "old project name is still referenced in the repo tree" ;;
+    splitdns)       echo "tailscale split-DNS for $DOMAIN is not configured" ;;
+    *)              echo "$1" ;;
+  esac
+}
+
+hint() {
+  case "$1" in
+    apt)            echo "run: apt-get install -y docker.io docker-compose-plugin git curl make sudo dnsmasq ufw jq apache2-utils, then re-check" ;;
+    user)           echo "run: adduser --disabled-password --gecos '' $OP_USER && usermod -aG sudo,docker $OP_USER, then re-check" ;;
+    ssh_keys)       echo "add a public key to /root/.ssh/authorized_keys and copy it to /home/$OP_USER/.ssh/authorized_keys, then re-check" ;;
+    tailscale)      echo "run: curl -fsSL https://tailscale.com/install.sh | sh, then re-check" ;;
+    tailscale_up)   echo "check the auth key (admin console -> Settings -> Keys) and run: tailscale up --authkey=<key>, then re-check" ;;
+    ts_ip)          echo "wait a few seconds, then run: tailscale ip -4, then re-check" ;;
+    install_config) echo "run: make install-config in $REPO, then re-check" ;;
+    caddy)          echo "run: make recreate-$DOMAIN, then re-check" ;;
+    nextcloud)      echo "run: make recreate-nextcloud, then re-check" ;;
+    vaultwarden)    echo "run: make recreate-vaultwarden, then re-check" ;;
+    kuma)           echo "run: make recreate-ut-kuma, then re-check" ;;
+    datadirectory)  echo "run: docker exec -w /var/www/html nextcloud php occ config:system:set datadirectory --value /data, then re-check" ;;
+    kuma_admin)     echo "create the admin account at https://kuma.$DOMAIN in the UI, then re-check" ;;
+    kuma_seed)      echo "run: docker exec -i ut-kuma sqlite3 /app/data/kuma.db < services/ut-kuma/seed-monitors.sql, or create monitors in the UI, then re-check" ;;
+    zone)           echo "add $DOMAIN as a zone in the Cloudflare dashboard, then re-check" ;;
+    dns_*)          echo "create an A record ${1#dns_}.$DOMAIN -> ${VPS_IP:-<VPS IP>} (proxied) in Cloudflare, then re-check" ;;
+    cert_*)         echo "hit https://${1#cert_}.$DOMAIN once to trigger ACME, wait a few seconds, then re-check" ;;
+    sweep)          echo "rename or remove the files listed by: grep -rl jehpok $REPO --exclude-dir=.git" ;;
+    splitdns)       echo "Tailscale admin console -> DNS: add split-DNS $DOMAIN -> ${TS_IP:-<tailscale IP>}, then confirm (y)" ;;
+    *)              echo "" ;;
   esac
 }
 
@@ -479,18 +505,26 @@ resolve_errors() {
     done
     if [ ${#exp[@]} -gt 0 ]; then
       echo " Manual steps (expected):"
-      for i in "${!exp[@]}"; do echo "   $((i+1)). ${exp[$i]} — $(describe "${exp[$i]}")"; done
+      for i in "${!exp[@]}"; do
+        echo "   $((i+1)). ${exp[$i]}"
+        echo "      problem: $(problem "${exp[$i]}")${ERR_DETAIL[${exp[$i]}]:+ (${ERR_DETAIL[${exp[$i]}]})}"
+        echo "      hint: $(hint "${exp[$i]}")"
+      done
     fi
     if [ ${#unexp[@]} -gt 0 ]; then
       echo " Unexpected errors (${#unexp[@]}):"
-      for i in "${!unexp[@]}"; do echo "   $((i+1)). ${unexp[$i]} — $(describe "${unexp[$i]}")"; done
+      for i in "${!unexp[@]}"; do
+        echo "   $((i+1)). ${unexp[$i]}"
+        echo "      problem: $(problem "${unexp[$i]}")${ERR_DETAIL[${unexp[$i]}]:+ (${ERR_DETAIL[${unexp[$i]}]})}"
+        echo "      hint: $(hint "${unexp[$i]}")"
+      done
     fi
     read -rp "Fix / complete the items above, then press Enter to re-check (Ctrl-C aborts): " input \
       || { echo "No terminal input — aborting."; exit 1; }
     local still=()
     for tag in "${remaining[@]}"; do
       if recheck "$tag"; then
-        echo "   ✓ solved: $tag — $(describe "$tag")"
+        echo "   ✓ solved: $tag — $(problem "$tag")"
       else
         still+=("$tag")
       fi
@@ -531,11 +565,19 @@ summary() {
     done
     if [ ${#exp[@]} -gt 0 ]; then
       echo " Manual steps (expected):"
-      for i in "${!exp[@]}"; do echo "   $((i+1)). ${exp[$i]} — $(describe "${exp[$i]}")"; done
+      for i in "${!exp[@]}"; do
+        echo "   $((i+1)). ${exp[$i]}"
+        echo "      problem: $(problem "${exp[$i]}")${ERR_DETAIL[${exp[$i]}]:+ (${ERR_DETAIL[${exp[$i]}]})}"
+        echo "      hint: $(hint "${exp[$i]}")"
+      done
     fi
     if [ ${#unexp[@]} -gt 0 ]; then
       echo " Unexpected errors (${#unexp[@]}):"
-      for i in "${!unexp[@]}"; do echo "   $((i+1)). ${unexp[$i]} — $(describe "${unexp[$i]}")"; done
+      for i in "${!unexp[@]}"; do
+        echo "   $((i+1)). ${unexp[$i]}"
+        echo "      problem: $(problem "${unexp[$i]}")${ERR_DETAIL[${unexp[$i]}]:+ (${ERR_DETAIL[${unexp[$i]}]})}"
+        echo "      hint: $(hint "${unexp[$i]}")"
+      done
     fi
   fi
 }
