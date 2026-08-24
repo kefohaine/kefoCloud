@@ -4,8 +4,13 @@
 # Prompts for three values (domain, Cloudflare API token, Tailscale auth
 # key), then runs unattended: host services, docker, tailscale, the four
 # containers (Caddy renamed to $DOMAIN, nextcloud, vaultwarden, ut-kuma),
-# Cloudflare DNS records, and LE cert issuance. Errors are collected and
-# printed numbered at the end, followed by a success summary.
+# Cloudflare DNS records, and LE cert issuance.
+#
+# Errors are collected with tags. No success message is printed until every
+# error is resolved: after the setup you get a numbered list of what's
+# still failing, and each time you press Enter the script re-checks them,
+# prints the solved ones once, and the remaining ones — until all are
+# green. Both 'root' and user 'op' can SSH in with keys automatically.
 #
 # Old-project references are renamed or deleted by this script; a sweep
 # at the end verifies none reappear on the new host (the script itself is
@@ -25,17 +30,19 @@ OP_USER=op
 REPO=/var/www/custom/projects/homelab/repo
 STATE=/var/tmp/homelab-setup.state
 LOG=/var/log/homelab-install.log
-ERR=()
+ERR_TAGS=()
+ERR_MSGS=()
 
 log()  { echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG"; }
-err()  { ERR+=("$*"); echo "  ERROR: $*" >>"$LOG"; }
+fail() { ERR_TAGS+=("$1"); ERR_MSGS+=("$2"); echo "  ERROR: $2" >>"$LOG"; }
 
 banner() {
 cat <<'EOF'
 ============================================================
   homelab VPS installer
   Nextcloud + Vaultwarden + Uptime Kuma + Caddy ($DOMAIN)
-  Prompts once, then runs unattended. Errors listed at the end.
+  Prompts once, then runs unattended. No success message
+  until every error is resolved (re-check loop at the end).
 ============================================================
 EOF
 }
@@ -49,6 +56,8 @@ DOMAIN='$DOMAIN'
 CF_API_TOKEN='$CF_API_TOKEN'
 TS_AUTHKEY='$TS_AUTHKEY'
 TS_IP='${TS_IP:-}'
+ERR_TAGS=($(printf '%q ' "${ERR_TAGS[@]}"))
+ERR_MSGS=($(printf '%q ' "${ERR_MSGS[@]}"))
 EOF
   chmod 600 "$STATE"
 }
@@ -73,28 +82,32 @@ ask_inputs() {
 # ───────────────────────────── Phase 1 (root) ─────────────────────────────
 
 phase1_root() {
-  log "Phase 1 (root): packages, user $OP_USER, ssh, docker, tailscale, firewall"
+  log "Phase 1 (root): packages, users, ssh, docker, tailscale, firewall"
   touch "$LOG" && chmod 666 "$LOG"
 
   DEBIAN_FRONTEND=noninteractive apt-get update -qq
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     docker.io docker-compose-plugin git curl make sudo dnsmasq ufw jq \
-    apache2-utils >/dev/null 2>&1 || err "apt install failed"
+    apache2-utils >/dev/null 2>&1 || fail apt "apt packages not installed"
 
   if ! id -u "$OP_USER" >/dev/null 2>&1; then
-    adduser --disabled-password --gecos "" "$OP_USER" || err "adduser $OP_USER failed"
+    adduser --disabled-password --gecos "" "$OP_USER" || fail user "user $OP_USER not created"
   fi
   usermod -aG sudo,docker "$OP_USER"
   echo "$OP_USER ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/$OP_USER-passwordless
   chmod 0440 /etc/sudoers.d/$OP_USER-passwordless
 
-  mkdir -p /home/$OP_USER/.ssh
-  cp /root/.ssh/authorized_keys /home/$OP_USER/.ssh/authorized_keys 2>/dev/null || \
-    log "no root authorized_keys found — add a key for $OP_USER later if needed"
-  chown -R $OP_USER:$OP_USER /home/$OP_USER/.ssh
-  chmod 700 /home/$OP_USER/.ssh && chmod 600 /home/$OP_USER/.ssh/authorized_keys
-
-  printf 'PasswordAuthentication no\nPermitRootLogin no\nAllowUsers %s\n' "$OP_USER" \
+  # SSH: root and op both log in with keys. root keeps its own keys; op
+  # gets a copy. Password auth stays off; root is key-only.
+  mkdir -p /home/$OP_USER/.ssh /root/.ssh
+  if [ -s /root/.ssh/authorized_keys ]; then
+    cp /root/.ssh/authorized_keys /home/$OP_USER/.ssh/authorized_keys
+    chown -R $OP_USER:$OP_USER /home/$OP_USER/.ssh
+    chmod 700 /home/$OP_USER/.ssh && chmod 600 /home/$OP_USER/.ssh/authorized_keys
+  else
+    fail ssh_keys "no SSH keys found — add a public key to /root/.ssh/authorized_keys (and copy it to /home/$OP_USER/.ssh/authorized_keys), then re-check"
+  fi
+  printf 'PasswordAuthentication no\nPermitRootLogin prohibit-password\nAllowUsers %s root\n' "$OP_USER" \
     > /etc/ssh/sshd_config.d/50-cloud-init.conf
   systemctl restart sshd
 
@@ -113,13 +126,13 @@ EOF
   curl -fsSL https://ollama.com/install.sh | sh >/dev/null 2>&1 || log "ollama install skipped"
 
   if ! command -v tailscale >/dev/null 2>&1; then
-    curl -fsSL https://tailscale.com/install.sh | sh || err "tailscale install failed"
+    curl -fsSL https://tailscale.com/install.sh | sh || fail tailscale "tailscale binary not installed"
   fi
   if ! tailscale ip -4 >/dev/null 2>&1; then
-    tailscale up --authkey="$TS_AUTHKEY" >>"$LOG" 2>&1 || err "tailscale up failed"
+    tailscale up --authkey="$TS_AUTHKEY" >>"$LOG" 2>&1 || fail tailscale_up "tailscale did not connect (check the auth key)"
   fi
   TS_IP=$(tailscale ip -4 2>/dev/null | head -1)
-  [ -n "$TS_IP" ] && log "tailscale IP: $TS_IP" || err "no tailscale IP"
+  [ -n "$TS_IP" ] && log "tailscale IP: $TS_IP" || fail ts_ip "no tailscale IP assigned"
 
   ufw allow from 100.64.0.0/10 to any port 22 proto tcp >/dev/null 2>&1
   ufw allow 80/tcp >/dev/null 2>&1
@@ -160,7 +173,8 @@ EOF
        git clone git@github.com:friedutch/homelab.git "$REPO" >>"$LOG" 2>&1; then
     if ! GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new" \
          git clone git@github.com:friedutch/jehpok.com.git "$REPO" >>"$LOG" 2>&1; then
-      err "repo clone failed — add the pubkey above to GitHub, then re-run"
+      echo "  ERROR: repo clone failed — add the pubkey above to GitHub, then re-run" >>"$LOG"
+      echo "Repo clone failed. Add the SSH key printed above to GitHub, then re-run the script."
       exit 1
     fi
     log "cloned from the pre-rename repo; remote will point at the renamed one"
@@ -280,17 +294,17 @@ host_services() {
   if [ -n "${TS_IP:-}" ]; then
     sed -i "s/100\.81\.245\.77/$TS_IP/g" config/dnsmasq/10-tailnet.conf
   else
-    err "no tailscale IP — dnsmasq config left at the old IP"
+    fail ts_ip "no tailscale IP — dnsmasq config left at the old IP"
   fi
-  make install-config >>"$LOG" 2>&1 || err "make install-config failed"
+  make install-config >>"$LOG" 2>&1 || fail install_config "make install-config failed (host services not up)"
 }
 
 containers_up() {
   log "  building Caddy image ($DOMAIN:local) — ~3 min on a cold cache"
-  make "recreate-$DOMAIN" >>"$LOG" 2>&1 || err "recreate-$DOMAIN failed"
-  make recreate-nextcloud   >>"$LOG" 2>&1 || err "recreate-nextcloud failed"
-  make recreate-vaultwarden >>"$LOG" 2>&1 || err "recreate-vaultwarden failed"
-  make recreate-ut-kuma     >>"$LOG" 2>&1 || err "recreate-ut-kuma failed"
+  make "recreate-$DOMAIN" >>"$LOG" 2>&1 || fail caddy "caddy container '$DOMAIN' not running"
+  make recreate-nextcloud   >>"$LOG" 2>&1 || fail nextcloud "nextcloud container not running"
+  make recreate-vaultwarden >>"$LOG" 2>&1 || fail vaultwarden "vaultwarden container not running"
+  make recreate-ut-kuma     >>"$LOG" 2>&1 || fail kuma "ut-kuma container not running"
 }
 
 nextcloud_fix() {
@@ -303,7 +317,7 @@ nextcloud_fix() {
   dd=$(docker exec -w /var/www/html nextcloud php occ config:system:get datadirectory 2>/dev/null | tr -d '\n')
   if [ "$dd" != "/data" ]; then
     docker exec -w /var/www/html nextcloud php occ config:system:set datadirectory --value /data >>"$LOG" 2>&1 \
-      || err "nextcloud datadirectory set failed"
+      || fail datadirectory "nextcloud datadirectory != /data"
   fi
 }
 
@@ -322,11 +336,11 @@ kuma_seed() {
     if [ -n "$HASH" ]; then
       docker exec ut-kuma sqlite3 /app/data/kuma.db \
         "INSERT INTO user (username,password,active,timezone,created_date) VALUES ('admin','$HASH',1,'UTC',strftime('%s','now'));" \
-        >>"$LOG" 2>&1 || err "kuma admin insert failed — create the admin in the UI instead"
+        >>"$LOG" 2>&1 || fail kuma_admin "uptime kuma admin user missing"
     fi
   fi
   docker exec -i ut-kuma sqlite3 /app/data/kuma.db < services/ut-kuma/seed-monitors.sql \
-    >>"$LOG" 2>&1 || err "kuma monitor seed failed (create monitors in the UI)"
+    >>"$LOG" 2>&1 || fail kuma_seed "uptime kuma monitors not seeded"
 }
 
 cf_dns() {
@@ -334,7 +348,7 @@ cf_dns() {
   ZONE_ID=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
     "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" | jq -r '.result[0].id // empty')
   if [ -z "$ZONE_ID" ]; then
-    err "Cloudflare zone '$DOMAIN' not found — create it in the dashboard, then re-run"
+    fail zone "Cloudflare zone '$DOMAIN' not found (create it in the dashboard)"
     return
   fi
   for h in cloud vault kuma; do
@@ -345,7 +359,7 @@ cf_dns() {
       curl -s -X POST -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
         "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
         -d "{\"type\":\"A\",\"name\":\"$h.$DOMAIN\",\"content\":\"$VPS_IP\",\"ttl\":1,\"proxied\":true}" \
-        >>"$LOG" 2>&1 || err "DNS record $h.$DOMAIN creation failed"
+        >>"$LOG" 2>&1 || fail "dns_$h" "DNS record for $h.$DOMAIN missing"
     fi
   done
   curl -s -X PATCH -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
@@ -363,7 +377,7 @@ issue_certs() {
       | openssl x509 -noout -issuer 2>/dev/null | cut -d'=' -f2-)
     case "$iss" in
       *"Let's Encrypt"*) ;;
-      *) err "cert for $h.$DOMAIN: issuer is '$iss' (expected Let's Encrypt)";;
+      *) fail "cert_$h" "cert for $h.$DOMAIN not Let's Encrypt (got: $iss)";;
     esac
   done
 }
@@ -374,7 +388,7 @@ sweep() {
   hits=$(grep -rl 'jehpok' "$REPO" --exclude-dir=.git 2>/dev/null \
     | grep -v "^$REPO/scripts/install.sh$" || true)
   if [ -n "$hits" ]; then
-    err "old project name still referenced in: $(echo "$hits" | tr '\n' ' ')"
+    fail sweep "old project name still referenced in: $(echo "$hits" | tr '\n' ' ')"
   fi
 }
 
@@ -394,15 +408,82 @@ phase2_op() {
   sweep
 }
 
-summary() {
+# ──────────────────────── error descriptions + rechecks ────────────────────
+
+describe() {
+  case "$1" in
+    apt)           echo "apt packages not installed (docker.io, docker-compose-plugin, git, curl, make, sudo, dnsmasq, ufw, jq, apache2-utils)";;
+    user)          echo "user '$OP_USER' not created";;
+    ssh_keys)      echo "no SSH key for root/op — add one to /root/.ssh/authorized_keys and /home/$OP_USER/.ssh/authorized_keys";;
+    tailscale)     echo "tailscale binary not installed";;
+    tailscale_up)  echo "tailscale not connected (auth key invalid?)";;
+    ts_ip)         echo "no tailscale IP assigned";;
+    install_config) echo "host services not up (make install-config failed)";;
+    caddy)         echo "caddy container '$DOMAIN' not running";;
+    nextcloud)     echo "nextcloud container not running";;
+    vaultwarden)   echo "vaultwarden container not running";;
+    kuma)          echo "ut-kuma container not running";;
+    datadirectory) echo "nextcloud datadirectory != /data";;
+    kuma_admin)    echo "uptime kuma admin user missing (create it in the UI)";;
+    kuma_seed)     echo "uptime kuma monitors not seeded";;
+    zone)          echo "Cloudflare zone '$DOMAIN' not found (create it in the dashboard)";;
+    dns_*)         echo "DNS record for ${1#dns_}.$DOMAIN missing";;
+    cert_*)        echo "cert for ${1#cert_}.$DOMAIN not Let's Encrypt";;
+    sweep)         echo "old project name still referenced in the repo tree";;
+    *)             echo "$1";;
+  esac
+}
+
+recheck() {
+  case "$1" in
+    apt)  dpkg -s docker.io docker-compose-plugin git curl make sudo dnsmasq ufw jq apache2-utils >/dev/null 2>&1 ;;
+    user) id -u "$OP_USER" >/dev/null 2>&1 ;;
+    ssh_keys) sudo test -s /root/.ssh/authorized_keys && [ -s /home/$OP_USER/.ssh/authorized_keys ] ;;
+    tailscale) command -v tailscale >/dev/null 2>&1 ;;
+    tailscale_up) tailscale ip -4 >/dev/null 2>&1 ;;
+    ts_ip) [ -n "$(tailscale ip -4 2>/dev/null | head -1)" ] ;;
+    install_config) systemctl is-active --quiet ttyd dnsmasq && systemctl is-enabled --quiet homelab-daily.timer ;;
+    caddy) docker ps --format '{{.Names}}' | grep -qx "$DOMAIN" ;;
+    nextcloud) docker ps --format '{{.Names}}' | grep -qx nextcloud ;;
+    vaultwarden) docker ps --format '{{.Names}}' | grep -qx vaultwarden ;;
+    kuma) docker ps --format '{{.Names}}' | grep -qx ut-kuma ;;
+    datadirectory) [ "$(docker exec -w /var/www/html nextcloud php occ config:system:get datadirectory 2>/dev/null | tr -d '\n')" = "/data" ] ;;
+    kuma_admin) [ "$(docker exec ut-kuma sqlite3 /app/data/kuma.db "SELECT COUNT(*) FROM user WHERE username='admin';" 2>/dev/null | tr -d '\n')" = "1" ] ;;
+    kuma_seed) [ "$(docker exec ut-kuma sqlite3 /app/data/kuma.db "SELECT COUNT(*) FROM monitor;" 2>/dev/null | tr -d '\n')" -gt 0 ] ;;
+    zone) [ -n "$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" | jq -r '.result[0].id // empty')" ] ;;
+    dns_*) local h=${1#dns_}; [ -n "$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$h.$DOMAIN" | jq -r '.result[0].id // empty')" ] ;;
+    cert_*) local h=${1#cert_}; echo | timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$h.$DOMAIN" 2>/dev/null | openssl x509 -noout -issuer 2>/dev/null | grep -q "Let's Encrypt" ;;
+    sweep) ! grep -rl 'jehpok' "$REPO" --exclude-dir=.git 2>/dev/null | grep -qv "^$REPO/scripts/install.sh$" ;;
+    *) false ;;
+  esac
+}
+
+resolve_errors() {
+  local remaining=("${ERR_TAGS[@]}")
+  while [ ${#remaining[@]} -gt 0 ]; do
+    echo ""
+    echo " Remaining issues (${#remaining[@]}):"
+    for i in "${!remaining[@]}"; do
+      echo "   $((i+1)). ${remaining[$i]} — $(describe "${remaining[$i]}")"
+    done
+    read -rp "Fix the issues above, then press Enter to re-check (Ctrl-C aborts): " input \
+      || { echo "No terminal input — aborting."; exit 1; }
+    local still=()
+    for tag in "${remaining[@]}"; do
+      if recheck "$tag"; then
+        echo "   ✓ solved: $tag — $(describe "$tag")"
+      else
+        still+=("$tag")
+      fi
+    done
+    remaining=("${still[@]}")
+  done
+  ERR_TAGS=()
+  success_block
+}
+
+success_block() {
   echo ""
-  echo "=============================================================="
-  if [ ${#ERR[@]} -gt 0 ]; then
-    echo " ERRORS (${#ERR[@]}):"
-    for i in "${!ERR[@]}"; do echo "   $((i+1)). ${ERR[$i]}"; done
-  else
-    echo " No errors."
-  fi
   echo "=============================================================="
   echo " SUCCESS — the stack is up:"
   echo "   Nextcloud    https://cloud.$DOMAIN      admin / ${NEXTCLOUD_ADMIN_PASSWORD:-<see services/nextcloud/.env>}"
@@ -410,6 +491,8 @@ summary() {
   echo "   Uptime Kuma  https://kuma.$DOMAIN       admin / ${KUMA_PASS:-<create in the UI>}"
   echo "   Shell        https://shell.$DOMAIN      (tailnet-only)"
   echo "   VPS IP ${VPS_IP:-?}   Tailscale IP ${TS_IP:-?}"
+  echo ""
+  echo " SSH: root and '$OP_USER' both log in with keys (tailnet-only, port 22)."
   echo ""
   echo " Manual follow-ups:"
   echo "   1. Tailscale admin console -> DNS: add split-DNS $DOMAIN -> ${TS_IP:-<tailscale IP>}"
@@ -419,6 +502,16 @@ summary() {
   echo "      rename the GitHub repo to match, or push will fail"
   echo "   4. Post-migration doc pass: docs/ still name vhosts/debian until audited"
   echo "=============================================================="
+}
+
+summary() {
+  if [ ${#ERR_TAGS[@]} -gt 0 ]; then
+    echo ""
+    echo " ERROR(S) — no success until every issue below is resolved:"
+    for i in "${!ERR_TAGS[@]}"; do
+      echo "   $((i+1)). ${ERR_TAGS[$i]} — $(describe "${ERR_TAGS[$i]}")"
+    done
+  fi
 }
 trap summary EXIT
 
@@ -437,6 +530,7 @@ main() {
     phase1_root
   elif [ "${1:-}" = "--op" ]; then
     phase2_op
+    resolve_errors
   else
     echo "First run must be as root (the script hands off to '$OP_USER' automatically)."; exit 1
   fi
