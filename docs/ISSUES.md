@@ -90,12 +90,6 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Problem**: after the Aug 2026 migration the canonical repo already carries the `fxmq.net` / `op` / `shell.` names, but `renames()` still expects a pre-migration clone: `mv services/vhosts services/$DOMAIN` fails (no `services/vhosts`), so re-running `install.sh` against a current clone aborts.
 - **Fix**: guard the rename steps (skip when `services/$DOMAIN` already exists and no `homelab.com` strings remain), or document that install.sh requires a pre-migration revision.
 
-#### Switch to online mode + Floodgate (fixes Java skins + name spoofing)  **[needs human approval]**
-- **File**: live `puffer/data/servers/2ecfbe8c/server.properties` + `plugins/Geyser-Spigot/config.yml` (`auth-type: floodgate` → `online`)
-- **Problem**: offline mode makes every Java player render the default Alex skin (see Intended) AND leaves Java auth open to name spoofing. Bedrock players do not require offline mode — Floodgate exists precisely to legitimize Xbox-authenticated Bedrock players on an online-mode server (`validate-bedrock-login: true` already, `require-link: false`, so zero extra steps on the user's side). The documented offline-mode rationale ("let Bedrock players in without Java accounts") is fully satisfied by online mode + Floodgate. History: the offline switch was made on a false premise — commit `ea0a0b9` documented "Floodgate would drop that requirement only by making the server offline-mode", which is backwards; Floodgate is the plugin that bridges Bedrock onto online-mode servers (see Lessons learned).
-- **Fix**: when the server is empty: set `online-mode=true` in server.properties, `auth-type: online` in Geyser-Spigot/config.yml, restart game server + lazymc; re-key Java-player UUIDs in `whitelist.json`/`ops.json` to real Mojang UUIDs (fetch from `https://api.mojang.com/users/profiles/minecraft/<name>`; Bedrock XUID UUIDs are unchanged). Java skins return automatically; Bedrock is unaffected.
-- **Why approval**: operator must confirm the flip; one-time UUID re-key while players are off.
-
 ### Efficiency
 
 #### PHP-FPM pool sizing under concurrent sync
@@ -135,10 +129,6 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 Behaviours that look like bugs but are deliberate. Do not fix; the rationale is the answer.
 
-### Offline-mode Java auth (operator-approved 2026-08-25) — name spoofing remains possible
-
-`online-mode=false` (Floodgate + Geyser `auth-type: floodgate` so Bedrock players authenticate via Xbox). Deliberate operator choice to let Bedrock players in without Java accounts. Residual risk: Java players are not session-verified — an attacker who knows a whitelisted Java username can join as them (offline UUIDs are name-derived, so the whitelist doesn't stop it). Compensating controls: `enforce-whitelist=true`, whitelist stays on, anti-xray engine 2, packet/spam limits. Full fix would be an auth plugin (AuthMe-style) — not installed. Side effect: every Java player renders with the default Alex skin — no session-server handshake means profiles carry no skin `textures`, and the name-derived offline UUIDs don't exist at Mojang so clients can't resolve one; modern clients fall back to the Alex (slim) model. Bedrock players normally keep their real skins via Geyser. Restoring Java skins has two options, both operator-approved and players-off: a skin plugin (SkinsRestorer-style), or switching to online mode + Floodgate (the standard Geyser setup — `auth-type: online`), which also closes the name-spoofing gap; see the Open entry.
-
 ### `shell.fxmq.net` is unresolvable from the public internet
 Looks like: DNS lookup fails for `shell.fxmq.net` outside Tailscale, *or* a `curl` against `https://shell.fxmq.net/` (any path) from a non-tailnet source times out, returns 403, or connection-refuses — including from the VPS host itself if the host isn't on the tailnet resolver. Reality: this is the only access control — see the access model table in `README.md`. The Caddy `@not_tailnet` matcher requires the `fxmq.net` container to be on the host network namespace (`network_mode: host`) so Caddy sees the real source IP — Docker DNAT through the bridge would rewrite it to `172.22.0.1` and break the matcher. **A failed curl is `@not_tailnet` working, not a service outage** — verify from a tailnet device or by SSH'ing in and curling from a tailnet-joined source.
 
@@ -162,6 +152,8 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **ufw status broken** — `sudo ufw status` works now (only benign "unable to resolve host server" warning); backend mismatch never re-investigated.
 - **MC game ports opened** — `ufw allow 25565/tcp` + `19132/udp` (host-net Paper server; 19132 pre-opened for planned Geyser, no listener yet).
 - **MC server optimized** — Xmx 8G→4G + Aikar flags + native caps (MaxMetaspace/CodeCache/DirectMemory → total ≤5 G, container limit dropped per operator), sim-distance 4 / view-distance 8 / spawn-protection 0, Paper culling, plugins Chunky + StackMob; lazymc pending operator review.
+- **Online mode restored with Floodgate** — `online-mode=true` + Geyser `auth-type: online`; Bedrock still joins via Xbox (no Java account, XUID UUIDs unchanged), Java players get real session auth + skins back; tremelix whitelist/ops re-keyed to real UUID; the offline-mode detour was based on a false Floodgate premise (see Lessons learned).
+- **MC autosave interval 1 h** — `auto-save-interval` 72000 ticks (was 6000 ticks / 5 min) in `config/paper-world-defaults.yml`, operator-set.
 - **Nextcloud integration** — first hosted on the VPS, migrated to `app.homelab.com/cloud`, reverted, then linked via PHP-FPM.
 - **Nextcloud backend upgrade** — image bump.
 - **CoreDNS isolated** — split into its own directory; config renamed.
