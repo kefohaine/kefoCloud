@@ -147,9 +147,9 @@ Safety rule 10 above is generic; the project-specific numbers live here:
 - The cert mode is per-vhost DNS-01 ACME via `caddy-dns/cloudflare`; each vhost carries its own `tls { dns cloudflare { env.CF_API_TOKEN } }` block. Replacing one with `tls internal` / `tls off` / `tls self_signed` will drop browser connections to that hostname.
 - The CF API token is at `$(REPO)/caddy_data/CF_API_TOKEN` (created by the operator, not in the repo, not in `bundle-secrets`). Caddy renews certs from the token; the token is the only thing that needs to migrate to a new VPS.
 
-### Minecraft server — restart/config changes strictly forbidden
+### Minecraft server — lifecycle managed by lazymc (operator-approved 2026-08-25)
 
-- The Minecraft server (PufferPanel-managed Paper server `2ecfbe8c`; server config at `/var/www/custom/projects/homelab/puffer/data/servers/2ecfbe8c.json`, container created by the PufferPanel daemon) must **never** be started, stopped, restarted, recreated, or have its config / launch args / `-Xmx` / container limits edited without explicit operator approval. The operator has strictly forbidden this. Only read-only inspection (`jcmd`, `jstat`, `docker stats`, `docker inspect`, reading the server JSON) is allowed without approval.
+- The Minecraft server (PufferPanel-managed Paper server `2ecfbe8c`; server config at `/var/www/custom/projects/homelab/puffer/data/servers/2ecfbe8c.json`, container created by the PufferPanel daemon) is started/stopped automatically by lazymc (wake on connect) and the mc-idle-sleeper timer (sleep after 5 min idle) — see `docs/GUIDE.md`. Manual start/stop/restart, and edits to its config / launch args / `-Xmx` / container limits, remain forbidden without explicit operator approval. Read-only inspection (`jcmd`, `jstat`, `docker stats`, `docker inspect`, reading the server JSON) is always allowed.
 
 ### `caddy_data/` is a runtime data dir, not source
 

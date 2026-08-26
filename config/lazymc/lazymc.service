@@ -1,0 +1,15 @@
+[Unit]
+Description=LazyMC Minecraft sleep proxy (Java 25565 -> Paper 127.0.0.1:25566; wake/sleep via PufferPanel API + RCON)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/etc/lazymc
+ExecStart=/usr/local/bin/lazymc -c /etc/lazymc/lazymc.toml start
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
