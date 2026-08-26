@@ -9,7 +9,7 @@ SHELL := /bin/bash
 REPO     := /var/www/custom/projects/homelab
 COMPOSE  := docker compose -f
 CONTAINERS := fxmq.net uptimekuma nextcloud vaultwarden pufferpanel
-HOST     := ttyd dnsmasq goose
+HOST     := ttyd dnsmasq goose lazymc
 
 # Per-container compose file map. Default is `services/<ctn>/docker-compose.yml`;
 # overrides list each `<ctn>:path` for compose files that live alongside the
@@ -74,7 +74,7 @@ d-logs-all:
 # Host services (systemd): ttyd, dnsmasq
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: restart-ttyd restart-dnsmasq logs-ttyd logs-dnsmasq
+.PHONY: restart-ttyd restart-dnsmasq restart-lazymc logs-ttyd logs-dnsmasq logs-lazymc
 
 restart-ttyd:
 >sudo systemctl restart ttyd
@@ -82,11 +82,17 @@ restart-ttyd:
 restart-dnsmasq:
 >sudo systemctl restart dnsmasq
 
+restart-lazymc:
+>sudo systemctl restart lazymc
+
 logs-ttyd:
 >sudo journalctl -u ttyd -n 50 -f
 
 logs-dnsmasq:
 >sudo journalctl -u dnsmasq -n 50 -f
+
+logs-lazymc:
+>sudo journalctl -u lazymc -n 50 -f
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Maintenance
@@ -204,7 +210,7 @@ install-config:
         install-dnsmasq-conf install-dnsmasq-override \
         install-docker install-sysctl \
         install-daily-sh install-daily-service install-daily-timer \
-        install-claude
+        install-claude install-lazymc install-mc-idle-sleeper
 
 install-goose:
 >@echo "install-goose: goose.service"
@@ -217,6 +223,22 @@ install-ttyd:
 >@sudo cp $(REPO)/repo/config/ttyd/ttyd.service /etc/systemd/system/ttyd.service
 >@sudo systemctl daemon-reload
 >@sudo systemctl restart ttyd
+
+install-lazymc:
+>@echo "install-lazymc: lazymc binary + unit + config (creds via /etc/lazymc/panel-cred, see docs/GUIDE.md)"
+>@sudo install -m 755 $(REPO)/repo/config/lazymc/start-panel.sh /etc/lazymc/start-panel.sh
+>@sudo cp $(REPO)/repo/config/lazymc/lazymc.toml /etc/lazymc/lazymc.toml
+>@sudo cp $(REPO)/repo/config/lazymc/lazymc.service /etc/systemd/system/lazymc.service
+>@sudo systemctl daemon-reload
+>@sudo systemctl restart lazymc
+
+install-mc-idle-sleeper:
+>@echo "install-mc-idle-sleeper: idle sleeper script + unit + timer"
+>@sudo install -m 755 $(REPO)/repo/config/mc-idle-sleeper/mc-idle-sleeper.py /usr/local/bin/mc-idle-sleeper.py
+>@sudo cp $(REPO)/repo/config/mc-idle-sleeper/mc-idle-sleeper.service /etc/systemd/system/mc-idle-sleeper.service
+>@sudo cp $(REPO)/repo/config/mc-idle-sleeper/mc-idle-sleeper.timer /etc/systemd/system/mc-idle-sleeper.timer
+>@sudo systemctl daemon-reload
+>@sudo systemctl enable --now mc-idle-sleeper.timer
 
 install-ssh:
 >@echo "install-ssh: 50-cloud-init.conf"
@@ -510,6 +532,7 @@ help:
 >@echo ""
 >@echo "  Host services (systemd)"
 >@echo "    make restart-ttyd     restart host ttyd"
+>@echo "    make restart-lazymc   restart lazymc (stop the game server first, see docs/GUIDE.md)"
 >@echo "    make restart-dnsmasq  restart host dnsmasq"
 >@echo "    make logs-ttyd        follow ttyd journal"
 >@echo "    make logs-dnsmasq     follow dnsmasq journal"
@@ -537,6 +560,8 @@ help:
 >@echo "    make install-daily-service      /etc/systemd/system/homelab-daily.service"
 >@echo "    make install-daily-timer        /etc/systemd/system/homelab-daily.timer"
 >@echo "    make install-claude             \$$REPO/repo/.claude/settings.local.json"
+>@echo "    make install-lazymc             lazymc binary + unit + /etc/lazymc config"
+>@echo "    make install-mc-idle-sleeper     idle-sleeper script + unit + timer"
 >@echo ""
 >@echo "  Backups (bkp-*) — all artifacts land in \$$REPO/backups/"
 >@echo "    make bkp-cloud        Nextcloud snapshot (maintenance mode during copy)"
