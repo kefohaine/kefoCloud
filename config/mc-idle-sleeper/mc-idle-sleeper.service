@@ -1,0 +1,7 @@
+[Unit]
+Description=Sleep the PufferPanel Minecraft server after 5 minutes of zero players
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/mc-idle-sleeper.py
