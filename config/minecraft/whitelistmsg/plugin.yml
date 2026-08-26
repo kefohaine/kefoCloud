@@ -1,0 +1,5 @@
+name: WhitelistMsg
+version: 1.0.0
+main: net.fxmq.whitelistmsg.WhitelistMsg
+api-version: '1.21'
+description: One-line whitelist kicks with the username in the message
