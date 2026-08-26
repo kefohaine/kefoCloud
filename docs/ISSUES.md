@@ -129,9 +129,9 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 Behaviours that look like bugs but are deliberate. Do not fix; the rationale is the answer.
 
-### Bedrock players must log in with a Java account (Geyser on an online-mode server)
+### Offline-mode Java auth (operator-approved 2026-08-25) — name spoofing remains possible
 
-Geyser's `java.auth-type: online` (correct for this online-mode server) makes every Bedrock player authenticate to Mojang with a Java account before joining — Geyser shows a "Log in with a Java account" form, and players without one see "You need a Java Edition account to play on this server." This is Geyser's intended auth flow, not a bug: the alternative (Floodgate) requires switching the whole server to offline-mode, which removes Java session validation (name-spoofing risk) — not worth it for a whitelisted private server. A Bedrock player without a Java account cannot join as configured.
+`online-mode=false` (Floodgate + Geyser `auth-type: floodgate` so Bedrock players authenticate via Xbox). Deliberate operator choice to let Bedrock players in without Java accounts. Residual risk: Java players are not session-verified — an attacker who knows a whitelisted Java username can join as them (offline UUIDs are name-derived, so the whitelist doesn't stop it). Compensating controls: `enforce-whitelist=true`, whitelist stays on, anti-xray engine 2, packet/spam limits. Full fix would be an auth plugin (AuthMe-style) — not installed.
 
 ### `shell.fxmq.net` is unresolvable from the public internet
 Looks like: DNS lookup fails for `shell.fxmq.net` outside Tailscale, *or* a `curl` against `https://shell.fxmq.net/` (any path) from a non-tailnet source times out, returns 403, or connection-refuses — including from the VPS host itself if the host isn't on the tailnet resolver. Reality: this is the only access control — see the access model table in `README.md`. The Caddy `@not_tailnet` matcher requires the `fxmq.net` container to be on the host network namespace (`network_mode: host`) so Caddy sees the real source IP — Docker DNAT through the bridge would rewrite it to `172.22.0.1` and break the matcher. **A failed curl is `@not_tailnet` working, not a service outage** — verify from a tailnet device or by SSH'ing in and curling from a tailnet-joined source.
