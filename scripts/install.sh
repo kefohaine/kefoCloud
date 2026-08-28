@@ -203,7 +203,7 @@ EOF
   fi
   ufw allow 80/tcp >/dev/null 2>&1
   ufw allow 443/tcp >/dev/null 2>&1
-  # Minecraft game ports — lazymc (host service) owns Java 25565; Geyser-Spigot
+  # Minecraft game ports — the PufferPanel-managed game server owns Java 25565; Geyser-Spigot
   # on the game server owns Bedrock 19132/udp (only answers while server is up).
   ufw allow 25565/tcp >/dev/null 2>&1
   ufw allow 19132/udp >/dev/null 2>&1
