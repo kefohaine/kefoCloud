@@ -11,11 +11,6 @@ COMPOSE  := docker compose -f
 CONTAINERS := fxmq.net uptimekuma nextcloud vaultwarden pufferpanel open-webui
 HOST     := ttyd dnsmasq goose
 
-# Per-container compose file map. Default is `services/<ctn>/docker-compose.yml`;
-# overrides list each `<ctn>:path` for compose files that live alongside the
-# default name (used when a service has more than one compose file). No
-# overrides currently.
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Per-container: d-recreate / d-restart / d-logs
 # `d-` prefix marks container (docker) actions so they don't collide
@@ -32,10 +27,8 @@ HOST     := ttyd dnsmasq goose
 # fxmq.net = custom Dockerfile adds caddy-dns/cloudflare for ACME DNS-01
 #   on every vhost; DNS-01 keeps cert issuance independent of the proxy.
 
-# Set per-container compose file paths. Default is `services/<ctn>/docker-compose.yml`;
-# overrides from COMPOSE_FILES above take precedence.
+# Set per-container compose file paths: services/<ctn>/docker-compose.yml.
 $(foreach s,$(CONTAINERS),$(eval COMPOSE_FILE_$s := services/$s/docker-compose.yml))
-$(foreach m,$(COMPOSE_FILES),$(eval COMPOSE_FILE_$(word 1,$(subst :, ,$(m))) := $(word 2,$(subst :, ,$(m)))))
 
 # Helper: $(compose-file-of $1) returns the absolute compose file path for
 # the named service. Recipes use this directly instead of $(COMPOSE_FILE_$1)
@@ -140,16 +133,15 @@ update:
   done
 >cd $(REPO)/repo && $(MAKE) d-recreate-all
 
+# Import an adapted Uptime Kuma db from another host (KUMA_DB=/path).
+kuma-import:
+>sudo scripts/kuma-import.sh $(KUMA_DB)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # config/ (live <-> repo)
 # config/ holds tracked copies of every host-level config. install-config
 # pushes them to live.
 # ─────────────────────────────────────────────────────────────────────────────
-
-# One-shot bootstrap: install ttyd, copy config/ to live, enable units,
-# restore Claude settings, open the UFW rule for ttyd. Idempotent.
-kuma-import:
->sudo scripts/kuma-import.sh $(KUMA_DB)
 
 install-config:
 >@if ! command -v ttyd >/dev/null 2>&1; then \
