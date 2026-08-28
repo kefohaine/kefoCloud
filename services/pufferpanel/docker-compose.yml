@@ -9,9 +9,10 @@ services:
     memswap_limit: 256m
 
     # Web UI on 8080, built-in SFTP on 5657 (file manager for servers).
-    # Exposed on the `net` bridge only — no host port publish, no Caddy
-    # vhost yet (no hostname assigned by the operator). Reachable from
-    # the host at http://172.22.0.8:8080 until a route is chosen.
+    # Exposed on the `net` bridge only — no host port publish. Served at
+    # https://mc.fxmq.net/panel (Caddy strips the /panel prefix; the SPA's
+    # baked-absolute root routes are proxied by the vhost's @panel_infra
+    # block — the panel has no subpath support).
     expose:
       - "8080"
       - "5657"
