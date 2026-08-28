@@ -31,23 +31,34 @@ https://mc.fxmq.net {
     # revalidates the whole SPA every minute. Hashed chunk names mean a
     # panel upgrade self-invalidates; 86400 kills the refetch churn and
     # lets Cloudflare edge-cache the assets (Vary so each encoding is cached).
-    @panel_static path /panel/js/* /panel/wasm/* /panel/css/* /panel/img/* /panel/fonts/* /assets/*
+    @panel_static path /js/* /wasm/* /css/* /img/* /fonts/* /assets/*
     header @panel_static Cache-Control "public, max-age=86400"
     header @panel_static Vary "Accept-Encoding"
     # PufferPanel — prefix stripped so the panel sees its canonical root
-    # paths (/dashboard, /servers, /api/...).
+    # paths (/dashboard, /servers, /api/...). Two blocks: `path /panel`
+    # matches only the exact path, so /panel/* is needed for subpaths
+    # (including the bare trailing slash).
     handle_path /panel {
+        reverse_proxy 172.22.0.8:8080
+    }
+    handle_path /panel/* {
         reverse_proxy 172.22.0.8:8080
     }
     # PufferPanel's baked-absolute root routes (no subpath support): the
     # SPA's history-mode pages, /api REST + websocket console, /auth web
     # login, Vite /assets, and /swagger API docs.
-    @panel_infra path /api/* /auth* /assets/* /swagger* /home/* /nodes* /dashboard /self /servers* /settings /templates* /users*
+    @panel_infra path /api/* /auth* /js/* /wasm/* /css/* /img/* /fonts/* /assets/* /swagger* /home/* /nodes* /dashboard /self /servers* /settings /templates* /users* /favicon.png /manifest.json
     handle @panel_infra {
         reverse_proxy 172.22.0.8:8080
     }
-    # File browser over the homelab/download drop folder.
+    # File browser over the homelab/download drop folder. Two blocks for
+    # the same reason as /panel: `path /download` matches only the exact
+    # path (which 308s to /download/), so /download/* serves the listing.
     handle_path /download {
+        root * /download
+        file_server browse
+    }
+    handle_path /download/* {
         root * /download
         file_server browse
     }
