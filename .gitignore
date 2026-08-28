@@ -3,5 +3,5 @@ __pycache__/
 *.pyc
 services/cloud/.env
 services/nextcloud/.env
-services/mail/.env
+services/mailserver/.env
 .claude/
