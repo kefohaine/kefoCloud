@@ -1,6 +1,6 @@
 # fxmq.net
 
-Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Nine containers: Caddy (`fxmq.net`, host-network reverse proxy), Nextcloud, Vaultwarden, Uptime Kuma, PufferPanel, Open WebUI (the AI chat), mc-home (Minecraft homepage), and the mail platform (Docker Mailserver + Roundcube webmail). Six hostnames are public through Cloudflare (cloud, kuma, mc, mail, vault, www); one (`shell.fxmq.net`) is Tailscale-only. The mail records (`MX`, `mail.fxmq.net` A) are DNS-only at Cloudflare — SMTP/IMAP can't be proxied. Goose (the agent CLI) runs on the host as a systemd service (`goose serve`).
+Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Eight containers: Caddy (`fxmq.net`, host-network reverse proxy), Nextcloud, Vaultwarden, Uptime Kuma, PufferPanel, Open WebUI (the AI chat), and the mail platform (Docker Mailserver + Roundcube webmail). Six hostnames are public through Cloudflare (cloud, kuma, mc, mail, vault, www); one (`shell.fxmq.net`) is Tailscale-only. The mail records (`MX`, `mail.fxmq.net` A) are DNS-only at Cloudflare — SMTP/IMAP can't be proxied. Goose (the agent CLI) runs on the host as a systemd service (`goose serve`).
 
 ## High-level overview
 
@@ -22,7 +22,7 @@ Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Nine con
            vaultwarden      uptime-kuma        nextcloud:9000
            (172.22.0.4:80)  (172.22.0.6:3001)  (Nextcloud FPM)
            (also: pufferpanel 172.22.0.8:8080, open-webui 172.22.0.7:8080,
-            mc-home 172.22.0.11:5000, roundcube webmail 172.22.0.10:80 —
+            roundcube webmail 172.22.0.10:80 —
             mail platform Postfix/Dovecot at 172.22.0.9, ports 25/465/587/993)
 
     shell.fxmq.net is tailnet-only (not in public DNS) — "/" serves
@@ -53,7 +53,7 @@ One VPS, one host. Cloudflare fronts the three public hostnames; the Tailscale-o
 | cloud.fxmq.net    | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Nextcloud (file sync, calendar, photos); PHP-FPM behind Caddy |
 | vault.fxmq.net    | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Vaultwarden (Bitwarden-compatible password manager) |
 | kuma.fxmq.net     | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Uptime Kuma monitor dashboard |
-| mc.fxmq.net       | Cloudflare DNS-only → VPS IP | Anyone on the internet             | Minecraft homepage at `/` (welcome + live status pings for Java `:25565` + Bedrock `:19132/udp`); PufferPanel at `/panel`; file browser at `/download` over the `download/` drop folder. DNS-only (grey cloud) so the game ports bypass the CF proxy |
+| mc.fxmq.net       | Cloudflare DNS-only → VPS IP | Anyone on the internet             | PufferPanel at `/panel`; Caddy file browser at `/download` over the `download/` drop folder; `/` redirects to `/panel`. DNS-only (grey cloud) so the game ports bypass the CF proxy |
 | www.fxmq.net      | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Stub: responds `ok` on `/` |
 | mail.fxmq.net    | Cloudflare **DNS-only** (grey cloud) → VPS IP | Anyone on the internet             | Roundcube webmail; Docker Mailserver platform (SMTP 25/465/587, IMAP 993). Inbound port 25 is open; PTR record still pending at the VPS provider — see `docs/ISSUES.md` |
 | shell.fxmq.net    | Not in Cloudflare, not in public DNS | Only devices on the Tailscale network | Plain `ok` landing at `/`; Open WebUI chat (DeepSeek models, ChatGPT-style) at `/owui`; ttyd host shell at `/ttyd`. Caddy `@not_tailnet` returns 403 for any non-tailnet source IP, including forged Host headers against the public IP |
