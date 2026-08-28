@@ -85,7 +85,7 @@ logs-dnsmasq:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: status clean-docker clean-apt clean-backups clean-all update install-config kuma-import help
+.PHONY: status smoke install-hooks clean-docker clean-apt clean-backups clean-all update install-config kuma-import help
 
 status:
 >@echo "--- containers ---"
@@ -104,6 +104,20 @@ clean-docker:
 >@docker builder prune -af
 >@docker image prune -af
 >@docker container prune -f
+
+# Live edge smoke test — every vhost must serve its real app (see
+# scripts/smoke-vhosts.sh). Run after any services/fxmq.net/ change or
+# `docker restart fxmq.net`. The pre-push hook runs this automatically.
+smoke:
+>@bash scripts/smoke-vhosts.sh
+
+# Install the repo's git hooks (pre-commit: Caddy validate + app-vhost stub
+# guard; pre-push: live vhost smoke test). Re-run after cloning.
+install-hooks:
+>@mkdir -p .git/hooks
+>@cp scripts/hooks/pre-commit scripts/hooks/pre-push .git/hooks/
+>@chmod +x .git/hooks/pre-commit .git/hooks/pre-push
+>@echo "Installed git hooks: pre-commit (Caddy validate + app-vhost stub guard), pre-push (live vhost smoke)."
 
 clean-apt:
 >@sudo apt-get -qq autoremove -y
