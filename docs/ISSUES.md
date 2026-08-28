@@ -49,21 +49,15 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### Security
 
-#### Mail platform: no PTR record (inbound port 25 now open)  **[needs human approval]**
+#### Mail platform: no PTR record (operator will set at AlphaVPS)  **[needs human approval]**
 - **File**: `services/mail/docker-compose.yml` (installed); DNS + UFW configured
-- **Problem**: inbound TCP 25 was provider-blocked but is now reachable from external nodes (verified 2026-08-28: check-host.net nodes connect, postfix serves `220 mail.fxmq.net ESMTP` with the LE cert on STARTTLS). The remaining blocker: 82.118.230.117 has no PTR — outbound mail to Gmail/Outlook will be rejected or spam-foldered until reverse DNS is set.
-- **Fix**: in the VPS provider panel set PTR `82.118.230.117` → `mail.fxmq.net` (must match postfix HELO + the `mail.fxmq.net` A record, both already set). Verify with `dig -x 82.118.230.117`, then send a test to an external inbox.
+- **Problem**: inbound TCP 25 is now open (verified 2026-08-28: external nodes connect, postfix serves `220 mail.fxmq.net ESMTP` with the LE cert). The remaining blocker: 82.118.230.117 has **no PTR** — outbound mail to Gmail/Outlook will be rejected or spam-foldered until reverse DNS exists. The reverse zone is provider-hosted, not delegated to us, so only the operator can set it.
+- **Fix** (operator, ~2 min): provider is **AlphaVPS** (netname `DAGroup`, RIPE `AA29428-RIPE`, block `82.118.230.0/24`). In the AlphaVPS client area (VPS → rDNS/Reverse DNS) set `82.118.230.117` → `mail.fxmq.net`, or ticket `support@alphavps.bg` / `abuse@alphavps.bg` with: *"Please set reverse DNS for 82.118.230.117 to `mail.fxmq.net`."* Must match postfix HELO + the `mail.fxmq.net` A record (both already `mail.fxmq.net`). Verify with `dig -x 82.118.230.117`, then send a test to an external inbox.
 
-#### `services/nextcloud/.env` is tracked in git
-- **File**: `services/nextcloud/.env` (in HEAD; found during the mail-platform git hygiene pass)
-- **Problem**: the Nextcloud admin password file is committed to the repo (`git ls-files` shows it). The .gitignore now covers it (future changes stay untracked), but the file remains in git history — if the GitHub repo is or was public, the admin password is exposed.
-- **Fix**: operator decision — `git rm --cached services/nextcloud/.env`, rotate the Nextcloud admin password, and if the repo is public, purge history (or treat the password as compromised).
-
-#### `fail2ban` installed but inactive
-- **File**: host package `fail2ban`
-- **Problem**: `fail2ban` is on the host but `systemctl is-active` returns `inactive`. No ban jail is protecting SSH even though sshd is hardened — defense-in-depth gap.
-- **Fix**: `systemctl enable --now fail2ban` + configure an SSH jail (filter `/etc/fail2ban/jail.d/sshd.conf` with `enabled = true`, `maxretry = 5`, `bantime = 1h`). Verify with `fail2ban-client status sshd`.
-- **Why approval**: needs a decision on retry threshold and ban duration; affects SSH UX for the operator.
+#### Nextcloud admin password was in git history  **[needs human approval]**
+- **File**: `services/nextcloud/.env` (removed from the git index 2026-08-28; file stays on disk, gitignored)
+- **Problem**: the Nextcloud admin password was committed to the repo. It is now untracked and future changes are gitignored, but the value remains in git history — if the GitHub repo is or was public, the password is exposed.
+- **Fix**: operator decision — rotate the Nextcloud admin password (`occ user:resetpassword admin`, update `services/nextcloud/.env`), and if the repo is public, purge history or treat the password as compromised.
 
 #### Tailscale tailnet has 2 stale devices  **[needs human approval]**
 - **File**: Tailscale admin console (outside repo)
@@ -294,6 +288,12 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Panel moved to `mc.fxmq.net/panel`** — PufferPanel now lives under `/panel` (prefix-stripped; the SPA has no subpath support, so its baked root routes `/api` `/auth` SPA pages `/assets` `/swagger` are proxied via the vhost's `@panel_infra`); `/panel/register` + `/auth/register` still 403 at the edge.
 - **Minecraft homepage + status at `mc.fxmq.net/`** — new `mc-home` container (172.22.0.11:5000, stdlib-only Python) serves the landing page (visual style copied from `archives/minecraft/templates/dashboard.html`) and `/status` pings of Java `:25565` + Bedrock `:19132` from the host bridge.
 - **File browser at `mc.fxmq.net/download`** — Caddy `file_server browse` over the new `homelab/download` drop folder (ro bind mount into the caddy container).
+- **Mail platform on `mail.fxmq.net`** — Docker Mailserver + Roundcube (mail 172.22.0.9 ports 25/465/587/993, roundcube .10), Caddy vhost + shared LE cert, MX/SPF/DMARC/DKIM DNS, STARTTLS webmail over the bridge.
+- **Inbound port 25 now open** — provider edge passes (external nodes connect, `220 mail.fxmq.net ESMTP`); UFW 25/465/587/993 allowed.
+- **fail2ban installed + sshd jail** — package was actually missing (stale ISSUES claim of "inactive"); jail `config/fail2ban/jail.d/sshd.conf` (maxretry 5, bantime 1h, tailnet whitelisted), enabled + wired into install-config/install.sh.
+- **`homelab-daily.service` failed state cleared** — stale systemd state reset; no unit/refs remain (maintenance stack fully removed).
+- **`/etc/hosts` hostname entry added** — `127.0.1.1 server`; sudo "unable to resolve host" warnings gone.
+- **`services/nextcloud/.env` untracked** — removed from git index; password rotation still pending (see Open).
 
 ---
 

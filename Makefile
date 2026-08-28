@@ -169,11 +169,13 @@ install-config:
     echo "Docker daemon config already up to date."; \
   fi
 >sudo cp $(REPO)/repo/config/ttyd/ttyd.service /etc/systemd/system/ttyd.service
+>sudo cp $(REPO)/repo/config/fail2ban/jail.d/sshd.conf /etc/fail2ban/jail.d/sshd.conf
+>sudo systemctl enable --now fail2ban
 >sudo ufw allow from 172.22.0.0/16 to any port 7681 proto tcp
 >sudo systemctl daemon-reload
 >sudo systemctl enable --now goose ttyd
 >sudo systemctl restart sshd dnsmasq
->@echo "Host install-config complete: goose + ttyd + dnsmasq + sshd enabled."
+>@echo "Host install-config complete: goose + ttyd + dnsmasq + fail2ban + sshd enabled."
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Per-file install (config/<file> → live path)
