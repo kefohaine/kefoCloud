@@ -1,0 +1,38 @@
+services:
+  mc-home:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mc-home:local
+    container_name: mc-home
+    restart: unless-stopped
+
+    # Tiny stdlib HTTP server — modest cap.
+    mem_limit: 128m
+    memswap_limit: 128m
+
+    # Serves the Minecraft homepage at / and /status (probes the game
+    # server's public ports from the host bridge 172.22.0.1).
+    expose:
+      - "5000"
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      net:
+        ipv4_address: 172.22.0.11
+
+networks:
+  net:
+    external: true

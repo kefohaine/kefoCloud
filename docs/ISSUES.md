@@ -281,6 +281,9 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **lazymc + mc-idle-sleeper removed** — sleep/wake stack deleted (units, configs, binaries, Makefile recipes, docs); server binds directly on 25565, manual start/stop via PufferPanel.
 - **AI chat on `shell.fxmq.net`** — root serves plain `ok`; Open WebUI (DeepSeek, same key as goose) at `/owui` (prefix stripped; root `/api` `/static` `/ws` `/auth` proxied — pinned build has no subpath support); ttyd at `/ttyd` (`-b /ttyd`); host access from chat via SSH tool (dedicated key, `restrict,no-pty`, UFW allows 172.22.0.0/16 → 22).
 - **CF token blocker cleared** — the `9109 Invalid access token` failure (Aug 28) no longer blocks DNS/certs: `kuma.fxmq.net` A record recreated, `www.fxmq.net` + `kuma.fxmq.net` serve Let's Encrypt certs.
+- **Panel moved to `mc.fxmq.net/panel`** — PufferPanel now lives under `/panel` (prefix-stripped; the SPA has no subpath support, so its baked root routes `/api` `/auth` SPA pages `/assets` `/swagger` are proxied via the vhost's `@panel_infra`); `/panel/register` + `/auth/register` still 403 at the edge.
+- **Minecraft homepage + status at `mc.fxmq.net/`** — new `mc-home` container (172.22.0.11:5000, stdlib-only Python) serves the landing page (visual style copied from `archives/minecraft/templates/dashboard.html`) and `/status` pings of Java `:25565` + Bedrock `:19132` from the host bridge.
+- **File browser at `mc.fxmq.net/download`** — Caddy `file_server browse` over the new `homelab/download` drop folder (ro bind mount into the caddy container).
 
 ---
 

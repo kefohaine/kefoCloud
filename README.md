@@ -21,7 +21,8 @@ Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Six cont
            reverse_proxy    reverse_proxy      php_fastcgi
            vaultwarden      uptime-kuma        nextcloud:9000
            (172.22.0.4:80)  (172.22.0.6:3001)  (Nextcloud FPM)
-           (also: pufferpanel 172.22.0.8:8080, open-webui 172.22.0.7:8080)
+           (also: pufferpanel 172.22.0.8:8080, open-webui 172.22.0.7:8080,
+            mc-home 172.22.0.11:5000)
 
     shell.fxmq.net is tailnet-only (not in public DNS) — "/" serves
     a plain "ok" landing, "/owui" the AI chat (Open WebUI), "/ttyd"
@@ -51,7 +52,7 @@ One VPS, one host. Cloudflare fronts the three public hostnames; the Tailscale-o
 | cloud.fxmq.net    | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Nextcloud (file sync, calendar, photos); PHP-FPM behind Caddy |
 | vault.fxmq.net    | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Vaultwarden (Bitwarden-compatible password manager) |
 | kuma.fxmq.net     | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Uptime Kuma monitor dashboard |
-| mc.fxmq.net       | Cloudflare (proxied) → VPS IP | Anyone on the internet             | PufferPanel game server panel; Minecraft Java `:25565` + Bedrock `:19132/udp` (Geyser) while the server is running (manual start/stop via the panel) |
+| mc.fxmq.net       | Cloudflare DNS-only → VPS IP | Anyone on the internet             | Minecraft homepage at `/` (welcome + live status pings for Java `:25565` + Bedrock `:19132/udp`); PufferPanel at `/panel`; file browser at `/download` over the `download/` drop folder. DNS-only (grey cloud) so the game ports bypass the CF proxy |
 | www.fxmq.net      | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Stub: responds `ok` on `/` |
 | shell.fxmq.net    | Not in Cloudflare, not in public DNS | Only devices on the Tailscale network | Plain `ok` landing at `/`; Open WebUI chat (DeepSeek models, ChatGPT-style) at `/owui`; ttyd host shell at `/ttyd`. Caddy `@not_tailnet` returns 403 for any non-tailnet source IP, including forged Host headers against the public IP |
 
