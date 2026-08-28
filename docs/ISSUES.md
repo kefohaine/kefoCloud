@@ -39,8 +39,8 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 #### Daily `make update` kicks a running game server
 - **File**: `config/maintenance/daily.sh` (chains `make update` → `d-recreate-all`)
-- **Problem**: the panel daemon stops + removes the game container at boot when it's running, so the daily panel recreate gracefully stops an online game (players kicked, world saved; lazymc returns to sleeping).
-- **Fix**: pre-stop the game server in `daily.sh` before `make update` (via `/usr/local/bin/mc-idle-sleeper.py` or the panel API), or accept the graceful kick as intended (players reconnect and lazymc wakes the server).
+- **Problem**: the panel daemon stops + removes the game container at boot when it's running, so the daily panel recreate gracefully stops an online game (players kicked, world saved; the server stays stopped until started manually from the panel).
+- **Fix**: pre-stop the game server in `daily.sh` before `make update` (panel API `POST /api/servers/2ecfbe8c/stop` with a `puffer_auth` cookie), or accept the graceful kick as intended (operator restarts it from the panel UI).
 
 ### Security
 
@@ -157,7 +157,7 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **LazyMC sleep proxy + Geyser Bedrock** — Java 25565 behind lazymc (wake/proxy), Bedrock 19132 via Geyser, 5-min idle sleep via mc-idle-sleeper timer, item despawn 6000 ticks.
 - **ufw status broken** — `sudo ufw status` works now (only benign "unable to resolve host server" warning); backend mismatch never re-investigated.
 - **MC game ports opened** — `ufw allow 25565/tcp` + `19132/udp` (host-net Paper server; 19132 pre-opened for planned Geyser, no listener yet).
-- **MC server optimized** — Xmx 8G→4G + Aikar flags + native caps (MaxMetaspace/CodeCache/DirectMemory → total ≤5 G, container limit dropped per operator), sim-distance 4 / view-distance 8 / spawn-protection 0, Paper culling, plugins Chunky + StackMob; lazymc pending operator review.
+- **MC server optimized** — Xmx 8G→4G + Aikar flags + native caps (MaxMetaspace/CodeCache/DirectMemory → total ≤5 G, container limit dropped per operator), sim-distance 4 / view-distance 8 / spawn-protection 0, Paper culling, plugins Chunky + StackMob.
 - **Online mode restored with Floodgate** — `online-mode=true` + Geyser `auth-type: online`; Bedrock still joins via Xbox (no Java account, XUID UUIDs unchanged), Java players get real session auth + skins back; tremelix whitelist/ops re-keyed to real UUID; the offline-mode detour was based on a false Floodgate premise (see Lessons learned).
 - **MC autosave interval 1 h** — `auto-save-interval` 72000 ticks (was 6000 ticks / 5 min) in `config/paper-world-defaults.yml`, operator-set.
 - **Nextcloud integration** — first hosted on the VPS, migrated to `app.homelab.com/cloud`, reverted, then linked via PHP-FPM.
@@ -273,6 +273,7 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **`ut-kuma` container + folder renamed `uptimekuma`** — `services/uptimekuma/`, `container_name: uptimekuma`, Makefile recipe `d-recreate-uptimekuma`; data dir stays `kuma/`.
 - **PufferPanel registration closed** — `/register` blocked 403 at Caddy on mc.fxmq.net; stray public-registered `tremelix` account deleted (panel now has only `admin`).
 - **`kuma-import` script + recipe** — imports a jehpok kuma.db, adapts URLs/container names, re-seeds the current monitor set.
+- **lazymc + mc-idle-sleeper removed** — sleep/wake stack deleted (units, configs, binaries, Makefile recipes, docs); server binds directly on 25565, manual start/stop via PufferPanel.
 
 ---
 

@@ -49,7 +49,7 @@ One VPS, one host. Cloudflare fronts the three public hostnames; the Tailscale-o
 | cloud.fxmq.net    | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Nextcloud (file sync, calendar, photos); PHP-FPM behind Caddy |
 | vault.fxmq.net    | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Vaultwarden (Bitwarden-compatible password manager) |
 | kuma.fxmq.net     | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Uptime Kuma monitor dashboard |
-| mc.fxmq.net       | Cloudflare (proxied) → VPS IP | Anyone on the internet             | PufferPanel game server panel; Minecraft Java `:25565` (LazyMC sleep proxy) + Bedrock `:19132/udp` (Geyser) while the server is awake |
+| mc.fxmq.net       | Cloudflare (proxied) → VPS IP | Anyone on the internet             | PufferPanel game server panel; Minecraft Java `:25565` + Bedrock `:19132/udp` (Geyser) while the server is running (manual start/stop via the panel) |
 | www.fxmq.net      | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Stub: responds `ok` on `/` |
 | shell.fxmq.net    | Not in Cloudflare, not in public DNS | Only devices on the Tailscale network | ttyd host shell at `/`. Caddy `@not_tailnet` returns 403 for any non-tailnet source IP, including forged Host headers against the public IP |
 

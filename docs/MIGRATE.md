@@ -34,13 +34,13 @@ The installer's `renames()` step transforms a clone that still carries the old n
 2. Optional: Cloudflare WAF rule skip for `cloud.$DOMAIN` — Nextcloud desktop sync is bot-challenged otherwise (see `Intended` in `docs/ISSUES.md`).
 3. Doc pass: done for the Aug 2026 migration — the canonical repo now carries the `fxmq.net` / `op` / `shell.` names in code, docs, and Makefile.
 
-## Minecraft server (PufferPanel + LazyMC + Geyser)
+## Minecraft server (PufferPanel + Geyser)
 
-The Minecraft stack is **not** part of `install.sh`'s container set — the panel (`services/pufferpanel/`), lazymc, and mc-idle-sleeper are added post-install. To carry it to a new VPS:
+The Minecraft stack is **not** part of `install.sh`'s container set — the panel (`services/pufferpanel/`) is added post-install; the game server itself is operator-managed (no sleep/wake stack — lazymc and mc-idle-sleeper were removed 2026-08-28). To carry it to a new VPS:
 
-1. The repo carries everything reproducible: the server template `config/pufferpanel/servers/2ecfbe8c.json`, the lazymc unit/config/script (`config/lazymc/`), the idle sleeper (`config/mc-idle-sleeper/`), and the UFW ports (already in `install.sh`). After the base install: create the panel server from the template JSON (copy into `puffer/data/servers/<id>.json`), `make install-mc-idle-sleeper`, and `make install-lazymc` (after the game has been started once by the panel so the daemon has created a container).
-2. Operator-only (not in repo, copy from the old host): the game server data dir `puffer/data/servers/2ecfbe8c/` (world, jars, plugin jars, Geyser cache/locales) and `/etc/lazymc/panel-cred` (credentials of the panel API user `lazymc`; on the new host recreate the user in the panel container via `/pufferpanel/bin/pufferpanel user add --name lazymc --password <pw> --admin --email lazymc@fxmq.net` and rewrite the file).
-3. Gotchas that must hold on the new host: the server MOTD stays plain text (no `§` codes) and a 64×64 `server-icon.png` exists in the server dir (lazymc v0.2.11's status decoder fails otherwise); `server.properties` `server-ip=127.0.0.1` / `server-port=25566` (lazymc rewrites these at start); RCON disabled; the game domain's CF A record is DNS-only; restarting lazymc requires the game server stopped (see `docs/ISSUES.md` lessons).
+1. The repo carries everything reproducible: the server template `config/pufferpanel/servers/2ecfbe8c.json` and the UFW ports (already in `install.sh`). After the base install: create the panel server from the template JSON (copy into `puffer/data/servers/<id>.json`) and start the game once from the panel UI so the daemon creates the container.
+2. Operator-only (not in repo, copy from the old host): the game server data dir `puffer/data/servers/2ecfbe8c/` (world, jars, plugin jars, Geyser cache/locales).
+3. Gotchas that must hold on the new host: the panel template writes `server.properties` at install from its `ip`/`port` data fields (the live server currently binds `server-ip=0.0.0.0` / `server-port=25565`); RCON disabled; the game domain's CF A record is DNS-only.
 
 ## Manual fallback
 
