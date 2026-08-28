@@ -1,18 +1,12 @@
-# mail.fxmq.net — Roundcube webmail (Docker Mailserver platform).
-# TLS: Let's Encrypt DNS-01 via Cloudflare (same pattern as every vhost).
-# The mail container reuses this cert for SMTP/IMAP TLS (SSL_TYPE=manual,
-# caddy_data mounted read-only at /caddy), so renewals are shared.
+# mail.fxmq.net — decommissioned stub: every path responds plain "ok".
+# (Roundcube webmail retired from the edge 2026-08-28; the mail platform
+# still runs on the bridge but is no longer routed. MX/SPF/DMARC/DKIM
+# DNS records are unchanged.)
+# TLS: Let's Encrypt DNS-01 via Cloudflare.
 
 https://mail.fxmq.net {
     tls {
         dns cloudflare {env.CF_API_TOKEN}
     }
-    import compress
-    request_body {
-        max_size 25m
-    }
-    header {
-        import security_headers
-    }
-    reverse_proxy 172.22.0.10:80
+    respond "ok" 200
 }

@@ -1,11 +1,7 @@
-# shell.fxmq.net — tailnet-only. / is a plain "ok" landing page; ttyd
-# host terminal at /ttyd (ttyd runs with -b /ttyd); Open WebUI AI chat
-# at /owui. The pinned Open WebUI build has no subpath support (its SPA
-# URLs are baked absolute: /api, /_app, /static, /ws), so the /owui
-# prefix is stripped for the app and its absolute root routes are
-# proxied by the dedicated block below. Non-tailnet sources get 403 on
-# every path (Tailscale membership is the access control — see README
-# "Domains and access model").
+# shell.fxmq.net — tailnet-only. ttyd host terminal at /ttyd (ttyd runs
+# with -b /ttyd); every other path (including /) responds plain "ok".
+# Non-tailnet sources get 403 on every path (Tailscale membership is the
+# access control — see README "Domains and access model").
 
 https://shell.fxmq.net {
     tls {
@@ -25,20 +21,7 @@ https://shell.fxmq.net {
             }
         }
     }
-    # Open WebUI chat entry: /owui and /owui/* are proxied with the
-    # prefix stripped so the app sees its canonical root paths.
-    # (handle_path, not handle+redir: `redir` inside `handle` adapts into
-    # a dead subroute in Caddy 2.11 — see ISSUES.md lessons learned.)
-    handle_path /owui {
-        reverse_proxy 172.22.0.7:8080
-    }
-    # Open WebUI's absolute root routes — SPA assets, API, websocket, and
-    # the login page (the pinned image can't be built with a base path).
-    @owui_infra path /api/* /ws/* /_app/* /static/* /auth* /manifest.json /favicon* /opensearch.xml /robots.txt /sql.js /wasm/* /audio/* /assets/* /pyodide/* /user.png
-    handle @owui_infra {
-        reverse_proxy 172.22.0.7:8080
-    }
-    # Everything else — including / — is the plain landing page.
+    # Everything else — including / — is the plain "ok" stub.
     handle {
         respond "ok" 200
     }

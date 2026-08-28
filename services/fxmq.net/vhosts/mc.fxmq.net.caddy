@@ -1,72 +1,13 @@
-# mc.fxmq.net — PufferPanel at /panel, Caddy file browser at /download.
-#   /panel    PufferPanel web UI (172.22.0.8:8080). The panel SPA has no
-#             subpath support (absolute history-mode routes), so /panel is
-#             prefix-stripped and its baked root routes (/api, /auth, SPA
-#             pages, /assets, /swagger) are proxied by @panel_infra below.
-#   /download Caddy file_server browse over homelab/download (mounted into
-#             the caddy container at /download:ro — see docker-compose.yml).
-# TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/cloud.fxmq.net.caddy).
-# /register is blocked (403) at the edge — public account creation closed
-# by operator request; accounts are admin-created in the panel.
+# mc.fxmq.net — decommissioned stub: every path responds plain "ok".
+# (PufferPanel at /panel and the /download file browser retired from the
+# edge 2026-08-28; the panel + game server still run on the bridge but are
+# no longer routed — Minecraft lifecycle control via the panel is
+# unavailable until the routes are restored.)
+# TLS: Let's Encrypt DNS-01 via Cloudflare.
 
 https://mc.fxmq.net {
     tls {
         dns cloudflare {env.CF_API_TOKEN}
     }
-    import compress
-    request_body {
-        max_size 100m
-    }
-    header {
-        import security_headers
-    }
-    @register path /panel/register* /auth/register*
-    handle @register {
-        respond 403
-    }
-    # PufferPanel sends max-age=60 on its JS/wasm chunks, so the browser
-    # revalidates the whole SPA every minute. Hashed chunk names mean a
-    # panel upgrade self-invalidates; 86400 kills the refetch churn and
-    # lets Cloudflare edge-cache the assets (Vary so each encoding is cached).
-    @panel_static path /js/* /wasm/* /css/* /img/* /fonts/* /assets/*
-    header @panel_static Cache-Control "public, max-age=86400"
-    header @panel_static Vary "Accept-Encoding"
-    # PufferPanel — prefix stripped so the panel sees its canonical root
-    # paths (/dashboard, /servers, /api/...). Two blocks: `path /panel`
-    # matches only the exact path, so /panel/* is needed for subpaths
-    # (including the bare trailing slash).
-    handle_path /panel {
-        reverse_proxy 172.22.0.8:8080
-    }
-    handle_path /panel/* {
-        reverse_proxy 172.22.0.8:8080
-    }
-    # PufferPanel's baked-absolute root routes (no subpath support): the
-    # SPA's history-mode pages, /api REST + websocket console, /auth web
-    # login, Vite /assets, and /swagger API docs.
-    @panel_infra path /api/* /auth* /js/* /wasm/* /css/* /img/* /fonts/* /assets/* /swagger* /home/* /nodes* /dashboard /self /servers* /settings /templates* /users* /favicon.png /manifest.json
-    handle @panel_infra {
-        reverse_proxy 172.22.0.8:8080
-    }
-    # File browser over the homelab/download drop folder. Two blocks for
-    # the same reason as /panel: `path /download` matches only the exact
-    # path (which 308s to /download/), so /download/* serves the listing.
-    handle_path /download {
-        root * /download
-        file_server browse
-    }
-    handle_path /download/* {
-        root * /download
-        file_server browse
-    }
-    # `/` points at the panel (homepage app removed).
-    @root path /
-    handle @root {
-        redir * /panel 308
-    }
-    # Catch-all: nothing else matched → 404 (without this, unmatched paths
-    # fall through to an empty 200 from net/http).
-    handle {
-        respond 404
-    }
+    respond "ok" 200
 }
