@@ -49,10 +49,10 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### Security
 
-#### Mail platform: provider blocks inbound port 25 + no PTR record  **[needs human approval]**
+#### Mail platform: no PTR record (inbound port 25 now open)  **[needs human approval]**
 - **File**: `services/mail/docker-compose.yml` (installed); DNS + UFW configured
-- **Problem**: the mail platform (Docker Mailserver + Roundcube at `mail.fxmq.net`) is installed and self-delivery + webmail work, but the VPS provider (AS203380, DA International) filters inbound TCP 25 (3-node external probe times out) and 82.118.230.117 has no PTR — external mail cannot arrive yet, and outbound mail to Gmail/Outlook will be rejected or spam-foldered until reverse DNS is set.
-- **Fix**: in the VPS provider panel (1) unblock inbound port 25, (2) set PTR `82.118.230.117` → `mail.fxmq.net`. Verify: `echo | openssl s_client -connect 82.118.230.117:25 -starttls smtp`, then send a test to an external inbox.
+- **Problem**: inbound TCP 25 was provider-blocked but is now reachable from external nodes (verified 2026-08-28: check-host.net nodes connect, postfix serves `220 mail.fxmq.net ESMTP` with the LE cert on STARTTLS). The remaining blocker: 82.118.230.117 has no PTR — outbound mail to Gmail/Outlook will be rejected or spam-foldered until reverse DNS is set.
+- **Fix**: in the VPS provider panel set PTR `82.118.230.117` → `mail.fxmq.net` (must match postfix HELO + the `mail.fxmq.net` A record, both already set). Verify with `dig -x 82.118.230.117`, then send a test to an external inbox.
 
 #### `services/nextcloud/.env` is tracked in git
 - **File**: `services/nextcloud/.env` (in HEAD; found during the mail-platform git hygiene pass)

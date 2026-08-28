@@ -55,7 +55,7 @@ One VPS, one host. Cloudflare fronts the three public hostnames; the Tailscale-o
 | kuma.fxmq.net     | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Uptime Kuma monitor dashboard |
 | mc.fxmq.net       | Cloudflare DNS-only → VPS IP | Anyone on the internet             | Minecraft homepage at `/` (welcome + live status pings for Java `:25565` + Bedrock `:19132/udp`); PufferPanel at `/panel`; file browser at `/download` over the `download/` drop folder. DNS-only (grey cloud) so the game ports bypass the CF proxy |
 | www.fxmq.net      | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Stub: responds `ok` on `/` |
-| mail.fxmq.net    | Cloudflare **DNS-only** (grey cloud) → VPS IP | Anyone on the internet             | Roundcube webmail; Docker Mailserver platform (SMTP 25/465/587, IMAP 993). Inbound port 25 is provider-blocked and the IP has no PTR yet — see `docs/ISSUES.md` |
+| mail.fxmq.net    | Cloudflare **DNS-only** (grey cloud) → VPS IP | Anyone on the internet             | Roundcube webmail; Docker Mailserver platform (SMTP 25/465/587, IMAP 993). Inbound port 25 is open; PTR record still pending at the VPS provider — see `docs/ISSUES.md` |
 | shell.fxmq.net    | Not in Cloudflare, not in public DNS | Only devices on the Tailscale network | Plain `ok` landing at `/`; Open WebUI chat (DeepSeek models, ChatGPT-style) at `/owui`; ttyd host shell at `/ttyd`. Caddy `@not_tailnet` returns 403 for any non-tailnet source IP, including forged Host headers against the public IP |
 
 The asymmetry on `shell.fxmq.net` is deliberate. By keeping it out of public DNS, the only way anyone can know its IP is by being inside the Tailscale network. Even a DNS leak on the user's device cannot reveal an address that public resolvers don't serve. As defense-in-depth, Caddy also rejects any request to the vhost whose source IP is not on the tailnet (`100.64.0.0/10`), so reaching it via the public IP with a forged Host header returns 403 on every path.
@@ -97,7 +97,7 @@ The trade-off: browser traffic is bot-challenged. For terminal `curl` or Nextclo
 - TLS reuses Caddy's per-vhost Let's Encrypt cert for mail.fxmq.net: the mail container mounts caddy_data read-only (SSL_TYPE=manual) and DMS's changedetector reloads postfix + dovecot when the cert renews, so there is one cert path for web + mail.
 - The mail records (MX fxmq.net, mail.fxmq.net A) are DNS-only at Cloudflare — a proxied record would break SMTP/IMAP, which only speaks TCP on 25/465/587/993. SPF, DMARC, and DKIM (mail._domainkey) TXT records are set on the zone; DKIM keys live in the mail config dir.
 - Roundcube talks to the mail container over the bridge with STARTTLS (dovecot/postfix reject plaintext auth), resolving mail.fxmq.net to the bridge IP via extra_hosts so SNI + cert verification match the LE cert.
-- Provider-side blockers that no host config can fix are tracked in docs/ISSUES.md: inbound TCP 25 is filtered by the VPS provider and the IP has no PTR record — external delivery/receipt needs the operator to unblock 25 and set reverse DNS at the provider.
+- Provider-side blocker that no host config can fix is tracked in docs/ISSUES.md: the IP has no PTR record yet (inbound port 25 is open). Set reverse DNS at the VPS provider for external deliverability.
 
 ### Why dnsmasq on the host and not CoreDNS in a container
 
