@@ -207,6 +207,13 @@ EOF
   # on the game server owns Bedrock 19132/udp (only answers while server is up).
   ufw allow 25565/tcp >/dev/null 2>&1
   ufw allow 19132/udp >/dev/null 2>&1
+  # Self-hosted mail (Docker Mailserver): SMTP + submission + IMAPS. Inbound 25
+  # can be provider-blocked on some VPSes — these are open so mail works the
+  # moment the provider allows it.
+  ufw allow 25/tcp >/dev/null 2>&1
+  ufw allow 465/tcp >/dev/null 2>&1
+  ufw allow 587/tcp >/dev/null 2>&1
+  ufw allow 993/tcp >/dev/null 2>&1
   echo y | ufw enable >/dev/null 2>&1 || true
 
   save_state
@@ -272,9 +279,16 @@ prep_dirs() {
   sudo mkdir -p /var/www/custom/projects/homelab/cloud/html \
                /var/www/custom/projects/homelab/cloud/users \
                /var/www/custom/projects/homelab/vault/data \
-               /var/www/custom/projects/homelab/kuma/data
+               /var/www/custom/projects/homelab/kuma/data \
+               /var/www/custom/projects/homelab/mail/data \
+               /var/www/custom/projects/homelab/mail/state \
+               /var/www/custom/projects/homelab/mail/logs \
+               /var/www/custom/projects/homelab/mail/config \
+               /var/www/custom/projects/homelab/mail/roundcube
   sudo chown -R 33:33 /var/www/custom/projects/homelab/cloud/html /var/www/custom/projects/homelab/cloud/users
   sudo chown -R 1000:1000 /var/www/custom/projects/homelab/vault/data
+  sudo chown -R 5000:5000 /var/www/custom/projects/homelab/mail/data /var/www/custom/projects/homelab/mail/state /var/www/custom/projects/homelab/mail/logs
+  sudo chown -R 33:33 /var/www/custom/projects/homelab/mail/roundcube
 }
 
 renames() {
