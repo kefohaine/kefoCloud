@@ -1,4 +1,13 @@
-# mc.fxmq.net — PufferPanel game server panel (web UI on 172.22.0.8:8080).
+# mc.fxmq.net — Minecraft homepage at /, PufferPanel at /panel, Caddy
+# file browser at /download.
+#   /         mc-home container (172.22.0.11:5000): landing page + /status
+#             (pings Java :25565 + Bedrock :19132 while the server runs)
+#   /panel    PufferPanel web UI (172.22.0.8:8080). The panel SPA has no
+#             subpath support (absolute history-mode routes), so /panel is
+#             prefix-stripped and its baked root routes (/api, /auth, SPA
+#             pages, /assets, /swagger) are proxied by @panel_infra below.
+#   /download Caddy file_server browse over homelab/download (mounted into
+#             the caddy container at /download:ro — see docker-compose.yml).
 # TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/cloud.fxmq.net.caddy).
 # /register is blocked (403) at the edge — public account creation closed
 # by operator request; accounts are admin-created in the panel.
@@ -14,7 +23,7 @@ https://mc.fxmq.net {
     header {
         import security_headers
     }
-    @register path /register*
+    @register path /panel/register* /auth/register*
     handle @register {
         respond 403
     }
@@ -22,10 +31,28 @@ https://mc.fxmq.net {
     # revalidates the whole SPA every minute. Hashed chunk names mean a
     # panel upgrade self-invalidates; 86400 kills the refetch churn and
     # lets Cloudflare edge-cache the assets (Vary so each encoding is cached).
-    @static path /js/* /wasm/* /css/* /img/* /fonts/*
-    header @static Cache-Control "public, max-age=86400"
-    header @static Vary "Accept-Encoding"
-    handle {
+    @panel_static path /panel/js/* /panel/wasm/* /panel/css/* /panel/img/* /panel/fonts/* /assets/*
+    header @panel_static Cache-Control "public, max-age=86400"
+    header @panel_static Vary "Accept-Encoding"
+    # PufferPanel — prefix stripped so the panel sees its canonical root
+    # paths (/dashboard, /servers, /api/...).
+    handle_path /panel {
         reverse_proxy 172.22.0.8:8080
+    }
+    # PufferPanel's baked-absolute root routes (no subpath support): the
+    # SPA's history-mode pages, /api REST + websocket console, /auth web
+    # login, Vite /assets, and /swagger API docs.
+    @panel_infra path /api/* /auth* /assets/* /swagger* /home/* /nodes* /dashboard /self /servers* /settings /templates* /users*
+    handle @panel_infra {
+        reverse_proxy 172.22.0.8:8080
+    }
+    # File browser over the homelab/download drop folder.
+    handle_path /download {
+        root * /download
+        file_server browse
+    }
+    # Everything else — the Minecraft homepage (and its /status API).
+    handle {
+        reverse_proxy 172.22.0.11:5000
     }
 }

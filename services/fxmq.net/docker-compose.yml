@@ -27,6 +27,9 @@ services:
 
     volumes:
       - /var/www/custom/projects/homelab/cloud/html:/nextcloud:ro
+      # homelab/download — the mc.fxmq.net/download file browser's root
+      # (drop files here; Caddy serves them read-only).
+      - /var/www/custom/projects/homelab/download:/download:ro
       # Top-level Caddyfile + per-vhost snippets. The dir is mounted so
       # the `import` directives in the top-level file resolve relative
       # paths (Caddy treats imports as relative to the importing file).
