@@ -1,6 +1,6 @@
 # fxmq.net
 
-Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Five containers: Caddy (`fxmq.net`, host-network reverse proxy), Nextcloud, Vaultwarden, Uptime Kuma, and PufferPanel. Five hostnames are public through Cloudflare (cloud, kuma, mc, vault, www); one (`shell.fxmq.net`) is Tailscale-only. Goose (the agent CLI) runs on the host as a systemd service (`goose serve`).
+Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Six containers: Caddy (`fxmq.net`, host-network reverse proxy), Nextcloud, Vaultwarden, Uptime Kuma, PufferPanel, and Open WebUI (the AI chat). Five hostnames are public through Cloudflare (cloud, kuma, mc, vault, www); one (`shell.fxmq.net`) is Tailscale-only. Goose (the agent CLI) runs on the host as a systemd service (`goose serve`).
 
 ## High-level overview
 
@@ -22,8 +22,9 @@ Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Five con
            vaultwarden      uptime-kuma        nextcloud:9000
            (172.22.0.4:80)  (172.22.0.6:3001)  (Nextcloud FPM)
 
-    shell.fxmq.net is tailnet-only (not in public DNS) — "/" proxies
-    to the host ttyd, non-tailnet sources get 403.
+    shell.fxmq.net is tailnet-only (not in public DNS) — "/" serves
+    the AI chat (Open WebUI), "/term" proxies to the host ttyd,
+    non-tailnet sources get 403.
 
                      ┌─────────────────────────────────────────────┐
                      │ Tailscale MagicDNS / split DNS              │
@@ -51,7 +52,7 @@ One VPS, one host. Cloudflare fronts the three public hostnames; the Tailscale-o
 | kuma.fxmq.net     | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Uptime Kuma monitor dashboard |
 | mc.fxmq.net       | Cloudflare (proxied) → VPS IP | Anyone on the internet             | PufferPanel game server panel; Minecraft Java `:25565` + Bedrock `:19132/udp` (Geyser) while the server is running (manual start/stop via the panel) |
 | www.fxmq.net      | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Stub: responds `ok` on `/` |
-| shell.fxmq.net    | Not in Cloudflare, not in public DNS | Only devices on the Tailscale network | ttyd host shell at `/`. Caddy `@not_tailnet` returns 403 for any non-tailnet source IP, including forged Host headers against the public IP |
+| shell.fxmq.net    | Not in Cloudflare, not in public DNS | Only devices on the Tailscale network | AI chat (Open WebUI, DeepSeek models, ChatGPT-style) at `/` and `/ai`; ttyd host shell at `/term`. Caddy `@not_tailnet` returns 403 for any non-tailnet source IP, including forged Host headers against the public IP |
 
 The asymmetry on `shell.fxmq.net` is deliberate. By keeping it out of public DNS, the only way anyone can know its IP is by being inside the Tailscale network. Even a DNS leak on the user's device cannot reveal an address that public resolvers don't serve. As defense-in-depth, Caddy also rejects any request to the vhost whose source IP is not on the tailnet (`100.64.0.0/10`), so reaching it via the public IP with a forged Host header returns 403 on every path.
 
@@ -79,6 +80,12 @@ The trade-off: browser traffic is bot-challenged. For terminal `curl` or Nextclo
 - Tailscale's split-DNS means the moment a Tailscale client joins the network, the hostname is reachable AND the resolver knows it. No port forwarding, no firewall holes.
 - The `shell.fxmq.net` vhost in Caddy uses a LE cert just like every other vhost — tailnet clients get a clean HTTPS handshake instead of a self-signed cert warning.
 - The VPS also advertises exit-node routes; IPv4+IPv6 forwarding is enabled in `config/sysctl/99-homelab.conf` so tailnet devices can route their internet traffic through it.
+
+### Why Open WebUI for the AI chat
+
+- `shell.fxmq.net` used to be ttyd-only; the AI chat (Open WebUI) now owns the root and the terminal lives at `/term` (`ttyd -b /term`). Open WebUI is a mature, actively maintained self-hosted ChatGPT-style UI that connects to any OpenAI-compatible API, so DeepSeek works with the same key goose uses, the chat bar's model dropdown is populated from DeepSeek's `/v1/models`, and chat history is persisted in its sqlite. It is the platform's Docker-only requirement satisfied out of the box.
+- "Host access from the chat" is a built-in **Host Shell** tool (Python, runs in the backend): it SSHes to the VPS as `op` (dedicated `restrict,no-pty` key, UFW allows the docker bridge to port 22) and runs shell commands in a working directory that defaults to the repo — the same access ttyd gives, now callable by the model mid-conversation.
+- Image **sending** works through the vision model (`deepseek-v4-flash-vision-exp`); image **generation** needs an engine the DeepSeek API doesn't provide yet — tracked in `docs/ISSUES.md`.
 
 ### Why dnsmasq on the host and not CoreDNS in a container
 
