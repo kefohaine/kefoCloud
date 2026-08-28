@@ -1,7 +1,4 @@
-# mc.fxmq.net — Minecraft homepage at /, PufferPanel at /panel, Caddy
-# file browser at /download.
-#   /         mc-home container (172.22.0.11:5000): landing page + /status
-#             (pings Java :25565 + Bedrock :19132 while the server runs)
+# mc.fxmq.net — PufferPanel at /panel, Caddy file browser at /download.
 #   /panel    PufferPanel web UI (172.22.0.8:8080). The panel SPA has no
 #             subpath support (absolute history-mode routes), so /panel is
 #             prefix-stripped and its baked root routes (/api, /auth, SPA
@@ -62,8 +59,14 @@ https://mc.fxmq.net {
         root * /download
         file_server browse
     }
-    # Everything else — the Minecraft homepage (and its /status API).
+    # `/` points at the panel (homepage app removed).
+    @root path /
+    handle @root {
+        redir * /panel 308
+    }
+    # Catch-all: nothing else matched → 404 (without this, unmatched paths
+    # fall through to an empty 200 from net/http).
     handle {
-        reverse_proxy 172.22.0.11:5000
+        respond 404
     }
 }
