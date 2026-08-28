@@ -37,6 +37,8 @@ make d-logs-<ctn>      # follow one container's logs
 make logs-dnsmasq      # follow the dnsmasq journal
 make logs-ttyd         # follow the ttyd journal
 make status            # show a table of all running containers + host systemd units
+make smoke             # live edge test: every vhost must serve its real app + SMTP/IMAP banners (scripts/smoke-vhosts.sh)
+make install-hooks     # install git hooks: pre-commit (Caddy validate + app-vhost stub guard) + pre-push (runs make smoke)
 make update            # apt update/upgrade + pull all images + make d-recreate-all
 make install-config    # one-shot host bootstrap: install ttyd, copy config/ to live, enable goose + ttyd + sshd + dnsmasq, open UFW rule
 make bundle-secrets    # collect live secrets into $(REPO)/backups/secrets-bundle-<date>.tar.gz (not chained into bkp-all)
@@ -106,7 +108,7 @@ The `net` Docker network is `external: true` — create once on a fresh host wit
 
 When you need to know "what does X do / where do I edit Y", read the file at the path below — the docs don't re-type the contents.
 
-- **`fxmq.net`** (Caddy) — vhosts, snippets, header policy: `services/fxmq.net/Caddyfile` (top-level config + per-vhost imports) and `services/fxmq.net/vhosts/*.caddy` (one per hostname: `cloud`, `kuma`, `mc`, `shell`, `vault`, `www`). Compose + bind mounts + custom Dockerfile (Caddy built with the `caddy-dns/cloudflare` plugin for ACME DNS-01): `services/fxmq.net/docker-compose.yml`. Runs `network_mode: host` — see note above. Every vhost has its own `tls { dns cloudflare { env.CF_API_TOKEN } }` block; don't replace it with `tls internal` / `tls off` / `tls self_signed`.
+- **`fxmq.net`** (Caddy) — vhosts, snippets, header policy: `services/fxmq.net/Caddyfile` (top-level config + per-vhost imports) and `services/fxmq.net/vhosts/*.caddy` (one per hostname: `cloud`, `kuma`, `mc`, `shell`, `vault`, `www`). Compose + bind mounts + custom Dockerfile (Caddy built with the `caddy-dns/cloudflare` plugin for ACME DNS-01): `services/fxmq.net/docker-compose.yml`. Runs `network_mode: host` — see note above. Every vhost has its own `tls { dns cloudflare { env.CF_API_TOKEN } }` block; don't replace it with `tls internal` / `tls off` / `tls self_signed`. This dir is bind-mounted into the running container at `/etc/caddy` — vhost edits are live config and take effect on the next `docker restart fxmq.net`; after any such restart run `make smoke`. The pre-commit hook blocks bare `respond "ok"` stubs in the app vhosts (see `docs/AGENTS.md` "Edge guardrails").
 - **`cloud`** — Nextcloud env, PHP-FPM pool tuning, bind mounts: `services/nextcloud/docker-compose.yml` + `services/nextcloud/php-fpm.d/zz-custom.conf`. Admin creds: `services/nextcloud/.env` (gitignored — read access only via the operator).
 - **`vault`** — env, bind mount, admin token: `services/vaultwarden/docker-compose.yml`.
 - **`kuma`** — image, bind mount, healthcheck: `services/uptimekuma/docker-compose.yml`. Monitor definitions live in Kuma's SQLite (`services/uptimekuma/seed-monitors.sql` seeds them; applied by the installer).

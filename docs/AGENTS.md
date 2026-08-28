@@ -160,3 +160,10 @@ Safety rule 10 above is generic; the project-specific numbers live here:
 ### `caddy_data/` is a runtime data dir, not source
 
 The Caddy container bind-mounts `/var/www/custom/projects/homelab/caddy_data` at `/data` for persistent cert/account storage. It also contains the `CF_API_TOKEN` file (token for the ACME DNS-01 challenge). The token file is created by the operator outside the repo (see `docs/MIGRATE.md`), lives under `caddy_data/` so container recreates don't lose the cert, and is excluded from `make bundle-secrets` (DNS-01 ACME doesn't need off-VPS cert copies — the cert is renewed by Caddy from the CF token). Do not commit anything from `caddy_data/`.
+
+### Edge guardrails (added after the 2026-08-28 ok-stub incident)
+
+The `services/fxmq.net/` directory is bind-mounted into the running Caddy container at `/etc/caddy` — **worktree vhost edits are live config**; the container picks them up on the next restart, committed or not. The 2026-08-28 incident stubbed every public vhost to plain `ok` and the operator had to declare a critical emergency. Standing rules:
+
+- **Stubbing/removing/rewriting the edge for all vhosts requires explicit operator approval.** The installed `pre-commit` hook blocks a bare `respond "ok"` in the app vhosts (`cloud`/`kuma`/`mail`/`mc`/`vault`; `www` and `shell` are exempt by design) unless committed with `EDGE_OVERRIDE=1` — and it runs `caddy validate` on any staged `services/fxmq.net/` change. The `pre-push` hook runs `make smoke` (live test: every vhost must serve its app, SMTP/IMAP must answer) before any push. Do not bypass either with `EDGE_OVERRIDE`/`SKIP_SMOKE` unless the operator explicitly asks.
+- After any `docker restart fxmq.net` / `make d-recreate-fxmq.net`, run `make smoke`. Hooks are installed via `make install-hooks` (re-run after a fresh clone — hooks are not committed by git).

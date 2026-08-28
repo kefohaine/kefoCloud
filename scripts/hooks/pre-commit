@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# pre-commit hook — guards the Caddy edge (installed via `make install-hooks`).
+# Two guards:
+#  1. If any file under services/fxmq.net/ is staged, the Caddyfile must
+#     validate (via the running fxmq.net container, when it's up).
+#  2. A bare `respond "ok"` in an APP vhost (cloud/kuma/mail/mc/vault) is
+#     blocked — that is the stub that took every public subdomain offline on
+#     2026-08-28. Operator-approved maintenance can pass with EDGE_OVERRIDE=1.
+#     www (health stub by design) and shell (legit `ok` paths) are exempt.
+set -uo pipefail
+
+staged=$(git diff --cached --name-only)
+[ -z "$staged" ] && exit 0
+
+# 1. Caddy config must validate when anything under services/fxmq.net/ changes.
+if echo "$staged" | grep -q '^services/fxmq.net/'; then
+  if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^fxmq.net$'; then
+    if ! docker exec fxmq.net caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
+      echo "pre-commit: Caddyfile invalid — refusing to commit."
+      echo "  Diagnose: docker exec fxmq.net caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile"
+      exit 1
+    fi
+  fi
+fi
+
+# 2. Stub guard on the app vhosts.
+app_vhosts="cloud.fxmq.net.caddy kuma.fxmq.net.caddy mail.fxmq.net.caddy mc.fxmq.net.caddy vault.fxmq.net.caddy"
+for f in $app_vhosts; do
+  if echo "$staged" | grep -q "^services/fxmq.net/vhosts/$f$"; then
+    if git show :"services/fxmq.net/vhosts/$f" 2>/dev/null | grep -qE '^\s*respond "ok"'; then
+      if [ "${EDGE_OVERRIDE:-}" != "1" ]; then
+        echo "pre-commit: $f contains a bare \`respond \"ok\"\` stub."
+        echo "  Stubbing an app vhost takes the service offline for every visitor."
+        echo "  If this is an operator-approved change, commit with EDGE_OVERRIDE=1."
+        exit 1
+      fi
+    fi
+  fi
+done
+
+exit 0

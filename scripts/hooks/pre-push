@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# pre-push hook — runs the live vhost smoke test before every push
+# (installed via `make install-hooks`). Blocks pushing while the edge is
+# broken (apps answering "ok" text/plain, dead SMTP/IMAP, etc.). This is the
+# last line of defence against committing a stub deployment: the 2026-08-28
+# incident shipped an edge-wide change whose failure mode this test catches.
+# Override with SKIP_SMOKE=1 only when the operator says the smoke is a false
+# alarm (e.g. containers down for maintenance).
+set -uo pipefail
+
+if [ "${SKIP_SMOKE:-}" = "1" ]; then
+  exit 0
+fi
+
+repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+smoke="$repo/scripts/smoke-vhosts.sh"
+[ -x "$smoke" ] || [ -f "$smoke" ] || exit 0
+
+if ! bash "$smoke" >/dev/null 2>&1; then
+  echo "pre-push: vhost smoke test FAILED — the live edge is not serving the apps."
+  echo "  Fix the running system first, then push again."
+  echo "  (bash $smoke  — full output; SKIP_SMOKE=1 to override, not on a whim)"
+  exit 1
+fi
+
+exit 0
