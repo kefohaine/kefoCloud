@@ -14,7 +14,7 @@ WorkingDirectory=/var/www/custom/projects/homelab/repo
 # profile (Settings > Profiles > Pro). Font: Menlo 13pt (macOS
 # Terminal default for Pro). Falls back to Monaco / Courier New on
 # non-mac browsers.
-ExecStart=/usr/local/bin/ttyd -W -i 172.22.0.1 -p 7681 \
+ExecStart=/usr/local/bin/ttyd -W -i 172.22.0.1 -p 7681 -b /term \
   -t fontSize=13 \
   -t 'fontFamily=Menlo,Monaco,"Courier New",monospace' \
   -t 'theme={"background":"#1e1c1c","foreground":"#d4d4d4","cursor":"#d4d4d4","cursorAccent":"#1e1c1c","selectionBackground":"#1bc9c9","black":"#1e1c1c","red":"#c91b1b","green":"#1bc91b","yellow":"#c91b1b","blue":"#1b1bc9","magenta":"#c91bc9","cyan":"#1bc9c9","white":"#d4d4d4","brightBlack":"#6f6f6f","brightRed":"#ff6f6f","brightGreen":"#6fff6f","brightYellow":"#ffff6f","brightBlue":"#6f6fff","brightMagenta":"#ff6fff","brightCyan":"#6fffff","brightWhite":"#ffffff"}' \
