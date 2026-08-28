@@ -23,8 +23,8 @@ Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Six cont
            (172.22.0.4:80)  (172.22.0.6:3001)  (Nextcloud FPM)
 
     shell.fxmq.net is tailnet-only (not in public DNS) — "/" serves
-    the AI chat (Open WebUI), "/term" proxies to the host ttyd,
-    non-tailnet sources get 403.
+    a plain "ok" landing, "/owui" the AI chat (Open WebUI), "/ttyd"
+    the host ttyd; non-tailnet sources get 403.
 
                      ┌─────────────────────────────────────────────┐
                      │ Tailscale MagicDNS / split DNS              │
@@ -52,7 +52,7 @@ One VPS, one host. Cloudflare fronts the three public hostnames; the Tailscale-o
 | kuma.fxmq.net     | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Uptime Kuma monitor dashboard |
 | mc.fxmq.net       | Cloudflare (proxied) → VPS IP | Anyone on the internet             | PufferPanel game server panel; Minecraft Java `:25565` + Bedrock `:19132/udp` (Geyser) while the server is running (manual start/stop via the panel) |
 | www.fxmq.net      | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Stub: responds `ok` on `/` |
-| shell.fxmq.net    | Not in Cloudflare, not in public DNS | Only devices on the Tailscale network | AI chat (Open WebUI, DeepSeek models, ChatGPT-style) at `/` and `/ai`; ttyd host shell at `/term`. Caddy `@not_tailnet` returns 403 for any non-tailnet source IP, including forged Host headers against the public IP |
+| shell.fxmq.net    | Not in Cloudflare, not in public DNS | Only devices on the Tailscale network | Plain `ok` landing at `/`; Open WebUI chat (DeepSeek models, ChatGPT-style) at `/owui`; ttyd host shell at `/ttyd`. Caddy `@not_tailnet` returns 403 for any non-tailnet source IP, including forged Host headers against the public IP |
 
 The asymmetry on `shell.fxmq.net` is deliberate. By keeping it out of public DNS, the only way anyone can know its IP is by being inside the Tailscale network. Even a DNS leak on the user's device cannot reveal an address that public resolvers don't serve. As defense-in-depth, Caddy also rejects any request to the vhost whose source IP is not on the tailnet (`100.64.0.0/10`), so reaching it via the public IP with a forged Host header returns 403 on every path.
 
@@ -83,7 +83,7 @@ The trade-off: browser traffic is bot-challenged. For terminal `curl` or Nextclo
 
 ### Why Open WebUI for the AI chat
 
-- `shell.fxmq.net` used to be ttyd-only; the AI chat (Open WebUI) now owns the root and the terminal lives at `/term` (`ttyd -b /term`). Open WebUI is a mature, actively maintained self-hosted ChatGPT-style UI that connects to any OpenAI-compatible API, so DeepSeek works with the same key goose uses, the chat bar's model dropdown is populated from DeepSeek's `/v1/models`, and chat history is persisted in its sqlite. It is the platform's Docker-only requirement satisfied out of the box.
+- `shell.fxmq.net` serves a plain `ok` landing at the root, with the AI chat (Open WebUI) at `/owui` and the host terminal at `/ttyd` (`ttyd -b /ttyd`). The pinned Open WebUI build has no subpath support — its SPA URLs are baked absolute — so Caddy strips the `/owui` prefix (`handle_path`) and proxies the app's root `/api` `/static` `/ws` `/auth` routes (see `services/fxmq.net/vhosts/shell.fxmq.net.caddy`). Open WebUI is a mature, actively maintained self-hosted ChatGPT-style UI that connects to any OpenAI-compatible API, so DeepSeek works with the same key goose uses, the chat bar's model dropdown is populated from DeepSeek's `/v1/models`, and chat history is persisted in its sqlite. It is the platform's Docker-only requirement satisfied out of the box.
 - "Host access from the chat" is a built-in **Host Shell** tool (Python, runs in the backend): it SSHes to the VPS as `op` (dedicated `restrict,no-pty` key, UFW allows the docker bridge to port 22) and runs shell commands in a working directory that defaults to the repo — the same access ttyd gives, now callable by the model mid-conversation.
 - Image **sending** works through the vision model (`deepseek-v4-flash-vision-exp`); image **generation** needs an engine the DeepSeek API doesn't provide yet — tracked in `docs/ISSUES.md`.
 
