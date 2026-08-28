@@ -8,7 +8,7 @@ SHELL := /bin/bash
 
 REPO     := /var/www/custom/projects/homelab
 COMPOSE  := docker compose -f
-CONTAINERS := fxmq.net uptimekuma nextcloud vaultwarden pufferpanel open-webui mail mc-home
+CONTAINERS := fxmq.net uptimekuma nextcloud vaultwarden pufferpanel open-webui mail
 HOST     := ttyd dnsmasq goose
 
 # ─────────────────────────────────────────────────────────────────────────────
