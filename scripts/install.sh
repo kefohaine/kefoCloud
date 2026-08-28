@@ -112,7 +112,7 @@ phase1_root() {
 
   DEBIAN_FRONTEND=noninteractive apt-get update -qq >>"$LOG" 2>&1
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-    git curl make sudo dnsmasq ufw jq apache2-utils >>"$LOG" 2>&1 || fail apt
+    git curl make sudo dnsmasq ufw jq apache2-utils fail2ban >>"$LOG" 2>&1 || fail apt
   # Docker: Debian packages first (bookworm ships docker-compose-plugin).
   # trixie does not, so fall back to Docker's official repo (docker-ce).
   if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io docker-compose-plugin >>"$LOG" 2>&1; then
