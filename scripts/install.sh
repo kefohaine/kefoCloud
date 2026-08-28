@@ -280,15 +280,15 @@ prep_dirs() {
                /var/www/custom/projects/homelab/cloud/users \
                /var/www/custom/projects/homelab/vault/data \
                /var/www/custom/projects/homelab/kuma/data \
-               /var/www/custom/projects/homelab/mail/data \
-               /var/www/custom/projects/homelab/mail/state \
-               /var/www/custom/projects/homelab/mail/logs \
-               /var/www/custom/projects/homelab/mail/config \
-               /var/www/custom/projects/homelab/mail/roundcube
+               /var/www/custom/projects/homelab/mailserver/data \
+               /var/www/custom/projects/homelab/mailserver/state \
+               /var/www/custom/projects/homelab/mailserver/logs \
+               /var/www/custom/projects/homelab/mailserver/config \
+               /var/www/custom/projects/homelab/mailserver/roundcube
   sudo chown -R 33:33 /var/www/custom/projects/homelab/cloud/html /var/www/custom/projects/homelab/cloud/users
   sudo chown -R 1000:1000 /var/www/custom/projects/homelab/vault/data
-  sudo chown -R 5000:5000 /var/www/custom/projects/homelab/mail/data /var/www/custom/projects/homelab/mail/state /var/www/custom/projects/homelab/mail/logs
-  sudo chown -R 33:33 /var/www/custom/projects/homelab/mail/roundcube
+  sudo chown -R 5000:5000 /var/www/custom/projects/homelab/mailserver/data /var/www/custom/projects/homelab/mailserver/state /var/www/custom/projects/homelab/mailserver/logs
+  sudo chown -R 33:33 /var/www/custom/projects/homelab/mailserver/roundcube
 }
 
 renames() {
