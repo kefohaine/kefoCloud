@@ -1,0 +1,91 @@
+services:
+  mail:
+    # Docker Mailserver (Postfix + Dovecot). One container, monthly releases,
+    # DKIM/DMARC/fail2ban/Rspamd built in. TLS is the per-vhost LE cert Caddy
+    # issues for mail.fxmq.net — mounted read-only from caddy_data and reused
+    # for SMTP/IMAP (SSL_TYPE=manual; DMS's changedetector reloads postfix +
+    # dovecot when the cert file changes, so LE renewal needs no restart).
+    image: ghcr.io/docker-mailserver/docker-mailserver:latest
+    container_name: mail
+    hostname: mail.fxmq.net
+    restart: unless-stopped
+
+    # Hard RAM cap (no container swap) — survives recreates, unlike docker update.
+    mem_limit: 1g
+    memswap_limit: 1g
+
+    environment:
+      OVERRIDE_HOSTNAME: mail.fxmq.net
+      # Allow the Roundcube container (same bridge) to relay via SMTP.
+      PERMIT_DOCKER: connected-networks
+      SSL_TYPE: manual
+      SSL_CERT_PATH: /caddy/caddy/certificates/acme-v02.api.letsencrypt.org-directory/mail.fxmq.net/mail.fxmq.net.crt
+      SSL_KEY_PATH: /caddy/caddy/certificates/acme-v02.api.letsencrypt.org-directory/mail.fxmq.net/mail.fxmq.net.key
+      POSTMASTER_ADDRESS: postmaster@fxmq.net
+      ENABLE_RSPAMD: 1
+      ENABLE_FAIL2BAN: 1
+      ENABLE_OPENDKIM: 1
+      ENABLE_OPENDMARC: 1
+      # Lightweight: no ClamAV.
+      ENABLE_CLAMAV: 0
+      # No IPv6 on this VPS.
+      POSTFIX_INET_PROTOCOLS: ipv4
+
+    ports:
+      - "25:25"
+      - "465:465"
+      - "587:587"
+      - "993:993"
+
+    volumes:
+      - /var/www/custom/projects/homelab/mail/data:/var/mail
+      - /var/www/custom/projects/homelab/mail/state:/var/mail-state
+      - /var/www/custom/projects/homelab/mail/logs:/var/log/mail
+      - /var/www/custom/projects/homelab/mail/config:/tmp/docker-mailserver
+      - /var/www/custom/projects/homelab/caddy_data:/caddy:ro
+      - /etc/localtime:/etc/localtime:ro
+
+    cap_add:
+      # fail2ban manages iptables inside the container.
+      - NET_ADMIN
+
+    networks:
+      net:
+        ipv4_address: 172.22.0.9
+
+  roundcube:
+    # Webmail for the mail platform, served by Caddy at mail.fxmq.net.
+    # No published ports — only Caddy reaches it. SQLite DB in the bind
+    # mount below. IMAP/SMTP point at the mail container over the bridge.
+    image: roundcube/roundcubemail:latest
+    container_name: roundcube
+    restart: unless-stopped
+
+    environment:
+      ROUNDCUBEMAIL_DB_TYPE: sqlite
+      # SQLite DB lives in the bind mount below (image default /var/roundcube/db).
+      ROUNDCUBEMAIL_DEFAULT_HOST: mail
+      ROUNDCUBEMAIL_DEFAULT_PORT: 143
+      # Note: the entrypoint reads SMTP_SERVER (not SMTP_HOST).
+      ROUNDCUBEMAIL_SMTP_SERVER: mail
+      ROUNDCUBEMAIL_SMTP_PORT: 587
+      # Users log in with just their local part (e.g. admin).
+      ROUNDCUBEMAIL_USERNAME_DOMAIN: fxmq.net
+
+    volumes:
+      - /var/www/custom/projects/homelab/mail/roundcube:/var/roundcube/db
+      # STARTTLS overrides (see file header) — included by the entrypoint.
+      - ./roundcube-tls.inc.php:/var/roundcube/config/roundcube-tls.inc.php:ro
+
+    extra_hosts:
+      # Map the cert FQDN to the mail container's bridge IP so Roundcube's
+      # TLS SNI + cert verification see mail.fxmq.net (the LE cert name).
+      - "mail.fxmq.net:172.22.0.9"
+
+    networks:
+      net:
+        ipv4_address: 172.22.0.10
+
+networks:
+  net:
+    external: true
