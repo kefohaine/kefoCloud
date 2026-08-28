@@ -39,6 +39,12 @@ When a fact fits two files, it belongs in the lower one in this list. A future a
 
 These directives govern how agents detect and correct drift, stale content, and duplicates when updating docs. Apply them every time a `.md` file is edited — not only at the end of a task.
 
+**Docs always reflect the repo — never the reverse.** The repo (compose files, Makefile, systemd units, Caddyfile, Dockerfile, app source, the running system) is the ground truth; every `.md` is a derived description. When a doc and the repo disagree, the doc is wrong — fix the doc in place, never the repo.
+
+**Missing repo artifacts are deliberate until the operator says otherwise.** A file, directory, or service absent from the repo was removed on purpose — even if a doc, the Makefile, or a script still references it. Never restore, re-create, copy in, or resurrect anything missing: no `git checkout` of deleted paths, no copying from the host or from git history, no re-adding "reference copies". If the absence breaks tooling (e.g. `make install-config` copies a file that doesn't exist), that is an operator decision point, not an invitation to fix: log the gap in `docs/ISSUES.md` and leave the repo untouched. The only exception is an explicit operator instruction to restore.
+
+**When in doubt, treat the repo as authoritative and the artifact as deliberately removed.** Note the mismatch in `docs/ISSUES.md` for the operator instead of acting on it.
+
 **Drift** = a documented fact that disagrees with the executable source (compose files, Makefile, systemd units, Caddyfile, Dockerfile, app source). Examples: a wrong port, an old container name, a recipe name that no longer matches the Makefile, a Caddyfile matcher that has moved, a claimed "X is renamed to Y" in a `Solved` entry where the rename was never applied on disk.
 
 **Stale** = content that has lost its anchor in reality — paths that no longer exist, port numbers that changed, container names that were renamed, units that were retired, hardening claims that were weakened, "currently" / "right now" snapshots that drifted from the steady state.

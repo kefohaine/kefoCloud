@@ -21,6 +21,7 @@ Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Six cont
            reverse_proxy    reverse_proxy      php_fastcgi
            vaultwarden      uptime-kuma        nextcloud:9000
            (172.22.0.4:80)  (172.22.0.6:3001)  (Nextcloud FPM)
+           (also: pufferpanel 172.22.0.8:8080, open-webui 172.22.0.7:8080)
 
     shell.fxmq.net is tailnet-only (not in public DNS) — "/" serves
     a plain "ok" landing, "/owui" the AI chat (Open WebUI), "/ttyd"

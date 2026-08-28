@@ -8,11 +8,6 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### Pending (Aug 2026)
 
-#### Cloudflare API token invalid — DNS + cert issuance blocked  **[needs human approval, high]**
-- **File**: `caddy_data/CF_API_TOKEN` (outside the repo)
-- **Problem**: the CF token file is intact (op:op, 0644, untouched since install) but the API rejects it with `9109 Invalid access token` — it was revoked/rotated (worked until ~07:00, dead by 07:40). Blocked: `kuma.fxmq.net` A record creation (the revert's DNS half), and new LE cert issuance via DNS-01 (`www.fxmq.net` cert, `kuma.fxmq.net` cert renewal when the cached one nears expiry). kuma.fxmq.net currently serves via the install-time cached cert; www.fxmq.net answers TLS errors until a cert exists.
-- **Fix**: operator refreshes the token — replace the value in `caddy_data/CF_API_TOKEN` (format `CF_API_TOKEN=<token>`, owner op:op mode 0644, readable by `make`/compose env_file) and recreate the proxy (`make d-recreate-fxmq.net`, or the docker-build fallback). Then Caddy auto-issues the pending certs; recreate the `kuma.fxmq.net` A record (proxied) via the CF dashboard, and `make restart-dnsmasq` to clear the negative cache.
-
 #### Nextcloud apps not migrated to `cloud.fxmq.net`  **[needs human approval]**
 - **File**: `services/nextcloud/` (fresh install, stock app set)
 - **Problem**: `cloud.fxmq.net` was installed fresh — enabled apps are the default Nextcloud 34 set (no Talk/Deck/Calendar/etc.), `cloud/users` is empty (no accounts/files), `backups/` is empty. The old instance's apps + app data live on the jehpok VPS, which is unreachable (see Kuma entry below).
@@ -35,6 +30,11 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Problem**: the recipe's `docker compose up -d --force-recreate --build` fails with `compose build requires buildx 0.17.0 or later` (Debian trixie pins buildx 0.13.1). Every Caddy config change needs the manual fallback: `docker build -t fxmq.net:local services/fxmq.net && docker compose -f services/fxmq.net/docker-compose.yml up -d --force-recreate`.
 - **Fix**: port the install.sh fallback into the Makefile recipe (try compose build, fall back to `docker build` + compose up), or install a newer docker-buildx-plugin (needs a .deb from Docker's apt repo — Debian trixie's is too old).
 
+#### `make install-config` copies files that aren't in the repo  **[needs human approval]**
+- **File**: `Makefile` (`install-config` + `install-daily-*` + `install-claude` recipes)
+- **Problem**: the recipes `cp` `config/maintenance/{daily.sh,daily.service,daily.timer}` → live systemd paths and `config/claude/settings.local.json` → `.claude/`, but the operator's `8c64483 Cleanup` deliberately removed those files from the repo — a fresh clone's bootstrap fails on those `cp` steps. Live host unaffected (installed Aug 24).
+- **Fix**: operator decision — restore the reference copies, or drop the `cp` lines/recipes and document the daily timer + Claude settings as host-only artifacts (keep the rest of `install-config`: goose, ssh, dnsmasq, sysctl, docker, ttyd, ufw).
+
 #### Migrate SQLite → MariaDB  **[needs human approval]**
 - **File**: `services/nextcloud/docker-compose.yml`
 - **Problem**: SQLite has file-level locking. Concurrent sync writes contend → intermittent 504s / "database is locked". Also the backup-corruption risk (copying an online SQLite file).
@@ -48,12 +48,12 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Why approval**: operator must choose a backup target (local path / remote / S3) and schedule.
 
 #### Daily `make update` kicks a running game server
-- **File**: `config/maintenance/daily.sh` (chains `make update` → `d-recreate-all`)
+- **File**: `/usr/local/bin/homelab-daily.sh` (host; chains `make update` → `d-recreate-all` — no repo copy, see Open)
 - **Problem**: the panel daemon stops + removes the game container at boot when it's running, so the daily panel recreate gracefully stops an online game (players kicked, world saved; the server stays stopped until started manually from the panel).
 - **Fix**: pre-stop the game server in `daily.sh` before `make update` (panel API `POST /api/servers/2ecfbe8c/stop` with a `puffer_auth` cookie), or accept the graceful kick as intended (operator restarts it from the panel UI).
 
 #### Open WebUI data not in the daily backup scope
-- **File**: `config/maintenance/daily.sh` (chains `make bkp-all` = cloud + vault only)
+- **File**: `/usr/local/bin/homelab-daily.sh` (host; chains `make bkp-all` = cloud + vault only)
 - **Problem**: the AI chat's sqlite (users, chats, tools) lives in `/var/www/custom/projects/homelab/open-webui/data` and is not covered by any backup recipe — a disk failure loses chat history.
 - **Fix**: add a `bkp-open-webui` Makefile recipe (sqlite `.backup` + tar of the data dir) and chain it into `bkp-all` (needs `sudo` for the root-owned files or a chown).
 
@@ -196,7 +196,7 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Static site placeholders** — non-blank `index.html` on www/app/vps.
 - **Healthchecks** — domain + cloud healthy.
 - **Security headers** — HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy on all vhosts.
-- **Claude Code project safety rail** — `config/claude/settings.local.json` (deny-only, AGENTS.md-protected resources + user-data bind mounts) deployed by `make install-config`.
+- **Claude Code project safety rail** — `config/claude/settings.local.json` (deny-only, AGENTS.md-protected resources + user-data bind mounts) deployed by `make install-config` (file since removed from the repo in the Aug 2026 cleanup — see Open).
 - **Backup + migrate recipes broken as `debian`** — root-owned `/var/www/custom/projects/homelab/` blocked `cp/tar/mkdir` destinations; `bkp-cloud` source was unreachable (`cloud/users` is `770 www-data:www-data`); `migrate` recipe was deleted by `582b789` and only its help line survived. Now: bkp-share/vault/secrets use `sudo` for destinations; bkp-cloud streams via `docker exec cloud tar cf - -C /data . | sudo tar xf -`; `migrate` recipe restored verbatim.
 - **Makefile `set -u` foot-gun** — `SHELLFLAGS := -eu -c` with unset `SHELL` ran recipes under `dash -eu`, where `-u` semantics differ from bash; latent crash on any unset var. Fixed: `SHELL := /bin/bash` set explicitly at top; documented in `GUIDE.md` operational gotchas.
 - **`bkp-cloud` maintenance trap** — added `trap 'occ maintenance:mode --off' EXIT` so a tar-stream failure can't leave Nextcloud in maintenance mode.
@@ -243,7 +243,7 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Terminal migrated to host systemd ttyd** — `services/terminal/` removed; `ttyd.service` runs as `debian` on the host, binds `172.22.0.1:7681` (not `0.0.0.0`), gated by Caddy `@not_tailnet` + UFW INPUT allow from the `net` bridge. Caddy proxies to `172.22.0.1:7681` with `transport http { versions 1.1 }`. `host-exec` / `runuser` shims are gone — the shell is a real host shell directly.
 - **Hostname `vps-742a45f9` → `server`** — system hostname + `/etc/hosts` updated; SSH host keys regenerated so the old `root@vps-742a45f9` comment is gone from the `.pub` files; cloud-init stale state (`/var/lib/cloud/data/{previous,set}-hostname`) deleted.
 - **`debian` has passwordless sudo** — `/etc/sudoers.d/debian-passwordless` (`NOPASSWD:ALL`, mode 0440). Reduces permission prompts during normal agent operations; still requires sudo for anything privileged.
-- **Claude Code allow-list curated + backed up** — `.claude/settings.local.json` is gitignored (per-operator); tracked template lives at `config/claude/settings.local.json`; `make install-config` deploys it. Allow-list covers ollama/maintenance commands; destructive ops still prompt. Later superseded by the project-level deny-only safety rail (see Claude Code project safety rail).
+- **Claude Code allow-list curated + backed up** — `.claude/settings.local.json` is gitignored (per-operator); the tracked template at `config/claude/settings.local.json` (since removed from the repo in the Aug 2026 cleanup — see Open) was deployed by `make install-config`. Allow-list covers ollama/maintenance commands; destructive ops still prompt. Later superseded by the project-level deny-only safety rail (see Claude Code project safety rail).
 - **ttyd hardening removed** — `ProtectSystem`, `PrivateTmp`, `MemoryDenyWriteExecute`, `PrivateDevices`, `RestrictAddressFamilies`, `LockPersonality`, `RestrictRealtime`, `ProtectControlGroups` all stripped from `ttyd.service` (operator preference: no permission hunts); access control stays at Tailscale + `Caddy @not_tailnet`.
 - **Minecraft server** — Paper + Geyser/Floodgate at `mc.homelab.com` (Java `:25565`, Bedrock `:19132`); tailnet-only tabbed Flask+rcon dashboard at `server.homelab.com/mc` (Status / Console / Players / Settings / Files / World; 2 s polling; per-player stats + actions; file browser + YAML editor; world download/upload/regenerate). World data bind-mounted under `$(REPO)/mc/data`; world backups at `$(REPO)/backups/mc-backup-<date>.tar.gz` (`make bkp-mc`).
 - **Minecraft dashboard TPS fixed** — rcon was calling `/debug` (vanilla JFR profiler, no TPS section), so the regex never matched and the card rendered `—`. Now calls `/tps` and strips `§X` color codes from the response before regex.
@@ -282,7 +282,7 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Docs audited for the fxmq.net migration** — README/GUIDE/AGENTS/ISSUES/MIGRATE now describe the 4-container fxmq.net system (homer/share/mc/vhosts content dropped or moved to history).
 - **`shell.fxmq.net` root serves the ttyd terminal** — `/` proxies to the host ttyd; `/shell` route removed with operator approval; non-tailnet still 403.
 - **PufferPanel container + `mc.fxmq.net` vhost** — `services/pufferpanel/` on `net` at 172.22.0.8 (web 8080, SFTP 5657), admin created, no MC server; public vhost `mc.fxmq.net` (CF-proxied A record + LE cert).
-- **`kuma.fxmq.net` → `status.fxmq.net` and back** — temporary rename reverted at operator request; vhost + docs back on `kuma.fxmq.net` (DNS record + certs pending the CF token fix).
+- **`kuma.fxmq.net` → `status.fxmq.net` and back** — temporary rename reverted at operator request; vhost + docs back on `kuma.fxmq.net` (DNS record + certs restored after the CF token blocker cleared).
 - **`www.fxmq.net` stub vhost** — responds `ok` on `/`; cert pending the CF token fix.
 - **Kuma temporary `tremelix` account** — 1.23.x has no self-registration (removed upstream), so it was admin-created, then deleted at operator request.
 - **`ut-kuma` container + folder renamed `uptimekuma`** — `services/uptimekuma/`, `container_name: uptimekuma`, Makefile recipe `d-recreate-uptimekuma`; data dir stays `kuma/`.
@@ -290,12 +290,13 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **`kuma-import` script + recipe** — imports a jehpok kuma.db, adapts URLs/container names, re-seeds the current monitor set.
 - **lazymc + mc-idle-sleeper removed** — sleep/wake stack deleted (units, configs, binaries, Makefile recipes, docs); server binds directly on 25565, manual start/stop via PufferPanel.
 - **AI chat on `shell.fxmq.net`** — root serves plain `ok`; Open WebUI (DeepSeek, same key as goose) at `/owui` (prefix stripped; root `/api` `/static` `/ws` `/auth` proxied — pinned build has no subpath support); ttyd at `/ttyd` (`-b /ttyd`); host access from chat via SSH tool (dedicated key, `restrict,no-pty`, UFW allows 172.22.0.0/16 → 22).
+- **CF token blocker cleared** — the `9109 Invalid access token` failure (Aug 28) no longer blocks DNS/certs: `kuma.fxmq.net` A record recreated, `www.fxmq.net` + `kuma.fxmq.net` serve Let's Encrypt certs.
 
 ---
 
-## Lessons learned (cert debug trail)
+## Lessons learned
 
-These are facts that were non-obvious during the `mc.homelab.com` cert fix and only surfaced by grepping the repo. They're documented here so a future agent doesn't have to re-discover them. See `docs/GUIDE.md` § Operational gotchas for the operational checklist.
+Facts that were non-obvious and only surfaced by grepping the repo or hitting an error — kept so a future agent doesn't have to re-discover them. See `docs/GUIDE.md` § Operational gotchas for the operational checklist.
 
 - **A vhost with no `tls` directive does not "use ACME by default" — it picks up any loaded cert that matches the SNI.** The `mc.homelab.com` vhost had no `tls` directive, intended to fall through to ACME, but Caddy served the wildcard `*.homelab.com` CF Origin cert as a SNI fallback. The automation policy never had a reason to fire because the wildcard cert was always available. Symptom: `mc.homelab.com` returned 200 OK from the first hit, but the cert issuer was `CloudFlare Origin CA`, not `Let's Encrypt`. To confirm ACME is actually firing, check the issuer on a fresh TLS handshake (`echo | openssl s_client -connect mc.homelab.com:443 -servername mc.homelab.com | openssl x509 -noout -issuer`) — not the HTTP response code.
 - **Caddy stock `caddy:2.x` images do not include the `caddy-dns/cloudflare` plugin.** Symptom: `module not registered: dns.providers.cloudflare` on container startup. Fix: build a custom image with `xcaddy build --with github.com/caddy-dns/cloudflare@<commit>` (see `services/fxmq.net/Dockerfile`). The `caddy` Docker Hub image only includes the core modules plus the conventional ACME issuer.
@@ -340,3 +341,4 @@ These are facts that were non-obvious during the `mc.homelab.com` cert fix and o
 - **DeepSeek API (this key) has no image-generation endpoint** — `/v1/images/generations` and `/images/generations` both return 404; only `deepseek-v4-flash-vision-exp` accepts images (chat-completions `image_url` works). Open WebUI image-gen needs a separate engine (see Open).
 - **Open WebUI admin provisioning is env-only in this version** — `WEBUI_ADMIN_EMAIL`/`WEBUI_ADMIN_NAME`/`WEBUI_ADMIN_PASSWORD` in the container env auto-create the admin at boot (backend `main.py:371`). There is no `ENABLE_SIGNUP` env var — signup is an admin-settings toggle (`/api/v1/auths/config`); the only boot-time switch is `ENABLE_INITIAL_ADMIN_SIGNUP` (first signup becomes admin, default False). Verify env names against `/app/backend/open_webui/env.py` in the pinned image before relying on them.
 - **Open WebUI tools are registered via the admin API, not files** — tools live in the sqlite `tool` table; the supported path is `POST /api/v1/tools/create` with the Python source (frontmatter + `class Tools`) after logging in as admin, not dropping a file into the container.
+- **`8c64483 Cleanup` (Aug 2026) removed repo files that tooling and docs still referenced** — `config/maintenance/{daily.sh,daily.service,daily.timer}`, `config/claude/settings.local.json`, `config/minecraft/whitelistmsg/` (WhitelistMsg plugin source), and `content/` (renamed → `archives/`). `make install-config` still `cp`s the maintenance + claude paths, so a fresh-clone bootstrap breaks there (see Open); GUIDE/ISSUES references corrected to point at the host reality (`/usr/local/bin/homelab-daily.sh`, jar in the server plugins dir). Takeaway: a missing repo artifact is deliberate until the operator says otherwise — never restore it (no `git checkout` of deleted paths, no copying from host/history); fix the docs and log the gap.
