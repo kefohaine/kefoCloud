@@ -1,10 +1,16 @@
-# kuma.fxmq.net — decommissioned stub: every path responds plain "ok".
-# (Uptime Kuma retired from the edge 2026-08-28.)
-# TLS: Let's Encrypt DNS-01 via Cloudflare.
+# kuma.fxmq.net — Uptime Kuma status monitor.
+# TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/cloud.fxmq.net.caddy).
 
 https://kuma.fxmq.net {
     tls {
         dns cloudflare {env.CF_API_TOKEN}
     }
-    respond "ok" 200
+    import compress
+    request_body {
+        max_size 100m
+    }
+    header {
+        import security_headers
+    }
+    reverse_proxy 172.22.0.6:3001
 }

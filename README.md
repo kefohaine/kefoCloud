@@ -1,13 +1,13 @@
 # fxmq.net
 
-Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Since 2026-08-28 the HTTP layer serves plain `ok` stubs: every vhost responds `ok` on every path except `shell.fxmq.net`, which serves the host ttyd terminal at `/ttyd` (Tailscale-only). The application containers (Nextcloud, Vaultwarden, Uptime Kuma, PufferPanel, Docker Mailserver + Roundcube) still run on the `net` bridge but are no longer routed through their hostnames; their compose files remain in `services/`. Open WebUI was removed entirely (container, image, data, routes). Six hostnames are public through Cloudflare (cloud, kuma, mc, mail, vault, www); one (`shell.fxmq.net`) is Tailscale-only. The mail records (`MX`, `mail.fxmq.net` A) are DNS-only at Cloudflare — SMTP/IMAP can't be proxied. Goose (the agent CLI) runs on the host as a systemd service (`goose serve`).
+Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Seven containers: Caddy (`fxmq.net`, host-network reverse proxy), Nextcloud, Vaultwarden, Uptime Kuma, PufferPanel, and the mail platform (Docker Mailserver + Roundcube webmail). Six hostnames are public through Cloudflare (cloud, kuma, mc, mail, vault, www); one (`shell.fxmq.net`) is Tailscale-only. The mail records (`MX`, `mail.fxmq.net` A) are DNS-only at Cloudflare — SMTP/IMAP can't be proxied. Goose (the agent CLI) runs on the host as a systemd service (`goose serve`).
 
 ## High-level overview
 
 ```
                    ┌─────────────────────────────────────────────┐
     Public DNS ──► │            Cloudflare (proxy)               │
-                   │       cloud / vault / kuma / www            │
+                   │       cloud / vault / kuma                  │
                    └──────────────┬──────────────────────────────┘
                                   │ HTTPS (LE cert via DNS-01)
                                   ▼
@@ -15,15 +15,19 @@ Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Since 20
                            │    Caddy     │  port 80 → 308 redirect
                            │  (fxmq.net)  │  port 443 (per-vhost LE)
                            └──────┬───────┘  custom image with the
-                                  │          caddy-dns/cloudflare
-                                  │          plugin
-              every path of every public vhost → plain "ok"
-              (mc + mail are DNS-only at CF; their vhosts
-               still terminate TLS and answer "ok")
+                ┌─────────────────┼─────────────────┐     caddy-dns/
+                │                 │                 │     cloudflare
+                ▼                 ▼                 ▼     plugin
+           reverse_proxy    reverse_proxy      php_fastcgi
+           vaultwarden      uptime-kuma        nextcloud:9000
+           (172.22.0.4:80)  (172.22.0.6:3001)  (Nextcloud FPM)
+           (also: pufferpanel 172.22.0.8:8080,
+            roundcube webmail 172.22.0.10:80 —
+            mail platform Postfix/Dovecot at 172.22.0.9, ports 25/465/587/993)
 
     shell.fxmq.net is tailnet-only (not in public DNS) — "/" serves
-    plain "ok", "/ttyd" the host ttyd terminal; non-tailnet sources
-    get 403.
+    a plain "ok" landing and "/ttyd"
+    the host ttyd; non-tailnet sources get 403.
 
                      ┌─────────────────────────────────────────────┐
                      │ Tailscale MagicDNS / split DNS              │
@@ -40,19 +44,19 @@ Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Since 20
                              └──────────────┘
 ```
 
-One VPS, one host. Cloudflare fronts the public hostnames; the Tailscale-only hostname is invisible on the public internet. The stub behaviour is deliberate (see "Why the edge serves plain `ok` stubs"): the domains keep resolving, the per-vhost Let's Encrypt certs keep renewing, and no endpoint returns a broken 502/404. Deliberate non-public behaviours (`shell.fxmq.net` being unreachable off the tailnet, Cloudflare Bot Fight Mode) are documented under `Intended` in `docs/ISSUES.md` so future agents don't "correct" them.
+One VPS, one host. Cloudflare fronts the three public hostnames; the Tailscale-only hostname is invisible on the public internet. Deliberate non-public behaviours (`shell.fxmq.net` being unreachable off the tailnet, Cloudflare Bot Fight Mode blocking `curl`/desktop sync against `cloud.fxmq.net`) are documented under `Intended` in `docs/ISSUES.md` so future agents don't "correct" them.
 
 ## Domains and access model
 
 | Domain            | Where DNS points            | Who can reach it                     | What is served                                  |
 |-------------------|-----------------------------|--------------------------------------|-------------------------------------------------|
-| cloud.fxmq.net    | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Plain `ok` stub (Nextcloud decommissioned from the edge 2026-08-28) |
-| vault.fxmq.net    | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Plain `ok` stub (Vaultwarden decommissioned from the edge 2026-08-28) |
-| kuma.fxmq.net     | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Plain `ok` stub (Uptime Kuma decommissioned from the edge 2026-08-28) |
-| mc.fxmq.net       | Cloudflare DNS-only → VPS IP | Anyone on the internet             | Plain `ok` stub (PufferPanel `/panel` + `/download` browser decommissioned from the edge 2026-08-28; game ports 25565/19132 still published directly on the VPS, DNS-only so the CF proxy doesn't break them) |
-| www.fxmq.net      | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Plain `ok` stub |
-| mail.fxmq.net    | Cloudflare **DNS-only** (grey cloud) → VPS IP | Anyone on the internet             | Plain `ok` stub (webmail decommissioned from the edge 2026-08-28; SMTP/IMAP ports 25/465/587/993 still published by the mail container, DNS-only so SMTP/IMAP work) |
-| shell.fxmq.net    | Not in Cloudflare, not in public DNS | Only devices on the Tailscale network | ttyd host shell at `/ttyd`; plain `ok` everywhere else. Caddy `@not_tailnet` returns 403 for any non-tailnet source IP, including forged Host headers against the public IP |
+| cloud.fxmq.net    | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Nextcloud (file sync, calendar, photos); PHP-FPM behind Caddy |
+| vault.fxmq.net    | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Vaultwarden (Bitwarden-compatible password manager) |
+| kuma.fxmq.net     | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Uptime Kuma monitor dashboard |
+| mc.fxmq.net       | Cloudflare DNS-only → VPS IP | Anyone on the internet             | PufferPanel at `/panel`; Caddy file browser at `/download` over the `download/` drop folder; `/` redirects to `/panel`. DNS-only (grey cloud) so the game ports bypass the CF proxy |
+| www.fxmq.net      | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Stub: responds `ok` on `/` |
+| mail.fxmq.net    | Cloudflare **DNS-only** (grey cloud) → VPS IP | Anyone on the internet             | Roundcube webmail; Docker Mailserver platform (SMTP 25/465/587, IMAP 993). Inbound port 25 is open; PTR record still pending at the VPS provider — see `docs/ISSUES.md` |
+| shell.fxmq.net    | Not in Cloudflare, not in public DNS | Only devices on the Tailscale network | Plain `ok` landing at `/`; ttyd host shell at `/ttyd`. Caddy `@not_tailnet` returns 403 for any non-tailnet source IP, including forged Host headers against the public IP |
 
 The asymmetry on `shell.fxmq.net` is deliberate. By keeping it out of public DNS, the only way anyone can know its IP is by being inside the Tailscale network. Even a DNS leak on the user's device cannot reveal an address that public resolvers don't serve. As defense-in-depth, Caddy also rejects any request to the vhost whose source IP is not on the tailnet (`100.64.0.0/10`), so reaching it via the public IP with a forged Host header returns 403 on every path.
 
@@ -69,7 +73,7 @@ The asymmetry on `shell.fxmq.net` is deliberate. By keeping it out of public DNS
 
 - Hides the VPS IP from clients (a small amount of obfuscation).
 - Provides DDoS protection, bot challenge, rate limiting at the edge.
-- The CF-proxy'd vhosts (`cloud`, `vault`, `kuma`, `www`) terminate TLS at the CF edge and re-encrypt to the origin with the LE cert that Caddy issues via DNS-01.
+- The CF-proxy'd vhosts (`cloud`, `vault`, `kuma`) terminate TLS at the CF edge and re-encrypt to the origin with the LE cert that Caddy issues via DNS-01.
 
 The trade-off: browser traffic is bot-challenged. For terminal `curl` or Nextcloud desktop sync clients that can't solve Cloudflare's Browser Integrity Check, the workaround is a per-hostname WAF rule skip on the affected hostname (`cloud.fxmq.net`) — see `Intended` in `docs/ISSUES.md`.
 
@@ -81,11 +85,13 @@ The trade-off: browser traffic is bot-challenged. For terminal `curl` or Nextclo
 - The `shell.fxmq.net` vhost in Caddy uses a LE cert just like every other vhost — tailnet clients get a clean HTTPS handshake instead of a self-signed cert warning.
 - The VPS also advertises exit-node routes; IPv4+IPv6 forwarding is enabled in `config/sysctl/99-homelab.conf` so tailnet devices can route their internet traffic through it.
 
-### Why the edge serves plain `ok` stubs
+### Why Docker Mailserver for mail
 
-- The application containers were decommissioned from the edge on 2026-08-28 (Open WebUI removed entirely; the rest unreachable via their hostnames). The vhosts still answer `ok` so the domains keep working: DNS stays valid, per-vhost LE certs keep renewing, links and monitors don't break with 502/404, and no dead proxy config points at a container that no longer answers.
-- `shell.fxmq.net` keeps the host terminal at `/ttyd` — the one service that was kept on purpose.
-- The containers themselves were not removed (except Open WebUI): Nextcloud, Vaultwarden, Uptime Kuma, PufferPanel (and the game server it manages) and the mail platform still run on the bridge, ready to be re-routed by restoring a vhost file. Compose files are in `services/`.
+- The mail platform is Docker Mailserver (one Postfix + Dovecot container, active monthly releases, DKIM/DMARC/fail2ban/Rspamd built in) plus the official Roundcube image as webmail. Chosen over Mailu (~8 containers) and Mailcow (~12, 6-8 GB RAM) because it is the lightest trusted option — one container serving SMTP/IMAP.
+- TLS reuses Caddy's per-vhost Let's Encrypt cert for mail.fxmq.net: the mail container mounts caddy_data read-only (SSL_TYPE=manual) and DMS's changedetector reloads postfix + dovecot when the cert renews, so there is one cert path for web + mail.
+- The mail records (MX fxmq.net, mail.fxmq.net A) are DNS-only at Cloudflare — a proxied record would break SMTP/IMAP, which only speaks TCP on 25/465/587/993. SPF, DMARC, and DKIM (mail._domainkey) TXT records are set on the zone; DKIM keys live in the mail config dir.
+- Roundcube talks to the mail container over the bridge with STARTTLS (dovecot/postfix reject plaintext auth), resolving mail.fxmq.net to the bridge IP via extra_hosts so SNI + cert verification match the LE cert.
+- Provider-side blocker that no host config can fix is tracked in docs/ISSUES.md: the IP has no PTR record yet (inbound port 25 is open). Set reverse DNS at the VPS provider for external deliverability.
 
 ### Why dnsmasq on the host and not CoreDNS in a container
 
@@ -99,5 +105,5 @@ The trade-off: browser traffic is bot-challenged. For terminal `curl` or Nextclo
 
 - All inter-container DNS (e.g. Caddy reverse-proxying to `nextcloud:9000`) needs a user-defined bridge network.
 - Docker's embedded DNS at `127.0.0.11` resolves container names on user-defined networks automatically — no Consul, no extra service registry.
-- One network keeps Caddy and the other containers on the same subnet.
-- Marked `external: true` with an explicit `--subnet=172.22.0.0/16` so the same network is reused across compose files and the pinned bridge IPs attach cleanly.
+- One network keeps Caddy and Nextcloud on the same subnet.
+- Marked `external: true` with an explicit `--subnet=172.22.0.0/16` so the same network is reused across compose files and the pinned bridge IPs (`172.22.0.4` vault, `.5` cloud, `.6` kuma) attach cleanly.
