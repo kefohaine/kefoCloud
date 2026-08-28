@@ -1,9 +1,0 @@
-[Unit]
-Description=fxmq.net daily maintenance (make refresh + backup-all + clean-all)
-After=docker.service
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/homelab-daily.sh
-User=op
-Group=op
