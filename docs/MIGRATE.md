@@ -1,6 +1,6 @@
 # Migration (new VPS, new domain) — script-first
 
-The primary path is `scripts/install.sh` — a plug-and-play installer. It prompts for three values (domain, Cloudflare API token, Tailscale auth key), then runs unattended. It creates the `op` user, installs host services (docker, tailscale, dnsmasq, ttyd, daily timer, ssh hardening, ufw, sysctl), clones the repo, renames it for the new domain, and brings up exactly four containers: Caddy (renamed `vhosts` → `$DOMAIN`), `nextcloud`, `vaultwarden`, `uptimekuma`. It also creates the Cloudflare A records (`cloud`/`vault`/`kuma`, proxied), sets the zone SSL mode to full, triggers Let's Encrypt issuance, and seeds Uptime Kuma (admin account included).
+The primary path is `scripts/install.sh` — a plug-and-play installer. It prompts for three values (domain, Cloudflare API token, Tailscale auth key), then runs unattended. It creates the `op` user, installs host services (docker, tailscale, dnsmasq, ttyd, ssh hardening, ufw, sysctl), clones the repo, renames it for the new domain, and brings up exactly four containers: Caddy (renamed `vhosts` → `$DOMAIN`), `nextcloud`, `vaultwarden`, `uptimekuma`. It also creates the Cloudflare A records (`cloud`/`vault`/`kuma`, proxied), sets the zone SSL mode to full, triggers Let's Encrypt issuance, and seeds Uptime Kuma (admin account included).
 
 ## Run it
 
@@ -18,9 +18,9 @@ The installer's `renames()` step transforms a clone that still carries the old n
 
 - `homelab.com` → `$DOMAIN` — every Caddy vhost, dnsmasq, compose env, Kuma seed
 - `server.$DOMAIN` → `shell.$DOMAIN` — the tailnet-only vhost and the dnsmasq `address=` line
-- `debian` → `op` — user, sudoers, sshd `AllowUsers`, ttyd/daily units, Makefile ownership
+- `debian` → `op` — user, sudoers, sshd `AllowUsers`, ttyd unit, Makefile ownership
 - `services/vhosts` → `services/$DOMAIN` — caddy container + image renamed to `$DOMAIN`
-- Container set trimmed to 4 — homer, share-flask, mc, mc-flask removed (their Caddy vhosts, Makefile recipes, daily.sh mc block, and Kuma monitors too)
+- Container set trimmed to 4 — homer, share-flask, mc, mc-flask removed (their Caddy vhosts, Makefile recipes, and Kuma monitors too; the daily.sh mc block died with the maintenance stack, removed Aug 2026)
 
 ## Prerequisites (manual, unavoidable)
 

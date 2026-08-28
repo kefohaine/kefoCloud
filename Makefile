@@ -176,21 +176,12 @@ install-config:
   else \
     echo "Docker daemon config already up to date."; \
   fi
->sudo cp $(REPO)/repo/config/maintenance/daily.sh /usr/local/bin/homelab-daily.sh
->sudo chmod +x /usr/local/bin/homelab-daily.sh
->sudo cp $(REPO)/repo/config/maintenance/daily.service /etc/systemd/system/homelab-daily.service
->sudo cp $(REPO)/repo/config/maintenance/daily.timer /etc/systemd/system/homelab-daily.timer
->sudo touch /var/log/homelab-daily.log
->sudo chown op:op /var/log/homelab-daily.log
 >sudo cp $(REPO)/repo/config/ttyd/ttyd.service /etc/systemd/system/ttyd.service
->mkdir -p $(REPO)/repo/.claude
->cp $(REPO)/repo/config/claude/settings.local.json $(REPO)/repo/.claude/settings.local.json
->chmod 0644 $(REPO)/repo/.claude/settings.local.json
 >sudo ufw allow from 172.22.0.0/16 to any port 7681 proto tcp
 >sudo systemctl daemon-reload
->sudo systemctl enable --now goose homelab-daily.timer ttyd
+>sudo systemctl enable --now goose ttyd
 >sudo systemctl restart sshd dnsmasq
->@echo "Host install-config complete: goose + ttyd + dnsmasq + sshd + daily timer enabled, Claude settings restored."
+>@echo "Host install-config complete: goose + ttyd + dnsmasq + sshd enabled."
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Per-file install (config/<file> → live path)
@@ -202,9 +193,7 @@ install-config:
 
 .PHONY: install-goose install-ttyd install-ssh \
         install-dnsmasq-conf install-dnsmasq-override \
-        install-docker install-sysctl \
-        install-daily-sh install-daily-service install-daily-timer \
-        install-claude
+        install-docker install-sysctl
 
 install-goose:
 >@echo "install-goose: goose.service"
@@ -245,28 +234,6 @@ install-sysctl:
 >@echo "install-sysctl: 99-homelab.conf"
 >@sudo cp $(REPO)/repo/config/sysctl/99-homelab.conf /etc/sysctl.d/99-homelab.conf
 >@sudo sysctl --system >/dev/null
-
-install-daily-sh:
->@echo "install-daily-sh: /usr/local/bin/homelab-daily.sh"
->@sudo cp $(REPO)/repo/config/maintenance/daily.sh /usr/local/bin/homelab-daily.sh
->@sudo chmod +x /usr/local/bin/homelab-daily.sh
-
-install-daily-service:
->@echo "install-daily-service: homelab-daily.service"
->@sudo cp $(REPO)/repo/config/maintenance/daily.service /etc/systemd/system/homelab-daily.service
->@sudo systemctl daemon-reload
-
-install-daily-timer:
->@echo "install-daily-timer: homelab-daily.timer"
->@sudo cp $(REPO)/repo/config/maintenance/daily.timer /etc/systemd/system/homelab-daily.timer
->@sudo systemctl daemon-reload
->@sudo systemctl enable --now homelab-daily.timer
-
-install-claude:
->@echo "install-claude: .claude/settings.local.json"
->@mkdir -p $(REPO)/repo/.claude
->@cp $(REPO)/repo/config/claude/settings.local.json $(REPO)/repo/.claude/settings.local.json
->@chmod 0644 $(REPO)/repo/.claude/settings.local.json
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Bundles (live <-> tarball)
@@ -533,10 +500,6 @@ help:
 >@echo "    make install-dnsmasq-override   /etc/systemd/system/dnsmasq.service.d/override.conf"
 >@echo "    make install-docker             /etc/docker/daemon.json (restart docker to apply)"
 >@echo "    make install-sysctl             /etc/sysctl.d/99-homelab.conf"
->@echo "    make install-daily-sh           /usr/local/bin/homelab-daily.sh"
->@echo "    make install-daily-service      /etc/systemd/system/homelab-daily.service"
->@echo "    make install-daily-timer        /etc/systemd/system/homelab-daily.timer"
->@echo "    make install-claude             \$$REPO/repo/.claude/settings.local.json"
 >@echo ""
 >@echo "  Backups (bkp-*) — all artifacts land in \$$REPO/backups/"
 >@echo "    make bkp-cloud        Nextcloud snapshot (maintenance mode during copy)"

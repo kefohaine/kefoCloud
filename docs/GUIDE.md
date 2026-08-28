@@ -38,7 +38,7 @@ make logs-dnsmasq      # follow the dnsmasq journal
 make logs-ttyd         # follow the ttyd journal
 make status            # show a table of all running containers + host systemd units
 make update            # apt update/upgrade + pull all images + make d-recreate-all
-make install-config    # one-shot host bootstrap: install ttyd, copy config/ to live, enable goose + ttyd + sshd + dnsmasq + daily maintenance timer, open UFW rule, restore Claude settings
+make install-config    # one-shot host bootstrap: install ttyd, copy config/ to live, enable goose + ttyd + sshd + dnsmasq, open UFW rule
 make bundle-secrets    # collect live secrets into $(REPO)/backups/secrets-bundle-<date>.tar.gz (not chained into bkp-all)
 make install-secrets   # extract a secrets bundle to live paths (BUNDLE=<path> to override)
 make bundle-config     # snapshot $(REPO)/repo/config/ into $(REPO)/backups/config-bundle-<date>.tar.gz (offline copy)
@@ -119,10 +119,6 @@ When you need to know "what does X do / where do I edit Y", read the file at the
 - **dnsmasq** — config: `config/dnsmasq/10-tailnet.conf` (live path: `/etc/dnsmasq.d/10-tailnet.conf`). systemd drop-in: `config/dnsmasq/dnsmasq.service.conf` (live path: `/etc/systemd/system/dnsmasq.service.d/override.conf`).
 - **goose** — unit: `config/goose/goose.service` (live path: `/etc/systemd/system/goose.service`).
 
-## Daily maintenance
-
-A systemd timer (`homelab-daily.timer`, enabled) runs the host script `/usr/local/bin/homelab-daily.sh` once per day (no repo reference copy — `config/maintenance/` was removed from the repo in the Aug 2026 cleanup; see `docs/ISSUES.md` Open). The script chains three `make` recipes: `make update` (apt + image pull + `make d-recreate-all`), `make bkp-all` (bkp-cloud + bkp-vault), then `make clean-all` (docker prune + apt autoremove + prune old backups). Run manually with `sudo systemctl start homelab-daily.service`. Logs to `/var/log/homelab-daily.log`.
-
 ## File ownership
 
 The repo is owned by `op:op` (the SSH/login user). Edit directly when signed in as `op`; use `sudo` only if acting as another user. Do not `chown` the repo to a different user.
@@ -138,7 +134,7 @@ git push homelab main
 ## Operational gotchas
 
 - A deliberate `systemctl stop dnsmasq` takes all tailnet-side `*.fxmq.net` resolution down. Restart with `make restart-dnsmasq`.
-- **A panel container restart stops a running game server** — the daemon reconciles at boot: if the game container is running when the panel restarts (e.g. the daily `make update` → `d-recreate-all`), it gracefully stops and removes it; players are kicked (world saved) and the server stays stopped until started manually from the panel. Disruptive but clean.
+- **A panel container restart stops a running game server** — the daemon reconciles at boot: if the game container is running when the panel restarts, it gracefully stops and removes it; players are kicked (world saved) and the server stays stopped until started manually from the panel. Disruptive but clean.
 - **Bedrock clients can't reach a stopped server** — Geyser lives inside the game server, so UDP 19132 only answers while the server is running.
 - New `*.fxmq.net` CF records can appear "down" on tailnet devices: dnsmasq negative-caches the NXDOMAIN if the hostname was queried before the record existed. After creating a CF record, `make restart-dnsmasq` (see Lessons learned in `docs/ISSUES.md`).
 - The Makefile sets `SHELL := /bin/bash` explicitly. Without it, recipes run under `/bin/sh` (dash on Debian) and `set -eu` semantics differ — `dash` aborts on any unset variable reference, while `bash` only aborts on expansion failures. If you see `parameter not set` from a recipe, the Makefile shell setting is the first place to look.
