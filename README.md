@@ -1,6 +1,6 @@
 # fxmq.net
 
-Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Six containers: Caddy (`fxmq.net`, host-network reverse proxy), Nextcloud, Vaultwarden, Uptime Kuma, PufferPanel, and Open WebUI (the AI chat). Five hostnames are public through Cloudflare (cloud, kuma, mc, vault, www); one (`shell.fxmq.net`) is Tailscale-only. Goose (the agent CLI) runs on the host as a systemd service (`goose serve`).
+Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Eight containers: Caddy (`fxmq.net`, host-network reverse proxy), Nextcloud, Vaultwarden, Uptime Kuma, PufferPanel, Open WebUI (the AI chat), and the mail platform (Docker Mailserver + Roundcube webmail). Six hostnames are public through Cloudflare (cloud, kuma, mc, mail, vault, www); one (`shell.fxmq.net`) is Tailscale-only. The mail records (`MX`, `mail.fxmq.net` A) are DNS-only at Cloudflare — SMTP/IMAP can't be proxied. Goose (the agent CLI) runs on the host as a systemd service (`goose serve`).
 
 ## High-level overview
 
@@ -22,7 +22,8 @@ Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Six cont
            vaultwarden      uptime-kuma        nextcloud:9000
            (172.22.0.4:80)  (172.22.0.6:3001)  (Nextcloud FPM)
            (also: pufferpanel 172.22.0.8:8080, open-webui 172.22.0.7:8080,
-            mc-home 172.22.0.11:5000)
+            mc-home 172.22.0.11:5000, roundcube webmail 172.22.0.10:80 —
+            mail platform Postfix/Dovecot at 172.22.0.9, ports 25/465/587/993)
 
     shell.fxmq.net is tailnet-only (not in public DNS) — "/" serves
     a plain "ok" landing, "/owui" the AI chat (Open WebUI), "/ttyd"
@@ -54,6 +55,7 @@ One VPS, one host. Cloudflare fronts the three public hostnames; the Tailscale-o
 | kuma.fxmq.net     | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Uptime Kuma monitor dashboard |
 | mc.fxmq.net       | Cloudflare DNS-only → VPS IP | Anyone on the internet             | Minecraft homepage at `/` (welcome + live status pings for Java `:25565` + Bedrock `:19132/udp`); PufferPanel at `/panel`; file browser at `/download` over the `download/` drop folder. DNS-only (grey cloud) so the game ports bypass the CF proxy |
 | www.fxmq.net      | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Stub: responds `ok` on `/` |
+| mail.fxmq.net    | Cloudflare **DNS-only** (grey cloud) → VPS IP | Anyone on the internet             | Roundcube webmail; Docker Mailserver platform (SMTP 25/465/587, IMAP 993). Inbound port 25 is provider-blocked and the IP has no PTR yet — see `docs/ISSUES.md` |
 | shell.fxmq.net    | Not in Cloudflare, not in public DNS | Only devices on the Tailscale network | Plain `ok` landing at `/`; Open WebUI chat (DeepSeek models, ChatGPT-style) at `/owui`; ttyd host shell at `/ttyd`. Caddy `@not_tailnet` returns 403 for any non-tailnet source IP, including forged Host headers against the public IP |
 
 The asymmetry on `shell.fxmq.net` is deliberate. By keeping it out of public DNS, the only way anyone can know its IP is by being inside the Tailscale network. Even a DNS leak on the user's device cannot reveal an address that public resolvers don't serve. As defense-in-depth, Caddy also rejects any request to the vhost whose source IP is not on the tailnet (`100.64.0.0/10`), so reaching it via the public IP with a forged Host header returns 403 on every path.
@@ -88,6 +90,14 @@ The trade-off: browser traffic is bot-challenged. For terminal `curl` or Nextclo
 - `shell.fxmq.net` serves a plain `ok` landing at the root, with the AI chat (Open WebUI) at `/owui` and the host terminal at `/ttyd` (`ttyd -b /ttyd`). The pinned Open WebUI build has no subpath support — its SPA URLs are baked absolute — so Caddy strips the `/owui` prefix (`handle_path`) and proxies the app's root `/api` `/static` `/ws` `/auth` routes (see `services/fxmq.net/vhosts/shell.fxmq.net.caddy`). Open WebUI is a mature, actively maintained self-hosted ChatGPT-style UI that connects to any OpenAI-compatible API, so DeepSeek works with the same key goose uses, the chat bar's model dropdown is populated from DeepSeek's `/v1/models`, and chat history is persisted in its sqlite. It is the platform's Docker-only requirement satisfied out of the box.
 - "Host access from the chat" is a built-in **Host Shell** tool (Python, runs in the backend): it SSHes to the VPS as `op` (dedicated `restrict,no-pty` key, UFW allows the docker bridge to port 22) and runs shell commands in a working directory that defaults to the repo — the same access ttyd gives, now callable by the model mid-conversation.
 - Image **sending** works through the vision model (`deepseek-v4-flash-vision-exp`); image **generation** needs an engine the DeepSeek API doesn't provide yet — tracked in `docs/ISSUES.md`.
+
+### Why Docker Mailserver for mail
+
+- The mail platform is Docker Mailserver (one Postfix + Dovecot container, active monthly releases, DKIM/DMARC/fail2ban/Rspamd built in) plus the official Roundcube image as webmail. Chosen over Mailu (~8 containers) and Mailcow (~12, 6-8 GB RAM) because it is the lightest trusted option — one container serving SMTP/IMAP.
+- TLS reuses Caddy's per-vhost Let's Encrypt cert for mail.fxmq.net: the mail container mounts caddy_data read-only (SSL_TYPE=manual) and DMS's changedetector reloads postfix + dovecot when the cert renews, so there is one cert path for web + mail.
+- The mail records (MX fxmq.net, mail.fxmq.net A) are DNS-only at Cloudflare — a proxied record would break SMTP/IMAP, which only speaks TCP on 25/465/587/993. SPF, DMARC, and DKIM (mail._domainkey) TXT records are set on the zone; DKIM keys live in the mail config dir.
+- Roundcube talks to the mail container over the bridge with STARTTLS (dovecot/postfix reject plaintext auth), resolving mail.fxmq.net to the bridge IP via extra_hosts so SNI + cert verification match the LE cert.
+- Provider-side blockers that no host config can fix are tracked in docs/ISSUES.md: inbound TCP 25 is filtered by the VPS provider and the IP has no PTR record — external delivery/receipt needs the operator to unblock 25 and set reverse DNS at the provider.
 
 ### Why dnsmasq on the host and not CoreDNS in a container
 

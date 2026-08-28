@@ -42,6 +42,14 @@ The Minecraft stack is **not** part of `install.sh`'s container set — the pane
 2. Operator-only (not in repo, copy from the old host): the game server data dir `puffer/data/servers/2ecfbe8c/` (world, jars, plugin jars, Geyser cache/locales).
 3. Gotchas that must hold on the new host: the panel template writes `server.properties` at install from its `ip`/`port` data fields (the live server currently binds `server-ip=0.0.0.0` / `server-port=25565`); RCON disabled; the game domain's CF A record is DNS-only.
 
+## Self-hosted mail (Docker Mailserver + Roundcube)
+
+Like PufferPanel, the mail platform is **not** part of install.sh's container set — it is added post-install. The repo carries everything reproducible (`services/mail/docker-compose.yml`, `services/fxmq.net/vhosts/mail.fxmq.net.caddy`, the UFW ports in install.sh). To carry it to a new VPS:
+
+1. After the base install: `make d-recreate-mail` (brings up `mail` at 172.22.0.9 + `roundcube` at 172.22.0.10) and `sudo ufw allow 25/tcp` etc. (already in install.sh on fresh installs).
+2. Operator-only (copy from the old host): `/var/www/custom/projects/homelab/mail/` (Maildirs, DMS config + DKIM keys, roundcube sqlite), `services/mail/.env` (mailbox passwords), and the CF DNS records (MX, mail A DNS-only, SPF, DMARC, DKIM TXT).
+3. Re-issue the mail.fxmq.net LE cert via the Caddy vhost; DMS reads it from caddy_data.
+
 ## Manual fallback
 
 If the script can't be used, it automates exactly: host packages + `op` user + sshd hardening + docker daemon.json + `tailscale up` + ufw + repo clone + the renames above + `docker network create net --subnet=172.22.0.0/16` + `make install-config` + `make d-recreate-$DOMAIN|d-recreate-nextcloud|d-recreate-vaultwarden|d-recreate-uptimekuma` + CF DNS records + cert triggers. Optional data restore: `rsync` `cloud/users`, `vault/data`, `kuma/data` from the old host before first start (then `chown -R 33:33 cloud/users` and touch `cloud/users/.ncdata`).

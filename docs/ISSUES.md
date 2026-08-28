@@ -49,6 +49,16 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### Security
 
+#### Mail platform: provider blocks inbound port 25 + no PTR record  **[needs human approval]**
+- **File**: `services/mail/docker-compose.yml` (installed); DNS + UFW configured
+- **Problem**: the mail platform (Docker Mailserver + Roundcube at `mail.fxmq.net`) is installed and self-delivery + webmail work, but the VPS provider (AS203380, DA International) filters inbound TCP 25 (3-node external probe times out) and 82.118.230.117 has no PTR — external mail cannot arrive yet, and outbound mail to Gmail/Outlook will be rejected or spam-foldered until reverse DNS is set.
+- **Fix**: in the VPS provider panel (1) unblock inbound port 25, (2) set PTR `82.118.230.117` → `mail.fxmq.net`. Verify: `echo | openssl s_client -connect 82.118.230.117:25 -starttls smtp`, then send a test to an external inbox.
+
+#### `services/nextcloud/.env` is tracked in git
+- **File**: `services/nextcloud/.env` (in HEAD; found during the mail-platform git hygiene pass)
+- **Problem**: the Nextcloud admin password file is committed to the repo (`git ls-files` shows it). The .gitignore now covers it (future changes stay untracked), but the file remains in git history — if the GitHub repo is or was public, the admin password is exposed.
+- **Fix**: operator decision — `git rm --cached services/nextcloud/.env`, rotate the Nextcloud admin password, and if the repo is public, purge history (or treat the password as compromised).
+
 #### `fail2ban` installed but inactive
 - **File**: host package `fail2ban`
 - **Problem**: `fail2ban` is on the host but `systemctl is-active` returns `inactive`. No ban jail is protecting SSH even though sshd is hardened — defense-in-depth gap.

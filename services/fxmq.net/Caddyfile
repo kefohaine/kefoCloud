@@ -49,4 +49,5 @@ import vhosts/mc.fxmq.net.caddy
 import vhosts/vault.fxmq.net.caddy
 import vhosts/cloud.fxmq.net.caddy
 import vhosts/kuma.fxmq.net.caddy
+import vhosts/mail.fxmq.net.caddy
 import vhosts/www.fxmq.net.caddy
