@@ -1,7 +1,10 @@
-# shell.fxmq.net — tailnet-only ttyd terminal. The root proxies straight
-# to the host ttyd (172.22.0.1:7681). Non-tailnet sources get 403 on every
-# path (Tailscale membership is the access control — see README "Domains
-# and access model"). The /shell path was removed with operator approval.
+# shell.fxmq.net — tailnet-only. The root now serves the AI chat (Open
+# WebUI, ChatGPT-style page; also reachable at /ai which 308s to /ai/).
+# The ttyd host terminal moved to /term (ttyd runs with -b /term). Caddy
+# dials Open WebUI at its pinned bridge IP 172.22.0.7:8080 and ttyd at the
+# host bridge 172.22.0.1:7681. Non-tailnet sources get 403 on every path
+# (Tailscale membership is the access control — see README "Domains and
+# access model").
 
 https://shell.fxmq.net {
     tls {
@@ -12,11 +15,23 @@ https://shell.fxmq.net {
     handle @not_tailnet {
         respond 403
     }
-    handle {
+    # ttyd host terminal. Base path is /term (ttyd -b /term), so the full
+    # path is proxied as-is — do not strip the prefix.
+    handle /term* {
         reverse_proxy 172.22.0.1:7681 {
             transport http {
                 versions 1.1
             }
         }
+    }
+    # /ai is an alias for the chat page (Open WebUI's SPA renders at any
+    # path; /ai/ hits the backend via the catch-all below).
+    handle /ai {
+        redir /ai/ 308
+    }
+    # Everything else — the chat page, /ai/, and all of Open WebUI's
+    # absolute /api /static /ws routes — goes to Open WebUI.
+    handle {
+        reverse_proxy 172.22.0.7:8080
     }
 }
