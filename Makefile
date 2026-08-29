@@ -126,7 +126,7 @@ install-hooks:
 # part (ROUNDCUBEMAIL_USERNAME_DOMAIN=fxmq.net).
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: mail-add-user mail-passwd mail-del-user mail-list-users mail-gen mail-alias-add mail-alias-del mail-alias-list
+.PHONY: mail-add-user mail-passwd mail-del-user mail-list-users mail-gen mail-alias-gen mail-alias-del mail-alias-list
 
 mail-add-user:
 >@[ -n "$(USER)" ] || { echo "Usage: make mail-add-user USER=name@fxmq.net"; exit 1; }
@@ -145,16 +145,18 @@ mail-del-user:
 mail-list-users:
 >@docker exec mailserver setup email list
 
-# Disposable mailbox: random two-word local part + random 16-char password
-# (see scripts/mail-gen.sh). Credentials printed once, stored nowhere.
+# Disposable mailbox: random 7-letter local part + random 16-char password
+# (see scripts/mail-gen.sh). Local part is always generated — no custom
+# names. Credentials printed once, stored nowhere.
 mail-gen:
 >@bash scripts/mail-gen.sh
 
-# Forwarding aliases: mail to ALIAS lands in TO (any address — internal or
-# external). No mailbox is consumed; delete with mail-alias-del.
-mail-alias-add:
->@[ -n "$(ALIAS)" ] && [ -n "$(TO)" ] || { echo "Usage: make mail-alias-add ALIAS=x@fxmq.net TO=target@example.com"; exit 1; }
->@docker exec mailserver setup alias add "$(ALIAS)" "$(TO)"
+# Disposable forwarding alias: random 7-digit local part forwarding to TO
+# (see scripts/mail-alias-gen.sh). No mailbox is consumed; delete with
+# mail-alias-del (needs ALIAS + TO).
+mail-alias-gen:
+>@[ -n "$(TO)" ] || { echo "Usage: make mail-alias-gen TO=target@example.com"; exit 1; }
+>@bash scripts/mail-alias-gen.sh "$(TO)"
 
 mail-alias-del:
 >@[ -n "$(ALIAS)" ] && [ -n "$(TO)" ] || { echo "Usage: make mail-alias-del ALIAS=x@fxmq.net TO=target@example.com"; exit 1; }
@@ -557,6 +559,16 @@ help:
 >@echo "    make bkp-cloud        Nextcloud snapshot (maintenance mode during copy)"
 >@echo "    make bkp-vault        Vaultwarden data tar"
 >@echo "    make bkp-list         list every artifact under \$$REPO/backups/ + count per pattern"
+>@echo ""
+>@echo "  Mail (Docker Mailserver — details in docs/GUIDE.md)"
+>@echo "    make mail-gen                disposable mailbox: random 7-letter address + random 16-char password (printed once)"
+>@echo "    make mail-alias-gen TO=…     disposable forwarding alias: random 7-digit address → TO, no mailbox (ALIAS always generated)"
+>@echo "    make mail-alias-del ALIAS=… TO=…   remove a target from an alias (DMS needs both)"
+>@echo "    make mail-alias-list         list aliases"
+>@echo "    make mail-add-user USER=…    named mailbox (password prompted via read -s)"
+>@echo "    make mail-passwd USER=…      rotate a mailbox password (prompted)"
+>@echo "    make mail-del-user USER=…    delete a mailbox"
+>@echo "    make mail-list-users         list mailboxes"
 >@echo ""
 >@echo "  Bundles"
 >@echo "    make bundle-secrets   collect live secrets into \$$REPO/backups/secrets-bundle-<date>.tar.gz"
