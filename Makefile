@@ -562,7 +562,7 @@ help:
 >@echo ""
 >@echo "  Mail (Docker Mailserver — details in docs/GUIDE.md)"
 >@echo "    make mail-gen                disposable mailbox: random 7-letter address + random 16-char password (printed once)"
->@echo "    make mail-alias-gen TO=…     disposable forwarding alias: random 7-digit address → TO, no mailbox (ALIAS always generated)"
+>@echo "    make mail-alias-gen TO=…     disposable forwarding alias: random 7-digit address → TO (external only — same-domain refused)"
 >@echo "    make mail-alias-del ALIAS=… TO=…   remove a target from an alias (DMS needs both)"
 >@echo "    make mail-alias-list         list aliases"
 >@echo "    make mail-add-user USER=…    named mailbox (password prompted via read -s)"
