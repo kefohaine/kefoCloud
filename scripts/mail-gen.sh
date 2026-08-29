@@ -25,13 +25,11 @@ if [ ! -s "$words_tmp" ]; then
   printf '%s\n' "${FALLBACK_WORDS[@]}" > "$words_tmp"
 fi
 
-# Two distinct words joined by a dash, e.g. quiet-rabbit@fxmq.net.
+# One random English word as the local part (e.g. quiet@fxmq.net). Retry on
+# collisions with existing mailboxes.
 addr=""
 for _ in $(seq 1 10); do
-  w1=$(shuf -n1 "$words_tmp")
-  w2=$(shuf -n1 "$words_tmp")
-  [ "$w1" != "$w2" ] || continue
-  candidate="$w1-$w2"
+  candidate=$(shuf -n1 "$words_tmp")
   if ! docker exec mailserver setup email list 2>/dev/null \
        | grep -qiE "^[* ] *$candidate@$DOMAIN( |\$|\[)"; then
     addr="$candidate@$DOMAIN"
