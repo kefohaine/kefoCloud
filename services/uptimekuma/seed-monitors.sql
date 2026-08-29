@@ -15,16 +15,18 @@ SELECT 1, 'local', 'socket', '/var/run/docker.sock'
 WHERE NOT EXISTS (SELECT 1 FROM docker_host WHERE name = 'local');
 
 -- ── HTTP monitors (public hostnames via Cloudflare → VPS → Caddy) ────────
-
-INSERT INTO monitor (name, type, url, interval, retry_interval, maxretries, active, user_id, description)
-
-INSERT INTO monitor (name, type, url, interval, retry_interval, maxretries, active, user_id, description)
-
-INSERT INTO monitor (name, type, url, interval, retry_interval, maxretries, active, user_id, description)
+-- NOTE: no monitor uses https://mail.fxmq.net — docker's embedded DNS resolves
+-- that name to the mailserver container (hostname: mail.fxmq.net → 172.22.0.9),
+-- which has no :443 (Caddy owns HTTPS on the host). Monitor roundcube on the
+-- bridge instead.
 
 INSERT INTO monitor (name, type, url, interval, retry_interval, maxretries, active, user_id, description)
 SELECT 'http: vault', 'http', 'https://vault.fxmq.net', 60, 60, 0, 1, 1, 'Vaultwarden'
 WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'http: vault');
+
+INSERT INTO monitor (name, type, url, interval, retry_interval, maxretries, active, user_id, description)
+SELECT 'http: mail', 'http', 'http://172.22.0.10:80/', 60, 60, 0, 1, 1, 'Roundcube webmail (bridge)'
+WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'http: mail');
 
 INSERT INTO monitor (name, type, url, interval, retry_interval, maxretries, active, user_id, description)
 SELECT 'http: cloud', 'http', 'https://cloud.fxmq.net', 60, 60, 0, 1, 1, 'Nextcloud'
@@ -49,15 +51,19 @@ FROM docker_host d WHERE d.name = 'local'
   AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: nextcloud');
 
 INSERT INTO monitor (name, type, interval, retry_interval, maxretries, active, user_id, docker_host, docker_container, description)
-FROM docker_host d WHERE d.name = 'local'
-
-INSERT INTO monitor (name, type, interval, retry_interval, maxretries, active, user_id, docker_host, docker_container, description)
 SELECT 'docker: vaultwarden', 'docker', 3600, 60, 0, 1, 1, d.id, 'vaultwarden', 'Vaultwarden'
 FROM docker_host d WHERE d.name = 'local'
   AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: vaultwarden');
 
 INSERT INTO monitor (name, type, interval, retry_interval, maxretries, active, user_id, docker_host, docker_container, description)
+SELECT 'docker: mailserver', 'docker', 3600, 60, 0, 1, 1, d.id, 'mailserver', 'Docker Mailserver'
 FROM docker_host d WHERE d.name = 'local'
+  AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: mailserver');
+
+INSERT INTO monitor (name, type, interval, retry_interval, maxretries, active, user_id, docker_host, docker_container, description)
+SELECT 'docker: roundcube', 'docker', 3600, 60, 0, 1, 1, d.id, 'roundcube', 'Roundcube webmail'
+FROM docker_host d WHERE d.name = 'local'
+  AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: roundcube');
 
 -- docker: kuma omitted — Kuma's own container; self-check is noise (the
 -- dashboard is the result you care about).
