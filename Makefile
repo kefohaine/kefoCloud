@@ -8,7 +8,7 @@ SHELL := /bin/bash
 
 REPO     := /var/www/custom/projects/homelab
 COMPOSE  := docker compose -f
-CONTAINERS := fxmq.net uptimekuma nextcloud vaultwarden pufferpanel mailserver
+CONTAINERS := fxmq.net uptimekuma nextcloud vaultwarden pufferpanel mailserver roundcube
 HOST     := ttyd dnsmasq goose
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -516,10 +516,12 @@ help:
 >@echo ""
 >@echo "  fxmq.net — make recipes"
 >@echo ""
->@echo "  Docker containers  (one of: $(CONTAINERS))"
->@echo "    make d-recreate-<ctn>  force-recreate container (fxmq.net rebuilds locally)"
->@echo "    make d-restart-<ctn>   reload container without recreating"
->@echo "    make d-logs-<ctn>      follow container logs"
+>@echo "  Docker containers"
+>@echo "    make docker-recreate-<ctn>  force-recreate container "
+>@echo "    make docker-restart-<ctn>   restart container"
+>@echo "    make docker-stop-<ctn>      stop container"
+>@echo "    make docker-log-<ctn>       follow container logs"
+>@echo "    make docker-list            list all active containers"
 >@echo ""
 >@echo "  Bulk"
 >@echo "    make d-recreate-all   recreate all containers in order"
@@ -545,15 +547,6 @@ help:
 >@echo "    make update           apt update/upgrade + pull images + d-recreate-all"
 >@echo "    make install-config   copy all of config/ to live"
 >@echo "    make migrate          cat docs/MIGRATE.md (full VPS-to-VPS runbook)"
->@echo ""
->@echo "  Per-file install (one file from config/ → live)"
->@echo "    make install-goose             /etc/systemd/system/goose.service"
->@echo "    make install-ttyd               /etc/systemd/system/ttyd.service"
->@echo "    make install-ssh                /etc/ssh/sshd_config.d/50-cloud-init.conf"
->@echo "    make install-dnsmasq-conf       /etc/dnsmasq.d/10-tailnet.conf"
->@echo "    make install-dnsmasq-override   /etc/systemd/system/dnsmasq.service.d/override.conf"
->@echo "    make install-docker             /etc/docker/daemon.json (restart docker to apply)"
->@echo "    make install-sysctl             /etc/sysctl.d/99-homelab.conf"
 >@echo ""
 >@echo "  Backups (bkp-*) — all artifacts land in \$$REPO/backups/"
 >@echo "    make bkp-cloud        Nextcloud snapshot (maintenance mode during copy)"
