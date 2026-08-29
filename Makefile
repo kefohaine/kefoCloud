@@ -119,6 +119,32 @@ install-hooks:
 >@chmod +x .git/hooks/pre-commit .git/hooks/pre-push
 >@echo "Installed git hooks: pre-commit (Caddy validate + app-vhost stub guard), pre-push (live vhost smoke)."
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Mail accounts (Docker Mailserver CLI). USER=<addr> required; add/passwd
+# prompt via `read -s` so the password never lands in shell history or the
+# process list. Friends log in at https://mail.fxmq.net with just the local
+# part (ROUNDCUBEMAIL_USERNAME_DOMAIN=fxmq.net).
+# ─────────────────────────────────────────────────────────────────────────────
+
+.PHONY: mail-add-user mail-passwd mail-del-user mail-list-users
+
+mail-add-user:
+>@[ -n "$(USER)" ] || { echo "Usage: make mail-add-user USER=name@fxmq.net"; exit 1; }
+>@read -s -p "Password for $(USER): " pass; echo; \
+  docker exec mailserver setup email add "$(USER)" "$$pass"
+
+mail-passwd:
+>@[ -n "$(USER)" ] || { echo "Usage: make mail-passwd USER=name@fxmq.net"; exit 1; }
+>@read -s -p "New password for $(USER): " pass; echo; \
+  docker exec mailserver setup email update "$(USER)" "$$pass"
+
+mail-del-user:
+>@[ -n "$(USER)" ] || { echo "Usage: make mail-del-user USER=name@fxmq.net"; exit 1; }
+>@docker exec mailserver setup email del "$(USER)"
+
+mail-list-users:
+>@docker exec mailserver setup email list
+
 clean-apt:
 >@sudo apt-get -qq autoremove -y
 
