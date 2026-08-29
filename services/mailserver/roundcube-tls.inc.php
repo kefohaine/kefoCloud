@@ -9,3 +9,9 @@
 // the compose file, so SNI + cert verification match.
 $config['imap_host'] = 'tls://mail.fxmq.net:143';
 $config['smtp_host'] = 'tls://mail.fxmq.net:587';
+
+// Anti-spoofing: users may NOT add or edit identities with a different email
+// address (level 3 = single identity, address locked to the login mailbox).
+// Roundcube's default (0) lets any user add an identity like admin@fxmq.net
+// and send From: it. Level 3 still allows editing name/signature.
+$config['identities_level'] = 3;

@@ -30,6 +30,11 @@ services:
       SSL_CERT_PATH: /caddy/caddy/certificates/acme-v02.api.letsencrypt.org-directory/mail.fxmq.net/mail.fxmq.net.crt
       SSL_KEY_PATH: /caddy/caddy/certificates/acme-v02.api.letsencrypt.org-directory/mail.fxmq.net/mail.fxmq.net.key
       POSTMASTER_ADDRESS: postmaster@fxmq.net
+      # Anti-spoofing: each authenticated user may only send as their own
+      # address (or aliases mapped to them) — reject_authenticated_sender_
+      # login_mismatch on submission. Without it, any account can put any
+      # address in MAIL FROM (roundcube identity spoofing vector).
+      SPOOF_PROTECTION: 1
       ENABLE_RSPAMD: 1
       ENABLE_FAIL2BAN: 1
       ENABLE_OPENDKIM: 1
