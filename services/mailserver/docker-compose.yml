@@ -29,7 +29,7 @@ services:
       SSL_TYPE: manual
       SSL_CERT_PATH: /caddy/caddy/certificates/acme-v02.api.letsencrypt.org-directory/mail.fxmq.net/mail.fxmq.net.crt
       SSL_KEY_PATH: /caddy/caddy/certificates/acme-v02.api.letsencrypt.org-directory/mail.fxmq.net/mail.fxmq.net.key
-      POSTMASTER_ADDRESS: postmaster@fxmq.net
+      POSTMASTER_ADDRESS: admin@fxmq.net
       ENABLE_RSPAMD: 1
       ENABLE_FAIL2BAN: 1
       ENABLE_OPENDKIM: 1
