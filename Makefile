@@ -126,7 +126,7 @@ install-hooks:
 # part (ROUNDCUBEMAIL_USERNAME_DOMAIN=fxmq.net).
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: mail-add-user mail-passwd mail-del-user mail-list-users
+.PHONY: mail-add-user mail-passwd mail-del-user mail-list-users mail-gen mail-alias-add mail-alias-del mail-alias-list
 
 mail-add-user:
 >@[ -n "$(USER)" ] || { echo "Usage: make mail-add-user USER=name@fxmq.net"; exit 1; }
@@ -144,6 +144,24 @@ mail-del-user:
 
 mail-list-users:
 >@docker exec mailserver setup email list
+
+# Disposable mailbox: random two-word local part + random 16-char password
+# (see scripts/mail-gen.sh). Credentials printed once, stored nowhere.
+mail-gen:
+>@bash scripts/mail-gen.sh
+
+# Forwarding aliases: mail to ALIAS lands in TO (any address — internal or
+# external). No mailbox is consumed; delete with mail-alias-del.
+mail-alias-add:
+>@[ -n "$(ALIAS)" ] && [ -n "$(TO)" ] || { echo "Usage: make mail-alias-add ALIAS=x@fxmq.net TO=target@example.com"; exit 1; }
+>@docker exec mailserver setup alias add "$(ALIAS)" "$(TO)"
+
+mail-alias-del:
+>@[ -n "$(ALIAS)" ] && [ -n "$(TO)" ] || { echo "Usage: make mail-alias-del ALIAS=x@fxmq.net TO=target@example.com"; exit 1; }
+>@docker exec mailserver setup alias del "$(ALIAS)" "$(TO)"
+
+mail-alias-list:
+>@docker exec mailserver setup alias list
 
 clean-apt:
 >@sudo apt-get -qq autoremove -y
