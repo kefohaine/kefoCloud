@@ -24,21 +24,44 @@ Manual — no CI/CD, pushes to `main` trigger nothing. Use the `Makefile` recipe
 
 ```bash
 make                   # default: print help with categories
-make d-recreate-all    # start/recreate all containers in order (fxmq.net, nextcloud, vaultwarden, uptimekuma)
-make d-restart-all     # restart every container + dnsmasq + ttyd
-make d-logs-all        # tail all container logs in one stream, each line prefixed with [container]
-make bkp-all           # chain bkp-cloud + bkp-vault in order
-make clean-all         # chain: clean-docker + clean-apt + clean-backups
-make d-recreate-<ctn>  # force-recreate one container — d-recreate-fxmq.net (rebuilds) | d-recreate-nextcloud | d-recreate-vaultwarden | d-recreate-uptimekuma | d-recreate-pufferpanel | d-recreate-mailserver
-make d-restart-<ctn>   # restart every container in the compose file — after editing a mounted config
-make restart-dnsmasq   # restart the host dnsmasq resolver — after editing config/dnsmasq/10-tailnet.conf
-make restart-ttyd      # restart the host ttyd service — after editing config/ttyd/ttyd.service
-make d-logs-<ctn>      # follow one container's logs
-make logs-dnsmasq      # follow the dnsmasq journal
-make logs-ttyd         # follow the ttyd journal
-make status            # show a table of all running containers + host systemd units
+make migrate           # cat docs/MIGRATE.md — the full VPS-to-VPS migration runbook
+make deploy            # copy config/ to live + extract the latest secrets bundle (install-config + install-secrets)
+make update            # apt update/upgrade + pull all images + make dok-recreate-all
+make backup            # full snapshot: bkp-cloud + bkp-vault + bundle-secrets + bundle-config → $(REPO)/backups/
+make cleanup           # chain: clean-docker + clean-apt + clean-backups
+make status            # overview: git; systemd; docker; tmux; backups; mails
 make smoke             # live edge test: every vhost must serve its real app + SMTP/IMAP banners (scripts/smoke-vhosts.sh)
 make install-hooks     # install git hooks: pre-commit (Caddy validate + app-vhost stub guard) + pre-push (runs make smoke)
+make dok-recreate-<ctn>  # force-recreate one container — dok-recreate-fxmq.net (rebuilds, buildx fallback) | dok-recreate-uptimekuma | dok-recreate-nextcloud | dok-recreate-vaultwarden | dok-recreate-pufferpanel | dok-recreate-mailserver | dok-recreate-roundcube
+make dok-recreate-all  # recreate every container in order
+make dok-restart-<ctn> # restart every container in the compose file — after editing a mounted config
+make dok-restart-all   # restart every container (mailserver compose unit = mailserver + roundcube)
+make dok-stop-<ctn>    # stop the compose unit (mailserver compose unit = mailserver + roundcube)
+make dok-stop-all      # stop every container
+make dok-logs-<ctn>    # follow one container's logs
+make dok-logs-all      # tail all container logs in one stream, each line prefixed with [container]
+make d-recreate-<ctn> / d-restart-<ctn> / d-logs-<ctn>  # pre-dok-* aliases (install.sh still calls these)
+make systemd-restart-<svc>  # restart one host service (ttyd | dnsmasq | goose)
+make systemd-restart-all    # restart all host services
+make systemd-log-<svc>      # follow one host service journal
+make systemd-log-all        # follow all host service journals
+make restart-ttyd / restart-dnsmasq / logs-ttyd / logs-dnsmasq  # aliases for the systemd-* recipes
+make git-pull         # git pull homelab main
+make git-add          # git add -A in $(REPO)/repo
+make git-com MSG="…"  # git commit -m MSG (MSG required)
+make git-push         # git push homelab main
+make git-all MSG="…"  # shortcut: stage + commit + push
+make bkp-cloud        # snapshot Nextcloud data (maintenance mode on during the copy)
+make bkp-vault        # tar the Vaultwarden data dir to $(REPO)/backups/vault-backup-<date>.tar.gz
+make bkp-all          # chain bkp-cloud + bkp-vault (no secrets/config bundles)
+make bkp-list         # list every artifact under $(REPO)/backups/ + count per pattern
+make bundle-secrets   # collect live secrets into $(REPO)/backups/secrets-bundle-<date>.tar.gz
+make install-secrets  # extract a secrets bundle to live paths (BUNDLE=<path> to override)
+make bundle-config    # snapshot $(REPO)/repo/config/ into $(REPO)/backups/config-bundle-<date>.tar.gz
+make install-config-bundle  # extract a config bundle into $(REPO)/repo/config/ (BUNDLE=<path> to override)
+make install-config   # one-shot host bootstrap: install ttyd, copy config/ to live, enable goose + ttyd + sshd + dnsmasq, open UFW rule
+make install-<file>   # per-file install from config/ → live (goose, ttyd, ssh, dnsmasq-conf, dnsmasq-override, docker, sysctl)
+make kuma-import      # import an adapted Uptime Kuma db from another host (KUMA_DB=/path)
 make mail-add-user USER=name@fxmq.net  # create a mailbox — password is prompted via read -s, never on the command line
 make mail-passwd USER=name@fxmq.net    # rotate a mailbox password (also prompted)
 make mail-del-user USER=name@fxmq.net  # delete mailbox + aliases + quota
@@ -47,27 +70,12 @@ make mail-gen                          # disposable mailbox: random 7-letter add
 make mail-alias-gen TO=target@example.com  # disposable forwarding alias: random 7-digit address → TO (external target required — same-domain refused)
 make mail-alias-del ALIAS=x@fxmq.net TO=target@example.com  # remove a target from an alias (DMS needs ALIAS + TO)
 make mail-alias-list                   # list aliases
-make update            # apt update/upgrade + pull all images + make d-recreate-all
-make install-config    # one-shot host bootstrap: install ttyd, copy config/ to live, enable goose + ttyd + sshd + dnsmasq, open UFW rule
-make bundle-secrets    # collect live secrets into $(REPO)/backups/secrets-bundle-<date>.tar.gz (not chained into bkp-all)
-make install-secrets   # extract a secrets bundle to live paths (BUNDLE=<path> to override)
-make bundle-config     # snapshot $(REPO)/repo/config/ into $(REPO)/backups/config-bundle-<date>.tar.gz (offline copy)
-make install-config-bundle  # extract a config bundle into $(REPO)/repo/config/ (BUNDLE=<path> to override)
-make migrate           # cat docs/MIGRATE.md — the full VPS-to-VPS migration runbook
-make kuma-import       # import an adapted Uptime Kuma db from another host (KUMA_DB=/path)
-make git-add           # git add -A in $(REPO)/repo
-make git-com MSG="…"   # git commit -m MSG (MSG required)
-make git-push          # git push homelab main
-make git-all MSG="…"   # shortcut: stage + commit + push
-make bkp-cloud         # snapshot Nextcloud data (maintenance mode on during the copy)
-make bkp-vault         # tar the Vaultwarden data dir to $(REPO)/backups/vault-backup-<date>.tar.gz
-make bkp-list          # list every artifact under $(REPO)/backups/ + count per pattern
 make clean-docker      # prune builder / image / container
 make clean-apt         # apt autoremove + clean
 make clean-backups     # keep latest 3 backups per pattern, delete older
-make tmux-new NAME=<n> # create a detached tmux session <n>
-make tmux-open NAME=<n># attach to session <n> (Ctrl-b d to detach)
-make tmux-kill NAME=<n># kill session <n>
+make tmux-new TAG=<n>  # create a detached tmux session <n>
+make tmux-open TAG=<n> # attach to session <n> (Ctrl-b d to detach)
+make tmux-kill TAG=<n> # kill session <n>
 make tmux-list         # list sessions (prints "No tmux sessions." when none)
 ```
 

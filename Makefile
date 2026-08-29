@@ -12,23 +12,30 @@ CONTAINERS := fxmq.net uptimekuma nextcloud vaultwarden pufferpanel mailserver r
 HOST     := ttyd dnsmasq goose
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Per-container: d-recreate / d-restart / d-logs
-# `d-` prefix marks container (docker) actions so they don't collide
-# visually with host systemd actions (restart-ttyd, restart-dnsmasq,
-# logs-ttyd, logs-dnsmasq below).
-# One set of rules, expanded across $(CONTAINERS).
+# Docker containers: dok-<action>-<ctn>
+# `dok-` prefix marks container (docker) actions so they don't collide
+# visually with host systemd actions (systemd-restart/systemd-log below).
+# One set of rules, expanded across $(CONTAINERS); append -<ctn> for one
+# container, -all for every container. mailserver and roundcube share one
+# compose file (services/mailserver/docker-compose.yml), so a compose-unit
+# action on either affects both.
+# The older d-recreate-*/d-restart-*/d-logs-* names remain as aliases —
+# install.sh and the docs still call them.
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: $(addprefix d-recreate-,$(CONTAINERS)) d-recreate-all
-.PHONY: $(addprefix d-restart-,$(CONTAINERS)) d-restart-all
-.PHONY: $(addprefix d-logs-,$(CONTAINERS)) d-logs-all
+.PHONY: $(addprefix dok-recreate-,$(CONTAINERS)) dok-recreate-all dok-recreate
+.PHONY: $(addprefix dok-restart-,$(CONTAINERS)) dok-restart-all dok-restart
+.PHONY: $(addprefix dok-stop-,$(CONTAINERS)) dok-stop-all dok-stop
+.PHONY: $(addprefix dok-logs-,$(CONTAINERS)) dok-logs-all dok-logs
 
 # fxmq.net (Caddy) rebuilds its image locally; the rest just pull.
 # fxmq.net = custom Dockerfile adds caddy-dns/cloudflare for ACME DNS-01
 #   on every vhost; DNS-01 keeps cert issuance independent of the proxy.
 
-# Set per-container compose file paths: services/<ctn>/docker-compose.yml.
+# Per-container compose file paths: services/<ctn>/docker-compose.yml.
+# roundcube lives in the mailserver compose file (no own compose).
 $(foreach s,$(CONTAINERS),$(eval COMPOSE_FILE_$s := services/$s/docker-compose.yml))
+COMPOSE_FILE_roundcube := services/mailserver/docker-compose.yml
 
 # Helper: $(compose-file-of $1) returns the absolute compose file path for
 # the named service. Recipes use this directly instead of $(COMPOSE_FILE_$1)
@@ -38,9 +45,9 @@ compose-file-of = $(REPO)/repo/$(COMPOSE_FILE_$1)
 # fxmq.net needs a local image build; compose v5.5.0 on Debian trixie ships
 # buildx 0.13.1, which is too old for `compose ... --build` (needs >= 0.17).
 # Try the compose build first and fall back to plain `docker build` + compose
-# up (the install.sh pattern) so `make d-recreate-fxmq.net` works everywhere.
-define recreate_rule
-d-recreate-$1:
+# up (the install.sh pattern) so `make dok-recreate-fxmq.net` works everywhere.
+define dok_recreate_rule
+dok-recreate-$1:
 >@if [ "$1" = "fxmq.net" ]; then \
     if ! $(COMPOSE) $(call compose-file-of,$1) up -d --force-recreate --build; then \
       echo "compose build unavailable (buildx < 0.17 on trixie) — falling back to docker build + compose up"; \
@@ -51,66 +58,128 @@ d-recreate-$1:
     $(COMPOSE) $(call compose-file-of,$1) up -d --force-recreate; \
   fi
 endef
-$(foreach s,$(CONTAINERS),$(eval $(call recreate_rule,$s)))
+$(foreach s,$(CONTAINERS),$(eval $(call dok_recreate_rule,$s)))
 
-define drestart_rule
-d-restart-$1:
+define dok_restart_rule
+dok-restart-$1:
 ># Restart every container declared in this service's compose file.
 >$(COMPOSE) $(call compose-file-of,$1) restart
 endef
-$(foreach s,$(CONTAINERS),$(eval $(call drestart_rule,$s)))
+$(foreach s,$(CONTAINERS),$(eval $(call dok_restart_rule,$s)))
 
-define dlogs_rule
-d-logs-$1:
+define dok_stop_rule
+dok-stop-$1:
+>$(COMPOSE) $(call compose-file-of,$1) stop
+endef
+$(foreach s,$(CONTAINERS),$(eval $(call dok_stop_rule,$s)))
+
+define dok_logs_rule
+dok-logs-$1:
 ># Tail the container named after the service.
 >docker logs $1 --tail 50 -f
 endef
-$(foreach s,$(CONTAINERS),$(eval $(call dlogs_rule,$s)))
+$(foreach s,$(CONTAINERS),$(eval $(call dok_logs_rule,$s)))
 
-d-recreate-all: $(addprefix d-recreate-,$(CONTAINERS))
-d-restart-all: $(addprefix d-restart-,$(CONTAINERS)) restart-dnsmasq restart-ttyd
+dok-recreate-all: $(addprefix dok-recreate-,$(CONTAINERS))
+dok-restart-all: $(addprefix dok-restart-,$(CONTAINERS))
+dok-stop-all: $(addprefix dok-stop-,$(CONTAINERS))
 
-d-logs-all:
+dok-logs-all:
 >@stdbuf -oL bash -c 'for c in $(CONTAINERS); do \
     docker logs $$c --tail 50 -f 2>&1 | stdbuf -oL sed "s/^/[$$c] /" & \
   done; wait'
 
+dok-recreate:
+>@echo "Usage: make dok-recreate-<ctn>  (one of: $(CONTAINERS))"
+>@echo "       make dok-recreate-all"
+dok-restart:
+>@echo "Usage: make dok-restart-<ctn>  (one of: $(CONTAINERS))"
+>@echo "       make dok-restart-all"
+dok-stop:
+>@echo "Usage: make dok-stop-<ctn>  (one of: $(CONTAINERS))"
+>@echo "       make dok-stop-all"
+dok-logs:
+>@echo "Usage: make dok-logs-<ctn>  (one of: $(CONTAINERS))"
+>@echo "       make dok-logs-all"
+
+# Aliases for the pre-dok-* names (install.sh + docs still call these).
+.PHONY: $(addprefix d-recreate-,$(CONTAINERS)) d-recreate-all
+.PHONY: $(addprefix d-restart-,$(CONTAINERS)) d-restart-all
+.PHONY: $(addprefix d-logs-,$(CONTAINERS)) d-logs-all
+
+$(foreach s,$(CONTAINERS),$(eval d-recreate-$s: dok-recreate-$s))
+$(foreach s,$(CONTAINERS),$(eval d-restart-$s: dok-restart-$s))
+$(foreach s,$(CONTAINERS),$(eval d-logs-$s: dok-logs-$s))
+
+d-recreate-all: dok-recreate-all
+d-restart-all: dok-restart-all restart-dnsmasq restart-ttyd
+d-logs-all: dok-logs-all
+
 # ─────────────────────────────────────────────────────────────────────────────
-# Host services (systemd): ttyd, dnsmasq
+# Host services (systemd): systemd-restart / systemd-log
+# Append -<svc> for one service (one of: $(HOST)) or -all for every service.
+# The older restart-<svc>/logs-<svc> names remain as aliases (docs still
+# call them).
 # ─────────────────────────────────────────────────────────────────────────────
 
+.PHONY: $(addprefix systemd-restart-,$(HOST)) systemd-restart-all systemd-restart
+.PHONY: $(addprefix systemd-log-,$(HOST)) systemd-log-all systemd-log
 .PHONY: restart-ttyd restart-dnsmasq logs-ttyd logs-dnsmasq
 
-restart-ttyd:
->sudo systemctl restart ttyd
+define systemd_restart_rule
+systemd-restart-$1:
+>sudo systemctl restart $1
+endef
+$(foreach s,$(HOST),$(eval $(call systemd_restart_rule,$s)))
 
-restart-dnsmasq:
->sudo systemctl restart dnsmasq
+define systemd_log_rule
+systemd-log-$1:
+>sudo journalctl -u $1 -n 50 -f
+endef
+$(foreach s,$(HOST),$(eval $(call systemd_log_rule,$s)))
 
-logs-ttyd:
->sudo journalctl -u ttyd -n 50 -f
+systemd-restart-all: $(addprefix systemd-restart-,$(HOST))
+systemd-log-all: $(addprefix systemd-log-,$(HOST))
 
-logs-dnsmasq:
->sudo journalctl -u dnsmasq -n 50 -f
+systemd-restart:
+>@echo "Usage: make systemd-restart-<svc>  (one of: $(HOST))"
+>@echo "       make systemd-restart-all"
+systemd-log:
+>@echo "Usage: make systemd-log-<svc>  (one of: $(HOST))"
+>@echo "       make systemd-log-all"
+
+# Aliases for the pre-systemd-* names (docs still call these).
+restart-ttyd: systemd-restart-ttyd
+restart-dnsmasq: systemd-restart-dnsmasq
+logs-ttyd: systemd-log-ttyd
+logs-dnsmasq: systemd-log-dnsmasq
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
 .PHONY: status smoke install-hooks clean-docker clean-apt clean-backups clean-all update install-config kuma-import help
+.PHONY: deploy backup cleanup
 
+# One-shot overview per the help line: git; systemd; docker; tmux; backups; mails.
 status:
+>@echo "--- git ---"
+>@cd $(REPO)/repo && git status -sb
+>@echo ""
+>@echo "--- systemd services ---"
+>@for u in $(HOST); do printf "  %-30s %s\n" "$$u" "$$(systemctl is-active $$u)"; done
+>@echo ""
 >@echo "--- containers ---"
 >@docker ps --format 'table {{.Names}}\t{{.Status}}'
 >@echo ""
->@echo "--- host services ---"
->@for u in $(HOST); do printf "  %-30s %s\n" "$$u" "$$(systemctl is-active $$u)"; done
+>@echo "--- tmux sessions ---"
+>@tmux ls 2>/dev/null || echo "  (none)"
 >@echo ""
->@echo "--- disk ---"
->@df -h /
+>@echo "--- backups ---"
+>@if [ -d "$(REPO)/backups" ]; then ls -1t "$(REPO)/backups" | head -10; else echo "  (none yet — run make backup)"; fi
 >@echo ""
->@echo "--- memory ---"
->@free -h
+>@echo "--- mailboxes ---"
+>@docker exec mailserver setup email list 2>/dev/null || echo "  (mailserver not running)"
 
 clean-docker:
 >@docker builder prune -af
@@ -193,6 +262,10 @@ clean-backups:
 
 clean-all: clean-docker clean-apt clean-backups
 
+# Help-line name for the same chain (apt autoremove+clean, docker prune,
+# backups keep-latest-3).
+cleanup: clean-all
+
 # Pull every image that isn't built locally, then bring everything up.
 update:
 >sudo apt-get update
@@ -204,7 +277,7 @@ update:
       $(COMPOSE) "$$f" pull; \
     fi; \
   done
->cd $(REPO)/repo && $(MAKE) d-recreate-all
+>cd $(REPO)/repo && $(MAKE) dok-recreate-all
 
 # Import an adapted Uptime Kuma db from another host (KUMA_DB=/path).
 kuma-import:
@@ -249,6 +322,11 @@ install-config:
 >sudo systemctl enable --now goose ttyd
 >sudo systemctl restart sshd dnsmasq
 >@echo "Host install-config complete: goose + ttyd + dnsmasq + fail2ban + sshd enabled."
+
+# Help-line name for a full restore: config/ → live (install-config) +
+# the latest secrets bundle → live (install-secrets). Fails with a clear
+# message if no secrets-bundle-*.tar.gz exists yet.
+deploy: install-config install-secrets
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Per-file install (config/<file> → live path)
@@ -309,8 +387,9 @@ install-sysctl:
 # whole config/ tree into a tarball — useful as an offline copy when
 # moving to a fresh host that doesn't have the repo cloned yet (the
 # git-tracked copy is the canonical one when the repo is present).
-# Neither chained into bkp-all — both need a deliberate operator
-# decision each time.
+# Neither is chained into bkp-all (both need a deliberate operator
+# decision each time); `make backup` (the help-line full snapshot)
+# chains both.
 # ─────────────────────────────────────────────────────────────────────────────
 
 .PHONY: bundle-secrets install-secrets bundle-config install-config-bundle
@@ -414,6 +493,12 @@ bkp-vault:
 
 bkp-all: bkp-cloud bkp-vault
 
+# Help-line name for the full snapshot: every container database (bkp-cloud,
+# bkp-vault) + live secrets (bundle-secrets) + the config tree
+# (bundle-config) — all land in $(REPO)/backups/. Unlike bkp-all, this
+# deliberately includes the secrets/config bundles (operator's help spec).
+backup: bkp-cloud bkp-vault bundle-secrets bundle-config
+
 # Show every backup artifact currently on disk, newest first. Includes
 # secrets bundles — the names/contents are not enumerated, just listed.
 bkp-list:
@@ -437,46 +522,46 @@ bkp-list:
 # Tmux sessions
 # Persistent terminal sessions on the host — detach (Ctrl-b d) and the
 # shell + whatever's running inside it stays alive; reattach from any
-# terminal with `make tmux-open NAME=<n>` (or `tmux attach -t <n>`).
+# terminal with `make tmux-open TAG=<n>` (or `tmux attach -t <n>`).
 # ─────────────────────────────────────────────────────────────────────────────
 
 .PHONY: tmux-new tmux-open tmux-kill tmux-list
 
 tmux-new:
->@if [ -z "$(NAME)" ]; then \
-    echo "Usage: make tmux-new NAME=<session>   (NAME is required)"; \
+>@if [ -z "$(TAG)" ]; then \
+    echo "Usage: make tmux-new TAG=<session>   (TAG is required)"; \
     exit 1; \
   fi
->@if tmux has-session -t "$(NAME)" 2>/dev/null; then \
-    echo "Session '$(NAME)' already exists. Attach with: make tmux-open NAME=$(NAME)"; \
+>@if tmux has-session -t "$(TAG)" 2>/dev/null; then \
+    echo "Session '$(TAG)' already exists. Attach with: make tmux-open TAG=$(TAG)"; \
     exit 1; \
   fi
->@tmux new -s "$(NAME)" -d
->@echo "Created detached session '$(NAME)'. Attach with: make tmux-open NAME=$(NAME)"
->@echo "  (or: tmux attach -t $(NAME))"
+>@tmux new -s "$(TAG)" -d
+>@echo "Created detached session '$(TAG)'. Attach with: make tmux-open TAG=$(TAG)"
+>@echo "  (or: tmux attach -t $(TAG))"
 
 tmux-open:
->@if [ -z "$(NAME)" ]; then \
-    echo "Usage: make tmux-open NAME=<session>"; \
+>@if [ -z "$(TAG)" ]; then \
+    echo "Usage: make tmux-open TAG=<session>"; \
     exit 1; \
   fi
->@if ! tmux has-session -t "$(NAME)" 2>/dev/null; then \
-    echo "Session '$(NAME)' does not exist. Create it with: make tmux-new NAME=$(NAME)"; \
+>@if ! tmux has-session -t "$(TAG)" 2>/dev/null; then \
+    echo "Session '$(TAG)' does not exist. Create it with: make tmux-new TAG=$(TAG)"; \
     exit 1; \
   fi
->@tmux attach -t "$(NAME)"
+>@tmux attach -t "$(TAG)"
 
 tmux-kill:
->@if [ -z "$(NAME)" ]; then \
-    echo "Usage: make tmux-kill NAME=<session>"; \
+>@if [ -z "$(TAG)" ]; then \
+    echo "Usage: make tmux-kill TAG=<session>"; \
     exit 1; \
   fi
->@if ! tmux has-session -t "$(NAME)" 2>/dev/null; then \
-    echo "Session '$(NAME)' does not exist."; \
+>@if ! tmux has-session -t "$(TAG)" 2>/dev/null; then \
+    echo "Session '$(TAG)' does not exist."; \
     exit 1; \
   fi
->@tmux kill-session -t "$(NAME)"
->@echo "Killed session '$(NAME)'"
+>@tmux kill-session -t "$(TAG)"
+>@echo "Killed session '$(TAG)'"
 
 tmux-list:
 >@tmux ls 2>/dev/null || echo "No tmux sessions."
@@ -494,7 +579,10 @@ migrate:
 # Git
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: git-add git-com git-push git-all
+.PHONY: git-pull git-add git-com git-push git-all
+
+git-pull:
+>cd $(REPO)/repo && git pull homelab main
 
 git-add:
 >cd $(REPO)/repo && git add -A
