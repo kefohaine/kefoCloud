@@ -10,6 +10,14 @@ services:
     hostname: mail.fxmq.net
     restart: unless-stopped
 
+    # SMTP + IMAP must actually listen before the container is "healthy".
+    healthcheck:
+      test: ["CMD-SHELL", "ss -tln | grep -Eq '0.0.0.0:(25|465|587|993)\\b'"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
     # Hard RAM cap (no container swap) — survives recreates, unlike docker update.
     mem_limit: 1g
     memswap_limit: 1g
@@ -60,6 +68,14 @@ services:
     image: roundcube/roundcubemail:latest
     container_name: roundcube
     restart: unless-stopped
+
+    # Web root must answer (apache + php-fpm up) before "healthy".
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
     environment:
       ROUNDCUBEMAIL_DB_TYPE: sqlite
