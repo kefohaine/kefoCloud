@@ -90,7 +90,7 @@ services:
   # signaling: Talk High Performance Backend (strukturag/nextcloud-spreed-
   #   signaling, the official Go server — no NATS needed). Config generated
   #   by `make talk-gen` into /var/www/custom/projects/homelab/talk/.
-  # coturn: TURN/STUN for WebRTC call media; talk.fxmq.net:3478/5349 + relay.
+  # coturn: TURN/STUN for WebRTC call media; turn.fxmq.net:3478/5349 + relay.
 
   redis:
     image: redis:7-alpine
@@ -146,7 +146,7 @@ services:
       # Rendered by `make talk-gen`. Static-auth-secret must match the
       # `occ talk:turn:add --secret` used in Nextcloud.
       - /var/www/custom/projects/homelab/talk/turnserver.conf:/etc/coturn/turnserver.conf:ro
-      # Reuse the talk.fxmq.net LE cert (issued by Caddy via DNS-01) for TURNS
+      # Reuse the turn.fxmq.net LE cert (issued by Caddy via DNS-01) for TURNS
       # on 5349 — same pattern as the mailserver's cert reuse.
       - /var/www/custom/projects/homelab/caddy_data:/caddy:ro
     networks:
