@@ -9,6 +9,7 @@ User=op
 Group=op
 WorkingDirectory=/var/www/custom/projects/homelab/repo
 ExecStart=/usr/local/bin/goose serve
+Environment=GOOSE_SERVER__SECRET_KEY=fb1c7f9e9a1d360a68821018bc56d86239960929665efae85c90a2049ed5d2e1
 Restart=always
 RestartSec=3
 
