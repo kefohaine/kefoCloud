@@ -165,13 +165,13 @@ systemd-log:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: status smoke install-hooks clean-docker clean-apt clean-backups update install-config kuma-import help
+.PHONY: list smoke install-hooks clean-docker clean-apt clean-backups update install-config kuma-import help
 .PHONY: deploy backup cleanup
 
 # One-shot overview per the help line: git; systemd; docker; tmux; backups; mails.
-status:
+list:
 >@echo "--- git ---"
->@cd $(REPO)/repo && git status -sb
+>@cd $(REPO)/repo && git list -sb
 >@echo ""
 >@echo "--- systemd services ---"
 >@for u in $(HOST); do printf "  %-30s %s\n" "$$u" "$$(systemctl is-active $$u)"; done
@@ -674,26 +674,26 @@ help:
 >@echo "  │  make update           │[apt -> update/upgrade; docker -> pull/recreate]"
 >@echo "  │  make backup           │[all container databases & secrets to homelab/backups/; live server config to repo/config/]"
 >@echo "  │  make cleanup          │[apt -> autoremove/clean; docker -> prune builder/images/containers; backups -> keep latest 3 of each]"
->@echo "  └  make status           │list [git; systemd; docker; tmux; backups; mails]"
+>@echo "  └  make list             │aio list [git; systemd; docker; tmux; backups; mails]"
 >@echo ""
->@echo "    Granular actions — per-file / primitive commands behind the Global recipes"
->@echo "    │  make smoke                 │live edge test: every vhost must serve its real app (pre-push hook runs it)"
->@echo "    │  make install-hooks         │install git hooks (pre-commit edge guard + pre-push smoke)"
->@echo "    │  make kuma-import           │import an adapted Uptime Kuma db (KUMA_DB=/path)"
->@echo "    │  make install-config        │one-shot host bootstrap: copy config/ to live paths"
->@echo "    │  make install-<file>        │per-file install from config/ → live (goose, ttyd, ssh, dnsmasq-conf, dnsmasq-override, docker, sysctl)"
->@echo "    │  make bkp-cloud             │Nextcloud snapshot (maintenance mode during copy)"
->@echo "    │  make bkp-vault             │Vaultwarden data tar"
->@echo "    │  make bkp-list              │list backup artifacts + count per pattern"
->@echo "    │  make bundle-secrets        │collect live secrets into backups/secrets-bundle-<date>.tar.gz"
->@echo "    │  make install-secrets       │extract a secrets bundle to live paths (BUNDLE=<path> to override)"
->@echo "    │  make bundle-config         │snapshot config/ into backups/config-bundle-<date>.tar.gz"
->@echo "    │  make install-config-bundle │extract a config bundle into repo/config/ (BUNDLE=<path> to override)"
->@echo "    │  make clean-docker          │prune builder / image / container"
->@echo "    │  make clean-apt             │apt autoremove + clean"
->@echo "    │  make clean-backups         │keep latest 3 per pattern, delete older"
->@echo "    │  make tmux-list             │list tmux sessions"
->@echo "    └  make help                  │print this help (default goal)"
+>@echo "  Granular actions — per-file / primitive commands behind the Global recipes"
+>@echo "  │  make smoke                 │live edge test: every vhost must serve its real app (pre-push hook runs it)"
+>@echo "  │  make install-hooks         │install git hooks (pre-commit edge guard + pre-push smoke)"
+>@echo "  │  make kuma-import           │import an adapted Uptime Kuma db (KUMA_DB=/path)"
+>@echo "  │  make install-config        │one-shot host bootstrap: copy config/ to live paths"
+>@echo "  │  make install-<file>        │per-file install from config/ → live (goose, ttyd, ssh, dnsmasq-conf, dnsmasq-override, docker, sysctl)"
+>@echo "  │  make bkp-cloud             │Nextcloud snapshot (maintenance mode during copy)"
+>@echo "  │  make bkp-vault             │Vaultwarden data tar"
+>@echo "  │  make bkp-list              │list backup artifacts + count per pattern"
+>@echo "  │  make bundle-secrets        │collect live secrets into backups/secrets-bundle-<date>.tar.gz"
+>@echo "  │  make install-secrets       │extract a secrets bundle to live paths (BUNDLE=<path> to override)"
+>@echo "  │  make bundle-config         │snapshot config/ into backups/config-bundle-<date>.tar.gz"
+>@echo "  │  make install-config-bundle │extract a config bundle into repo/config/ (BUNDLE=<path> to override)"
+>@echo "  │  make clean-docker          │prune builder / image / container"
+>@echo "  │  make clean-apt             │apt autoremove + clean"
+>@echo "  │  make clean-backups         │keep latest 3 per pattern, delete older"
+>@echo "  │  make tmux-list             │list tmux sessions"
+>@echo "  └  make help                  │print this help (default goal)"
 >@echo ""
 >@echo "  GitHub Actions"
 >@echo "  │  make git-pull         │pull remote changes     │"
