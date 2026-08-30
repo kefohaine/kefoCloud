@@ -434,16 +434,13 @@ host_services() {
 
 containers_up() {
   log "  building Caddy image ($DOMAIN:local) — ~3 min on a cold cache"
-  if ! make "d-recreate-$DOMAIN" >>"$LOG" 2>&1; then
-    # compose build on trixie requires buildx >= 0.17; fall back to plain docker build
-    log "  compose build failed — falling back to docker build + compose up"
-    docker build -t "$DOMAIN:local" "services/$DOMAIN" >>"$LOG" 2>&1 \
-      && docker compose -f "services/$DOMAIN/docker-compose.yml" up -d --force-recreate >>"$LOG" 2>&1 \
-      || fail caddy
-  fi
-  make d-recreate-nextcloud   >>"$LOG" 2>&1 || fail nextcloud
-  make d-recreate-vaultwarden >>"$LOG" 2>&1 || fail vaultwarden
-  make d-recreate-uptimekuma     >>"$LOG" 2>&1 || fail kuma
+  # The dok-recreate recipe already falls back to docker build + compose up
+  # when compose's buildx is too old (Debian trixie), so no manual fallback
+  # is needed here.
+  make "dok-recreate-$DOMAIN" >>"$LOG" 2>&1 || fail caddy
+  make dok-recreate-nextcloud   >>"$LOG" 2>&1 || fail nextcloud
+  make dok-recreate-vaultwarden >>"$LOG" 2>&1 || fail vaultwarden
+  make dok-recreate-uptimekuma  >>"$LOG" 2>&1 || fail kuma
 }
 
 kuma_seed() {
@@ -595,10 +592,10 @@ hint() {
     tailscale_up)   echo "check the auth key (admin console -> Settings -> Keys) and run: tailscale up --authkey=<key>, then re-check" ;;
     ts_ip)          echo "wait a few seconds, then run: tailscale ip -4, then re-check" ;;
     install_config) echo "run: make install-config in $REPO, then re-check" ;;
-    caddy)          echo "run: make d-recreate-$DOMAIN, then re-check" ;;
-    nextcloud)      echo "run: make d-recreate-nextcloud, then re-check" ;;
-    vaultwarden)    echo "run: make d-recreate-vaultwarden, then re-check" ;;
-    kuma)           echo "run: make d-recreate-uptimekuma, then re-check" ;;
+    caddy)          echo "run: make dok-recreate-$DOMAIN, then re-check" ;;
+    nextcloud)      echo "run: make dok-recreate-nextcloud, then re-check" ;;
+    vaultwarden)    echo "run: make dok-recreate-vaultwarden, then re-check" ;;
+    kuma)           echo "run: make dok-recreate-uptimekuma, then re-check" ;;
     datadirectory)  echo "run: docker exec -w /var/www/html nextcloud php occ config:system:set datadirectory --value /data, then re-check" ;;
     kuma_admin)     echo "create the admin account at https://kuma.$DOMAIN in the UI, then re-check" ;;
     kuma_seed)      echo "run: docker exec -i uptimekuma sqlite3 /app/data/kuma.db < services/uptimekuma/seed-monitors.sql, or create monitors in the UI, then re-check" ;;
