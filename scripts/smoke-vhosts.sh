@@ -34,6 +34,25 @@ check() {
 
 # Public vhosts. App vhosts must answer with real content, never text/plain.
 check cloud "cloud.fxmq.net" "/"        "200 301 302 307 308" html
+# turn.fxmq.net — Talk HPB + TURN. The backend API must answer with the
+# signaling server's Welcome JSON and the client websocket route must reject
+# an unauthenticated handshake (400/426/101). A bare `respond "ok"` stub
+# returns 200 on both and fails here — the 2026-08-28-style guard for Talk.
+check turn-root "turn.fxmq.net" "/" "200"
+turn_welcome=$(curl -s --max-time 12 --resolve "turn.fxmq.net:443:127.0.0.1" "https://turn.fxmq.net/signaling/api/v1/welcome" 2>/dev/null)
+if ! echo "$turn_welcome" | grep -q '"Welcome"'; then
+  echo "FAIL turn-signaling: /signaling/api/v1/welcome is not the signaling server: $(echo "$turn_welcome" | head -c 80)"; fails=1
+else
+  echo "ok   turn-signaling: backend API answered"
+fi
+turn_ws=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 --resolve "turn.fxmq.net:443:127.0.0.1" \
+  -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+  "https://turn.fxmq.net/signaling/spreed" 2>/dev/null)
+if [ "$turn_ws" != "400" ] && [ "$turn_ws" != "426" ] && [ "$turn_ws" != "101" ]; then
+  echo "FAIL turn-signaling: websocket handshake got HTTP $turn_ws (want 400/426/101 — signaling server must answer)"; fails=1
+else
+  echo "ok   turn-signaling: websocket endpoint answered ($turn_ws)"
+fi
 check vault "vault.fxmq.net" "/"        "200 301 302 307 308" html
 check kuma  "kuma.fxmq.net"  "/"        "200 301 302 307 308" html
 check mc-root     "mc.fxmq.net" "/"           "200 301 302 307 308" html
