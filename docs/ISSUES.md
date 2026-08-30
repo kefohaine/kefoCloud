@@ -148,6 +148,7 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **AI/LLM API service** — `services/ai/app.py` on a separate network, Ollama-backed; later removed.
 
 ### Aug 2026 — Nextcloud, TLS, hardening, ops
+- **Orphaned MC server template `ea3b4585` removed** — lazymc-era Fabric install (208M, world+mods) deleted from `puffer/data/servers/` (pre-removal tarball: `backups/mc-orphan-ea3b4585-20260830.tar.gz`); panel restarted; only `2ecfbe8c` remains.
 - **mail container renamed to `mailserver`** — service + container_name, data dir `/var/www/custom/projects/homelab/mail` → `mailserver`, roundcube host refs, Makefile/install.sh/docs; SMTP/IMAP verified after recreate.
 - **LazyMC sleep proxy + Geyser Bedrock** — Java 25565 behind lazymc (wake/proxy), Bedrock 19132 via Geyser, 5-min idle sleep via mc-idle-sleeper timer, item despawn 6000 ticks.
 - **ufw status broken** — `sudo ufw status` works now (only benign "unable to resolve host server" warning); backend mismatch never re-investigated.
