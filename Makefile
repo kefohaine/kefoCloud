@@ -171,7 +171,7 @@ systemd-log:
 # One-shot overview per the help line: git; systemd; docker; tmux; backups; mails.
 list:
 >@echo "--- git ---"
->@cd $(REPO)/repo && git list -sb
+>@cd $(REPO)/repo && git status -sb
 >@echo ""
 >@echo "--- systemd services ---"
 >@for u in $(HOST); do printf "  %-30s %s\n" "$$u" "$$(systemctl is-active $$u)"; done

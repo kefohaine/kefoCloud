@@ -29,7 +29,7 @@ make deploy            # copy config/ to live + extract the latest secrets bundl
 make update            # apt update/upgrade + pull all images + recreate all compose units (self-contained)
 make backup            # full snapshot: container data + live secrets compressed into $(REPO)/backups/; live config pulled into $(REPO)/repo/config/ subdirs (the one uncompressed part)
 make cleanup           # apt autoremove+clean; docker prune; backups keep latest 3 (self-contained)
-make status            # overview: git; systemd; docker; tmux; backups; mails
+make list             # overview: git; systemd; docker; tmux; backups; mails
 make smoke             # live edge test: every vhost must serve its real app + SMTP/IMAP banners (scripts/smoke-vhosts.sh)
 make install-hooks     # install git hooks: pre-commit (Caddy validate + app-vhost stub guard) + pre-push (runs make smoke)
 make dok-recreate-<ctn>  # force-recreate one container — dok-recreate-fxmq.net (rebuilds, buildx fallback) | dok-recreate-uptimekuma | dok-recreate-nextcloud | dok-recreate-vaultwarden | dok-recreate-pufferpanel | dok-recreate-mailserver | dok-recreate-roundcube
