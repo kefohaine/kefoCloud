@@ -20,7 +20,12 @@ https://mc.fxmq.net {
     header {
         import security_headers
     }
-    @register path /panel/register* /auth/register*
+    # /register is blocked (403) at the edge — public account creation closed
+    # by operator request; accounts are admin-created in the panel. Covers the
+    # UI route (/panel/register), the prefix-stripped API route
+    # (/panel/auth/register → /auth/register) and the root passthrough path
+    # (/auth/register) — the 2026-08-30 incident left the API path open.
+    @register path /panel/register* /auth/register* /panel/auth/register*
     handle @register {
         respond 403
     }
