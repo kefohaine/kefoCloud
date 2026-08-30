@@ -1,0 +1,4 @@
+# Nextcloud background jobs via occ cron — every 5 minutes (see docs/GUIDE.md).
+# The fpm image has no cron; without this, background jobs only run on page
+# loads (Ajax mode), which stalls Talk notifications / Mail / previews.
+*/5 * * * * op docker exec -u www-data nextcloud php -f /var/www/html/cron.php >/dev/null 2>&1
