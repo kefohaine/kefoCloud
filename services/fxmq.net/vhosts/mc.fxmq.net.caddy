@@ -69,6 +69,25 @@ https://mc.fxmq.net {
     handle @root {
         redir * /panel 308
     }
+    # In-browser Minecraft (eaglercraft 1.12.2): static client at /play,
+    # WebSocket at /ws (Caddy strips the prefix; EaglerXServer listens on
+    # 8081 of the host — the game server container runs host-net).
+    # /play serves the client files from the homelab/eaglercraft dir
+    # (bind-mounted at /eaglercraft:ro — see docker-compose.yml).
+    handle_path /play {
+        root * /eaglercraft
+        file_server
+    }
+    handle_path /play/* {
+        root * /eaglercraft
+        file_server
+    }
+    # Eaglercraft clients connect to wss://mc.fxmq.net/ws; reverse_proxy
+    # passes the WebSocket upgrade through to the EaglerXServer plugin
+    # (host-net game server on 172.22.0.1:8081).
+    handle_path /ws {
+        reverse_proxy 172.22.0.1:8081
+    }
     # Catch-all: nothing else matched → 404 (without this, unmatched paths
     # fall through to an empty 200 from net/http).
     handle {

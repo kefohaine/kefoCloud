@@ -18,7 +18,7 @@ Manual — no CI/CD, pushes to `main` trigger nothing. Use the `Makefile` recipe
 
 ### First-time setup and migration
 
-`scripts/install.sh` is the plug-and-play path: it prompts for the domain, Cloudflare API token, and Tailscale auth key, then runs unattended — host services, docker, tailscale, the four containers (Caddy, `nextcloud`, `vaultwarden`, `uptimekuma`), Cloudflare DNS records, and certs. `make migrate` prints the manual runbook (`docs/MIGRATE.md`).
+`scripts/install.sh` is the plug-and-play path: it prompts for the domain, Cloudflare API token, and Tailscale auth key, then runs unattended — host services, docker, tailscale, the Nextcloud stack (app + PostgreSQL + Redis + Talk signaling/TURN), Caddy, `vaultwarden`, `uptimekuma`, Cloudflare DNS records (incl. the DNS-only `turn` record), and certs. `make migrate` prints the manual runbook (`docs/MIGRATE.md`).
 
 ### CMD Sheet
 
