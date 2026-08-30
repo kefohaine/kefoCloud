@@ -1,0 +1,26 @@
+# turn.fxmq.net — Nextcloud Talk High Performance Backend (signaling) + TURN.
+#
+# /signaling* reverse-proxies the spreed-signaling websocket (container
+# talk-signaling at 172.22.0.12:8080) — this is the wss:// endpoint Talk
+# clients connect to. Everything else answers a plain ok by design: the
+# vhost exists so clients have a public websocket URL and so Caddy issues
+# the turn.fxmq.net LE cert (DNS-01) that coturn reuses for TURNS on 5349.
+#
+# The turn.fxmq.net A record MUST stay DNS-only (grey cloud) at Cloudflare:
+# TURN speaks UDP/TCP on 3478/5349 + relay 49160-49200, which the CF proxy
+# cannot carry (HTTP(S) only). Same constraint as mail.fxmq.net / mc.fxmq.net.
+
+https://turn.fxmq.net {
+    tls {
+        dns cloudflare {env.CF_API_TOKEN}
+    }
+
+    @signaling path /signaling /signaling/*
+    handle @signaling {
+        reverse_proxy 172.22.0.12:8080
+    }
+
+    handle {
+        respond "ok" 200
+    }
+}
