@@ -15,8 +15,11 @@ https://turn.fxmq.net {
         dns cloudflare {env.CF_API_TOKEN}
     }
 
-    @signaling path /signaling /signaling/*
-    handle @signaling {
+    # The signaling server serves its websocket + API at the root of its own
+    # listener, so the /signaling prefix is stripped before proxying (the
+    # official nginx template does the same with `proxy_pass .../`). Clients
+    # still connect to wss://turn.fxmq.net/signaling.
+    handle_path /signaling* {
         reverse_proxy 172.22.0.12:8080
     }
 
