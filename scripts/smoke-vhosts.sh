@@ -70,6 +70,41 @@ else
   echo "ok   imaps:993 Dovecot banner"
 fi
 
+# ─────────────────────────────────────────────────────────────────────────────
+# PufferPanel lockdown — registration must stay closed and the admin account
+# must exist. The 2026-08-30 incident: backend registration was open (the
+# toggle lives in puffer/data/config.json, not the DB) and the edge 403 only
+# covered the UI path, so POST /panel/auth/register (the API) was reachable.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Edge: the UI + API registration paths must be blocked (403 edge / 404 backend).
+check mc-reg-ui "mc.fxmq.net" "/panel/register" "403"
+reg_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 --resolve "mc.fxmq.net:443:127.0.0.1" \
+  -X POST "https://mc.fxmq.net/panel/auth/register" -H 'Content-Type: application/json' \
+  -d '{"username":"smokeprobe","email":"smokeprobe@example.com","password":"smokeprobe"}' 2>/dev/null)
+if [ "$reg_code" != "404" ] && [ "$reg_code" != "403" ]; then
+  echo "FAIL panel-register-api: POST /panel/auth/register returned $reg_code (want 404/403 — registration must be closed)"; fails=1
+else
+  echo "ok   panel-register-api: $reg_code (registration closed)"
+fi
+
+# Backend: config toggle off + admin account healthy (read-only, no hashes read).
+if ! python3 - 2>&1 <<'PYEOF'
+import json, sqlite3
+cfg = json.load(open("/var/www/custom/projects/homelab/puffer/data/config.json"))
+assert cfg.get("panel", {}).get("registrationenabled") is False, "panel.registrationenabled is not false"
+con = sqlite3.connect("file:/var/www/custom/projects/homelab/puffer/data/pufferpanel.db?mode=ro", uri=True)
+cur = con.cursor()
+assert cur.execute("SELECT id FROM users WHERE id=1 AND email='admin@fxmq.net' AND password IS NOT NULL AND length(password)>=50").fetchone(), "admin user missing or hash empty"
+assert cur.execute("SELECT id FROM permissions WHERE user_id=1 AND scopes LIKE '%admin%'").fetchone(), "admin permission missing"
+con.close()
+PYEOF
+then
+  echo "FAIL panel-lockdown: registration open or admin account broken (see above)"; fails=1
+else
+  echo "ok   panel-lockdown: registration closed + admin account healthy"
+fi
+
 if [ "$fails" = 1 ]; then
   echo "SMOKE FAILED — the edge is not serving the apps. Fix before committing/pushing."
   exit 1
