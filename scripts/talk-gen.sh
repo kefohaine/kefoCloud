@@ -25,8 +25,10 @@ set_env() {
 # Secrets (only appended when absent — a rerun never rotates live values).
 [ -n "${POSTGRES_PASSWORD:-}" ] || set_env POSTGRES_PASSWORD "$(openssl rand -hex 24)"
 set_env SIGNALING_SECRET "$(openssl rand -hex 32)"
-set_env SIGNALING_HASH_KEY "$(openssl rand -hex 64)"
-set_env SIGNALING_BLOCK_KEY "$(openssl rand -hex 32)"
+# The Go signaling server counts string length: hashkey must be 32 or 64
+# chars, blockkey 16/24/32 chars. hex-32 = 64 chars, hex-16 = 32 chars.
+set_env SIGNALING_HASH_KEY "$(openssl rand -hex 32)"
+set_env SIGNALING_BLOCK_KEY "$(openssl rand -hex 16)"
 set_env SIGNALING_INTERNAL_SECRET "$(openssl rand -hex 32)"
 set_env TURN_SECRET "$(openssl rand -hex 32)"
 # Password for the nextcloud@fxmq.net mailbox used as NC's SMTP sender.
