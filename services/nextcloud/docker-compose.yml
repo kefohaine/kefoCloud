@@ -119,6 +119,14 @@ services:
     volumes:
       # Rendered by `make talk-gen` (gitignored runtime dir, sibling of repo/).
       - /var/www/custom/projects/homelab/talk/server.conf:/config/server.conf:ro
+    extra_hosts:
+      # The signaling server validates client sessions by calling back into
+      # Nextcloud ([backend1] urls = https://cloud.fxmq.net). Route that
+      # directly to Caddy on the host bridge (172.22.0.1) instead of the
+      # public DNS → Cloudflare proxy path: one less hop and immune to CF
+      # Bot Fight Mode challenging the server's requests (same pattern as
+      # the roundcube container's extra_hosts). SNI/cert still match.
+      - "cloud.fxmq.net:172.22.0.1"
     healthcheck:
       test: ["CMD-SHELL", "timeout 3 bash -c '</dev/tcp/127.0.0.1/8080' || exit 1"]
       interval: 30s
@@ -133,6 +141,11 @@ services:
     image: coturn/coturn:4.6
     container_name: talk-coturn
     restart: unless-stopped
+    # The image defaults to uid nobody, which cannot read the TURN secret
+    # conf (0600) or the caddy_data LE certs (uid 201). turnserver as root is
+    # the standard deployment (same pattern as the mailserver reading
+    # caddy_data); it still only relays for clients holding a TURN credential.
+    user: "0:0"
     mem_limit: 128m
     memswap_limit: 128m
     ports:

@@ -18,6 +18,11 @@ blockkey = __SIGNALING_BLOCK_KEY__
 [clients]
 internalsecret = __SIGNALING_INTERNAL_SECRET__
 
+[nats]
+# Embedded loopback bus — no external NATS needed for a single signaling
+# instance (the official compose only adds a nats container for HA).
+url = nats://loopback
+
 [backend]
 backends = backend1
 timeout = 10
