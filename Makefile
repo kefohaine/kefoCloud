@@ -19,8 +19,6 @@ HOST     := ttyd dnsmasq goose
 # container, -all for every container. mailserver and roundcube share one
 # compose file (services/mailserver/docker-compose.yml), so a compose-unit
 # action on either affects both.
-# The older d-recreate-*/d-restart-*/d-logs-* names remain as aliases —
-# install.sh and the docs still call them.
 # ─────────────────────────────────────────────────────────────────────────────
 
 .PHONY: $(addprefix dok-recreate-,$(CONTAINERS)) dok-recreate-all dok-recreate
@@ -80,9 +78,35 @@ dok-logs-$1:
 endef
 $(foreach s,$(CONTAINERS),$(eval $(call dok_logs_rule,$s)))
 
-dok-recreate-all: $(addprefix dok-recreate-,$(CONTAINERS))
-dok-restart-all: $(addprefix dok-restart-,$(CONTAINERS))
-dok-stop-all: $(addprefix dok-stop-,$(CONTAINERS))
+# Shared loop: force-recreate every compose unit under services/ (fxmq.net
+# builds locally, with the buildx fallback). Used by dok-recreate-all and
+# update — each keeps a self-contained recipe (no chained make targets).
+define dok_recreate_all_cmds
+>@for f in $(REPO)/repo/services/*/docker-compose.yml; do \
+    if [ "$$f" = "$(REPO)/repo/services/fxmq.net/docker-compose.yml" ]; then \
+      if ! $(COMPOSE) "$$f" up -d --force-recreate --build; then \
+        echo "compose build unavailable (buildx < 0.17 on trixie) — falling back to docker build + compose up"; \
+        docker build -t fxmq.net:local $(REPO)/repo/services/fxmq.net \
+          && $(COMPOSE) "$$f" up -d --force-recreate; \
+      fi; \
+    else \
+      $(COMPOSE) "$$f" up -d --force-recreate; \
+    fi; \
+  done
+endef
+
+dok-recreate-all:
+>$(dok_recreate_all_cmds)
+
+dok-restart-all:
+>@for f in $(REPO)/repo/services/*/docker-compose.yml; do \
+    $(COMPOSE) "$$f" restart; \
+  done
+
+dok-stop-all:
+>@for f in $(REPO)/repo/services/*/docker-compose.yml; do \
+    $(COMPOSE) "$$f" stop; \
+  done
 
 dok-logs-all:
 >@stdbuf -oL bash -c 'for c in $(CONTAINERS); do \
@@ -102,29 +126,13 @@ dok-logs:
 >@echo "Usage: make dok-logs-<ctn>  (one of: $(CONTAINERS))"
 >@echo "       make dok-logs-all"
 
-# Aliases for the pre-dok-* names (install.sh + docs still call these).
-.PHONY: $(addprefix d-recreate-,$(CONTAINERS)) d-recreate-all
-.PHONY: $(addprefix d-restart-,$(CONTAINERS)) d-restart-all
-.PHONY: $(addprefix d-logs-,$(CONTAINERS)) d-logs-all
-
-$(foreach s,$(CONTAINERS),$(eval d-recreate-$s: dok-recreate-$s))
-$(foreach s,$(CONTAINERS),$(eval d-restart-$s: dok-restart-$s))
-$(foreach s,$(CONTAINERS),$(eval d-logs-$s: dok-logs-$s))
-
-d-recreate-all: dok-recreate-all
-d-restart-all: dok-restart-all restart-dnsmasq restart-ttyd
-d-logs-all: dok-logs-all
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Host services (systemd): systemd-restart / systemd-log
 # Append -<svc> for one service (one of: $(HOST)) or -all for every service.
-# The older restart-<svc>/logs-<svc> names remain as aliases (docs still
-# call them).
 # ─────────────────────────────────────────────────────────────────────────────
 
 .PHONY: $(addprefix systemd-restart-,$(HOST)) systemd-restart-all systemd-restart
 .PHONY: $(addprefix systemd-log-,$(HOST)) systemd-log-all systemd-log
-.PHONY: restart-ttyd restart-dnsmasq logs-ttyd logs-dnsmasq
 
 define systemd_restart_rule
 systemd-restart-$1:
@@ -138,8 +146,13 @@ systemd-log-$1:
 endef
 $(foreach s,$(HOST),$(eval $(call systemd_log_rule,$s)))
 
-systemd-restart-all: $(addprefix systemd-restart-,$(HOST))
-systemd-log-all: $(addprefix systemd-log-,$(HOST))
+systemd-restart-all:
+>sudo systemctl restart $(HOST)
+
+systemd-log-all:
+>@stdbuf -oL bash -c 'for u in $(HOST); do \
+    sudo journalctl -u $$u -n 50 -f 2>&1 | stdbuf -oL sed "s/^/[$$u] /" & \
+  done; wait'
 
 systemd-restart:
 >@echo "Usage: make systemd-restart-<svc>  (one of: $(HOST))"
@@ -148,17 +161,11 @@ systemd-log:
 >@echo "Usage: make systemd-log-<svc>  (one of: $(HOST))"
 >@echo "       make systemd-log-all"
 
-# Aliases for the pre-systemd-* names (docs still call these).
-restart-ttyd: systemd-restart-ttyd
-restart-dnsmasq: systemd-restart-dnsmasq
-logs-ttyd: systemd-log-ttyd
-logs-dnsmasq: systemd-log-dnsmasq
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: status smoke install-hooks clean-docker clean-apt clean-backups clean-all update install-config kuma-import help
+.PHONY: status smoke install-hooks clean-docker clean-apt clean-backups update install-config kuma-import help
 .PHONY: deploy backup cleanup
 
 # One-shot overview per the help line: git; systemd; docker; tmux; backups; mails.
@@ -181,10 +188,55 @@ status:
 >@echo "--- mailboxes ---"
 >@docker exec mailserver setup email list 2>/dev/null || echo "  (mailserver not running)"
 
-clean-docker:
+# Shared bodies for the granular clean-* recipes. cleanup is the umbrella
+# recipe and inlines all three bodies — no chained make targets.
+define clean_docker_cmds
 >@docker builder prune -af
 >@docker image prune -af
 >@docker container prune -f
+endef
+
+define clean_apt_cmds
+>@sudo apt-get -qq autoremove -y
+>@sudo apt-get clean
+endef
+
+define clean_backups_cmds
+>@for pattern in cloud-backup-* share-backup-*.db vault-backup-*.tar.gz secrets-bundle-*.tar.gz 'mc-backup-*.tar.gz minecraft-backup-*.tar.gz'; do \
+    sudo ls -1dt $(REPO)/backups/$$pattern 2>/dev/null | tail -n +4 | sudo xargs -r rm -rf; \
+  done
+>@echo "Pruned backups older than the 3 most recent per pattern."
+endef
+
+clean-docker:
+>$(clean_docker_cmds)
+
+clean-apt:
+>$(clean_apt_cmds)
+
+clean-backups:
+>$(clean_backups_cmds)
+
+# Help-line umbrella: apt autoremove+clean; docker prune builder/images/
+# containers; backups keep latest 3 per pattern. Self-contained recipe.
+cleanup:
+>$(clean_docker_cmds)
+>$(clean_apt_cmds)
+>$(clean_backups_cmds)
+
+# Pull every image that isn't built locally, then bring everything up
+# (self-contained: no sub-make, the recreate loop is inline).
+update:
+>sudo apt-get update
+>sudo apt-get upgrade -y
+>@for f in $(REPO)/repo/services/*/docker-compose.yml; do \
+    if grep -qE '^[[:space:]]*build:' "$$f"; then \
+      echo "skip pull (built locally): $$f"; \
+    else \
+      $(COMPOSE) "$$f" pull; \
+    fi; \
+  done
+>$(dok_recreate_all_cmds)
 
 # Live edge smoke test — every vhost must serve its real app (see
 # scripts/smoke-vhosts.sh). Run after any services/fxmq.net/ change or
@@ -246,39 +298,6 @@ mail-alias-del:
 mail-alias-list:
 >@docker exec mailserver setup alias list
 
-clean-apt:
->@sudo apt-get -qq autoremove -y
->@sudo apt-get clean
-
-# Keep the 3 most recent artifacts per backup pattern; delete older.
-# The share/mc patterns match legacy artifacts from the pre-migration
-# services (link shortener, Minecraft) so orphans age out instead of
-# accumulating forever. All backups live under $(REPO)/backups/.
-clean-backups:
->@for pattern in cloud-backup-* share-backup-*.db vault-backup-*.tar.gz secrets-bundle-*.tar.gz 'mc-backup-*.tar.gz minecraft-backup-*.tar.gz'; do \
-    sudo ls -1dt $(REPO)/backups/$$pattern 2>/dev/null | tail -n +4 | sudo xargs -r rm -rf; \
-  done
->@echo "Pruned backups older than the 3 most recent per pattern."
-
-clean-all: clean-docker clean-apt clean-backups
-
-# Help-line name for the same chain (apt autoremove+clean, docker prune,
-# backups keep-latest-3).
-cleanup: clean-all
-
-# Pull every image that isn't built locally, then bring everything up.
-update:
->sudo apt-get update
->sudo apt-get upgrade -y
->@for f in $(REPO)/repo/services/*/docker-compose.yml; do \
-    if grep -qE '^[[:space:]]*build:' "$$f"; then \
-      echo "skip pull (built locally): $$f"; \
-    else \
-      $(COMPOSE) "$$f" pull; \
-    fi; \
-  done
->cd $(REPO)/repo && $(MAKE) dok-recreate-all
-
 # Import an adapted Uptime Kuma db from another host (KUMA_DB=/path).
 kuma-import:
 >sudo scripts/kuma-import.sh $(KUMA_DB)
@@ -289,7 +308,9 @@ kuma-import:
 # pushes them to live.
 # ─────────────────────────────────────────────────────────────────────────────
 
-install-config:
+# Shared body: push config/ → live (install-config). deploy inlines this
+# body plus the secrets extraction so it never chains another make target.
+define install_config_cmds
 >@if ! command -v ttyd >/dev/null 2>&1; then \
     echo "Installing ttyd..."; \
     curl -fsSL -o /tmp/ttyd https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64; \
@@ -322,11 +343,17 @@ install-config:
 >sudo systemctl enable --now goose ttyd
 >sudo systemctl restart sshd dnsmasq
 >@echo "Host install-config complete: goose + ttyd + dnsmasq + fail2ban + sshd enabled."
+endef
 
-# Help-line name for a full restore: config/ → live (install-config) +
-# the latest secrets bundle → live (install-secrets). Fails with a clear
-# message if no secrets-bundle-*.tar.gz exists yet.
-deploy: install-config install-secrets
+install-config:
+>$(install_config_cmds)
+
+# Help-line name for a full restore: config/ → live + the latest secrets
+# bundle → live. Self-contained recipe; fails with a clear message if no
+# secrets-bundle-*.tar.gz exists yet.
+deploy:
+>$(install_config_cmds)
+>$(install_secrets_cmds)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Per-file install (config/<file> → live path)
@@ -387,14 +414,13 @@ install-sysctl:
 # whole config/ tree into a tarball — useful as an offline copy when
 # moving to a fresh host that doesn't have the repo cloned yet (the
 # git-tracked copy is the canonical one when the repo is present).
-# Neither is chained into bkp-all (both need a deliberate operator
-# decision each time); `make backup` (the help-line full snapshot)
-# chains both.
+# The bodies are shared defines: `make backup` and `make deploy` inline
+# them so the umbrella recipes never chain another make target.
 # ─────────────────────────────────────────────────────────────────────────────
 
 .PHONY: bundle-secrets install-secrets bundle-config install-config-bundle
 
-bundle-secrets:
+define bundle_secrets_cmds
 >@dest=$(BKP_DIR)/secrets-bundle-$$(date +%Y%m%d).tar.gz; \
   sudo mkdir -p "$(BKP_DIR)"; \
   sudo tar czf "$$dest" \
@@ -410,10 +436,14 @@ bundle-secrets:
     /etc/systemd/system/dnsmasq.service.d/override.conf \
     /var/lib/tailscale
 >@echo "Secrets bundle at $$dest"
+endef
+
+bundle-secrets:
+>$(bundle_secrets_cmds)
 
 # Extract a secrets bundle tar.gz to the live paths. Defaults to the
 # newest secrets-bundle-*.tar.gz under $(BKP_DIR); override with BUNDLE=<path>.
-install-secrets:
+define install_secrets_cmds
 >@if [ -z "$(BUNDLE)" ]; then \
     BUNDLE="$$(ls -1t $(BKP_DIR)/secrets-bundle-*.tar.gz 2>/dev/null | head -1)"; \
     if [ -z "$$BUNDLE" ]; then \
@@ -426,6 +456,10 @@ install-secrets:
   fi; \
   sudo tar xzf "$$BUNDLE" -C / --warning=no-absolute-names; \
   echo "Installed $$BUNDLE to live paths."
+endef
+
+install-secrets:
+>$(install_secrets_cmds)
 
 # Snapshot the whole config/ tree into a single tarball under backups/.
 # The git-tracked copy is canonical when the repo is present; this
@@ -463,17 +497,20 @@ install-config-bundle:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Backups (rename: backup-* → bkp-*)
-# bkp-all chains the bkp-* recipes in order (no bundle-secrets — secrets
-# need a deliberate decision).
+# bkp-cloud/bkp-vault stay granular; `make backup` (help-line umbrella)
+# inlines them plus the secrets bundle and the live-config pull into
+# repo/config/.
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: bkp-cloud bkp-vault bkp-all bkp-list
+.PHONY: bkp-cloud bkp-vault bkp-list backup
 
 # All bkp-* recipes write under $(REPO)/backups/. bkp-list enumerates that
 # dir so the operator has one place to see what's been snapshotted.
 BKP_DIR := $(REPO)/backups
 
-bkp-cloud:
+# Shared bodies: `make backup` inlines them so it stays one self-contained
+# recipe (no chained make targets).
+define bkp_cloud_cmds
 >@dest=$(BKP_DIR)/cloud-backup-$$(date +%Y%m%d-%H%M%S); \
   sudo mkdir -p "$(BKP_DIR)" "$$dest"; \
   sudo chown op:op "$$dest"; \
@@ -484,20 +521,42 @@ bkp-cloud:
   trap - EXIT; \
   docker exec -w /var/www/html nextcloud php occ maintenance:mode --off; \
   echo "Backup at $$dest"
+endef
 
-bkp-vault:
+define bkp_vault_cmds
 >@dest=$(BKP_DIR)/vault-backup-$$(date +%Y%m%d-%H%M%S).tar.gz; \
   sudo mkdir -p "$(BKP_DIR)"; \
   sudo tar czf "$$dest" -C $(REPO)/vault data; \
   echo "Backup at $$dest"
+endef
 
-bkp-all: bkp-cloud bkp-vault
+bkp-cloud:
+>$(bkp_cloud_cmds)
 
-# Help-line name for the full snapshot: every container database (bkp-cloud,
-# bkp-vault) + live secrets (bundle-secrets) + the config tree
-# (bundle-config) — all land in $(REPO)/backups/. Unlike bkp-all, this
-# deliberately includes the secrets/config bundles (operator's help spec).
-backup: bkp-cloud bkp-vault bundle-secrets bundle-config
+bkp-vault:
+>$(bkp_vault_cmds)
+
+# Help-line name for the full snapshot — one self-contained recipe:
+# every container database + live secrets land compressed in $(REPO)/backups/,
+# and the live server config is pulled into $(REPO)/repo/config/ subdirectories
+# (the one non-compressed exception). The config-pull mirrors the file list
+# install-config pushes, reversed; git add/commit the config/ changes.
+backup:
+>$(bkp_cloud_cmds)
+>$(bkp_vault_cmds)
+>$(bundle_secrets_cmds)
+>@echo "--- pulling live config into repo/config/ ---"
+>@sudo mkdir -p $(REPO)/repo/config
+>@sudo cp /etc/systemd/system/goose.service $(REPO)/repo/config/goose/goose.service
+>@sudo cp /etc/systemd/system/ttyd.service $(REPO)/repo/config/ttyd/ttyd.service
+>@sudo cp /etc/ssh/sshd_config.d/50-cloud-init.conf $(REPO)/repo/config/ssh/50-cloud-init.conf
+>@sudo cp /etc/dnsmasq.d/10-tailnet.conf $(REPO)/repo/config/dnsmasq/10-tailnet.conf
+>@sudo cp /etc/systemd/system/dnsmasq.service.d/override.conf $(REPO)/repo/config/dnsmasq/dnsmasq.service.conf
+>@sudo cp /etc/sysctl.d/99-homelab.conf $(REPO)/repo/config/sysctl/99-homelab.conf
+>@sudo cp /etc/docker/daemon.json $(REPO)/repo/config/docker/daemon.json
+>@sudo cp /etc/fail2ban/jail.d/sshd.conf $(REPO)/repo/config/fail2ban/jail.d/sshd.conf
+>@sudo chown -R op:op $(REPO)/repo/config
+>@echo "Live config pulled into $(REPO)/repo/config/ — git add/commit to sync the repo."
 
 # Show every backup artifact currently on disk, newest first. Includes
 # secrets bundles — the names/contents are not enumerated, just listed.
@@ -579,7 +638,7 @@ migrate:
 # Git
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: git-pull git-add git-com git-push git-all
+.PHONY: git-pull git-add git-com git-push
 
 git-pull:
 >cd $(REPO)/repo && git pull homelab main
@@ -596,15 +655,6 @@ git-com:
 
 git-push:
 >cd $(REPO)/repo && git push homelab main
-
-# Bulk: stage + commit (MSG required) + push in one shot. Same as the
-# old 'make push', kept as a shortcut for the common case.
-git-all: git-add
->@if [ -z "$(MSG)" ]; then \
-    echo "Usage: make git-all MSG=\"...\"  (MSG is required)"; \
-    exit 1; \
-  fi
->cd $(REPO)/repo && git commit -m "$(MSG)" && git push homelab main
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Help (default goal)

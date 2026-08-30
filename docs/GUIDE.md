@@ -25,35 +25,31 @@ Manual — no CI/CD, pushes to `main` trigger nothing. Use the `Makefile` recipe
 ```bash
 make                   # default: print help with categories
 make migrate           # cat docs/MIGRATE.md — the full VPS-to-VPS migration runbook
-make deploy            # copy config/ to live + extract the latest secrets bundle (install-config + install-secrets)
-make update            # apt update/upgrade + pull all images + make dok-recreate-all
-make backup            # full snapshot: bkp-cloud + bkp-vault + bundle-secrets + bundle-config → $(REPO)/backups/
-make cleanup           # chain: clean-docker + clean-apt + clean-backups
+make deploy            # copy config/ to live + extract the latest secrets bundle (self-contained)
+make update            # apt update/upgrade + pull all images + recreate all compose units (self-contained)
+make backup            # full snapshot: container data + live secrets compressed into $(REPO)/backups/; live config pulled into $(REPO)/repo/config/ subdirs (the one uncompressed part)
+make cleanup           # apt autoremove+clean; docker prune; backups keep latest 3 (self-contained)
 make status            # overview: git; systemd; docker; tmux; backups; mails
 make smoke             # live edge test: every vhost must serve its real app + SMTP/IMAP banners (scripts/smoke-vhosts.sh)
 make install-hooks     # install git hooks: pre-commit (Caddy validate + app-vhost stub guard) + pre-push (runs make smoke)
 make dok-recreate-<ctn>  # force-recreate one container — dok-recreate-fxmq.net (rebuilds, buildx fallback) | dok-recreate-uptimekuma | dok-recreate-nextcloud | dok-recreate-vaultwarden | dok-recreate-pufferpanel | dok-recreate-mailserver | dok-recreate-roundcube
-make dok-recreate-all  # recreate every container in order
+make dok-recreate-all  # recreate every compose unit in order (self-contained loop)
 make dok-restart-<ctn> # restart every container in the compose file — after editing a mounted config
-make dok-restart-all   # restart every container (mailserver compose unit = mailserver + roundcube)
-make dok-stop-<ctn>    # stop the compose unit (mailserver compose unit = mailserver + roundcube)
-make dok-stop-all      # stop every container
+make dok-restart-all   # restart every compose unit (mailserver unit = mailserver + roundcube)
+make dok-stop-<ctn>    # stop the compose unit (mailserver unit = mailserver + roundcube)
+make dok-stop-all      # stop every compose unit
 make dok-logs-<ctn>    # follow one container's logs
 make dok-logs-all      # tail all container logs in one stream, each line prefixed with [container]
-make d-recreate-<ctn> / d-restart-<ctn> / d-logs-<ctn>  # pre-dok-* aliases (install.sh still calls these)
 make systemd-restart-<svc>  # restart one host service (ttyd | dnsmasq | goose)
 make systemd-restart-all    # restart all host services
 make systemd-log-<svc>      # follow one host service journal
 make systemd-log-all        # follow all host service journals
-make restart-ttyd / restart-dnsmasq / logs-ttyd / logs-dnsmasq  # aliases for the systemd-* recipes
 make git-pull         # git pull homelab main
 make git-add          # git add -A in $(REPO)/repo
 make git-com MSG="…"  # git commit -m MSG (MSG required)
 make git-push         # git push homelab main
-make git-all MSG="…"  # shortcut: stage + commit + push
 make bkp-cloud        # snapshot Nextcloud data (maintenance mode on during the copy)
 make bkp-vault        # tar the Vaultwarden data dir to $(REPO)/backups/vault-backup-<date>.tar.gz
-make bkp-all          # chain bkp-cloud + bkp-vault (no secrets/config bundles)
 make bkp-list         # list every artifact under $(REPO)/backups/ + count per pattern
 make bundle-secrets   # collect live secrets into $(REPO)/backups/secrets-bundle-<date>.tar.gz
 make install-secrets  # extract a secrets bundle to live paths (BUNDLE=<path> to override)
@@ -81,7 +77,7 @@ make tmux-list         # list sessions (prints "No tmux sessions." when none)
 
 When a recipe covers the task, use the recipe. Raw `git`, `docker compose`, `docker exec`, `systemctl restart`, and `tar` are reserved for cases no recipe covers (one-off diagnostics the operator asked for, log/file inspection, ad-hoc reads).
 
-`make git-com MSG="…"` and `make git-all MSG="…"` take a single-sentence `MSG` only. Two quoting constraints: embedded newlines break the `git commit -m "..."` quoting through `bash -c` and fail with `unexpected EOF` before the commit lands, and embedded double-quote characters break the recipe's own `$(MSG)` substitution (the recipe's `[-z "$(MSG)"]` check sees word-split fragments and errors with `[: too many arguments]`, then `git commit -m` interprets the unquoted remainder as paths). If the message needs a quote mark, wrap the whole `MSG=` in single quotes (`make git-com MSG='…'`) — the shell does not interpolate inside single quotes, so the embedded `"` survives intact. The diff speaks for itself; the message only needs to round-trip through bash.
+`make git-com MSG="…"` takes a single-sentence `MSG` only. Two quoting constraints: embedded newlines break the `git commit -m "..."` quoting through `bash -c` and fail with `unexpected EOF` before the commit lands, and embedded double-quote characters break the recipe's own `$(MSG)` substitution (the recipe's `[-z "$(MSG)"]` check sees word-split fragments and errors with `[: too many arguments]`, then `git commit -m` interprets the unquoted remainder as paths). If the message needs a quote mark, wrap the whole `MSG=` in single quotes (`make git-com MSG='…'`) — the shell does not interpolate inside single quotes, so the embedded `"` survives intact. The diff speaks for itself; the message only needs to round-trip through bash.
 
 ## Protected host resources
 
@@ -108,14 +104,14 @@ The compose files are the source of truth. This table is the one-line reference 
 
 | Service | Compose | Container | Edit mounted config | After compose / image change |
 |---------|---------|-----------|---------------------|------------------------------|
-| caddy   | `services/fxmq.net/docker-compose.yml` | `fxmq.net` | `make d-restart-fxmq.net` | `make d-recreate-fxmq.net` (rebuilds `fxmq.net:local` from `services/fxmq.net/Dockerfile`) |
-| cloud   | `services/nextcloud/docker-compose.yml` | `nextcloud` | `make d-restart-nextcloud` | `make d-recreate-nextcloud` |
-| vault   | `services/vaultwarden/docker-compose.yml` | `vaultwarden` | `make d-restart-vaultwarden` | `make d-recreate-vaultwarden` |
-| kuma    | `services/uptimekuma/docker-compose.yml` | `uptimekuma` | `make d-restart-uptimekuma` | `make d-recreate-uptimekuma` |
-| panel   | `services/pufferpanel/docker-compose.yml` | `pufferpanel` | `make d-restart-pufferpanel` | `make d-recreate-pufferpanel` |
-| mailserver | `services/mailserver/docker-compose.yml` | `mailserver` + `roundcube` | `make d-restart-mailserver` | `make d-recreate-mailserver` |
-| terminal | n/a (host systemd; see Protected host resources) | n/a | `make restart-ttyd` | `make install-config` (reinstall) |
-| dnsmasq | n/a (host systemd) | n/a | `make restart-dnsmasq` | n/a |
+| caddy   | `services/fxmq.net/docker-compose.yml` | `fxmq.net` | `make dok-restart-fxmq.net` | `make dok-recreate-fxmq.net` (rebuilds `fxmq.net:local` from `services/fxmq.net/Dockerfile`) |
+| cloud   | `services/nextcloud/docker-compose.yml` | `nextcloud` | `make dok-restart-nextcloud` | `make dok-recreate-nextcloud` |
+| vault   | `services/vaultwarden/docker-compose.yml` | `vaultwarden` | `make dok-restart-vaultwarden` | `make dok-recreate-vaultwarden` |
+| kuma    | `services/uptimekuma/docker-compose.yml` | `uptimekuma` | `make dok-restart-uptimekuma` | `make dok-recreate-uptimekuma` |
+| panel   | `services/pufferpanel/docker-compose.yml` | `pufferpanel` | `make dok-restart-pufferpanel` | `make dok-recreate-pufferpanel` |
+| mailserver | `services/mailserver/docker-compose.yml` | `mailserver` + `roundcube` | `make dok-restart-mailserver` | `make dok-recreate-mailserver` |
+| terminal | n/a (host systemd; see Protected host resources) | n/a | `make systemd-restart-ttyd` | `make install-config` (reinstall) |
+| dnsmasq | n/a (host systemd) | n/a | `make systemd-restart-dnsmasq` | n/a |
 | goose   | n/a (host systemd; see Protected host resources) | n/a | `systemctl restart goose` | n/a |
 
 The `net` Docker network is `external: true` — create once on a fresh host with `docker network create net --subnet=172.22.0.0/16` (the compose files pin `172.22.0.x` bridge IPs; a default-subnet network rejects them). All inter-container services use `expose`, not `ports`. The exception is `fxmq.net`: it runs with `network_mode: host` so Caddy sees the real client source IP — without host networking, Docker DNAT rewrites every packet to `172.22.0.1` (the bridge gateway) before Caddy sees it, which breaks the `@not_tailnet` remote_ip matcher on `https://shell.fxmq.net`. The host network namespace is on the `net` bridge at `172.22.0.0/16`, so Caddy still dials upstream containers by their bridge IP (see Caddyfile). dnsmasq binds to the Tailscale IP only, not `0.0.0.0`.
@@ -129,7 +125,7 @@ When you need to know "what does X do / where do I edit Y", read the file at the
 - **`vault`** — env, bind mount, admin token: `services/vaultwarden/docker-compose.yml`.
 - **`kuma`** — image, bind mount, healthcheck: `services/uptimekuma/docker-compose.yml`. Monitor definitions live in Kuma's SQLite (`services/uptimekuma/seed-monitors.sql` seeds them; applied by the installer).
 - **`panel`** — PufferPanel game panel: `services/pufferpanel/docker-compose.yml`. Served at `https://mc.fxmq.net/panel` (Caddy vhost `services/fxmq.net/vhosts/mc.fxmq.net.caddy`): `/panel` is prefix-stripped, and because the panel SPA has no subpath support (absolute history-mode routes), its baked root routes (API, auth pages, SPA pages + chunks at `/js` `/assets`, swagger, favicon/manifest) are proxied by the vhost's `@panel_infra` block — the exact path list lives in the vhost file. `/panel/register` + `/auth/register` are blocked 403 at the edge (registration closed by operator request). The vhost overrides PufferPanel's `max-age=60` on static chunks with 1-day cache headers (panel upgrades self-invalidate via hashed chunk names). SFTP on the bridge at `:5657`; mounts the Docker socket rw (required to start). Admin credentials: `/var/www/custom/projects/homelab/puffer/admin-pass.txt` (created at setup).
-- **`mc.fxmq.net`** — PufferPanel at `/panel` (see `panel`); Caddy file browser at `/download` over the `homelab/download` drop folder (bind-mounted into the caddy container at `/download:ro`); `/` redirects to `/panel` (the `mc-home` homepage app was removed 2026-08-28). **`mc.fxmq.net` A record MUST be DNS-only at Cloudflare** (grey cloud): CF's proxy only carries 80/443, so a proxied record breaks the game ports. Caddy's 443 still works DNS-only (DNS-01 cert). After any CF record change, `make restart-dnsmasq`.
+- **`mc.fxmq.net`** — PufferPanel at `/panel` (see `panel`); Caddy file browser at `/download` over the `homelab/download` drop folder (bind-mounted into the caddy container at `/download:ro`); `/` redirects to `/panel` (the `mc-home` homepage app was removed 2026-08-28). **`mc.fxmq.net` A record MUST be DNS-only at Cloudflare** (grey cloud): CF's proxy only carries 80/443, so a proxied record breaks the game ports. Caddy's 443 still works DNS-only (DNS-01 cert). After any CF record change, `make systemd-restart-dnsmasq`.
 
   **Template + portable backup**: the deployable PufferPanel server JSON is at `config/pufferpanel/servers/2ecfbe8c.json` (drop into `puffer/data/servers/<id>.json` to deploy). The server's custom config files — `server.properties`, `bukkit.yml`, `spigot.yml`, `config/paper-global.yml`, `config/paper-world-defaults.yml`, `whitelist.json`, `ops.json`, `server-icon.png`, `plugins/{Chunky,StackMob,Geyser-Spigot}/config.yml` (+ StackMob `entity-translation.yml`) — are the portable part for porting to other modloaders; taildrop them as a tarball to `macoslaptop:` (`sudo tailscale file cp <tar> macoslaptop:`).
 
@@ -156,13 +152,13 @@ git push homelab main
 
 ## Operational gotchas
 
-- A deliberate `systemctl stop dnsmasq` takes all tailnet-side `*.fxmq.net` resolution down. Restart with `make restart-dnsmasq`.
+- A deliberate `systemctl stop dnsmasq` takes all tailnet-side `*.fxmq.net` resolution down. Restart with `make systemd-restart-dnsmasq`.
 - **A panel container restart stops a running game server** — the daemon reconciles at boot: if the game container is running when the panel restarts, it gracefully stops and removes it; players are kicked (world saved) and the server stays stopped until started manually from the panel. Disruptive but clean.
 - **Bedrock clients can't reach a stopped server** — Geyser lives inside the game server, so UDP 19132 only answers while the server is running.
 - **Dovecot/postfix reject plaintext SMTP/IMAP auth** — Roundcube must use STARTTLS (`tls://mail.fxmq.net:143` / `:587`). The env-derived `ROUNDCUBEMAIL_*` settings in the compose file cannot express the TLS prefix; the override lives in `services/mailserver/roundcube-tls.inc.php` (included by the image entrypoint) and the compose `extra_hosts` maps the FQDN to the bridge IP.
 - **Mail DNS records must stay DNS-only at Cloudflare** — MX and the `mail.fxmq.net` A record are grey-clouded; a proxied record breaks SMTP/IMAP (CF only proxies HTTP(S)).
 - **PTR is provider-side** — the IP has no PTR record (inbound 25 is now open), so outbound mail reputation with Gmail/Outlook is blocked until the operator sets reverse DNS at the provider (see `docs/ISSUES.md`).
-- New `*.fxmq.net` CF records can appear "down" on tailnet devices: dnsmasq negative-caches the NXDOMAIN if the hostname was queried before the record existed. After creating a CF record, `make restart-dnsmasq` (see Lessons learned in `docs/ISSUES.md`).
+- New `*.fxmq.net` CF records can appear "down" on tailnet devices: dnsmasq negative-caches the NXDOMAIN if the hostname was queried before the record existed. After creating a CF record, `make systemd-restart-dnsmasq` (see Lessons learned in `docs/ISSUES.md`).
 - The Makefile sets `SHELL := /bin/bash` explicitly. Without it, recipes run under `/bin/sh` (dash on Debian) and `set -eu` semantics differ — `dash` aborts on any unset variable reference, while `bash` only aborts on expansion failures. If you see `parameter not set` from a recipe, the Makefile shell setting is the first place to look.
 - Cloudflare's free tier rate-limits rate-limit rules to a 10s min window. Plan ahead if a public endpoint ends up attracting more traffic than expected.
 - **Every Caddy vhost has its own TLS block** — don't reintroduce a shared wildcard cert. The wildcard CF Origin cert at `$(REPO)/certs/` covered `*.fxmq.net`, so a vhost without its own `tls` directive would pick up the wildcard as a SNI fallback and the per-vhost ACME automation policy would never fire. Lesson: a vhost with no `tls` directive appears to "use ACME by default" but actually picks up any loaded cert that matches the SNI.
@@ -170,6 +166,6 @@ git push homelab main
 - **`caddy:2.11.4` requires Go ≥ 1.25.1** to build — the `golang:1.25-bookworm` image satisfies this. Older builder images (e.g. `golang:1.24-bookworm`) fail with `go: github.com/caddyserver/caddy/v2@v2.11.4 requires go >= 1.25.1`. If you bump Caddy, check the new `go.mod` `go` directive and bump the builder image too.
 - **`network_mode: host` is required for `@not_tailnet` to work.** Docker DNAT rewrites every packet to `172.22.0.1` (the bridge gateway) before Caddy sees it. Without `network_mode: host`, the `100.64.0.0/10` matcher matches nothing and every tailnet request gets 403. This is set in `services/fxmq.net/docker-compose.yml` — do not "fix" it.
 - **`docker compose env_file:` reads the file as the UID running `make`, NOT as the UID inside the container** — compose parses `env_file:` at the host side. The `CF_API_TOKEN` file must be readable by the user running the compose command (`op`), mode 0644; chowning it to the container's uid (201) breaks the read and Caddy ends up with no token.
-- **`make d-recreate-fxmq.net` (or `make d-recreate-all`) takes ~3 minutes on a fresh VPS and prints zero progress** — `docker compose up --build` runs `docker build` in a streaming-tty mode that buffers until the step finishes. The build chain is `golang:1.25-bookworm` → `go install xcaddy` → `xcaddy build --with caddy-dns/cloudflare@a8737d0 v2.11.4` → `FROM caddy:2.11.4` + `COPY --from=builder`. `docker build --progress=plain` shows the steps.
+- **`make dok-recreate-fxmq.net` (or `make dok-recreate-all`) takes ~3 minutes on a fresh VPS and prints zero progress** — `docker compose up --build` runs `docker build` in a streaming-tty mode that buffers until the step finishes. The build chain is `golang:1.25-bookworm` → `go install xcaddy` → `xcaddy build --with caddy-dns/cloudflare@a8737d0 v2.11.4` → `FROM caddy:2.11.4` + `COPY --from=builder`. `docker build --progress=plain` shows the steps.
 - **The cert's issuer is the only reliable indicator of which path it took** — `curl -sk` returning 200 means "the listener responded", not "the right cert was served". Check `openssl x509 -noout -issuer` on a fresh `-no-keepalive` handshake. On CF-proxied hosts (every public vhost) the handshake sees Cloudflare's edge cert (issuer `Google Trust Services WE1`), not the origin's — check the origin cert with `openssl s_client -connect 127.0.0.1:443 -servername <host>` from the host instead (issuer should be `Let's Encrypt`).
 - **Host performance tuning** — network stack (`config/sysctl/99-homelab.conf`): BBR + `fq` qdisc, `tcp_fastopen=3`, `tcp_slow_start_after_idle=0`; Docker (`config/docker/daemon.json`): pull concurrency 10/10, `userland-proxy: false` (no compose publishes ports, so no behavior change); dnsmasq (`config/dnsmasq/10-tailnet.conf`): `cache-size=10000`.

@@ -46,10 +46,10 @@ The Minecraft stack is **not** part of `install.sh`'s container set — the pane
 
 Like PufferPanel, the mail platform is **not** part of install.sh's container set — it is added post-install. The repo carries everything reproducible (`services/mailserver/docker-compose.yml`, `services/fxmq.net/vhosts/mail.fxmq.net.caddy`, the UFW ports in install.sh). To carry it to a new VPS:
 
-1. After the base install: `make d-recreate-mailserver` (brings up `mailserver` at 172.22.0.9 + `roundcube` at 172.22.0.10) and `sudo ufw allow 25/tcp` etc. (already in install.sh on fresh installs).
+1. After the base install: `make dok-recreate-mailserver` (brings up `mailserver` at 172.22.0.9 + `roundcube` at 172.22.0.10) and `sudo ufw allow 25/tcp` etc. (already in install.sh on fresh installs).
 2. Operator-only (copy from the old host): `/var/www/custom/projects/homelab/mailserver/` (Maildirs, DMS config + DKIM keys, roundcube sqlite), `services/mailserver/.env` (mailbox passwords), and the CF DNS records (MX, mail A DNS-only, SPF, DMARC, DKIM TXT).
 3. Re-issue the mail.fxmq.net LE cert via the Caddy vhost; DMS reads it from caddy_data.
 
 ## Manual fallback
 
-If the script can't be used, it automates exactly: host packages + `op` user + sshd hardening + docker daemon.json + `tailscale up` + ufw + repo clone + the renames above + `docker network create net --subnet=172.22.0.0/16` + `make install-config` + `make d-recreate-$DOMAIN|d-recreate-nextcloud|d-recreate-vaultwarden|d-recreate-uptimekuma` + CF DNS records + cert triggers. Optional data restore: `rsync` `cloud/users`, `vault/data`, `kuma/data` from the old host before first start (then `chown -R 33:33 cloud/users` and touch `cloud/users/.ncdata`).
+If the script can't be used, it automates exactly: host packages + `op` user + sshd hardening + docker daemon.json + `tailscale up` + ufw + repo clone + the renames above + `docker network create net --subnet=172.22.0.0/16` + `make install-config` + `make dok-recreate-$DOMAIN|dok-recreate-nextcloud|dok-recreate-vaultwarden|dok-recreate-uptimekuma` + CF DNS records + cert triggers. Optional data restore: `rsync` `cloud/users`, `vault/data`, `kuma/data` from the old host before first start (then `chown -R 33:33 cloud/users` and touch `cloud/users/.ncdata`).
