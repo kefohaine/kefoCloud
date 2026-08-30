@@ -17,4 +17,6 @@ services/mailserver/.env
 /open-webui/
 /mail/
 /mailserver/
+/pgdata/
+/talk/
 .claude/
