@@ -165,7 +165,7 @@ systemd-log:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: list smoke install-hooks clean-docker clean-apt clean-backups update install-config kuma-import help
+.PHONY: list smoke install-hooks clean-docker clean-apt clean-backups update install-config kuma-import help talk-gen
 .PHONY: deploy backup cleanup
 
 # One-shot overview per the help line: git; systemd; docker; tmux; backups; mails.
@@ -302,6 +302,12 @@ mail-alias-list:
 kuma-import:
 >sudo scripts/kuma-import.sh $(KUMA_DB)
 
+# Generate the Nextcloud-stack secrets + Talk service configs (idempotent).
+# Creates services/nextcloud/.env entries (DB, Redis, signaling, TURN, SMTP)
+# if missing and renders /var/www/custom/projects/homelab/talk/{server,turnserver}.conf.
+talk-gen:
+>@bash scripts/talk-gen.sh
+
 # ─────────────────────────────────────────────────────────────────────────────
 # config/ (live <-> repo)
 # config/ holds tracked copies of every host-level config. install-config
@@ -337,12 +343,14 @@ sudo sysctl --system >/dev/null
   fi
 sudo cp $(REPO)/repo/config/ttyd/ttyd.service /etc/systemd/system/ttyd.service
 sudo cp $(REPO)/repo/config/fail2ban/jail.d/sshd.conf /etc/fail2ban/jail.d/sshd.conf
+sudo cp $(REPO)/repo/config/cron/nextcloud /etc/cron.d/nextcloud
+sudo chmod 0644 /etc/cron.d/nextcloud
 sudo systemctl enable --now fail2ban
 sudo ufw allow from 172.22.0.0/16 to any port 7681 proto tcp
 sudo systemctl daemon-reload
 sudo systemctl enable --now goose ttyd
 sudo systemctl restart sshd dnsmasq
-@echo "Host install-config complete: goose + ttyd + dnsmasq + fail2ban + sshd enabled."
+@echo "Host install-config complete: goose + ttyd + dnsmasq + fail2ban + sshd + cron installed."
 endef
 
 install-config:
@@ -365,7 +373,8 @@ deploy:
 
 .PHONY: install-goose install-ttyd install-ssh \
         install-dnsmasq-conf install-dnsmasq-override \
-        install-docker install-sysctl
+        install-docker install-sysctl install-cron
+.PHONY: dok-recreate-nextcloud-db dok-restart-nextcloud-db dok-stop-nextcloud-db dok-logs-nextcloud-db
 
 install-goose:
 >@echo "install-goose: goose.service"
@@ -406,6 +415,31 @@ install-sysctl:
 >@echo "install-sysctl: 99-homelab.conf"
 >@sudo cp $(REPO)/repo/config/sysctl/99-homelab.conf /etc/sysctl.d/99-homelab.conf
 >@sudo sysctl --system >/dev/null
+
+install-cron:
+>@echo "install-cron: /etc/cron.d/nextcloud (Nextcloud occ cron, every 5 min)"
+>@sudo cp $(REPO)/repo/config/cron/nextcloud /etc/cron.d/nextcloud
+>@sudo chmod 0644 /etc/cron.d/nextcloud
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Nextcloud database (services/nextcloud/docker-compose.db.yml)
+# Runs on the fxmq host for now; migrates to the operator's 1 TB VPS later
+# (see docs/GUIDE.md "Nextcloud DB"). Deliberately NOT in $(CONTAINERS) —
+# the -all loops glob services/*/docker-compose.yml only, and this file is
+# named docker-compose.db.yml so they never see it.
+# ─────────────────────────────────────────────────────────────────────────────
+
+dok-recreate-nextcloud-db:
+>$(COMPOSE) $(REPO)/repo/services/nextcloud/docker-compose.db.yml up -d --force-recreate
+
+dok-restart-nextcloud-db:
+>$(COMPOSE) $(REPO)/repo/services/nextcloud/docker-compose.db.yml restart
+
+dok-stop-nextcloud-db:
+>$(COMPOSE) $(REPO)/repo/services/nextcloud/docker-compose.db.yml stop
+
+dok-logs-nextcloud-db:
+>docker logs nextcloud-db --tail 50 -f
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Bundles (live <-> tarball)
@@ -554,6 +588,7 @@ backup:
 >@sudo cp /etc/sysctl.d/99-homelab.conf $(REPO)/repo/config/sysctl/99-homelab.conf
 >@sudo cp /etc/docker/daemon.json $(REPO)/repo/config/docker/daemon.json
 >@sudo cp /etc/fail2ban/jail.d/sshd.conf $(REPO)/repo/config/fail2ban/jail.d/sshd.conf
+>@sudo cp /etc/cron.d/nextcloud $(REPO)/repo/config/cron/nextcloud
 >@sudo chown -R op:op $(REPO)/repo/config
 >@echo "Live config pulled into $(REPO)/repo/config/ — git add/commit to sync the repo."
 
@@ -679,8 +714,10 @@ help:
 >@echo "  │  make smoke                 │live edge test: every vhost must serve its real app (pre-push hook runs it)"
 >@echo "  │  make install-hooks         │install git hooks (pre-commit edge guard + pre-push smoke)"
 >@echo "  │  make kuma-import           │import an adapted Uptime Kuma db (KUMA_DB=/path)"
+>@echo "  │  make talk-gen              │generate Nextcloud-stack secrets + Talk/TURN configs (idempotent)"
+>@echo "  │  make dok-recreate-nextcloud-db │force-recreate the Nextcloud PostgreSQL unit (runs on this host until the 1 TB VPS joins)"
 >@echo "  │  make install-config        │one-shot host bootstrap: copy config/ to live paths"
->@echo "  │  make install-<file>        │per-file install from config/ → live (goose, ttyd, ssh, dnsmasq-conf, dnsmasq-override, docker, sysctl)"
+>@echo "  │  make install-<file>        │per-file install from config/ → live (goose, ttyd, ssh, dnsmasq-conf, dnsmasq-override, docker, sysctl, cron)"
 >@echo "  │  make bkp-cloud             │Nextcloud snapshot (maintenance mode during copy)"
 >@echo "  │  make bkp-vault             │Vaultwarden data tar"
 >@echo "  │  make bkp-list              │list backup artifacts + count per pattern"
@@ -706,7 +743,7 @@ help:
 >@echo ""
 >@echo "  Docker Containers"
 >@echo "  │  make dok-recreate     │force-recreate target   │for one specific container, append -<ctn>"
->@echo "  │  make dok-restart      │restart target          │for all known containers, append -all"
+>@echo "  │  make dok-recreate-nextcloud-db │recreate the PostgreSQL unit (docker-compose.db.yml, not in -all loops)"
 >@echo "  │  make dok-stop         │stop target             │"
 >@echo "  └  make dok-logs         │tail target logs        │"
 >@echo ""
