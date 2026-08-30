@@ -5,6 +5,8 @@ services:
     restart: unless-stopped
 
     # Hard RAM cap (no container swap) — survives recreates, unlike `docker update`.
+    # The whole stack (nextcloud+redis+signaling+coturn+db) stays under the
+    # operator's 3 GB ceiling: 1g+192m+256m+128m+768m = 2.34g.
     mem_limit: 1g
     memswap_limit: 1g
 
@@ -19,6 +21,9 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
+
+    depends_on:
+      - redis
 
     volumes:
       # Nextcloud html root (3rdparty, core, apps, config, occ).
@@ -38,10 +43,17 @@ services:
       - ./php-conf.d/zz-opcache.ini:/usr/local/etc/php/conf.d/zz-opcache.ini:ro
 
     environment:
-      # With no MYSQL_/POSTGRES_ vars set, the official image's entrypoint
-      # auto-creates db/owncloud.db (SQLite) inside the data volume.
-      # Admin credentials are read from .env (gitignored). Nextcloud is
-      # already installed; these are only used on first init.
+      # Database: PostgreSQL. For now the db container runs on this host
+      # (docker-compose.db.yml, bridge IP 172.22.0.15); when the operator's
+      # 1 TB VPS joins the tailnet, move pgdata + that compose file there and
+      # set POSTGRES_HOST to its tailnet IP (see docs/GUIDE.md "Nextcloud DB").
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      # Redis distributed cache + file locking — the entrypoint writes these
+      # into config.php (memcache.distributed / memcache.locking) at install.
+      REDIS_HOST: ${REDIS_HOST}
       NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER}
       NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD}
       NEXTCLOUD_OVERWRITEPROTOCOL: https
@@ -54,6 +66,13 @@ services:
       TRUSTED_PROXIES: "172.22.0.0/16,173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22,2400:cb00::/32,2606:4700::/32,2803:f800::/32,2405:b500::/32,2405:8100::/32,2a06:98c0::/29,2c0f:f248::/32"
       OVERWRITECLIURL: "https://cloud.fxmq.net"
 
+    extra_hosts:
+      # Map the cert FQDN to the mail container's bridge IP so the Mail app
+      # and Nextcloud's SMTP see mail.fxmq.net with matching SNI + LE cert
+      # (same pattern as the roundcube container). The Mail app authenticates
+      # per-user mailboxes; NC's own outbound uses nextcloud@fxmq.net.
+      - "mail.fxmq.net:172.22.0.9"
+
     logging:
       driver: json-file
       options:
@@ -65,6 +84,74 @@ services:
     networks:
       net:
         ipv4_address: 172.22.0.5
+
+  # ── Nextcloud Talk support stack ──────────────────────────────────────────
+  # redis: distributed cache + locking (see REDIS_HOST above).
+  # signaling: Talk High Performance Backend (strukturag/nextcloud-spreed-
+  #   signaling, the official Go server — no NATS needed). Config generated
+  #   by `make talk-gen` into /var/www/custom/projects/homelab/talk/.
+  # coturn: TURN/STUN for WebRTC call media; talk.fxmq.net:3478/5349 + relay.
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    mem_limit: 192m
+    memswap_limit: 192m
+    # Pure cache: no persistence, LRU eviction at 128 MB. Locks live here too —
+    # losing them on restart is harmless (they are ephemeral by design).
+    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      net:
+        ipv4_address: 172.22.0.11
+
+  signaling:
+    image: strukturag/nextcloud-spreed-signaling:latest
+    container_name: talk-signaling
+    restart: unless-stopped
+    mem_limit: 256m
+    memswap_limit: 256m
+    volumes:
+      # Rendered by `make talk-gen` (gitignored runtime dir, sibling of repo/).
+      - /var/www/custom/projects/homelab/talk/server.conf:/config/server.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 3 bash -c '</dev/tcp/127.0.0.1/8080' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      net:
+        ipv4_address: 172.22.0.12
+
+  coturn:
+    image: coturn/coturn:4.6
+    container_name: talk-coturn
+    restart: unless-stopped
+    mem_limit: 128m
+    memswap_limit: 128m
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      - "5349:5349/tcp"
+      - "49160-49200:49160-49200/udp"
+      - "49160-49200:49160-49200/tcp"
+    command: ["-c", "/etc/coturn/turnserver.conf", "--log-file=stdout", "--external-ip=$(detect-external-ip)"]
+    volumes:
+      # Rendered by `make talk-gen`. Static-auth-secret must match the
+      # `occ talk:turn:add --secret` used in Nextcloud.
+      - /var/www/custom/projects/homelab/talk/turnserver.conf:/etc/coturn/turnserver.conf:ro
+      # Reuse the talk.fxmq.net LE cert (issued by Caddy via DNS-01) for TURNS
+      # on 5349 — same pattern as the mailserver's cert reuse.
+      - /var/www/custom/projects/homelab/caddy_data:/caddy:ro
+    networks:
+      net:
+        ipv4_address: 172.22.0.14
 
 networks:
   net:

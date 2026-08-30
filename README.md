@@ -1,6 +1,6 @@
 # fxmq.net
 
-Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Seven containers: Caddy (`fxmq.net`, host-network reverse proxy), Nextcloud, Vaultwarden, Uptime Kuma, PufferPanel, and the mail platform (Docker Mailserver + Roundcube webmail). Six hostnames are public through Cloudflare (cloud, kuma, mc, mail, vault, www); one (`shell.fxmq.net`) is Tailscale-only. The mail records (`MX`, `mail.fxmq.net` A) are DNS-only at Cloudflare — SMTP/IMAP can't be proxied. Goose (the agent CLI) runs on the host as a systemd service (`goose serve`).
+Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Eleven containers: Caddy (`fxmq.net`, host-network reverse proxy), the Nextcloud stack (app FPM, PostgreSQL, Redis cache, Talk signaling + TURN), Vaultwarden, Uptime Kuma, PufferPanel, and the mail platform (Docker Mailserver + Roundcube webmail). Seven hostnames are public through Cloudflare (cloud, kuma, mail, mc, talk, vault, www); one (`shell.fxmq.net`) is Tailscale-only. The mail records (`MX`, `mail.fxmq.net` A) are DNS-only at Cloudflare — SMTP/IMAP can't be proxied; `talk.fxmq.net` is DNS-only too (TURN media bypasses the proxy). Goose (the agent CLI) runs on the host as a systemd service (`goose serve`).
 
 ## High-level overview
 
@@ -50,7 +50,8 @@ One VPS, one host. Cloudflare fronts the three public hostnames; the Tailscale-o
 
 | Domain            | Where DNS points            | Who can reach it                     | What is served                                  |
 |-------------------|-----------------------------|--------------------------------------|-------------------------------------------------|
-| cloud.fxmq.net    | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Nextcloud (file sync, calendar, photos); PHP-FPM behind Caddy |
+| cloud.fxmq.net    | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Nextcloud (file sync, calendar, photos, Talk, Mail); PHP-FPM behind Caddy |
+| talk.fxmq.net     | Cloudflare **DNS-only** (grey cloud) → VPS IP | Anyone on the internet | Talk High Performance Backend websocket at `/signaling` + TURN/STUN on 3478/5349. DNS-only because WebRTC media bypasses the CF proxy (same constraint as mail) |
 | vault.fxmq.net    | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Vaultwarden (Bitwarden-compatible password manager) |
 | kuma.fxmq.net     | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Uptime Kuma monitor dashboard |
 | mc.fxmq.net       | Cloudflare DNS-only → VPS IP | Anyone on the internet             | PufferPanel at `/panel`; Caddy file browser at `/download` over the `download/` drop folder; `/` redirects to `/panel`. DNS-only (grey cloud) so the game ports bypass the CF proxy |
@@ -107,3 +108,10 @@ The trade-off: browser traffic is bot-challenged. For terminal `curl` or Nextclo
 - Docker's embedded DNS at `127.0.0.11` resolves container names on user-defined networks automatically — no Consul, no extra service registry.
 - One network keeps Caddy and Nextcloud on the same subnet.
 - Marked `external: true` with an explicit `--subnet=172.22.0.0/16` so the same network is reused across compose files and the pinned bridge IPs (`172.22.0.4` vault, `.5` cloud, `.6` kuma) attach cleanly.
+
+### Why the Nextcloud stack is split the way it is
+
+- **PostgreSQL instead of the stock SQLite** — SQLite's file-level locking caused intermittent 504s under concurrent sync and made consistent backups hard. Postgres (tuned via `-c` flags in `services/nextcloud/docker-compose.db.yml`, data in the repo-sibling `pgdata/`) is the "strong database" the app deserves; the data dir is deliberately portable because the operator plans to relocate it to a 1 TB / 2 GB VPS over Tailscale (see `docs/ISSUES.md`).
+- **Redis for caching + locking** (`redis` container, 128 MB LRU, no persistence — a pure cache) — `memcache.distributed` + `memcache.locking` land in `config.php` automatically from `REDIS_HOST`; APCu stays as the local cache.
+- **Talk HPB + self-hosted TURN** — the official Go signaling server (`talk-signaling`) gives Talk a websocket backend at `wss://talk.fxmq.net/signaling`; coturn provides TURN/STUN so calls work from restrictive NATs without handing call media to a public STUN/TURN service. The 3 GB RAM ceiling for the whole stack (app + cache + signaling + TURN + DB = 2.34 GB of hard caps) is enforced with `mem_limit`/`memswap_limit` per container.
+- **The mail ecosystem is reciprocal** — Nextcloud's Mail app and its own outbound SMTP talk to the same Docker Mailserver on the bridge (`extra_hosts` maps `mail.fxmq.net` → 172.22.0.9 so the LE cert matches); NC sends notifications/resets from a `nextcloud@fxmq.net` mailbox, and user emails (e.g. `admin@fxmq.net`) are the account recovery channel.

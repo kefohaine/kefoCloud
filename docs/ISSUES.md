@@ -9,9 +9,9 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 ### Pending (Aug 2026)
 
 #### Nextcloud apps not migrated to `cloud.fxmq.net`  **[needs human approval]**
-- **File**: `services/nextcloud/` (fresh install, stock app set)
-- **Problem**: `cloud.fxmq.net` was installed fresh — enabled apps are the default Nextcloud 34 set (no Talk/Deck/Calendar/etc.), `cloud/users` is empty (no accounts/files), `backups/` is empty. The old instance's apps + app data live on the jehpok VPS, which is unreachable (see Kuma entry below).
-- **Fix**: same delivery path as the Kuma db (fix jehpok SSH/taildrop). Code-only apps: `occ app:install <app>` from the operator's list. Data-bearing apps (Talk/Deck/Calendar/Notes…): restore the old instance's DB + `appdata_*` — a file-copy alone won't carry them.
+- **File**: `services/nextcloud/` (rebuild 2026-08-30: fresh install, stock app set + Talk/Calendar/Contacts/Mail)
+- **Problem**: the operator chose to **start from zero** — the old instance's apps + app data stay on the jehpok VPS (unreachable) and are intentionally NOT migrated. The 2026-08-30 rebuild installs the app set from the app store post-install (`occ app:install spreed calendar contacts mail`), so the "no apps" gap is closed for new usage; the old accounts/files remain on jehpok by operator decision.
+- **Fix**: none needed — old data is abandoned by decision (backups of the pre-rebuild instance exist under `backups/`). If the operator later wants anything back from jehpok, the Kuma-entry delivery path (SSH/taildrop) applies.
 
 #### Kuma config copy from the jehpok VPS is blocked  **[needs human approval]**
 - **File**: `scripts/kuma-import.sh` (prepared); source db on `jehpok` (100.81.245.77)
@@ -20,10 +20,15 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### Robustness
 
-#### Migrate SQLite → MariaDB  **[needs human approval]**
-- **File**: `services/nextcloud/docker-compose.yml`
+#### Nextcloud DB runs on fxmq until the 1 TB / 2 GB VPS joins the tailnet
+- **File**: `services/nextcloud/docker-compose.db.yml` (PostgreSQL 17, data in `/var/www/custom/projects/homelab/pgdata/`)
+- **Problem**: the operator wants the Nextcloud database on a separate 1 TB storage / 2 GB RAM VPS ("storage relocation"), but that host is not yet connected to the tailnet. Until then PostgreSQL runs on fxmq (bridge-only, no published ports), consuming 768 MB of the 3 GB Nextcloud-stack ceiling.
+- **Fix**: when the new VPS joins the tailnet, follow the migration steps in `docs/GUIDE.md` → "Nextcloud DB": stop the unit, rsync `pgdata/` to the big disk, re-deploy `docker-compose.db.yml` there (port published on the tailnet IP only), point `POSTGRES_HOST` in `services/nextcloud/.env` at the new IP, recreate nextcloud. Remove this entry when done.
+
+#### Migrate SQLite → MariaDB  **[superseded — fresh rebuild lands PostgreSQL 2026-08-30]**
+- **File**: `services/nextcloud/docker-compose.yml` + `docker-compose.db.yml`
 - **Problem**: SQLite has file-level locking. Concurrent sync writes contend → intermittent 504s / "database is locked". Also the backup-corruption risk (copying an online SQLite file).
-- **Fix**: Add a MariaDB container on `net`, set `MYSQL_*` env vars, run `occ conversion:migrate` to move data, then back up with `mysqldump`.
+- **Fix**: resolved by the 2026-08-30 rebuild: the fresh install uses PostgreSQL 17 (`docker-compose.db.yml`) instead of MariaDB — no conversion needed since the old SQLite instance is wiped by operator decision. Close this entry once the fresh install is verified.
 - **Why approval**: destructive migration; operator should pick a maintenance window and verify clients reconnect.
 
 #### No automated backup script
@@ -97,10 +102,10 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Problem**: `pm.max_children = 8` with 200s terminate timeout. Slow syncs can occupy all 8 children. (Already switched to `ondemand` — idle workers now free at rest.)
 - **Fix**: Monitor `docker exec -w /var/www/html nextcloud php occ status` and `docker stats nextcloud`. Raise `max_children` only if sync load grows; lower `request_terminate_timeout` if 504s appear.
 
-#### No Nextcloud distributed cache (Redis)
+#### No Nextcloud distributed cache (Redis)  **[superseded — Redis lands 2026-08-30]**
 - **File**: `services/nextcloud/docker-compose.yml`
 - **Problem**: Only `memcache.local` (APCu) is set. No `memcache.distributed` or `memcache.locking` — file locking falls back to DB locks, which under SQLite is coarse.
-- **Fix**: Add a small Redis container on `net` and set `memcache.distributed` + `memcache.locking` to Redis. Skip at current traffic levels; revisit if sync contention appears.
+- **Fix**: resolved by the 2026-08-30 rebuild: a `redis` container (172.22.0.11, 128 MB LRU, no persistence) joins the stack and `REDIS_HOST` makes the installer write `memcache.distributed` + `memcache.locking`. Close this entry once the fresh install is verified.
 
 #### Stop goose when idle  **[needs human approval]**
 - **File**: `/etc/systemd/system/goose.service`

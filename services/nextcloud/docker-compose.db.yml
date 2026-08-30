@@ -1,0 +1,84 @@
+# Nextcloud database — PostgreSQL 17.
+#
+# Deploy with:  docker compose -f services/nextcloud/docker-compose.db.yml up -d
+# (NOT part of the Makefile CONTAINERS set and named docker-compose.db.yml so
+# the dok-recreate-all / update loops never pick it up — this file intentionally
+# has no `docker-compose.yml` name).
+#
+# Currently runs on the fxmq host (bridge IP 172.22.0.15, no published ports —
+# only the nextcloud container on the 'net' bridge reaches it). When the
+# operator's 1 TB / 2 GB VPS joins the tailnet, migrate by: stopping this unit,
+# rsyncing /var/www/custom/projects/homelab/pgdata to the big disk there,
+# re-deploying this compose on that host with the port published on the
+# tailnet interface only, and pointing services/nextcloud/.env POSTGRES_HOST
+# at the new tailnet IP (see docs/GUIDE.md "Nextcloud DB" for the full steps).
+#
+# Tuning targets the 2 GB RAM of the future DB host; on the 11 GB fxmq host it
+# is deliberately conservative. Postgres default (not tuned here) settings
+# apply everywhere else.
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: nextcloud-db
+    restart: unless-stopped
+
+    # Hard RAM cap (no container swap). Part of the 3 GB Nextcloud-stack
+    # ceiling on fxmq: 1g+192m+256m+128m+768m = 2.34g total.
+    mem_limit: 768m
+    memswap_limit: 768m
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+    # -c overrides beat the image defaults; kept as a single source of truth
+    # for the DB tuning (no extra conf file to drift).
+    command:
+      - "postgres"
+      - "-c"
+      - "listen_addresses=*"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=640MB"
+      - "-c"
+      - "work_mem=8MB"
+      - "-c"
+      - "maintenance_work_mem=64MB"
+      - "-c"
+      - "max_connections=50"
+      - "-c"
+      - "max_wal_size=1GB"
+      - "-c"
+      - "min_wal_size=80MB"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      - "-c"
+      - "random_page_cost=1.1"
+
+    volumes:
+      # Data lives in the repo-sibling runtime dir (like /cloud/, /kuma/…).
+      # This is the directory that migrates to the 1 TB VPS.
+      - /var/www/custom/projects/homelab/pgdata:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      net:
+        ipv4_address: 172.22.0.15
+
+networks:
+  net:
+    external: true

@@ -1,0 +1,22 @@
+# coturn TURN/STUN server for Nextcloud Talk WebRTC media.
+#
+# The real file is /var/www/custom/projects/homelab/talk/turnserver.conf,
+# rendered by `make talk-gen` (__PLACEHOLDERS__ never committed).
+#
+# static-auth-secret must match the `occ talk:turn:add --secret` used in
+# Nextcloud (Talk mints per-session TURN credentials from it).
+# TLS reuses the talk.fxmq.net LE cert Caddy issues via DNS-01 (mounted from
+# caddy_data at /caddy:ro, same pattern as the mailserver).
+listening-port=3478
+tls-listening-port=5349
+realm=fxmq.net
+fingerprint
+use-auth-secret
+static-auth-secret=__TURN_SECRET__
+min-port=49160
+max-port=49200
+cert=/caddy/caddy/certificates/acme-v02.api.letsencrypt.org-directory/talk.fxmq.net/talk.fxmq.net.crt
+pkey=/caddy/caddy/certificates/acme-v02.api.letsencrypt.org-directory/talk.fxmq.net/talk.fxmq.net.key
+no-stdout-log
+log-file=stdout
+no-multicast-peers

@@ -1,0 +1,28 @@
+# Nextcloud Talk High Performance Backend — signaling server config
+# (strukturag/nextcloud-spreed-signaling, the official Go server).
+#
+# The real file is /var/www/custom/projects/homelab/talk/server.conf, rendered
+# by `make talk-gen` from this template with secrets from
+# services/nextcloud/.env. __PLACEHOLDERS__ are never committed.
+#
+# The [backend1] secret must match the `occ talk:signaling:add --secret`
+# value used in Nextcloud; urls is the Nextcloud instance the signaling
+# server calls back into.
+[http]
+listen = 0.0.0.0:8080
+
+[sessions]
+hashkey = __SIGNALING_HASH_KEY__
+blockkey = __SIGNALING_BLOCK_KEY__
+
+[clients]
+internalsecret = __SIGNALING_INTERNAL_SECRET__
+
+[backend]
+backends = backend1
+timeout = 10
+connectionsperhost = 8
+
+[backend1]
+urls = https://cloud.fxmq.net
+secret = __SIGNALING_SECRET__
