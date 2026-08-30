@@ -30,7 +30,7 @@
     },
     "javaversion": {
       "type": "string",
-      "value": "8",
+      "value": "17",
       "display": "Java Version",
       "desc": "Version of Java to use",
       "required": true,
@@ -279,7 +279,7 @@
       ]
     },
     {
-      "if": "modlauncher == 'paper'",
+      "if": "modlauncher == 'paper' && !file_exists('server.jar')",
       "type": "paperdl",
       "build": "${paperbuild}",
       "minecraftVersion": "${version}",
@@ -391,7 +391,7 @@
     "type": "docker",
     "bindings": {},
     "containerRoot": "",
-    "image": "eclipse-temurin:8",
+    "image": "eclipse-temurin:17",
     "networkName": "host",
     "portBindings": [
       "0.0.0.0:25567:25567/tcp"
@@ -403,7 +403,7 @@
     },
     {
       "type": "docker",
-      "image": "eclipse-temurin:8",
+      "image": "eclipse-temurin:17",
       "portBindings": [
         "0.0.0.0:25567:25567/tcp"
       ]
