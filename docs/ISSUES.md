@@ -150,6 +150,8 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **07fd7727 registered in panel DB** — file-dropped server was daemon-visible but UI-invisible; added `servers`+`permissions` rows (admin scopes) → visible as "Browser Play"; ea3b4585's leftover DB rows purged (the earlier orphan file deletion had missed them).
 - **Playground tuning applied** — view-distance 4, eaglercraft render 4, entity limits halved, 4G heap, autorestart on (operator-set 2026-08-31).
 - **Web instance switched to EaglercraftX 1.8.8** — official u53 client at `/play`, ViaVersion on the 1.12.2 backend (official template combo), websocket renamed `/ws` → `/web`, Java port 25567 opened publicly (clients 1.8–1.12.2).
+- **Any-version Java access** — ViaBackwards + ViaRewind added (with ViaVersion): Java clients 1.7.10 → latest all connect to `mc.fxmq.net:25567`.
+- **Chunky installed for 1.12.2** — rebuilt from source (tag 1.1.21, the last pre-1.13 line): dead repo URLs swapped, BlueMap dep dropped, `api-version` + the hard ≥1.13.2 gate patched out; enables cleanly on Paper 1.12.2. Pregen: `/chunky radius N` + `/chunky start` in the panel console.
 - **Nextcloud integration** — first hosted on the VPS, migrated to `app.homelab.com/cloud`, reverted, then linked via PHP-FPM.
 - **Nextcloud backend upgrade** — image bump.
 - **CoreDNS isolated** — split into its own directory; config renamed.
