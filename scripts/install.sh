@@ -213,6 +213,10 @@ EOF
   # on the game server owns Bedrock 19132/udp (only answers while server is up).
   ufw allow 25565/tcp >/dev/null 2>&1
   ufw allow 19132/udp >/dev/null 2>&1
+  # Browser-MC playground (server 07fd7727) — host-net Java port 25567 is PUBLIC
+  # (opened 2026-08-31: Java clients join mc.$DOMAIN:25567 directly; the eaglercraft
+  # websocket is multiplexed on the same port, so no separate rule is needed).
+  ufw allow 25567/tcp >/dev/null 2>&1
   # Self-hosted mail (Docker Mailserver): SMTP + submission + IMAPS. Inbound 25
   # can be provider-blocked on some VPSes — these are open so mail works the
   # moment the provider allows it.
@@ -454,6 +458,93 @@ SELECT last_insert_rowid(), NULL, NULL, 'admin';" >>"$LOG" 2>&1 || fail panel_ad
     || fail panel_admin "admin permission missing"
 }
 
+# Deploy the PufferPanel server templates from the repo (browser-MC playground
+# 07fd7727 + the protected game server 2ecfbe8c). The daemon loads the JSONs at
+# boot — autostart applies (07fd7727 autostarts; 2ecfbe8c does not). The server
+# DATA dirs (jars, plugins, worlds) are operator-only and stay outside the repo
+# (see docs/MIGRATE.md): drop them in and start from the panel.
+panel_servers() {
+  local src=/var/www/custom/projects/homelab/repo/config/pufferpanel/servers
+  local dst=/var/www/custom/projects/homelab/puffer/data/servers
+  if [ -d "$src" ]; then
+    sudo mkdir -p "$dst"
+    sudo cp "$src"/*.json "$dst"/
+    # chown only the JSONs — daemon-created server subdirs stay root-owned.
+    sudo chown $OP_USER:$OP_USER "$dst"/*.json 2>/dev/null || true
+  fi
+  sudo test -f "$dst/07fd7727.json" && sudo test -f "$dst/2ecfbe8c.json" || fail panel_servers
+}
+
+# Post-boot Nextcloud occ wiring: Talk signaling + TURN registration, NC
+# outbound SMTP (nextcloud@$DOMAIN sender mailbox), background cron. All
+# steps are idempotent (safe to re-run; never clobbers operator settings).
+# Requires the nextcloud + mailserver containers (called after containers_up).
+nextcloud_setup() {
+  cd "$REPO" || exit 1
+  local i=0
+  while [ $i -lt 90 ]; do
+    docker exec -u www-data nextcloud php occ status 2>/dev/null | grep -q "installed: true" && break
+    sleep 2; i=$((i+2))
+  done
+  if ! docker exec -u www-data nextcloud php occ status 2>/dev/null | grep -q "installed: true"; then
+    fail nextcloud_setup "nextcloud not installed/ready after 3 min"
+    return
+  fi
+
+  # Talk app (spreed) — bundled in the image; enable if disabled.
+  docker exec -u www-data nextcloud php occ app:enable spreed >/dev/null 2>&1 || true
+
+  # NC outbound SMTP sender mailbox — create if missing (secrets from .env).
+  . services/nextcloud/.env
+  if ! docker exec mailserver setup email list 2>/dev/null | grep -qiE "^[* ] *nextcloud@$DOMAIN( |\$|\[)"; then
+    printf '%s\n%s\n' "$SMTP_PASSWORD" "$SMTP_PASSWORD" \
+      | docker exec -i mailserver setup email add "nextcloud@$DOMAIN" >/dev/null 2>&1 \
+      || fail nextcloud_setup "mailbox nextcloud@$DOMAIN not created"
+  fi
+
+  # NC SMTP settings — only when unset (never clobber operator config).
+  # Output redirected: occ config:system:set echoes secret values to stdout.
+  if [ -z "$(docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | tr -d '\n')" ]; then
+    docker exec -u www-data nextcloud php occ config:system:set mail_smtphost --value "mail.$DOMAIN" >/dev/null 2>&1
+    docker exec -u www-data nextcloud php occ config:system:set mail_smtpport --value 587 --type integer >/dev/null 2>&1
+    docker exec -u www-data nextcloud php occ config:system:set mail_smtpauthtype --value LOGIN >/dev/null 2>&1
+    docker exec -u www-data nextcloud php occ config:system:set mail_smtpsecure --value tls >/dev/null 2>&1
+    docker exec -u www-data nextcloud php occ config:system:set mail_smtpname --value "nextcloud@$DOMAIN" >/dev/null 2>&1
+    docker exec -u www-data nextcloud php occ config:system:set mail_smtppassword --value "$SMTP_PASSWORD" >/dev/null 2>&1
+    docker exec -u www-data nextcloud php occ config:system:set mail_from_address --value nextcloud >/dev/null 2>&1
+    docker exec -u www-data nextcloud php occ config:system:set mail_domain --value "$DOMAIN" >/dev/null 2>&1
+  fi
+
+  # Talk signaling — internal URL first, public second (see docs/GUIDE.md).
+  local sig
+  sig=$(docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null)
+  if ! echo "$sig" | grep -q "https://turn.$DOMAIN/signaling"; then
+    docker exec -u www-data nextcloud php occ talk:signaling:add http://172.22.0.12:8080 "$SIGNALING_SECRET" >/dev/null 2>&1 || true
+    docker exec -u www-data nextcloud php occ talk:signaling:add "https://turn.$DOMAIN/signaling" "$SIGNALING_SECRET" >/dev/null 2>&1 || true
+  fi
+
+  # Talk TURN/STUN — udp+tcp on 3478, tls on 5349 (secret matches turnserver.conf).
+  local trn
+  trn=$(docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null)
+  if ! echo "$trn" | grep -q "turn.$DOMAIN:3478"; then
+    docker exec -u www-data nextcloud php occ talk:turn:add turn "turn.$DOMAIN:3478" --secret "$TURN_SECRET" --udp --tcp >/dev/null 2>&1 || true
+  fi
+  if ! echo "$trn" | grep -q "turn.$DOMAIN:5349"; then
+    docker exec -u www-data nextcloud php occ talk:turn:add turns "turn.$DOMAIN:5349" --secret "$TURN_SECRET" >/dev/null 2>&1 || true
+  fi
+
+  # Background jobs via the host cron (config/cron/nextcloud, installed by install-config).
+  docker exec -u www-data nextcloud php occ background:cron >/dev/null 2>&1 || true
+
+  # Verify what the smoke/operational docs assert.
+  docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN" \
+    || fail nextcloud_setup "mail_smtphost not set"
+  docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://turn.$DOMAIN/signaling" \
+    || fail nextcloud_setup "talk signaling not registered"
+  docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "turn.$DOMAIN:3478" \
+    || fail nextcloud_setup "talk turn not registered"
+}
+
 ssl_mode_full() {
   # API first (needs Zone Settings read on the token); fall back to a
   # behavior probe — Flexible/Off makes CF reach the origin over HTTP and
@@ -556,8 +647,10 @@ phase2_op() {
   cf_dns
   host_services
   containers_up
+  nextcloud_setup
   issue_certs
   kuma_seed
+  panel_servers
   panel_admin_setup
   sweep
 }
@@ -591,6 +684,8 @@ problem() {
     cert_*)         echo "cert for ${1#cert_}.$DOMAIN is not issued by Let's Encrypt" ;;
     sweep)          echo "old project name is still referenced in the repo tree" ;;
     sslmode)        echo "Cloudflare SSL/TLS mode is not Full (or strict)" ;;
+    nextcloud_setup) echo "Nextcloud occ wiring incomplete (Talk signaling/TURN, SMTP, background cron)" ;;
+    panel_servers)  echo "PufferPanel server templates not deployed (puffer/data/servers/)" ;;
     clone)          echo "repo clone failed" ;;
     *)              echo "$1" ;;
   esac
@@ -623,6 +718,8 @@ hint() {
     cert_*)         echo "hit https://${1#cert_}.$DOMAIN once to trigger ACME, wait a few seconds, then re-check" ;;
     sweep)          echo "rename or remove the files listed by: grep -rl jehpok $REPO --exclude-dir=.git" ;;
     sslmode)        echo "Cloudflare dashboard -> SSL/TLS -> Overview -> set mode to Full (or Full strict), then re-check" ;;
+    nextcloud_setup) echo "run the occ steps from docs/GUIDE.md 'Ordering after a fresh deploy' (talk:signaling:add x2, talk:turn:add x2, config:system:set mail_*, background:cron) — see the nextcloud_setup function in this script, then re-check" ;;
+    panel_servers)  echo "run: sudo cp config/pufferpanel/servers/*.json /var/www/custom/projects/homelab/puffer/data/servers/, then re-check" ;;
     clone)          echo "add the key printed above to GitHub (Settings -> SSH keys), then re-run the script" ;;
     *)              echo "" ;;
   esac
@@ -654,6 +751,8 @@ recheck() {
     cert_*) local h=${1#cert_}; echo | timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$h.$DOMAIN" 2>/dev/null | openssl x509 -noout -issuer 2>/dev/null | grep -q "Let's Encrypt" ;;
     sweep) ! grep -rl 'jehpok' "$REPO" --exclude-dir=.git 2>/dev/null | grep -qv "^$REPO/scripts/install.sh$" ;;
     sslmode) ssl_mode_full ;;
+    nextcloud_setup) docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN" && docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://turn.$DOMAIN/signaling" && docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "turn.$DOMAIN:3478" ;;
+    panel_servers)  sudo test -f /var/www/custom/projects/homelab/puffer/data/servers/07fd7727.json && sudo test -f /var/www/custom/projects/homelab/puffer/data/servers/2ecfbe8c.json ;;
     *) false ;;
   esac
 }
@@ -736,7 +835,12 @@ success_block() {
   echo "   2. (optional) Cloudflare WAF rule skip for cloud.$DOMAIN (desktop sync)"
   echo "   3. Git remote 'homelab' points at git@github.com:friedutch/homelab.git —"
   echo "      rename the GitHub repo to match, or push will fail"
-  echo "   4. Mailboxes: make mail-add-user USER=name@$DOMAIN (or make mail-gen for a disposable)"
+  echo "   4. Mailboxes: make mail-add-user USER=name@$DOMAIN (or make mail-gen for a disposable);"
+  echo "      the nextcloud@$DOMAIN SMTP sender mailbox is created automatically"
+  echo "   5. Game servers: the panel templates are deployed (07fd7727 browser-MC + 2ecfbe8c)."
+  echo "      Register them in the panel DB to make them visible in the UI (docs/GUIDE.md"
+  echo "      'Registering a file-dropped server'), drop the operator jars into"
+  echo "      puffer/data/servers/<id>/, then start from the panel (docs/MIGRATE.md)"
   echo "=============================================================="
 }
 
