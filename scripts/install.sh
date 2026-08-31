@@ -345,6 +345,22 @@ EOF
     # insert into [Service] (after ExecStart) — a plain append lands after [Install] and is ignored
     sed -i "/^ExecStart=/a Environment=GOOSE_SERVER__SECRET_KEY=$(openssl rand -hex 32)" config/goose/goose.service
   fi
+  # Vaultwarden SMTP sender (vaultwarden@$DOMAIN) — SMTP vars for the
+  # compose interpolation; the mailbox itself is created after the
+  # mailserver container is up (see vaultwarden_setup). Idempotent.
+  if [ ! -f services/vaultwarden/.env ]; then
+    cat > services/vaultwarden/.env <<EOF
+SMTP_HOST=mail.$DOMAIN
+SMTP_PORT=587
+SMTP_SECURITY=starttls
+SMTP_USERNAME=vaultwarden@$DOMAIN
+SMTP_PASSWORD=$(openssl rand -hex 16)
+SMTP_FROM=vaultwarden@$DOMAIN
+SMTP_FROM_NAME=Vaultwarden
+SMTP_AUTH_MECHANISM=Login
+EOF
+    chmod 600 services/vaultwarden/.env
+  fi
 }
 
 docker_net() {
@@ -547,6 +563,20 @@ nextcloud_setup() {
     || fail nextcloud_setup "talk turn not registered"
 }
 
+# Vaultwarden SMTP sender mailbox (vaultwarden@$DOMAIN) — created after the
+# mailserver container is up (called after containers_up). The SMTP vars the
+# vaultwarden container uses come from services/vaultwarden/.env (written by
+# seed_stack); this step only makes the mailbox exist so auth succeeds.
+vaultwarden_setup() {
+  cd "$REPO" || exit 1
+  . services/vaultwarden/.env
+  if ! docker exec mailserver setup email list 2>/dev/null | grep -qiE "^[* ] *vaultwarden@$DOMAIN( |\$|\[)"; then
+    printf '%s\n%s\n' "$SMTP_PASSWORD" "$SMTP_PASSWORD" \
+      | docker exec -i mailserver setup email add "vaultwarden@$DOMAIN" >/dev/null 2>&1 \
+      || fail vaultwarden_setup "mailbox vaultwarden@$DOMAIN not created"
+  fi
+}
+
 ssl_mode_full() {
   # API first (needs Zone Settings read on the token); fall back to a
   # behavior probe — Flexible/Off makes CF reach the origin over HTTP and
@@ -650,6 +680,7 @@ phase2_op() {
   host_services
   containers_up
   nextcloud_setup
+  vaultwarden_setup
   issue_certs
   kuma_seed
   panel_servers
@@ -687,6 +718,7 @@ problem() {
     sweep)          echo "old project name is still referenced in the repo tree" ;;
     sslmode)        echo "Cloudflare SSL/TLS mode is not Full (or strict)" ;;
     nextcloud_setup) echo "Nextcloud occ wiring incomplete (Talk signaling/TURN, SMTP, background cron)" ;;
+    vaultwarden_setup) echo "Vaultwarden SMTP sender mailbox missing (vaultwarden@$DOMAIN)" ;;
     panel_servers)  echo "PufferPanel server templates not deployed (puffer/data/servers/)" ;;
     clone)          echo "repo clone failed" ;;
     *)              echo "$1" ;;
@@ -721,6 +753,7 @@ hint() {
     sweep)          echo "rename or remove the files listed by: grep -rl jehpok $REPO --exclude-dir=.git" ;;
     sslmode)        echo "Cloudflare dashboard -> SSL/TLS -> Overview -> set mode to Full (or Full strict), then re-check" ;;
     nextcloud_setup) echo "run the occ steps from docs/GUIDE.md 'Ordering after a fresh deploy' (talk:signaling:add x2, talk:turn:add x2, config:system:set mail_*, background:cron) — see the nextcloud_setup function in this script, then re-check" ;;
+    vaultwarden_setup) echo "run: printf '%s\\n%s\\n' <pass> <pass> | docker exec -i mailserver setup email add vaultwarden@$DOMAIN, then re-check" ;;
     panel_servers)  echo "run: sudo cp config/pufferpanel/servers/*.json /var/www/custom/projects/homelab/puffer/data/servers/, then re-check" ;;
     clone)          echo "add the key printed above to GitHub (Settings -> SSH keys), then re-run the script" ;;
     *)              echo "" ;;
@@ -754,6 +787,7 @@ recheck() {
     sweep) ! grep -rl 'jehpok' "$REPO" --exclude-dir=.git 2>/dev/null | grep -qv "^$REPO/scripts/install.sh$" ;;
     sslmode) ssl_mode_full ;;
     nextcloud_setup) docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN" && docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://turn.$DOMAIN/signaling" && docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "turn.$DOMAIN:3478" ;;
+    vaultwarden_setup) docker exec mailserver setup email list 2>/dev/null | grep -qiE "^[* ] *vaultwarden@$DOMAIN( |\$|\[)" ;;
     panel_servers)  sudo test -f /var/www/custom/projects/homelab/puffer/data/servers/07fd7727.json && sudo test -f /var/www/custom/projects/homelab/puffer/data/servers/2ecfbe8c.json ;;
     *) false ;;
   esac
