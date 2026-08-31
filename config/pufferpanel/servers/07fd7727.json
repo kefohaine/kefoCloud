@@ -108,7 +108,7 @@
     },
     "port": {
       "type": "integer",
-      "value": 25567,
+      "value": 25565,
       "display": "Port",
       "desc": "What port to bind the server to",
       "required": true,
@@ -394,7 +394,7 @@
     "image": "eclipse-temurin:17",
     "networkName": "host",
     "portBindings": [
-      "0.0.0.0:25567:25567/tcp"
+      "0.0.0.0:25565:25565/tcp"
     ]
   },
   "supportedEnvironments": [
@@ -405,7 +405,7 @@
       "type": "docker",
       "image": "eclipse-temurin:17",
       "portBindings": [
-        "0.0.0.0:25567:25567/tcp"
+        "0.0.0.0:25565:25565/tcp"
       ]
     }
   ],
