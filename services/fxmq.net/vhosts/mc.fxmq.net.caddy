@@ -84,12 +84,12 @@ https://mc.fxmq.net {
 		root * /eaglercraft
 		file_server
 	}
-	# Eaglercraft clients connect to wss://mc.fxmq.net/ws; reverse_proxy
+	# Eaglercraft clients connect to wss://mc.fxmq.net/web; reverse_proxy
 	# passes the WebSocket upgrade through to the EaglerXServer plugin,
 	# which multiplexes the websocket on the SAME Netty channel as the
 	# MC protocol (EaglerXServer 1.1.1 injects its handler into the
 	# game server's port — host-net server on 172.22.0.1:25567).
-	handle_path /ws {
+	handle_path /web {
 		reverse_proxy 172.22.0.1:25567
 	}
 	# Catch-all: nothing else matched → 404 (without this, unmatched paths
