@@ -555,7 +555,7 @@ BKP_DIR := $(REPO)/backups
 # Shared bodies: `make backup` inlines them so it stays one self-contained
 # recipe (no chained make targets).
 define bkp_cloud_cmds
-@dest=$(BKP_DIR)/cloud-backup-$$(date +%Y%m%d-%H%M%S); \
+@dest=$(BKP_DIR)/cloud-backup-$$(date +%Y%m%d); \
   sudo mkdir -p "$(BKP_DIR)" "$$dest"; \
   sudo chown op:op "$$dest"; \
   docker exec -w /var/www/html nextcloud php occ maintenance:mode --on; \
@@ -568,7 +568,7 @@ define bkp_cloud_cmds
 endef
 
 define bkp_vault_cmds
-@dest=$(BKP_DIR)/vault-backup-$$(date +%Y%m%d-%H%M%S).tar.gz; \
+@dest=$(BKP_DIR)/vault-backup-$$(date +%Y%m%d).tar.gz; \
   sudo mkdir -p "$(BKP_DIR)"; \
   sudo tar czf "$$dest" -C $(REPO)/vault data; \
   echo "Backup at $$dest"

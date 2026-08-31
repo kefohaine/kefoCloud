@@ -112,10 +112,10 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Problem**: opening Templates triggers an on-demand git checkout of the community repo (`Checking out repo community: cache/template-repos/1`) — the only >100ms request in the panel log (`GET /api/templates/1` = 936ms; every other request is sub-ms). Also the community `minecraft` template dir contains only `data.json` + `minecraft.json` (no `README.md`, upstream), so every view logs `Error reading readme cache/template-repos/1/minecraft/README.md: no such file or directory`.
 - **Fix**: cosmetic/stall only — the checkout is cached after first run (subsequent opens are ~1ms). For the README error, delete the repo dir and let PufferPanel re-checkout, or accept it as an upstream data gap. Not worth action unless template browsing is a daily use case.
 
-#### Nextcloud Talk: no High-performance backend, no Client Push
-- **File**: `services/nextcloud/docker-compose.yml` (or new compose for HPB + push proxy)
-- **Problem**: Talk scales only to ~3 participants without an HPB container; Client Push proxy absent → delayed notifications. Currently a low-impact warning; grows if Talk is used.
-- **Fix**: Add a Talk HPB container on `net` + the `nextcloud-talk-hpb` image, set `TURN_SERVER` / `SIGNALING_*` env; install `nextcloud_announcements` or a separate push proxy. Both are out-of-scope unless Talk calls become a real use case.
+#### Nextcloud Talk: no Client Push proxy
+- **File**: `services/nextcloud/docker-compose.yml` (Talk stack: `talk-signaling` HPB + `talk-coturn` already deployed)
+- **Problem**: mobile push notifications are delayed — no push proxy (UnifiedPush / nextcloud-push) is installed. The old entry's "no HPB" premise is stale: the Go signaling server (strukturag/nextcloud-spreed-signaling) has run since the 2026-08-30 rebuild.
+- **Fix**: install a push proxy + Notifications backend when Talk push becomes a real use case.
 
 ---
 
@@ -304,6 +304,8 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **PufferPanel registration fully closed + admin login restored** — backend toggle `panel.registrationenabled` was `true` in the live config and the edge 403 only covered the UI path, so `POST /panel/auth/register` (prefix-stripped API route) stayed live. Now: toggle `false`, Caddy blocks `/panel/register*` + `/auth/register*` + `/panel/auth/register*`, admin password reset (bcrypt + SQLite UPDATE + panel restart), and `make smoke` enforces all of it (edge 403s + toggle off + admin account healthy).
 - **Browser 1.12.2 world pregenerated (radius 1000)** — Chunky patched (`AsyncChunksPaper_9_12`: main-thread time-sliced chunk loads; AsyncCatcher + watchdog fixes, source in `plugins/chunky-patch/`); task finished 16,129 chunks (square — `chunky start circle` silently ignores the shape arg; set it via `chunky shape circle`), world 69 MB; `07fd7727` `autorestart` off (operator, 2026-08-31).
 - **`lazymc` panel account removed** — dormant root-admin user (id 3, admin scope) deleted after lazymc's Aug 28 removal; 32 stale sessions + admin permission purged, panel restarted. Panel now has only `admin` (id 1).
+- **Backup artifacts per-day, no hour** — cloud/vault backups renamed to `YYYYMMDD` (matching secrets/config bundles); a same-day `make backup` overwrites/merges into the same files.
+- **`talk-coturn` healthcheck added** — real STUN binding probe (`turnutils_stunclient 127.0.0.1`, ships in the image); container now `healthy` like the rest of the stack.
 
 ---
 
