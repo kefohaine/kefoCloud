@@ -187,6 +187,9 @@ list:
 >@echo ""
 >@echo "--- mailboxes ---"
 >@docker exec mailserver setup email list 2>/dev/null || echo "  (mailserver not running)"
+>@echo ""
+>@echo "--- mail aliases ---"
+>@docker exec mailserver setup alias list 2>/dev/null || echo "  (mailserver not running)"
 
 # Shared bodies for the granular clean-* recipes. cleanup is the umbrella
 # recipe and inlines all three bodies — no chained make targets.
@@ -259,7 +262,7 @@ install-hooks:
 # part (ROUNDCUBEMAIL_USERNAME_DOMAIN=fxmq.net).
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: mail-add-user mail-passwd mail-del-user mail-list-users mail-gen mail-alias-gen mail-alias-del mail-alias-list
+.PHONY: mail-add-user mail-passwd mail-del-user mail-list-users mail-gen mail-alias-gen mail-alias-del mail-alias-list mail-quota-add mail-quota-del
 
 mail-add-user:
 >@[ -n "$(USER)" ] || { echo "Usage: make mail-add-user USER=name@fxmq.net"; exit 1; }
@@ -277,6 +280,18 @@ mail-del-user:
 
 mail-list-users:
 >@docker exec mailserver setup email list
+
+# Per-mailbox storage quota (bytes with B/k/M/G/T suffix; 0 = no limit).
+# Writes mailserver/config/dovecot-quotas.cf — DMS changedetector reloads
+# dovecot automatically, no container restart needed.
+mail-quota-add:
+>@[ -n "$(MAIL)" ] && [ -n "$(QUOTA)" ] || { echo "Usage: make mail-quota-add MAIL=name@fxmq.net QUOTA=2G"; exit 1; }
+>@echo "$(QUOTA)" | grep -qE '^([0-9]+(B|k|M|G|T)|0)$$' || { echo "Invalid QUOTA — B/k/M/G/T suffix, or 0 (no limit)"; exit 1; }
+>@docker exec mailserver setup quota set "$(MAIL)" "$(QUOTA)"
+
+mail-quota-del:
+>@[ -n "$(MAIL)" ] || { echo "Usage: make mail-quota-del MAIL=name@fxmq.net"; exit 1; }
+>@docker exec mailserver setup quota del "$(MAIL)"
 
 # Disposable mailbox: random 7-letter local part + random 16-char password
 # (see scripts/mail-gen.sh). Local part is always generated — no custom
@@ -760,6 +775,8 @@ help:
 >@echo "  │  make mail-add-user USER=…    named mailbox (password prompted via read -s)"
 >@echo "  │  make mail-passwd USER=…      rotate a mailbox password (prompted)"
 >@echo "  │  make mail-del-user USER=…    delete a mailbox"
->@echo "  └  make mail-list-users         list mailboxes"
+>@echo "  │  make mail-list-users         list mailboxes"
+>@echo "  │  make mail-quota-add MAIL=… QUOTA=…   set a mailbox storage quota (B/k/M/G/T suffix; 0 = no limit)"
+>@echo "  └  make mail-quota-del MAIL=…   remove a mailbox quota (back to unlimited)"
 >@echo ""
 >@echo ""
