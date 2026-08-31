@@ -58,12 +58,14 @@ cat <<'EOF'
 ██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗███████╗██║  ██║██████╔╝
 ╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝╚═════╝
 
-  One-shot setup for a fresh Debian VPS: Nextcloud, Vaultwarden,
-  Uptime Kuma and Caddy (named after your domain) behind Cloudflare,
-  with tailscale, ttyd, dnsmasq and goose as host services. Prompts
-  once (domain, Cloudflare API token, Tailscale auth key), then runs
-  unattended — errors are listed with a hint each and re-checked
-  until resolved, and success prints only when all are green.
+  One-shot setup for a fresh Debian VPS: Nextcloud (app + PostgreSQL +
+  Redis + Talk HPB/TURN), Caddy, Vaultwarden, Uptime Kuma, PufferPanel
+  and the Docker Mailserver + Roundcube platform (named after your
+  domain) behind Cloudflare, with tailscale, ttyd, dnsmasq and goose
+  as host services. Prompts once (domain, Cloudflare API token,
+  Tailscale auth key), then runs unattended — errors are listed with
+  a hint each and re-checked until resolved, and success prints only
+  when all are green.
 
 WARNING: SSH (port 22) is tailnet-only — your current session stays alive, but the next login must come from a Tailscale device.
 EOF
