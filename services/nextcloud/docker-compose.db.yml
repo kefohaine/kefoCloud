@@ -17,15 +17,15 @@
 # is deliberately conservative. Postgres default (not tuned here) settings
 # apply everywhere else.
 services:
-  db:
+  postgresql:
     image: postgres:17-alpine
-    container_name: nextcloud-db
+    container_name: postgresql
     restart: unless-stopped
 
     # Hard RAM cap (no container swap). Part of the 3 GB Nextcloud-stack
-    # ceiling on fxmq: 1g+192m+256m+128m+768m = 2.34g total.
-    mem_limit: 768m
-    memswap_limit: 768m
+    # ceiling on fxmq: 1g+128m+256m+128m+512m = 2.02g total.
+    mem_limit: 512m
+    memswap_limit: 512m
 
     environment:
       POSTGRES_DB: ${POSTGRES_DB}

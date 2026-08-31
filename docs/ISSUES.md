@@ -22,7 +22,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 #### Nextcloud DB runs on fxmq until the 1 TB / 2 GB VPS joins the tailnet
 - **File**: `services/nextcloud/docker-compose.db.yml` (PostgreSQL 17, data in `/var/www/custom/projects/homelab/pgdata/`)
-- **Problem**: the operator wants the Nextcloud database on a separate 1 TB storage / 2 GB RAM VPS ("storage relocation"), but that host is not yet connected to the tailnet. Until then PostgreSQL runs on fxmq (bridge-only, no published ports), consuming 768 MB of the 3 GB Nextcloud-stack ceiling.
+- **Problem**: the operator wants the Nextcloud database on a separate 1 TB storage / 2 GB RAM VPS ("storage relocation"), but that host is not yet connected to the tailnet. Until then PostgreSQL runs on fxmq (bridge-only, no published ports), consuming 512 MB of the 3 GB Nextcloud-stack ceiling.
 - **Fix**: when the new VPS joins the tailnet, follow the migration steps in `docs/GUIDE.md` → "Nextcloud DB": stop the unit, rsync `pgdata/` to the big disk, re-deploy `docker-compose.db.yml` there (port published on the tailnet IP only), point `POSTGRES_HOST` in `services/nextcloud/.env` at the new IP, recreate nextcloud. Remove this entry when done.
 
 #### No automated backup script
@@ -78,11 +78,6 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Problem**: after the migration, `cloud.fxmq.net` Nextcloud desktop sync is bot-challenged until the per-hostname WAF rule skip is re-created (same rationale as the `cloud.fxmq.net` `Intended` entry).
 - **Fix**: re-add the per-hostname WAF rule skip for `cloud.fxmq.net` after `scripts/install.sh` finishes.
 
-#### install.sh `renames()` is not idempotent on the migrated canonical repo
-- **File**: `scripts/install.sh`
-- **Problem**: after the Aug 2026 migration the canonical repo already carries the `fxmq.net` / `op` / `shell.` names, but `renames()` still expects a pre-migration clone: `mv services/vhosts services/$DOMAIN` fails (no `services/vhosts`), so re-running `install.sh` against a current clone aborts.
-- **Fix**: guard the rename steps (skip when `services/$DOMAIN` already exists and no `homelab.com` strings remain), or document that install.sh requires a pre-migration revision.
-
 #### Bedrock skins invisible to Java clients (Geyser 1228 / Floodgate b140 upstream bug)  **[needs human approval]**
 - **File**: upstream Geyser/Floodgate; local workaround = plugin drop
 - **Problem**: Java players see a default skin for Bedrock players despite classic skin + online mode + healthy skin service — a known upstream regression in exactly these builds (see Lessons learned; GeyserMC/Geyser #6659, #6574).
@@ -113,7 +108,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Fix**: cosmetic/stall only — the checkout is cached after first run (subsequent opens are ~1ms). For the README error, delete the repo dir and let PufferPanel re-checkout, or accept it as an upstream data gap. Not worth action unless template browsing is a daily use case.
 
 #### Nextcloud Talk: no Client Push proxy
-- **File**: `services/nextcloud/docker-compose.yml` (Talk stack: `talk-signaling` HPB + `talk-coturn` already deployed)
+- **File**: `services/nextcloud/docker-compose.yml` (Talk stack: `talk-hpb` HPB + `talk-relay` already deployed)
 - **Problem**: mobile push notifications are delayed — no push proxy (UnifiedPush / nextcloud-push) is installed. The old entry's "no HPB" premise is stale: the Go signaling server (strukturag/nextcloud-spreed-signaling) has run since the 2026-08-30 rebuild.
 - **Fix**: install a push proxy + Notifications backend when Talk push becomes a real use case.
 
@@ -305,7 +300,10 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Browser 1.12.2 world pregenerated (radius 1000)** — Chunky patched (`AsyncChunksPaper_9_12`: main-thread time-sliced chunk loads; AsyncCatcher + watchdog fixes, source in `plugins/chunky-patch/`); task finished 16,129 chunks (square — `chunky start circle` silently ignores the shape arg; set it via `chunky shape circle`), world 69 MB; `07fd7727` `autorestart` off (operator, 2026-08-31).
 - **`lazymc` panel account removed** — dormant root-admin user (id 3, admin scope) deleted after lazymc's Aug 28 removal; 32 stale sessions + admin permission purged, panel restarted. Panel now has only `admin` (id 1).
 - **Backup artifacts per-day, no hour** — cloud/vault backups renamed to `YYYYMMDD` (matching secrets/config bundles); a same-day `make backup` overwrites/merges into the same files.
-- **`talk-coturn` healthcheck added** — real STUN binding probe (`turnutils_stunclient 127.0.0.1`, ships in the image); container now `healthy` like the rest of the stack.
+- **Container renames** — `talk-signaling`→`talk-hpb`, `talk-coturn`→`talk-relay`, `nextcloud-db`→`postgresql`; bridge IPs unchanged, Caddy upstreams by IP unaffected.
+- **RAM caps rebalanced** — redis 192m→128m, postgresql 768m→512m, roundcube got a 512m cap; NC stack ceiling now 1g+128m+256m+128m+512m = 2.02 GB.
+- **`talk-relay` healthcheck added** — real STUN binding probe (`turnutils_stunclient 127.0.0.1`, ships in the image); container now `healthy` like the rest of the stack.
+- **install.sh rewritten for the canonical repo** — legacy homelab.com/vhosts/debian renames and 4-container trimming dropped; deploys the full stack (panel + mail included), uses the committed kuma seed, adds mail/mc/www DNS records.
 
 ---
 

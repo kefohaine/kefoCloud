@@ -5,8 +5,8 @@ services:
     restart: unless-stopped
 
     # Hard RAM cap (no container swap) — survives recreates, unlike `docker update`.
-    # The whole stack (nextcloud+redis+signaling+coturn+db) stays under the
-    # operator's 3 GB ceiling: 1g+192m+256m+128m+768m = 2.34g.
+    # The whole stack (nextcloud+redis+hpb+relay+db) stays under the
+    # operator's 3 GB ceiling: 1g+128m+256m+128m+512m = 2.02g.
     mem_limit: 1g
     memswap_limit: 1g
 
@@ -87,17 +87,17 @@ services:
 
   # ── Nextcloud Talk support stack ──────────────────────────────────────────
   # redis: distributed cache + locking (see REDIS_HOST above).
-  # signaling: Talk High Performance Backend (strukturag/nextcloud-spreed-
+  # hpb: Talk High Performance Backend (strukturag/nextcloud-spreed-
   #   signaling, the official Go server — no NATS needed). Config generated
   #   by `make talk-gen` into /var/www/custom/projects/homelab/talk/.
-  # coturn: TURN/STUN for WebRTC call media; turn.fxmq.net:3478/5349 + relay.
+  # relay: TURN/STUN for WebRTC call media; turn.fxmq.net:3478/5349 + relay.
 
   redis:
     image: redis:7-alpine
     container_name: redis
     restart: unless-stopped
-    mem_limit: 192m
-    memswap_limit: 192m
+    mem_limit: 128m
+    memswap_limit: 128m
     # Pure cache: no persistence, LRU eviction at 128 MB. Locks live here too —
     # losing them on restart is harmless (they are ephemeral by design).
     command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--save", "", "--appendonly", "no"]
@@ -110,9 +110,9 @@ services:
       net:
         ipv4_address: 172.22.0.11
 
-  signaling:
+  hpb:
     image: strukturag/nextcloud-spreed-signaling:latest
-    container_name: talk-signaling
+    container_name: talk-hpb
     restart: unless-stopped
     mem_limit: 256m
     memswap_limit: 256m
@@ -137,9 +137,9 @@ services:
       net:
         ipv4_address: 172.22.0.12
 
-  coturn:
+  relay:
     image: coturn/coturn:4.6
-    container_name: talk-coturn
+    container_name: talk-relay
     restart: unless-stopped
     # The image defaults to uid nobody, which cannot read the TURN secret
     # conf (0600) or the caddy_data LE certs (uid 201). turnserver as root is

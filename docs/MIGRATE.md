@@ -1,6 +1,6 @@
 # Migration (new VPS, new domain) — script-first
 
-The primary path is `scripts/install.sh` — a plug-and-play installer. It prompts for three values (domain, Cloudflare API token, Tailscale auth key), then runs unattended. It creates the `op` user, installs host services (docker, tailscale, dnsmasq, ttyd, ssh hardening, ufw, sysctl), clones the repo, renames it for the new domain, and brings up exactly four containers: Caddy (renamed `vhosts` → `$DOMAIN`), `nextcloud`, `vaultwarden`, `uptimekuma`. It also creates the Cloudflare A records (`cloud`/`vault`/`kuma`, proxied), sets the zone SSL mode to full, triggers Let's Encrypt issuance, and seeds Uptime Kuma (admin account included).
+The primary path is `scripts/install.sh` — a plug-and-play installer. It prompts for three values (domain, Cloudflare API token, Tailscale auth key), then runs unattended. It creates the `op` user, installs host services (docker, tailscale, dnsmasq, ttyd, ssh hardening, ufw, sysctl), clones the repo (which already carries the canonical `<domain>` naming — no renames are applied), and brings up the full stack: Caddy (`$DOMAIN`), Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Vaultwarden, Uptime Kuma, PufferPanel, and Docker Mailserver + Roundcube. It also creates the Cloudflare A records (`cloud`/`vault`/`kuma`/`www` proxied, `turn`/`mail`/`mc` DNS-only), sets the zone SSL mode to full, triggers Let's Encrypt issuance, and seeds Uptime Kuma (admin account included).
 
 ## Run it
 
@@ -12,15 +12,9 @@ bash install.sh
 
 Enter the domain, CF token, and TS auth key when prompted. The script hands off to user `op` and runs unattended; full log at `/var/log/homelab-install.log`. Errors are printed numbered at the end, then a success summary with credentials.
 
-## What the script renames (expects a pre-migration clone)
+## What the script renames (nothing)
 
-The installer's `renames()` step transforms a clone that still carries the old names. The canonical repo has already been migrated (fxmq.net / `op` / `shell.` since Aug 2026), so re-running `install.sh` against a current clone fails at `mv services/vhosts services/$DOMAIN` — the rename steps are not yet idempotent (tracked in `docs/ISSUES.md`).
-
-- `homelab.com` → `$DOMAIN` — every Caddy vhost, dnsmasq, compose env, Kuma seed
-- `server.$DOMAIN` → `shell.$DOMAIN` — the tailnet-only vhost and the dnsmasq `address=` line
-- `debian` → `op` — user, sudoers, sshd `AllowUsers`, ttyd unit, Makefile ownership
-- `services/vhosts` → `services/$DOMAIN` — caddy container + image renamed to `$DOMAIN`
-- Container set trimmed to 4 — homer, share-flask, mc, mc-flask removed (their Caddy vhosts, Makefile recipes, and Kuma monitors too; the daily.sh mc block died with the maintenance stack, removed Aug 2026)
+The installer's legacy `renames()` step — which transformed a pre-migration clone (`homelab.com` → `$DOMAIN`, `services/vhosts` → `services/$DOMAIN`, `debian` → `op`, trimming to 4 containers) — was removed 2026-08-31. The canonical repo already carries the final naming (fxmq.net / `op` / `shell.`), and `install.sh` deploys it as-is.
 
 ## Prerequisites (manual, unavoidable)
 
@@ -36,7 +30,7 @@ The installer's `renames()` step transforms a clone that still carries the old n
 
 ## Minecraft server (PufferPanel + Geyser)
 
-The Minecraft stack is **not** part of `install.sh`'s container set — the panel (`services/pufferpanel/`) is added post-install; the game server itself is operator-managed (no sleep/wake stack — lazymc and mc-idle-sleeper were removed 2026-08-28). To carry it to a new VPS:
+`install.sh` brings up the panel container itself (PufferPanel at `mc.$DOMAIN/panel`; the first-run admin wizard is an **expected** manual step in its error loop). The game server, however, stays operator-managed (no sleep/wake stack — lazymc and mc-idle-sleeper were removed 2026-08-28). To carry it to a new VPS:
 
 1. The repo carries everything reproducible: the server template `config/pufferpanel/servers/2ecfbe8c.json` and the UFW ports (already in `install.sh`). After the base install: create the panel server from the template JSON (copy into `puffer/data/servers/<id>.json`) and start the game once from the panel UI so the daemon creates the container.
 2. Operator-only (not in repo, copy from the old host): the game server data dir `puffer/data/servers/2ecfbe8c/` (world, jars, plugin jars, Geyser cache/locales).
@@ -44,12 +38,11 @@ The Minecraft stack is **not** part of `install.sh`'s container set — the pane
 
 ## Self-hosted mail (Docker Mailserver + Roundcube)
 
-Like PufferPanel, the mail platform is **not** part of install.sh's container set — it is added post-install. The repo carries everything reproducible (`services/mailserver/docker-compose.yml`, `services/fxmq.net/vhosts/mail.fxmq.net.caddy`, the UFW ports in install.sh). To carry it to a new VPS:
+`install.sh` brings up the mail platform too (`make dok-recreate-mailserver` → `mailserver` at 172.22.0.9 + `roundcube` at 172.22.0.10; the UFW ports are opened by the installer). What is NOT scripted: mailbox accounts (create with `make mail-add-user`/`mail-gen`). To carry existing mail to a new VPS:
 
-1. After the base install: `make dok-recreate-mailserver` (brings up `mailserver` at 172.22.0.9 + `roundcube` at 172.22.0.10) and `sudo ufw allow 25/tcp` etc. (already in install.sh on fresh installs).
-2. Operator-only (copy from the old host): `/var/www/custom/projects/homelab/mailserver/` (Maildirs, DMS config + DKIM keys, roundcube sqlite), `services/mailserver/.env` (mailbox passwords), and the CF DNS records (MX, mail A DNS-only, SPF, DMARC, DKIM TXT).
-3. Re-issue the mail.fxmq.net LE cert via the Caddy vhost; DMS reads it from caddy_data.
+1. Operator-only (copy from the old host): `/var/www/custom/projects/homelab/mailserver/` (Maildirs, DMS config + DKIM keys, roundcube sqlite), `services/mailserver/.env` (mailbox passwords), and the CF DNS records (MX, mail A DNS-only, SPF, DMARC, DKIM TXT).
+2. Re-issue the mail.fxmq.net LE cert via the Caddy vhost; DMS reads it from caddy_data.
 
 ## Manual fallback
 
-If the script can't be used, it automates exactly: host packages + `op` user + sshd hardening + docker daemon.json + `tailscale up` + ufw + repo clone + the renames above + `docker network create net --subnet=172.22.0.0/16` + `make install-config` + `make dok-recreate-$DOMAIN|dok-recreate-nextcloud|dok-recreate-vaultwarden|dok-recreate-uptimekuma` + CF DNS records + cert triggers. Optional data restore: `rsync` `cloud/users`, `vault/data`, `kuma/data` from the old host before first start (then `chown -R 33:33 cloud/users` and touch `cloud/users/.ncdata`).
+If the script can't be used, it automates exactly: host packages + `op` user + sshd hardening + docker daemon.json + `tailscale up` + ufw + repo clone + `docker network create net --subnet=172.22.0.0/16` + `make install-config` + `make dok-recreate-$DOMAIN|dok-recreate-nextcloud-db|dok-recreate-nextcloud|dok-recreate-vaultwarden|dok-recreate-uptimekuma|dok-recreate-pufferpanel|dok-recreate-mailserver` + CF DNS records + cert triggers. Optional data restore: `rsync` `cloud/users`, `vault/data`, `kuma/data` from the old host before first start (then `chown -R 33:33 cloud/users` and touch `cloud/users/.ncdata`).
