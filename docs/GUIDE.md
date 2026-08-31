@@ -73,6 +73,29 @@ make mail-default-quota-set QUOTA=2G   # default quota for make mail-gen (B/k/M/
 make mail-alias-gen TO=target@example.com  # disposable forwarding alias: random 7-digit address → TO (external target required — same-domain refused)
 make mail-alias-del ALIAS=x@fxmq.net TO=target@example.com  # remove a target from an alias (DMS needs ALIAS + TO)
 make mail-alias-list                   # list aliases
+make nc-occ CMD='...'                  # run any occ command verbatim (escape hatch, e.g. CMD='status')
+make nc-status / nc-check              # occ status / occ check
+make nc-update-check                   # occ update:check — newer version available?
+make nc-upgrade                        # occ upgrade — apply DB migrations after an image bump
+make nc-cron / nc-cron-run             # occ background:cron (set mode) / run cron.php once now
+make nc-maintenance-on / nc-maintenance-off  # occ maintenance:mode --on / --off
+make nc-repair                         # occ maintenance:repair --include-expensive (mimetype migrations)
+make nc-db-indices / nc-db-columns / nc-db-primary-keys / nc-db-bigint  # occ db:add-missing-*
+make nc-apps                           # occ app:list
+make nc-app-enable APP=... / nc-app-disable APP=...  # occ app:enable / app:disable
+make nc-config-get KEY=...             # occ config:system:get
+make nc-config-set KEY=... VALUE=... [TYPE=...]  # occ config:system:set (TYPE: string|integer|boolean|array)
+make nc-users                          # occ user:list
+make nc-user-add USER=... [PASS=...]   # occ user:add (prompts for the password without PASS)
+make nc-user-del USER=...              # occ user:delete
+make nc-user-password USER=... [PASS=...]  # occ user:resetpassword
+make nc-user-setting USER=... KEY=... VALUE=...  # occ user:setting (e.g. KEY=email)
+make nc-scan [USER=...]                # occ files:scan (default --all)
+make nc-groups / nc-jobs               # occ group:list / occ background-job:list
+make nc-talk-signaling                 # occ talk:signaling:list (add: URL=... SECRET=... · del: URL=...)
+make nc-talk-turn                      # occ talk:turn:list (add: SERVER='scheme host:port [--udp --tcp]' SECRET=... · del: SERVER=...)
+make nc-2fa-enforce USER=...           # occ twofactorauth:enforce
+make nc-logs [N=100]                   # occ log:tail — tail the Nextcloud log
 make clean-docker      # prune builder / image / container
 make clean-apt         # apt autoremove + clean
 make clean-backups     # keep latest 3 backups per pattern, delete older

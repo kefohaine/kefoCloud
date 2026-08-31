@@ -697,6 +697,170 @@ tmux-list:
 >@tmux ls 2>/dev/null || echo "No tmux sessions."
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Nextcloud (occ) — every recipe wraps `docker exec -u www-data nextcloud
+# php occ` (the container is named nextcloud; the FPM user owns occ).
+# Generic escape hatch: make nc-occ CMD='<any occ command + args>'.
+# Secrets never go into argv: passwords use OC_PASS (occ prompts otherwise)
+# and occ config:system:set output is left as-is (never echoed to logs).
+# ─────────────────────────────────────────────────────────────────────────────
+
+NC_OCC := docker exec -u www-data nextcloud php occ
+
+.PHONY: nc-occ nc-status nc-check nc-update-check nc-upgrade nc-cron nc-cron-run \
+	nc-maintenance-on nc-maintenance-off nc-repair nc-db-indices nc-db-columns \
+	nc-db-primary-keys nc-db-bigint nc-apps nc-app-enable nc-app-disable \
+	nc-config-get nc-config-set nc-users nc-user-add nc-user-del nc-user-password \
+	nc-user-setting nc-scan nc-groups nc-jobs nc-talk-signaling nc-talk-signaling-add \
+	nc-talk-signaling-del nc-talk-turn nc-talk-turn-add nc-talk-turn-del \
+	nc-2fa-enforce nc-logs
+
+nc-occ:
+>@if [ -z "$(CMD)" ]; then \
+    echo "Usage: make nc-occ CMD='<occ command + args>'  (e.g. CMD='status' or CMD='app:list')"; \
+    exit 1; \
+  fi
+>$(NC_OCC) $(CMD)
+
+nc-status:
+>$(NC_OCC) status
+
+nc-check:
+>$(NC_OCC) check
+
+nc-update-check:
+>$(NC_OCC) update:check
+
+nc-upgrade:
+>$(NC_OCC) upgrade
+
+nc-cron:
+>$(NC_OCC) background:cron
+
+nc-cron-run:
+>docker exec -u www-data nextcloud php -f /var/www/html/cron.php
+
+nc-maintenance-on:
+>$(NC_OCC) maintenance:mode --on
+
+nc-maintenance-off:
+>$(NC_OCC) maintenance:mode --off
+
+nc-repair:
+>$(NC_OCC) maintenance:repair --include-expensive
+
+nc-db-indices:
+>$(NC_OCC) db:add-missing-indices
+
+nc-db-columns:
+>$(NC_OCC) db:add-missing-columns
+
+nc-db-primary-keys:
+>$(NC_OCC) db:add-missing-primary-keys
+
+nc-db-bigint:
+>$(NC_OCC) db:convert-filecache-bigint
+
+nc-apps:
+>$(NC_OCC) app:list
+
+nc-app-enable:
+>@if [ -z "$(APP)" ]; then echo "Usage: make nc-app-enable APP=<app-id>"; exit 1; fi
+>$(NC_OCC) app:enable $(APP)
+
+nc-app-disable:
+>@if [ -z "$(APP)" ]; then echo "Usage: make nc-app-disable APP=<app-id>"; exit 1; fi
+>$(NC_OCC) app:disable $(APP)
+
+nc-config-get:
+>@if [ -z "$(KEY)" ]; then echo "Usage: make nc-config-get KEY=<config-key>"; exit 1; fi
+>$(NC_OCC) config:system:get $(KEY)
+
+nc-config-set:
+>@if [ -z "$(KEY)" ] || [ -z "$(VALUE)" ]; then \
+    echo "Usage: make nc-config-set KEY=<key> VALUE=<value> [TYPE=string|integer|boolean|array]"; \
+    exit 1; \
+  fi
+>$(NC_OCC) config:system:set $(KEY) --value "$(VALUE)" $(TYPE:%=--type %)
+
+nc-users:
+>$(NC_OCC) user:list
+
+nc-user-add:
+>@if [ -z "$(USER)" ]; then echo "Usage: make nc-user-add USER=<uid> [PASS=<password>]"; exit 1; fi
+>@if [ -n "$(PASS)" ]; then \
+    OC_PASS="$(PASS)" $(NC_OCC) user:add --password-from-env "$(USER)"; \
+  else \
+    $(NC_OCC) user:add "$(USER)"; \
+  fi
+
+nc-user-del:
+>@if [ -z "$(USER)" ]; then echo "Usage: make nc-user-del USER=<uid>"; exit 1; fi
+>$(NC_OCC) user:delete "$(USER)"
+
+nc-user-password:
+>@if [ -z "$(USER)" ]; then echo "Usage: make nc-user-password USER=<uid> [PASS=<password>]"; exit 1; fi
+>@if [ -n "$(PASS)" ]; then \
+    OC_PASS="$(PASS)" $(NC_OCC) user:resetpassword --password-from-env "$(USER)"; \
+  else \
+    $(NC_OCC) user:resetpassword "$(USER)"; \
+  fi
+
+nc-user-setting:
+>@if [ -z "$(USER)" ] || [ -z "$(KEY)" ] || [ -z "$(VALUE)" ]; then \
+    echo "Usage: make nc-user-setting USER=<uid> KEY=<setting-key> VALUE=<value>  (e.g. KEY=email)"; \
+    exit 1; \
+  fi
+>$(NC_OCC) user:setting "$(USER)" settings "$(KEY)" "$(VALUE)"
+
+nc-scan:
+>@if [ -n "$(USER)" ]; then \
+    $(NC_OCC) files:scan "$(USER)"; \
+  else \
+    $(NC_OCC) files:scan --all; \
+  fi
+
+nc-groups:
+>$(NC_OCC) group:list
+
+nc-jobs:
+>$(NC_OCC) background-job:list
+
+nc-talk-signaling:
+>$(NC_OCC) talk:signaling:list
+
+nc-talk-signaling-add:
+>@if [ -z "$(URL)" ] || [ -z "$(SECRET)" ]; then \
+    echo "Usage: make nc-talk-signaling-add URL=<server-url> SECRET=<shared-secret>"; \
+    exit 1; \
+  fi
+>$(NC_OCC) talk:signaling:add "$(URL)" "$(SECRET)"
+
+nc-talk-signaling-del:
+>@if [ -z "$(URL)" ]; then echo "Usage: make nc-talk-signaling-del URL=<server-url>"; exit 1; fi
+>$(NC_OCC) talk:signaling:delete "$(URL)"
+
+nc-talk-turn:
+>$(NC_OCC) talk:turn:list
+
+nc-talk-turn-add:
+>@if [ -z "$(SERVER)" ] || [ -z "$(SECRET)" ]; then \
+    echo "Usage: make nc-talk-turn-add SERVER='scheme host:port [--udp] [--tcp]' SECRET=<shared-secret>"; \
+    exit 1; \
+  fi
+>$(NC_OCC) talk:turn:add $(SERVER) --secret "$(SECRET)"
+
+nc-talk-turn-del:
+>@if [ -z "$(SERVER)" ]; then echo "Usage: make nc-talk-turn-del SERVER='scheme host:port'"; exit 1; fi
+>$(NC_OCC) talk:turn:delete $(SERVER)
+
+nc-2fa-enforce:
+>@if [ -z "$(USER)" ]; then echo "Usage: make nc-2fa-enforce USER=<uid>"; exit 1; fi
+>$(NC_OCC) twofactorauth:enforce "$(USER)"
+
+nc-logs:
+>$(NC_OCC) log:tail $(or $(N),100)
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Migration
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -802,5 +966,31 @@ help:
 >@echo "  │  make mail-del-user USER=…    delete a mailbox"
 >@echo "  │  make mail-list-users         list mailboxes"
 >@echo "  └  make mail-quota-set MAIL=… QUOTA=…   set a mailbox storage quota (B/k/M/G/T suffix; 0 = no limit)"
+>@echo ""
+>@echo "  Nextcloud (occ — every command runs as www-data in the nextcloud container)"
+>@echo "  │  make nc-occ CMD='…'      any occ command verbatim (escape hatch, e.g. CMD='status')"
+>@echo "  │  make nc-status           occ status · nc-check = occ check"
+>@echo "  │  make nc-update-check     occ update:check — newer version available?"
+>@echo "  │  make nc-upgrade          occ upgrade — apply DB migrations after an image bump"
+>@echo "  │  make nc-cron             occ background:cron — set background-jobs mode"
+>@echo "  │  make nc-cron-run         run cron.php once now (host cron does this every 5 min)"
+>@echo "  │  make nc-maintenance-on   occ maintenance:mode --on (off: nc-maintenance-off)"
+>@echo "  │  make nc-repair           occ maintenance:repair --include-expensive (mimetype migrations)"
+>@echo "  │  make nc-db-indices       occ db:add-missing-indices (columns / primary-keys / bigint: nc-db-*)"
+>@echo "  │  make nc-apps             occ app:list"
+>@echo "  │  make nc-app-enable APP=…   occ app:enable · nc-app-disable APP=… = occ app:disable"
+>@echo "  │  make nc-config-get KEY=…   occ config:system:get"
+>@echo "  │  make nc-config-set KEY=… VALUE=… [TYPE=…]   occ config:system:set"
+>@echo "  │  make nc-users            occ user:list"
+>@echo "  │  make nc-user-add USER=… [PASS=…]    occ user:add (prompts without PASS)"
+>@echo "  │  make nc-user-del USER=… occ user:delete"
+>@echo "  │  make nc-user-password USER=… [PASS=…]    occ user:resetpassword"
+>@echo "  │  make nc-user-setting USER=… KEY=… VALUE=…    occ user:setting (e.g. KEY=email)"
+>@echo "  │  make nc-scan [USER=…]    occ files:scan (default --all)"
+>@echo "  │  make nc-groups           occ group:list · nc-jobs = occ background-job:list"
+>@echo "  │  make nc-talk-signaling   occ talk:signaling:list (add: URL=… SECRET=… · del: URL=…)"
+>@echo "  │  make nc-talk-turn        occ talk:turn:list (add: SERVER='scheme host:port [--udp --tcp]' SECRET=… · del: SERVER=…)"
+>@echo "  │  make nc-2fa-enforce USER=…   occ twofactorauth:enforce"
+>@echo "  └  make nc-logs [N=100]     occ log:tail — tail the Nextcloud log"
 >@echo ""
 >@echo ""
