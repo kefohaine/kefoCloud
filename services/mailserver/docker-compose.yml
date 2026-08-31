@@ -82,6 +82,10 @@ services:
       retries: 3
       start_period: 15s
 
+    # Hard RAM cap (no container swap) — survives recreates, unlike docker update.
+    mem_limit: 512m
+    memswap_limit: 512m
+
     environment:
       ROUNDCUBEMAIL_DB_TYPE: sqlite
       # SQLite DB lives in the bind mount below (image default /var/roundcube/db).
