@@ -6,7 +6,7 @@ For system architecture and design rationale, see `README.md`. For agent rules, 
 
 ## Repository layout
 
-Top-level dirs: `services/` (one compose file per running container), `config/` (reference copies of host configs, restored by `make install-config`), `docs/` (agent rules, this guide, issue tracker, migration runbook), `scripts/` (installer + kuma import). `ls` is the source of truth — what's described here is the intent, not the full inventory.
+Top-level dirs: `services/` (one compose file per running container), `config/` (reference copies of host configs, restored by `make install-config`), `docs/` (agent rules, this guide, issue tracker, migration runbook), `scripts/` (installer, kuma import, storage onboarding). `ls` is the source of truth — what's described here is the intent, not the full inventory.
 
 - `services/<ctn>/docker-compose.yml` — one per running container. Compose files are the source of truth for images, env vars, ports, volumes, healthchecks, and logging.
 - `config/` — reference copies of host-level configs (goose systemd unit, SSH hardening, dnsmasq, ttyd, docker daemon, sysctl, PufferPanel server template). Restored to live paths by `make install-config`. For an offline copy of the whole `config/` tree, use `make bundle-config`.
@@ -59,7 +59,8 @@ make install-config   # one-shot host bootstrap: install ttyd, copy config/ to l
 make install-<file>   # per-file install from config/ → live (goose, ttyd, ssh, dnsmasq-conf, dnsmasq-override, docker, sysctl, cron)
 make kuma-import      # import an adapted Uptime Kuma db from another host (KUMA_DB=/path)
 make talk-gen         # generate Nextcloud-stack secrets + Talk/TURN configs (idempotent; writes services/nextcloud/.env + /var/www/custom/projects/homelab/talk/)
-make dok-recreate-nextcloud-db  # force-recreate the Nextcloud PostgreSQL unit (docker-compose.db.yml — runs on this host until the 1 TB VPS joins the tailnet)
+make storage          # onboard the 1 TB storage VPS as Nextcloud object storage (Garage S3; PG stays on fxmq) — prompts for ssh password + tailscale auth key (scripts/storage.sh)
+make dok-recreate-nextcloud-db  # force-recreate the Nextcloud PostgreSQL unit (docker-compose.db.yml — stays on this host; the 1 TB VPS serves files via Garage instead, see make storage)
 make install-cron     # install /etc/cron.d/nextcloud (Nextcloud occ cron, every 5 min)
 make mail-add-user USER=name@fxmq.net  # create a mailbox — password is prompted via read -s, never on the command line
 make mail-passwd USER=name@fxmq.net    # rotate a mailbox password (also prompted)

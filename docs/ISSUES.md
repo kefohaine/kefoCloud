@@ -25,10 +25,10 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Problem**: the 2026-08-31 tuning set `view-distance=4` in server.properties, but Spigot's per-world `world-settings.default.view-distance: 6` overrides it — the server boots with "View Distance: 6" for all three worlds, so the intended 4-chunk render/tick distance never took effect (1.12.2 has no separate sim-distance, so this also widens entity ticking).
 - **Fix**: operator decision — either set spigot.yml `world-settings.default.view-distance: 4` (matches the tuning intent) or accept 6 and update the docs. Requires a server restart (spigot.yml is read at world load).
 
-#### Nextcloud DB runs on fxmq until the 1 TB / 2 GB VPS joins the tailnet
-- **File**: `services/nextcloud/docker-compose.db.yml` (PostgreSQL 17, data in `/var/www/custom/projects/homelab/pgdata/`)
-- **Problem**: the operator wants the Nextcloud database on a separate 1 TB storage / 2 GB RAM VPS ("storage relocation"), but that host is not yet connected to the tailnet. Until then PostgreSQL runs on fxmq (bridge-only, no published ports), consuming 512 MB of the 3 GB Nextcloud-stack ceiling.
-- **Fix**: when the new VPS joins the tailnet, follow the migration steps in `docs/GUIDE.md` → "Nextcloud DB": stop the unit, rsync `pgdata/` to the big disk, re-deploy `docker-compose.db.yml` there (port published on the tailnet IP only), point `POSTGRES_HOST` in `services/nextcloud/.env` at the new IP, recreate nextcloud. Remove this entry when done.
+#### Nextcloud DB stays on fxmq; the 1 TB VPS joins as object storage (Setup A)
+- **File**: `scripts/storage.sh` (Garage on the 1 TB / 2 GB VPS; `services/nextcloud/docker-compose.db.yml` stays)
+- **Problem**: the 1 TB / 2 GB storage VPS was meant for a DB relocation, but Setup A was chosen: PostgreSQL stays on fxmq (11 GB RAM — no pressure, and DB latency stays local); the 1 TB box serves the user **files** as Garage (S3) object storage.
+- **Fix** (pending): run `make storage` (prompts for the storage root password + a tailscale auth key). It: joins storage to the tailnet (lockout-safe firewall lockdown), installs Garage + bucket/keys, moves the datadirectory files into the bucket, configures NC primary object store via `occ`, sets the admin quota, and installs a nightly `pg_dump` → `storage:/backups/nc`. Manual follow-ups: friends' quotas (`make nc-user-setting USER=<uid> KEY=quota VALUE=...`), then delete the local copies under `cloud/users/` once the bucket is trusted. Remove this entry when done.
 
 #### No automated backup script
 - **File**: (missing) `scripts/backup.sh`

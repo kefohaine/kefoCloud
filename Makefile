@@ -345,6 +345,12 @@ kuma-import:
 talk-gen:
 >@bash scripts/talk-gen.sh
 
+# Onboard the 1 TB / 2 GB storage VPS as Nextcloud object storage (Setup A:
+# PostgreSQL stays on fxmq, user files move to Garage on storage). Prompts for
+# the storage root password + a tailscale auth key; lockout-safe, idempotent.
+storage:
+>@bash scripts/storage.sh
+
 # ─────────────────────────────────────────────────────────────────────────────
 # config/ (live <-> repo)
 # config/ holds tracked copies of every host-level config. install-config
@@ -916,6 +922,7 @@ help:
 >@echo "  │  make install-hooks         │install git hooks (pre-commit edge guard + pre-push smoke)"
 >@echo "  │  make kuma-import           │import an adapted Uptime Kuma db (KUMA_DB=/path)"
 >@echo "  │  make talk-gen              │generate Nextcloud-stack secrets + Talk/TURN configs (idempotent)"
+>@echo "  │  make storage               │onboard the 1 TB storage VPS: tailscale + garage (S3) for Nextcloud files (prompts: ssh password + tailscale auth key)"
 >@echo "  │  make dok-recreate-nextcloud-db │force-recreate the Nextcloud PostgreSQL unit (runs on this host until the 1 TB VPS joins)"
 >@echo "  │  make install-config        │one-shot host bootstrap: copy config/ to live paths"
 >@echo "  │  make install-<file>        │per-file install from config/ → live (goose, ttyd, ssh, dnsmasq-conf, dnsmasq-override, docker, sysctl, cron)"
