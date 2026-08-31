@@ -15,6 +15,11 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### Robustness
 
+#### Undocumented host process: `node server/server.js` (dumb-init "extra")
+- **File**: host (not in repo) — `ps` shows `dumb-init -- extra` (PID 51742) → `node server/server.js` (PID 51776, up since Aug 24, ~170 MB RSS, cwd `/`)
+- **Problem**: matches no compose file, systemd unit, or script in the repo; purpose unknown. Not touched by any agent task.
+- **Fix**: ask the operator what it is; document it in `docs/GUIDE.md` or remove it if stale.
+
 #### Browser 1.12.2 server: effective view-distance is 6, not the tuned 4  **[needs human approval]**
 - **File**: `puffer/data/servers/07fd7727/spigot.yml` (`world-settings.default.view-distance: 6`) + `server.properties` (`view-distance=4`)
 - **Problem**: the 2026-08-31 tuning set `view-distance=4` in server.properties, but Spigot's per-world `world-settings.default.view-distance: 6` overrides it — the server boots with "View Distance: 6" for all three worlds, so the intended 4-chunk render/tick distance never took effect (1.12.2 has no separate sim-distance, so this also widens entity ticking).
