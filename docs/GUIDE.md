@@ -147,6 +147,7 @@ The compose files are the source of truth. This table is the one-line reference 
 | terminal | n/a (host systemd; see Protected host resources) | n/a | `make systemd-restart-ttyd` | `make install-config` (reinstall) |
 | dnsmasq | n/a (host systemd) | n/a | `make systemd-restart-dnsmasq` | n/a |
 | goose   | n/a (host systemd; see Protected host resources) | n/a | `systemctl restart goose` | n/a |
+| storage | n/a (1 TB / 2 GB VPS; Garage S3 in Docker on the storage host) | `garage` (on storage, 100.111.139.13, tailnet-only) | n/a | `make storage` (onboard/re-run — idempotent) |
 
 The `net` Docker network is `external: true` — create once on a fresh host with `docker network create net --subnet=172.22.0.0/16` (the compose files pin `172.22.0.x` bridge IPs; a default-subnet network rejects them). All inter-container services use `expose`, not `ports`. The exception is `fxmq.net`: it runs with `network_mode: host` so Caddy sees the real client source IP — without host networking, Docker DNAT rewrites every packet to `172.22.0.1` (the bridge gateway) before Caddy sees it, which breaks the `@not_tailnet` remote_ip matcher on `https://shell.fxmq.net`. The host network namespace is on the `net` bridge at `172.22.0.0/16`, so Caddy still dials upstream containers by their bridge IP (see Caddyfile). dnsmasq binds to the Tailscale IP only, not `0.0.0.0`.
 
