@@ -74,10 +74,12 @@ https://mc.fxmq.net {
 	# 8081 of the host — the game server container runs host-net).
 	# /play serves the client files from the homelab/eaglercraft dir
 	# (bind-mounted at /eaglercraft:ro — see docker-compose.yml).
-	handle_path /play {
-		root * /eaglercraft
-		file_server
-	}
+	# /play must keep the trailing slash: the client resolves its assets
+	# (classes.js, assets.epk) RELATIVE to the page URL, so serving index.html
+	# at /play (no slash) breaks every asset path (they resolve to /assets.epk
+	# → 404 → black page). 308 to /play/ so the base URL is always the dir.
+	@play_root path /play
+	redir @play_root /play/ 308
 	handle_path /play/* {
 		root * /eaglercraft
 		file_server
