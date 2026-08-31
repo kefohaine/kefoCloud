@@ -35,8 +35,13 @@ done
 pw=$(openssl rand -base64 12 | tr -d '\n')
 printf '%s\n%s\n' "$pw" "$pw" | docker exec -i mailserver setup email add "$addr" >/dev/null
 
+# Disposable mailboxes get a default 1 GiB quota — transient addresses stay
+# bounded; `make mail-del-user` removes the quota entry along with the mailbox.
+docker exec mailserver setup quota set "$addr" 1G >/dev/null
+
 echo "Disposable mailbox created:"
 echo "  address : $addr"
 echo "  password: $pw"
+echo "  quota   : 1G (default for disposable mailboxes)"
 echo "  login   : https://mail.fxmq.net   (username: ${addr%@*})"
 echo "  delete  : make mail-del-user USER=$addr"
