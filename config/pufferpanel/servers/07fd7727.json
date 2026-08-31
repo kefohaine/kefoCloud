@@ -385,7 +385,7 @@
     },
     "autostart": true,
     "autorecover": false,
-    "autorestart": true
+    "autorestart": false
   },
   "environment": {
     "type": "docker",
