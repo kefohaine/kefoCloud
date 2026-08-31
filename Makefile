@@ -262,20 +262,20 @@ install-hooks:
 # part (ROUNDCUBEMAIL_USERNAME_DOMAIN=fxmq.net).
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: mail-add-user mail-passwd mail-del-user mail-list-users mail-gen mail-alias-gen mail-alias-del mail-alias-list mail-quota-set
+.PHONY: mail-add-user mail-passwd mail-del-user mail-del-user-data mail-list-users mail-list-user-data mail-gen mail-alias-gen mail-alias-del mail-alias-list mail-quota-set mail-default-quota-set
 
 mail-add-user:
->@[ -n "$(USER)" ] || { echo "Usage: make mail-add-user USER=name@fxmq.net"; exit 1; }
+>@[ "$(origin USER)" = "command line" ] || { echo "Usage: make mail-add-user USER=name@fxmq.net"; exit 1; }
 >@read -s -p "Password for $(USER): " pass; echo; \
   docker exec mailserver setup email add "$(USER)" "$$pass"
 
 mail-passwd:
->@[ -n "$(USER)" ] || { echo "Usage: make mail-passwd USER=name@fxmq.net"; exit 1; }
+>@[ "$(origin USER)" = "command line" ] || { echo "Usage: make mail-passwd USER=name@fxmq.net"; exit 1; }
 >@read -s -p "New password for $(USER): " pass; echo; \
   docker exec mailserver setup email update "$(USER)" "$$pass"
 
 mail-del-user:
->@[ -n "$(USER)" ] || { echo "Usage: make mail-del-user USER=name@fxmq.net"; exit 1; }
+>@[ "$(origin USER)" = "command line" ] || { echo "Usage: make mail-del-user USER=name@fxmq.net"; exit 1; }
 >@docker exec mailserver setup email del "$(USER)"
 
 mail-list-users:
@@ -285,13 +285,36 @@ mail-list-users:
 # Writes mailserver/config/dovecot-quotas.cf — DMS changedetector reloads
 # dovecot automatically, no container restart needed.
 mail-quota-set:
->@[ -n "$(MAIL)" ] && [ -n "$(QUOTA)" ] || { echo "Usage: make mail-quota-set MAIL=name@fxmq.net QUOTA=2G"; exit 1; }
+>@[ "$(origin MAIL)" = "command line" ] && [ -n "$(QUOTA)" ] || { echo "Usage: make mail-quota-set MAIL=name@fxmq.net QUOTA=2G"; exit 1; }
 >@echo "$(QUOTA)" | grep -qE '^([0-9]+(B|k|M|G|T)|0)$$' || { echo "Invalid QUOTA — B/k/M/G/T suffix, or 0 (no limit)"; exit 1; }
 >@docker exec mailserver setup quota set "$(MAIL)" "$(QUOTA)"
 
+# Stored-mail cleanup: `mail-del-user` only removes the account entry (DMS
+# never deletes Maildirs). This removes the actual stored mail (the folder
+# under mailserver/data/fxmq.net/). USER is the folder/local part, not the
+# full address (e.g. qkzfwbc, not qkzfwbc@fxmq.net).
+mail-del-user-data:
+>@[ "$(origin USER)" = "command line" ] || { echo "Usage: make mail-del-user-data USER=<folder-name>"; exit 1; }
+>@echo "$(USER)" | grep -qE '^[a-z0-9._-]+$$' && [ "$(USER)" != "." ] && [ "$(USER)" != ".." ] || { echo "Invalid USER — use the folder name under mailserver/data/fxmq.net/ (a-z0-9._-)"; exit 1; }
+>@if [ -d "$(REPO)/mailserver/data/fxmq.net/$(USER)" ]; then sudo rm -rf "$(REPO)/mailserver/data/fxmq.net/$(USER)" && echo "Deleted stored mail for $(USER) (mailserver/data/fxmq.net/$(USER))"; else echo "No stored mail for '$(USER)' (mailserver/data/fxmq.net/$(USER) not found) — nothing to delete"; fi
+
+# List every stored-mail folder (one per mailbox) under mailserver/data/fxmq.net/.
+mail-list-user-data:
+>@sudo ls -1 "$(REPO)/mailserver/data/fxmq.net/" 2>/dev/null || echo "(no mail data yet — run make mail-gen)"
+
+# Default quota that make mail-gen applies to new disposable mailboxes.
+# Persisted in services/mailserver/default-quota (tracked; mail-gen reads
+# it, falling back to 1G on a fresh clone).
+mail-default-quota-set:
+>@[ -n "$(QUOTA)" ] || { echo "Usage: make mail-default-quota-set QUOTA=2G"; exit 1; }
+>@echo "$(QUOTA)" | grep -qE '^([0-9]+(B|k|M|G|T)|0)$$' || { echo "Invalid QUOTA — B/k/M/G/T suffix, or 0 (no limit)"; exit 1; }
+>@printf '%s\n' "$(QUOTA)" > services/mailserver/default-quota
+>@echo "Default quota for make mail-gen set to $(QUOTA) (services/mailserver/default-quota) — git add/commit to keep it."
+
 # Disposable mailbox: random 7-letter local part + random 16-char password
 # (see scripts/mail-gen.sh). Local part is always generated — no custom
-# names. 1 GiB default quota applied. Credentials printed once, stored nowhere.
+# names. Default quota from services/mailserver/default-quota (see
+# mail-default-quota-set). Credentials printed once, stored nowhere.
 mail-gen:
 >@bash scripts/mail-gen.sh
 
@@ -764,7 +787,10 @@ help:
 >@echo "  └  make tmux-kill TAG=   │kill target             │can also kill with 'exit'"
 >@echo ""
 >@echo "  Mail (Docker Mailserver — details in docs/GUIDE.md)"
->@echo "  │  make mail-gen                disposable mailbox: random 7-letter address + random 16-char password + 1G quota (printed once)"
+>@echo "  │  make mail-gen                disposable mailbox: random 7-letter address + random 16-char password + default quota (printed once)"
+>@echo "  │  make mail-list-user-data     list stored-mail folders under mailserver/data/fxmq.net/"
+>@echo "  │  make mail-del-user-data USER=…   delete one user's stored mail (folder under mailserver/data/fxmq.net/)"
+>@echo "  │  make mail-default-quota-set QUOTA=…   default quota for make mail-gen (B/k/M/G/T suffix; 0 = no limit)"
 >@echo "  │  make mail-alias-gen TO=…     disposable forwarding alias: random 7-digit address → TO (external only — same-domain refused)"
 >@echo "  │  make mail-alias-del ALIAS=… TO=…   remove a target from an alias (DMS needs both)"
 >@echo "  │  make mail-alias-list         list aliases"
