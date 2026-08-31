@@ -44,7 +44,7 @@ Self-hosted infrastructure on a Debian VPS, fronted by Caddy in Docker. Eleven c
                              └──────────────┘
 ```
 
-One VPS, one host. Cloudflare fronts the three public hostnames; the Tailscale-only hostname is invisible on the public internet. Deliberate non-public behaviours (`shell.fxmq.net` being unreachable off the tailnet, Cloudflare Bot Fight Mode blocking `curl`/desktop sync against `cloud.fxmq.net`) are documented under `Intended` in `docs/ISSUES.md` so future agents don't "correct" them.
+One VPS, one host. Cloudflare fronts the seven public hostnames (three proxied — cloud, vault, kuma — four DNS-only); the Tailscale-only hostname is invisible on the public internet. Deliberate non-public behaviours (`shell.fxmq.net` being unreachable off the tailnet, Cloudflare Bot Fight Mode blocking `curl`/desktop sync against `cloud.fxmq.net`) are documented under `Intended` in `docs/ISSUES.md` so future agents don't "correct" them.
 
 ## Domains and access model
 
@@ -54,7 +54,7 @@ One VPS, one host. Cloudflare fronts the three public hostnames; the Tailscale-o
 | turn.fxmq.net     | Cloudflare **DNS-only** (grey cloud) → VPS IP | Anyone on the internet | Talk High Performance Backend websocket at `/signaling` + TURN/STUN on 3478/5349. DNS-only because WebRTC media bypasses the CF proxy (same constraint as mail) |
 | vault.fxmq.net    | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Vaultwarden (Bitwarden-compatible password manager) |
 | kuma.fxmq.net     | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Uptime Kuma monitor dashboard |
-| mc.fxmq.net       | Cloudflare DNS-only → VPS IP | Anyone on the internet             | PufferPanel at `/panel`; Caddy file browser at `/download` over the `download/` drop folder; in-browser Minecraft 1.8.8 (EaglercraftX, no install/login) at `/play` with websocket at `/server` (Java players: `mc.fxmq.net:25567`, clients 1.8–1.12.2); `/` redirects to `/panel`. DNS-only (grey cloud) so the game ports bypass the CF proxy |
+| mc.fxmq.net       | Cloudflare DNS-only → VPS IP | Anyone on the internet             | PufferPanel at `/panel`; Caddy file browser at `/download` over the `download/` drop folder; in-browser Minecraft 1.8.8 (EaglercraftX, no install/login) at `/play` with websocket at `/server` (Java players: `mc.fxmq.net:25567`, any Java client 1.7.10–latest via the Via family); `/` redirects to `/panel`. DNS-only (grey cloud) so the game ports bypass the CF proxy |
 | www.fxmq.net      | Cloudflare (proxied) → VPS IP | Anyone on the internet             | Stub: responds `ok` on `/` |
 | mail.fxmq.net    | Cloudflare **DNS-only** (grey cloud) → VPS IP | Anyone on the internet             | Roundcube webmail; Docker Mailserver platform (SMTP 25/465/587, IMAP 993). Inbound port 25 is open; PTR record still pending at the VPS provider — see `docs/ISSUES.md` |
 | shell.fxmq.net    | Not in Cloudflare, not in public DNS | Only devices on the Tailscale network | Plain `ok` landing at `/`; ttyd host shell at `/ttyd`. Caddy `@not_tailnet` returns 403 for any non-tailnet source IP, including forged Host headers against the public IP |

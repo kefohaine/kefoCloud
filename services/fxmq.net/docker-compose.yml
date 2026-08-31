@@ -16,7 +16,7 @@ services:
     # before Caddy sees it, which breaks the @not_tailnet remote_ip matcher
     # on https://shell.fxmq.net. The host network namespace is on the
     # `net` bridge at 172.22.0.0/16, so Caddy can still reach upstream
-    # containers by their bridge IP (172.22.0.2 .. .9 — see Caddyfile).
+    # containers by their bridge IP (172.22.0.4 .. .15 — see Caddyfile).
     network_mode: host
 
     healthcheck:

@@ -70,8 +70,9 @@ https://mc.fxmq.net {
 		redir * /panel 308
 	}
 	# In-browser Minecraft (eaglercraft 1.12.2): static client at /play,
-	# WebSocket at /ws (Caddy strips the prefix; EaglerXServer listens on
-	# 8081 of the host — the game server container runs host-net).
+	# WebSocket at /server (Caddy strips the prefix; EaglerXServer
+	# multiplexes the websocket on the game server's own port — host-net
+	# server on 172.22.0.1:25567, renamed from /ws→/web→/server 2026-08-31).
 	# /play serves the client files from the homelab/eaglercraft dir
 	# (bind-mounted at /eaglercraft:ro — see docker-compose.yml).
 	# /play must keep the trailing slash: the client resolves its assets
