@@ -2,9 +2,12 @@
 # homelab install.sh — plug-and-play new-VPS installer.
 #
 # Prompts for three values (domain, Cloudflare API token, Tailscale auth
-# key), then runs unattended: host services, docker, tailscale, the
-# Nextcloud stack (app + PostgreSQL + Redis + Talk signaling/TURN), Caddy,
-# vaultwarden, uptimekuma, Cloudflare DNS records, and LE cert issuance.
+# key), then runs unattended: host services, docker, tailscale, the full
+# stack — Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Caddy,
+# Vaultwarden, Uptime Kuma, PufferPanel, Docker Mailserver + Roundcube —
+# Cloudflare DNS records, and LE cert issuance. The repo already carries
+# the canonical <domain> naming (services/<domain>/, vhosts/<host>.caddy);
+# no legacy renames are applied.
 #
 # Errors are collected with tags, each shown as a "problem" plus a separate
 # "hint". Manual dashboard steps are grouped as expected; real failures as
@@ -13,10 +16,6 @@
 # time you press Enter the script re-checks them, prints the solved ones
 # once, and the remaining ones — until all are green. Both 'root' and user
 # 'op' can SSH in with keys automatically.
-#
-# Old-project references are renamed or deleted by this script; a sweep
-# at the end verifies none reappear on the new host (the script itself is
-# the only allowed carrier).
 #
 # Usage:
 #   scp scripts/install.sh root@<new-vps>:
@@ -290,134 +289,49 @@ prep_dirs() {
                /var/www/custom/projects/homelab/mailserver/state \
                /var/www/custom/projects/homelab/mailserver/logs \
                /var/www/custom/projects/homelab/mailserver/config \
-               /var/www/custom/projects/homelab/mailserver/roundcube
+               /var/www/custom/projects/homelab/mailserver/roundcube \
+               /var/www/custom/projects/homelab/pgdata \
+               /var/www/custom/projects/homelab/talk \
+               /var/www/custom/projects/homelab/download \
+               /var/www/custom/projects/homelab/eaglercraft \
+               /var/www/custom/projects/homelab/puffer/data \
+               /var/www/custom/projects/homelab/puffer/config
   sudo chown -R 33:33 /var/www/custom/projects/homelab/cloud/html /var/www/custom/projects/homelab/cloud/users
   sudo chown -R 1000:1000 /var/www/custom/projects/homelab/vault/data
   sudo chown -R 5000:5000 /var/www/custom/projects/homelab/mailserver/data /var/www/custom/projects/homelab/mailserver/state /var/www/custom/projects/homelab/mailserver/logs
   sudo chown -R 33:33 /var/www/custom/projects/homelab/mailserver/roundcube
+  # op-owned: talk configs (talk-gen), drop folder, browser-MC client, panel data.
+  # pgdata stays root-owned — the postgres entrypoint chowns it on first boot.
+  sudo chown -R $OP_USER:$OP_USER /var/www/custom/projects/homelab/talk \
+    /var/www/custom/projects/homelab/download \
+    /var/www/custom/projects/homelab/eaglercraft \
+    /var/www/custom/projects/homelab/puffer/data \
+    /var/www/custom/projects/homelab/puffer/config
 }
 
-renames() {
+seed_stack() {
   cd "$REPO" || exit 1
-  log "  domain swap: homelab.com -> $DOMAIN"
-  grep -rl 'homelab\.com' services/ config/ | xargs sed -i "s/homelab\.com/$DOMAIN/g"
-  log "  server.$DOMAIN -> shell.$DOMAIN"
-  grep -rl "server\.$DOMAIN" services/ config/ | xargs sed -i "s/server\.$DOMAIN/shell.$DOMAIN/g"
-  log "  debian -> $OP_USER"
-  grep -rl 'debian' Makefile config/ | xargs sed -i "s/debian/$OP_USER/g"
-  log "  trimming to 4 services"
-  rm -rf services/homer services/share-flask services/mc content/share content/minecraft
-  log "  renaming caddy service dir vhosts -> $DOMAIN"
-  mv services/vhosts "services/$DOMAIN"
-  log "  renaming + trimming per-vhost files"
-  cd "services/$DOMAIN/vhosts" || exit 1
-  rm -f www.homelab.com.caddy share.homelab.com.caddy api.homelab.com.caddy mc.homelab.com.caddy
-  for f in *.homelab.com.caddy; do [ -e "$f" ] && mv "$f" "${f/homelab.com/$DOMAIN}"; done
-  mv "server.$DOMAIN.caddy" "shell.$DOMAIN.caddy"
-  cd ../../..
-  log "  patching caddy compose, Caddyfile, Makefile"
-  sed -i "s/container_name: vhosts/container_name: $DOMAIN/" "services/$DOMAIN/docker-compose.yml"
-  sed -i "s/image: caddy-dns:local/image: $DOMAIN:local/" "services/$DOMAIN/docker-compose.yml"
-  sed -i "\|\.\./\.\.:/srv:ro|d; \|share/files:/files:ro|d" "services/$DOMAIN/docker-compose.yml"
-  sed -i "/^import vhosts\/\(www\|share\|api\|mc\)\./d" "services/$DOMAIN/Caddyfile"
-  sed -i "s/^CONTAINERS := .*/CONTAINERS := $DOMAIN uptimekuma nextcloud vaultwarden/" Makefile
-  sed -i "s/filter share-flask vhosts mc-flask/filter $DOMAIN/" Makefile
-  sed -i "/^COMPOSE_FILES/d" Makefile
-  awk '/^bkp-(share|mc):/ {skip=1; next}
-       /^bkp-all:/ {sub(/ bkp-share/,""); sub(/ bkp-mc/,""); skip=0}
-       skip && /^[a-z][a-z0-9-]*:/ {skip=0}
-       { if (!skip) print }' Makefile > Makefile.tmp && mv Makefile.tmp Makefile
-  log "  rewriting shell vhost (share/mc routes dropped)"
-  cat > "services/$DOMAIN/vhosts/shell.$DOMAIN.caddy" <<EOF
-https://shell.$DOMAIN {
-    tls {
-        dns cloudflare {env.CF_API_TOKEN}
-    }
-    import compress
-    @not_tailnet not remote_ip 100.64.0.0/10
-    handle @not_tailnet {
-        respond 403
-    }
-    @shell path /shell /shell/*
-    handle @shell {
-        uri strip_prefix /shell
-        reverse_proxy 172.22.0.1:7681 {
-            transport http {
-                versions 1.1
-            }
-        }
-    }
-    handle {
-        @root path /
-        respond @root "ok"
-        respond "not found" 404
-    }
-}
-EOF
-  log "  nextcloud env + datadir"
-  sed -i "/NEXTCLOUD_TRUSTED_DOMAINS/a\      NEXTCLOUD_DATA_DIR: /data" services/nextcloud/docker-compose.yml
-  NEXTCLOUD_ADMIN_PASSWORD=$(openssl rand -base64 18 | tr -d '/+=' | head -c 20)
-  cat > services/nextcloud/.env <<EOF
+  # The repo already carries the canonical naming (services/$DOMAIN/,
+  # container $DOMAIN, vhosts/<host>.caddy, user $OP_USER) — no domain
+  # renames apply. Fresh-install state: Nextcloud admin creds, stack
+  # secrets, goose secret.
+  if [ ! -f services/nextcloud/.env ]; then
+    NEXTCLOUD_ADMIN_PASSWORD=$(openssl rand -base64 18 | tr -d '/+=' | head -c 20)
+    cat > services/nextcloud/.env <<EOF
 NEXTCLOUD_ADMIN_USER=admin
 NEXTCLOUD_ADMIN_PASSWORD=$NEXTCLOUD_ADMIN_PASSWORD
 EOF
-  chmod 600 services/nextcloud/.env
+    chmod 600 services/nextcloud/.env
+  fi
   # Stack secrets (PostgreSQL, Redis, signaling, TURN, SMTP mailbox) +
   # Talk service configs — idempotent, appends only missing keys.
   log "  nextcloud stack secrets via talk-gen"
   make talk-gen >>"$LOG" 2>&1 || fail talk_gen
-  log "  kuma seed SQL"
-  cat > services/uptimekuma/seed-monitors.sql <<EOF
--- First-time Kuma monitor seed (4-container set, generated by install.sh).
--- Apply with: docker exec -i uptimekuma sqlite3 /app/data/kuma.db < services/uptimekuma/seed-monitors.sql
-
-INSERT INTO docker_host (user_id, name, docker_type, docker_daemon)
-SELECT 1, 'local', 'socket', '/var/run/docker.sock'
-WHERE NOT EXISTS (SELECT 1 FROM docker_host WHERE name = 'local');
-
-INSERT INTO monitor (name, type, url, interval, retry_interval, maxretries, active, user_id, description)
-SELECT 'http: cloud', 'http', 'https://cloud.$DOMAIN', 60, 60, 0, 1, 1, 'Nextcloud'
-WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'http: cloud');
-
-INSERT INTO monitor (name, type, url, interval, retry_interval, maxretries, active, user_id, description)
-SELECT 'http: vault', 'http', 'https://vault.$DOMAIN', 60, 60, 0, 1, 1, 'Vaultwarden'
-WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'http: vault');
-
-INSERT INTO monitor (name, type, interval, retry_interval, maxretries, active, user_id, docker_host, docker_container, description)
-SELECT 'docker: $DOMAIN', 'docker', 3600, 60, 0, 1, 1, d.id, '$DOMAIN', 'Caddy reverse proxy'
-FROM docker_host d WHERE d.name = 'local'
-  AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: $DOMAIN');
-
-INSERT INTO monitor (name, type, interval, retry_interval, maxretries, active, user_id, docker_host, docker_container, description)
-SELECT 'docker: nextcloud', 'docker', 3600, 60, 0, 1, 1, d.id, 'nextcloud', 'Nextcloud PHP-FPM'
-FROM docker_host d WHERE d.name = 'local'
-  AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: nextcloud');
-
-INSERT INTO monitor (name, type, interval, retry_interval, maxretries, active, user_id, docker_host, docker_container, description)
-SELECT 'docker: vaultwarden', 'docker', 3600, 60, 0, 1, 1, d.id, 'vaultwarden', 'Vaultwarden'
-FROM docker_host d WHERE d.name = 'local'
-  AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: vaultwarden');
-
-INSERT INTO "group" (name) SELECT 'Public'     WHERE NOT EXISTS (SELECT 1 FROM "group" WHERE name = 'Public');
-INSERT INTO "group" (name) SELECT 'Containers' WHERE NOT EXISTS (SELECT 1 FROM "group" WHERE name = 'Containers');
-
-INSERT INTO monitor_group (monitor_id, group_id)
-SELECT m.id, g.id FROM monitor m, "group" g
-WHERE g.name = 'Public' AND m.name IN ('http: cloud','http: vault')
-  AND NOT EXISTS (SELECT 1 FROM monitor_group mg WHERE mg.monitor_id = m.id AND mg.group_id = g.id);
-
-INSERT INTO monitor_group (monitor_id, group_id)
-SELECT m.id, g.id FROM monitor m, "group" g
-WHERE g.name = 'Containers' AND m.name LIKE 'docker: %'
-  AND NOT EXISTS (SELECT 1 FROM monitor_group mg WHERE mg.monitor_id = m.id AND mg.group_id = g.id);
-EOF
   log "  goose service secret"
   if ! grep -q GOOSE_SERVER__SECRET_KEY config/goose/goose.service; then
     # insert into [Service] (after ExecStart) — a plain append lands after [Install] and is ignored
     sed -i "/^ExecStart=/a Environment=GOOSE_SERVER__SECRET_KEY=$(openssl rand -hex 32)" config/goose/goose.service
   fi
-  git add -A && git -c user.name="$OP_USER" -c user.email="$OP_USER@$DOMAIN" \
-    commit -q -m "install: domain $DOMAIN, user $OP_USER, shell., 4 containers" 2>/dev/null || true
 }
 
 docker_net() {
@@ -435,7 +349,7 @@ caddy_data() {
 
 host_services() {
   if [ -n "${TS_IP:-}" ]; then
-    sed -i "s/100\.81\.245\.77/$TS_IP/g" config/dnsmasq/10-tailnet.conf
+    sed -i "s/100\.117\.144\.0/$TS_IP/g" config/dnsmasq/10-tailnet.conf
   else
     fail ts_ip
   fi
@@ -449,11 +363,15 @@ containers_up() {
   # is needed here.
   make "dok-recreate-$DOMAIN" >>"$LOG" 2>&1 || fail caddy
   # PostgreSQL first — the nextcloud entrypoint's fresh install needs the DB
-  # reachable (POSTGRES_HOST from .env, set by talk-gen above).
+  # reachable (POSTGRES_HOST from .env, set by talk-gen above). Caddy's
+  # DNS-01 issuance runs at startup, so the mail/turn certs the talk stack
+  # and mailserver need are on disk by the time they start.
   make dok-recreate-nextcloud-db >>"$LOG" 2>&1 || fail nextcloud_db
   make dok-recreate-nextcloud   >>"$LOG" 2>&1 || fail nextcloud
   make dok-recreate-vaultwarden >>"$LOG" 2>&1 || fail vaultwarden
   make dok-recreate-uptimekuma  >>"$LOG" 2>&1 || fail kuma
+  make dok-recreate-pufferpanel >>"$LOG" 2>&1 || fail pufferpanel
+  make dok-recreate-mailserver  >>"$LOG" 2>&1 || fail mailserver
 }
 
 kuma_seed() {
@@ -503,7 +421,7 @@ cf_dns() {
     fail zone
     return
   fi
-  for h in cloud vault kuma; do
+  for h in cloud vault kuma www; do
     local rid
     rid=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
       "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$h.$DOMAIN" | jq -r '.result[0].id // empty')
@@ -514,18 +432,21 @@ cf_dns() {
         >>"$LOG" 2>&1 || fail "dns_$h"
     fi
   done
-  # turn.$DOMAIN MUST be DNS-only (grey cloud): TURN relays media over
-  # UDP/TCP 3478/5349 + 49160-49200, which the CF proxy cannot carry. The
-  # Caddy vhost still gets its LE cert via DNS-01.
-  local rid
-  rid=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
-    "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=turn.$DOMAIN" | jq -r '.result[0].id // empty')
-  if [ -z "$rid" ]; then
-    curl -s -X POST -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
-      "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
-      -d "{\"type\":\"A\",\"name\":\"turn.$DOMAIN\",\"content\":\"$VPS_IP\",\"ttl\":1,\"proxied\":false}" \
-      >>"$LOG" 2>&1 || fail dns_turn
-  fi
+  # turn/mail/mc MUST be DNS-only (grey cloud): TURN relays media over
+  # UDP/TCP 3478/5349 + 49160-49200, SMTP/IMAP and the MC game ports also
+  # bypass the CF proxy (HTTP(S) only). Caddy still gets their LE certs
+  # via DNS-01.
+  for h in turn mail mc; do
+    local rid
+    rid=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
+      "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$h.$DOMAIN" | jq -r '.result[0].id // empty')
+    if [ -z "$rid" ]; then
+      curl -s -X POST -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
+        "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
+        -d "{\"type\":\"A\",\"name\":\"$h.$DOMAIN\",\"content\":\"$VPS_IP\",\"ttl\":1,\"proxied\":false}" \
+        >>"$LOG" 2>&1 || fail "dns_$h"
+    fi
+  done
   curl -s -X PATCH -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
     "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/settings/ssl" -d '{"value":"full"}' >>"$LOG" 2>&1 || true
   # DNS-only tokens can't set SSL mode; surface it as an expected manual step.
@@ -535,11 +456,11 @@ cf_dns() {
 }
 
 issue_certs() {
-  for h in cloud vault kuma turn; do
+  for h in cloud vault kuma turn www mail mc; do
     curl -sk --resolve "$h.$DOMAIN:443:127.0.0.1" -o /dev/null "https://$h.$DOMAIN/" >>"$LOG" 2>&1 || true
     sleep 3
   done
-  for h in cloud vault kuma turn; do
+  for h in cloud vault kuma turn www mail mc; do
     local iss
     iss=$(echo | timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$h.$DOMAIN" 2>/dev/null \
       | openssl x509 -noout -issuer 2>/dev/null | cut -d'=' -f2-)
@@ -561,20 +482,21 @@ sweep() {
 }
 
 phase2_op() {
-  log "Phase 2 ($OP_USER): repo, renames, host config, containers, DNS, certs"
+  log "Phase 2 ($OP_USER): repo, host config, containers, DNS, certs"
   ensure_repo
   prep_dirs
-  renames
+  seed_stack
   docker_net
   caddy_data
+  cf_dns
   host_services
   containers_up
-  kuma_seed
-  cf_dns
   issue_certs
+  kuma_seed
   sweep
   # Expected manual step — blocks SUCCESS until the operator confirms it.
   fail splitdns
+  fail panel_admin
 }
 
 # ──────────────────────── error problems + hints ──────────────────────────
@@ -590,10 +512,13 @@ problem() {
     ts_ip)          echo "no tailscale IP assigned" ;;
     install_config) echo "host services are not up (make install-config failed)" ;;
     caddy)          echo "caddy container '$DOMAIN' is not running" ;;
-    nextcloud)      echo "nextcloud container is not running" ;;
-    nextcloud_db)   echo "nextcloud database container is not running (docker-compose.db.yml)" ;;
+    nextcloud)      echo "nextcloud container is not running (or talk-hpb/talk-relay are down)" ;;
+    nextcloud_db)   echo "postgresql container is not running (docker-compose.db.yml)" ;;
     vaultwarden)    echo "vaultwarden container is not running" ;;
     kuma)           echo "uptimekuma container is not running" ;;
+    pufferpanel)    echo "pufferpanel container is not running" ;;
+    mailserver)     echo "mailserver container is not running (mail platform)" ;;
+    panel_admin)    echo "PufferPanel admin account not created" ;;
     datadirectory)  echo "nextcloud datadirectory is not /data" ;;
     talk_gen)       echo "nextcloud stack secrets not generated (make talk-gen failed)" ;;
     kuma_admin)     echo "uptime kuma admin user is missing" ;;
@@ -625,6 +550,9 @@ hint() {
     talk_gen)       echo "run: make talk-gen in $REPO, then re-check" ;;
     vaultwarden)    echo "run: make dok-recreate-vaultwarden, then re-check" ;;
     kuma)           echo "run: make dok-recreate-uptimekuma, then re-check" ;;
+    pufferpanel)    echo "run: make dok-recreate-pufferpanel, then re-check" ;;
+    mailserver)     echo "run: make dok-recreate-mailserver, then re-check" ;;
+    panel_admin)    echo "open https://mc.$DOMAIN/panel and complete the first-run setup wizard to create the admin user, then re-check" ;;
     datadirectory)  echo "run: docker exec -w /var/www/html nextcloud php occ config:system:set datadirectory --value /data, then re-check" ;;
     kuma_admin)     echo "create the admin account at https://kuma.$DOMAIN in the UI, then re-check" ;;
     kuma_seed)      echo "run: docker exec -i uptimekuma sqlite3 /app/data/kuma.db < services/uptimekuma/seed-monitors.sql, or create monitors in the UI, then re-check" ;;
@@ -650,9 +578,13 @@ recheck() {
     ts_ip) [ -n "$(tailscale ip -4 2>/dev/null | head -1)" ] ;;
     install_config) systemctl is-active --quiet ttyd dnsmasq goose ;;
     caddy) docker ps --format '{{.Names}}' | grep -qx "$DOMAIN" ;;
-    nextcloud) docker ps --format '{{.Names}}' | grep -qx nextcloud ;;
+    nextcloud) docker ps --format '{{.Names}}' | grep -qx nextcloud && docker ps --format '{{.Names}}' | grep -qx talk-hpb && docker ps --format '{{.Names}}' | grep -qx talk-relay ;;
+    nextcloud_db) docker ps --format '{{.Names}}' | grep -qx postgresql ;;
     vaultwarden) docker ps --format '{{.Names}}' | grep -qx vaultwarden ;;
     kuma) docker ps --format '{{.Names}}' | grep -qx uptimekuma ;;
+    pufferpanel) docker ps --format '{{.Names}}' | grep -qx pufferpanel ;;
+    mailserver) docker ps --format '{{.Names}}' | grep -qx mailserver && docker ps --format '{{.Names}}' | grep -qx roundcube ;;
+    panel_admin) docker exec pufferpanel wget -q -O /dev/null http://localhost:8080/ 2>/dev/null ;;
     datadirectory) if docker exec -w /var/www/html nextcloud php occ status 2>/dev/null | grep -q "installed: true"; then [ "$(docker exec -w /var/www/html nextcloud php occ config:system:get datadirectory 2>/dev/null | tr -d '\n')" = "/data" ]; else true; fi ;;
     kuma_admin) [ "$(docker exec uptimekuma sqlite3 /app/data/kuma.db "SELECT COUNT(*) FROM user WHERE username='admin';" 2>/dev/null | tr -d '\n')" = "1" ] ;;
     kuma_seed) [ "$(docker exec uptimekuma sqlite3 /app/data/kuma.db "SELECT COUNT(*) FROM monitor;" 2>/dev/null | tr -d '\n')" -gt 0 ] ;;
@@ -668,7 +600,7 @@ recheck() {
 
 is_expected() {
   case "$1" in
-    splitdns|zone|ssh_keys|kuma_admin|clone|sslmode) return 0 ;;  # manual dashboard / UI steps
+    splitdns|zone|ssh_keys|kuma_admin|clone|sslmode|panel_admin) return 0 ;;  # manual dashboard / UI steps
     *) return 1 ;;
   esac
 }
@@ -731,6 +663,8 @@ success_block() {
   echo "   Nextcloud    https://cloud.$DOMAIN      admin / ${NEXTCLOUD_ADMIN_PASSWORD:-<see services/nextcloud/.env>}"
   echo "   Vaultwarden  https://vault.$DOMAIN"
   echo "   Uptime Kuma  https://kuma.$DOMAIN       admin / ${KUMA_PASS:-<create in the UI>}"
+  echo "   PufferPanel  https://mc.$DOMAIN/panel   (admin created in the first-run wizard)"
+  echo "   Webmail      https://mail.$DOMAIN       (mailboxes via make mail-add-user)"
   echo "   Shell        https://shell.$DOMAIN      (tailnet-only)"
   echo "   VPS IP ${VPS_IP:-?}   Tailscale IP ${TS_IP:-?}"
   echo ""
