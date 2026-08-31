@@ -16,10 +16,20 @@
 
 # ── snippets ────────────────────────────────────────────────────────────────
 
+# Security headers, delete-then-set: Caddy's `header` directive ADDS to
+# upstream values (it does not replace), so apps that already send these
+# headers (Nextcloud, Vaultwarden, Kuma) produced duplicates and a
+# conflicting Referrer-Policy (NC's no-referrer vs ours) — flagged by
+# scan.nextcloud.com. Deleting the field first guarantees exactly one
+# value per header on every vhost response.
 (security_headers) {
+    -Strict-Transport-Security
     Strict-Transport-Security "max-age=31536000"
+    -X-Content-Type-Options
     X-Content-Type-Options "nosniff"
+    -X-Frame-Options
     X-Frame-Options "SAMEORIGIN"
+    -Referrer-Policy
     Referrer-Policy "strict-origin-when-cross-origin"
 }
 

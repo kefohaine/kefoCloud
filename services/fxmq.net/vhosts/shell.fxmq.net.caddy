@@ -8,6 +8,9 @@ https://shell.fxmq.net {
         dns cloudflare {env.CF_API_TOKEN}
     }
     import compress
+    header {
+        import security_headers
+    }
     @not_tailnet not remote_ip 100.64.0.0/10
     handle @not_tailnet {
         respond 403

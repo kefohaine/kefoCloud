@@ -15,6 +15,10 @@ https://turn.fxmq.net {
     tls {
         dns cloudflare {env.CF_API_TOKEN}
     }
+    import compress
+    header {
+        import security_headers
+    }
 
     # The signaling server serves its websocket + API at the root of its own
     # listener, so the /signaling prefix is stripped before proxying (the
