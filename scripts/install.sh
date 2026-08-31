@@ -520,26 +520,42 @@ nextcloud_setup() {
       || fail nextcloud_setup "mailbox nextcloud@$DOMAIN not created"
   fi
 
-  # NC SMTP settings — only when unset (never clobber operator config).
+  # trusted_proxies must be a real ARRAY (NC 34 setup check) — the image
+  # env TRUSTED_PROXIES writes a comma-joined string into index 0, which
+  # breaks the brute-force throttle. The compose no longer carries it; set
+  # it here as indexed entries (Caddy's net subnet + Cloudflare edge ranges).
+  docker exec -u www-data nextcloud php occ config:system:delete trusted_proxies >/dev/null 2>&1 || true
+  local p i=0
+  for p in 172.22.0.0/16 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32; do
+    docker exec -u www-data nextcloud php occ config:system:set trusted_proxies "$i" --value "$p" >/dev/null 2>&1
+    i=$((i+1))
+  done
+
+  # NC SMTP settings — host/port/name/from/domain only when unset (never
+  # clobber operator config); secure + authtype fixed unconditionally (the
+  # 2026-08-31 "Email could not be sent" cause was secure=ssl on port 587).
   # Output redirected: occ config:system:set echoes secret values to stdout.
   if [ -z "$(docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | tr -d '\n')" ]; then
     docker exec -u www-data nextcloud php occ config:system:set mail_smtphost --value "mail.$DOMAIN" >/dev/null 2>&1
     docker exec -u www-data nextcloud php occ config:system:set mail_smtpport --value 587 --type integer >/dev/null 2>&1
-    docker exec -u www-data nextcloud php occ config:system:set mail_smtpauthtype --value LOGIN >/dev/null 2>&1
-    docker exec -u www-data nextcloud php occ config:system:set mail_smtpsecure --value tls >/dev/null 2>&1
     docker exec -u www-data nextcloud php occ config:system:set mail_smtpname --value "nextcloud@$DOMAIN" >/dev/null 2>&1
     docker exec -u www-data nextcloud php occ config:system:set mail_smtppassword --value "$SMTP_PASSWORD" >/dev/null 2>&1
     docker exec -u www-data nextcloud php occ config:system:set mail_from_address --value nextcloud >/dev/null 2>&1
     docker exec -u www-data nextcloud php occ config:system:set mail_domain --value "$DOMAIN" >/dev/null 2>&1
   fi
+  docker exec -u www-data nextcloud php occ config:system:set mail_smtpsecure --value tls >/dev/null 2>&1
+  docker exec -u www-data nextcloud php occ config:system:set mail_smtpauthtype --value LOGIN >/dev/null 2>&1
 
-  # Talk signaling — internal URL first, public second (see docs/GUIDE.md).
+  # Talk signaling — ONE entry (the public URL): NC 34 deprecates multiple
+  # high-performance backends. Clients get wss://turn.$DOMAIN/signaling; the
+  # signaling server reaches NC back via its own [backend1] urls (extra_hosts),
+  # so no internal URL registration is needed.
   local sig
   sig=$(docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null)
   if ! echo "$sig" | grep -q "https://turn.$DOMAIN/signaling"; then
-    docker exec -u www-data nextcloud php occ talk:signaling:add http://172.22.0.12:8080 "$SIGNALING_SECRET" >/dev/null 2>&1 || true
     docker exec -u www-data nextcloud php occ talk:signaling:add "https://turn.$DOMAIN/signaling" "$SIGNALING_SECRET" >/dev/null 2>&1 || true
   fi
+  docker exec -u www-data nextcloud php occ talk:signaling:remove "http://172.22.0.12:8080" >/dev/null 2>&1 || true
 
   # Talk TURN/STUN — udp+tcp on 3478, tls on 5349 (secret matches turnserver.conf).
   local trn
