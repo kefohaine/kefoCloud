@@ -9,6 +9,13 @@
 # the canonical <domain> naming (services/<domain>/, vhosts/<host>.caddy);
 # no legacy renames are applied.
 #
+# Fully autonomous: the Kuma and PufferPanel admin accounts are created
+# automatically (passwords written to kuma/admin-pass.txt + puffer/admin-
+# pass.txt), and no manual confirmation steps block success — the only
+# follow-ups are printed in the summary (Tailscale split-DNS, mailboxes).
+# Prerequisites checked up front: the Cloudflare zone must exist, and a
+# GitHub SSH key must be added when the script prints the pubkey.
+#
 # Errors are collected with tags, each shown as a "problem" plus a separate
 # "hint". Manual dashboard steps are grouped as expected; real failures as
 # unexpected. No success message is printed until every error is resolved:
@@ -111,7 +118,7 @@ phase1_root() {
 
   DEBIAN_FRONTEND=noninteractive apt-get update -qq >>"$LOG" 2>&1
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-    git curl make sudo dnsmasq ufw jq apache2-utils fail2ban >>"$LOG" 2>&1 || fail apt
+    git curl make sudo dnsmasq ufw jq apache2-utils fail2ban sqlite3 >>"$LOG" 2>&1 || fail apt
   # Docker: Debian packages first (bookworm ships docker-compose-plugin).
   # trixie does not, so fall back to Docker's official repo (docker-ce).
   if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io docker-compose-plugin >>"$LOG" 2>&1; then
@@ -390,10 +397,61 @@ kuma_seed() {
       docker exec uptimekuma sqlite3 /app/data/kuma.db \
         "INSERT OR IGNORE INTO user (username,password,active,timezone) VALUES ('admin','$HASH',1,'UTC');" \
         >>"$LOG" 2>&1 || fail kuma_admin
+      echo "$KUMA_PASS" | sudo tee /var/www/custom/projects/homelab/kuma/admin-pass.txt >/dev/null
+      sudo chown $OP_USER:$OP_USER /var/www/custom/projects/homelab/kuma/admin-pass.txt
+      sudo chmod 600 /var/www/custom/projects/homelab/kuma/admin-pass.txt
     fi
   fi
   docker exec -i uptimekuma sqlite3 /app/data/kuma.db < services/uptimekuma/seed-monitors.sql \
     >>"$LOG" 2>&1 || fail kuma_seed
+}
+
+# Fully autonomous PufferPanel first-run: bypass the setup wizard by
+# inserting the admin user directly (same pattern as the GUIDE admin-
+# recovery path) and write puffer/admin-pass.txt. Also forces
+# panel.registrationenabled=false (the make smoke lockdown assertion).
+panel_admin_setup() {
+  local i=0
+  while [ $i -lt 60 ]; do
+    sudo test -f /var/www/custom/projects/homelab/puffer/data/pufferpanel.db && break
+    sleep 2; i=$((i+2))
+  done
+  if ! sudo test -f /var/www/custom/projects/homelab/puffer/data/pufferpanel.db; then
+    fail panel_admin "panel DB not created yet"
+    return
+  fi
+  local n
+  n=$(sudo sqlite3 /var/www/custom/projects/homelab/puffer/data/pufferpanel.db \
+      "SELECT COUNT(*) FROM users WHERE email='admin@fxmq.net';" 2>/dev/null | tr -d '\n')
+  if [ "$n" = "0" ]; then
+    PANEL_PASS=$(openssl rand -base64 18 | tr -d '/+=' | head -c 20)
+    local HASH
+    HASH=$(htpasswd -bnBC 10 "" "$PANEL_PASS" 2>/dev/null | tr -d ':\n')
+    sudo sqlite3 /var/www/custom/projects/homelab/puffer/data/pufferpanel.db "
+INSERT INTO users (username, email, password, otp_active, allow_passwordless_login, created_at, updated_at)
+VALUES ('admin','admin@fxmq.net','$HASH','false','true',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+INSERT INTO permissions (user_id, client_id, server_identifier, scopes)
+SELECT last_insert_rowid(), NULL, NULL, 'admin';" >>"$LOG" 2>&1 || fail panel_admin "user insert failed"
+    echo "$PANEL_PASS" | sudo tee /var/www/custom/projects/homelab/puffer/admin-pass.txt >/dev/null
+    sudo chown $OP_USER:$OP_USER /var/www/custom/projects/homelab/puffer/admin-pass.txt
+    sudo chmod 600 /var/www/custom/projects/homelab/puffer/admin-pass.txt
+  fi
+  # Registration must stay closed (smoke asserts the toggle): force it false.
+  if sudo test -f /var/www/custom/projects/homelab/puffer/data/config.json \
+     && ! sudo jq -e '.panel.registrationenabled == false' /var/www/custom/projects/homelab/puffer/data/config.json >/dev/null 2>&1; then
+    sudo jq '.panel.registrationenabled = false' /var/www/custom/projects/homelab/puffer/data/config.json > /tmp/panel-config.json.$$
+    sudo mv /tmp/panel-config.json.$$ /var/www/custom/projects/homelab/puffer/data/config.json
+  fi
+  # The daemon caches users at boot — restart to pick up the inserted admin.
+  # Safe on a fresh install: no game servers exist yet to be stopped.
+  make dok-restart-pufferpanel >>"$LOG" 2>&1 || true
+  # Verify exactly what make smoke's panel-lockdown asserts.
+  sudo sqlite3 /var/www/custom/projects/homelab/puffer/data/pufferpanel.db \
+    "SELECT COUNT(*) FROM users WHERE id=1 AND email='admin@fxmq.net' AND password IS NOT NULL AND length(password)>=50;" 2>/dev/null | grep -q 1 \
+    || fail panel_admin "admin user missing or hash empty"
+  sudo sqlite3 /var/www/custom/projects/homelab/puffer/data/pufferpanel.db \
+    "SELECT COUNT(*) FROM permissions WHERE user_id=1 AND scopes LIKE '%admin%';" 2>/dev/null | grep -q 1 \
+    || fail panel_admin "admin permission missing"
 }
 
 ssl_mode_full() {
@@ -483,6 +541,13 @@ sweep() {
 
 phase2_op() {
   log "Phase 2 ($OP_USER): repo, host config, containers, DNS, certs"
+  # Fail fast: the Cloudflare zone must already exist (the script cannot
+  # create one — that needs nameservers pointing at Cloudflare).
+  if [ -z "$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
+        "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" | jq -r '.result[0].id // empty')" ]; then
+    fail zone "create the zone in the CF dashboard (point your nameservers there), then re-run"
+    exit 1
+  fi
   ensure_repo
   prep_dirs
   seed_stack
@@ -493,10 +558,8 @@ phase2_op() {
   containers_up
   issue_certs
   kuma_seed
+  panel_admin_setup
   sweep
-  # Expected manual step — blocks SUCCESS until the operator confirms it.
-  fail splitdns
-  fail panel_admin
 }
 
 # ──────────────────────── error problems + hints ──────────────────────────
@@ -518,16 +581,15 @@ problem() {
     kuma)           echo "uptimekuma container is not running" ;;
     pufferpanel)    echo "pufferpanel container is not running" ;;
     mailserver)     echo "mailserver container is not running (mail platform)" ;;
-    panel_admin)    echo "PufferPanel admin account not created" ;;
     datadirectory)  echo "nextcloud datadirectory is not /data" ;;
     talk_gen)       echo "nextcloud stack secrets not generated (make talk-gen failed)" ;;
     kuma_admin)     echo "uptime kuma admin user is missing" ;;
     kuma_seed)      echo "uptime kuma monitors are not seeded" ;;
+    panel_admin)    echo "PufferPanel admin user was not created automatically" ;;
     zone)           echo "Cloudflare zone '$DOMAIN' not found" ;;
     dns_*)          echo "DNS record for ${1#dns_}.$DOMAIN is missing" ;;
     cert_*)         echo "cert for ${1#cert_}.$DOMAIN is not issued by Let's Encrypt" ;;
     sweep)          echo "old project name is still referenced in the repo tree" ;;
-    splitdns)       echo "tailscale split-DNS for $DOMAIN is not configured" ;;
     sslmode)        echo "Cloudflare SSL/TLS mode is not Full (or strict)" ;;
     clone)          echo "repo clone failed" ;;
     *)              echo "$1" ;;
@@ -536,7 +598,7 @@ problem() {
 
 hint() {
   case "$1" in
-    apt)            echo "install git curl make sudo dnsmasq ufw jq apache2-utils, plus docker with the compose plugin (docker-ce from download.docker.com on trixie), then re-check" ;;
+    apt)            echo "install git curl make sudo dnsmasq ufw jq apache2-utils sqlite3, plus docker with the compose plugin (docker-ce from download.docker.com on trixie), then re-check" ;;
     goose)          echo "run: curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | CONFIGURE=false GOOSE_BIN_DIR=/usr/local/bin bash, then re-check" ;;
     user)           echo "run: adduser --disabled-password --gecos '' $OP_USER && usermod -aG sudo,docker $OP_USER, then re-check" ;;
     ssh_keys)       echo "add a public key to /root/.ssh/authorized_keys and copy it to /home/$OP_USER/.ssh/authorized_keys, then re-check" ;;
@@ -552,7 +614,7 @@ hint() {
     kuma)           echo "run: make dok-recreate-uptimekuma, then re-check" ;;
     pufferpanel)    echo "run: make dok-recreate-pufferpanel, then re-check" ;;
     mailserver)     echo "run: make dok-recreate-mailserver, then re-check" ;;
-    panel_admin)    echo "open https://mc.$DOMAIN/panel and complete the first-run setup wizard to create the admin user, then re-check" ;;
+    panel_admin)    echo "the automatic admin insert failed — inspect /var/log/homelab-install.log; fallback: create the admin in the UI at https://mc.$DOMAIN/panel, or run: sudo sqlite3 puffer/data/pufferpanel.db \"INSERT INTO users ...\" per docs/GUIDE.md 'Admin login recovery', then re-check" ;;
     datadirectory)  echo "run: docker exec -w /var/www/html nextcloud php occ config:system:set datadirectory --value /data, then re-check" ;;
     kuma_admin)     echo "create the admin account at https://kuma.$DOMAIN in the UI, then re-check" ;;
     kuma_seed)      echo "run: docker exec -i uptimekuma sqlite3 /app/data/kuma.db < services/uptimekuma/seed-monitors.sql, or create monitors in the UI, then re-check" ;;
@@ -560,7 +622,6 @@ hint() {
     dns_*)          echo "create an A record ${1#dns_}.$DOMAIN -> ${VPS_IP:-<VPS IP>} in Cloudflare (turn must be DNS-only/grey-cloud — TURN bypasses the proxy; the rest proxied), then re-check" ;;
     cert_*)         echo "hit https://${1#cert_}.$DOMAIN once to trigger ACME, wait a few seconds, then re-check" ;;
     sweep)          echo "rename or remove the files listed by: grep -rl jehpok $REPO --exclude-dir=.git" ;;
-    splitdns)       echo "Tailscale admin console -> DNS: add split-DNS $DOMAIN -> ${TS_IP:-<tailscale IP>}, then confirm (y)" ;;
     sslmode)        echo "Cloudflare dashboard -> SSL/TLS -> Overview -> set mode to Full (or Full strict), then re-check" ;;
     clone)          echo "add the key printed above to GitHub (Settings -> SSH keys), then re-run the script" ;;
     *)              echo "" ;;
@@ -569,7 +630,7 @@ hint() {
 
 recheck() {
   case "$1" in
-    apt) command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 && dpkg -s git curl make sudo dnsmasq ufw jq apache2-utils >/dev/null 2>&1 ;;
+    apt) command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 && dpkg -s git curl make sudo dnsmasq ufw jq apache2-utils sqlite3 >/dev/null 2>&1 ;;
     goose) command -v goose >/dev/null 2>&1 || [ -x /usr/local/bin/goose ] ;;
     user) id -u "$OP_USER" >/dev/null 2>&1 ;;
     ssh_keys) sudo test -s /root/.ssh/authorized_keys && [ -s /home/$OP_USER/.ssh/authorized_keys ] ;;
@@ -584,7 +645,7 @@ recheck() {
     kuma) docker ps --format '{{.Names}}' | grep -qx uptimekuma ;;
     pufferpanel) docker ps --format '{{.Names}}' | grep -qx pufferpanel ;;
     mailserver) docker ps --format '{{.Names}}' | grep -qx mailserver && docker ps --format '{{.Names}}' | grep -qx roundcube ;;
-    panel_admin) docker exec pufferpanel wget -q -O /dev/null http://localhost:8080/ 2>/dev/null ;;
+    panel_admin) sudo sqlite3 /var/www/custom/projects/homelab/puffer/data/pufferpanel.db "SELECT COUNT(*) FROM users WHERE id=1 AND email='admin@fxmq.net' AND password IS NOT NULL AND length(password)>=50;" 2>/dev/null | grep -q 1 && sudo sqlite3 /var/www/custom/projects/homelab/puffer/data/pufferpanel.db "SELECT COUNT(*) FROM permissions WHERE user_id=1 AND scopes LIKE '%admin%';" 2>/dev/null | grep -q 1 ;;
     datadirectory) if docker exec -w /var/www/html nextcloud php occ status 2>/dev/null | grep -q "installed: true"; then [ "$(docker exec -w /var/www/html nextcloud php occ config:system:get datadirectory 2>/dev/null | tr -d '\n')" = "/data" ]; else true; fi ;;
     kuma_admin) [ "$(docker exec uptimekuma sqlite3 /app/data/kuma.db "SELECT COUNT(*) FROM user WHERE username='admin';" 2>/dev/null | tr -d '\n')" = "1" ] ;;
     kuma_seed) [ "$(docker exec uptimekuma sqlite3 /app/data/kuma.db "SELECT COUNT(*) FROM monitor;" 2>/dev/null | tr -d '\n')" -gt 0 ] ;;
@@ -592,7 +653,6 @@ recheck() {
     dns_*) local h=${1#dns_}; [ -n "$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$h.$DOMAIN" | jq -r '.result[0].id // empty')" ] ;;
     cert_*) local h=${1#cert_}; echo | timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$h.$DOMAIN" 2>/dev/null | openssl x509 -noout -issuer 2>/dev/null | grep -q "Let's Encrypt" ;;
     sweep) ! grep -rl 'jehpok' "$REPO" --exclude-dir=.git 2>/dev/null | grep -qv "^$REPO/scripts/install.sh$" ;;
-    splitdns) read -rp "    Confirmed split-DNS set in the Tailscale admin console? (y/N): " c && [[ "$c" =~ ^[yY]$ ]] ;;
     sslmode) ssl_mode_full ;;
     *) false ;;
   esac
@@ -600,7 +660,7 @@ recheck() {
 
 is_expected() {
   case "$1" in
-    splitdns|zone|ssh_keys|kuma_admin|clone|sslmode|panel_admin) return 0 ;;  # manual dashboard / UI steps
+    zone|ssh_keys|clone|sslmode) return 0 ;;  # input prerequisites / dashboard steps the script can't do
     *) return 1 ;;
   esac
 }
@@ -662,19 +722,21 @@ success_block() {
   echo " SUCCESS — the stack is up:"
   echo "   Nextcloud    https://cloud.$DOMAIN      admin / ${NEXTCLOUD_ADMIN_PASSWORD:-<see services/nextcloud/.env>}"
   echo "   Vaultwarden  https://vault.$DOMAIN"
-  echo "   Uptime Kuma  https://kuma.$DOMAIN       admin / ${KUMA_PASS:-<create in the UI>}"
-  echo "   PufferPanel  https://mc.$DOMAIN/panel   (admin created in the first-run wizard)"
+  echo "   Uptime Kuma  https://kuma.$DOMAIN       admin / ${KUMA_PASS:-<see kuma/admin-pass.txt>}"
+  echo "   PufferPanel  https://mc.$DOMAIN/panel   admin / ${PANEL_PASS:-<see puffer/admin-pass.txt>}"
   echo "   Webmail      https://mail.$DOMAIN       (mailboxes via make mail-add-user)"
   echo "   Shell        https://shell.$DOMAIN      (tailnet-only)"
   echo "   VPS IP ${VPS_IP:-?}   Tailscale IP ${TS_IP:-?}"
   echo ""
   echo " SSH: root and '$OP_USER' both log in with keys (tailnet-only, port 22)."
   echo ""
-  echo " Manual follow-ups:"
-  echo "   1. (optional) Cloudflare WAF rule skip for cloud.$DOMAIN (desktop sync)"
-  echo "   2. Git remote 'homelab' points at git@github.com:friedutch/homelab.git —"
+  echo " Follow-ups (none block the install):"
+  echo "   1. Tailscale split-DNS: admin console -> DNS -> add $DOMAIN -> ${TS_IP:-<tailscale IP>}"
+  echo "      so shell.$DOMAIN resolves for tailnet devices (dnsmasq on the VPS already answers it)"
+  echo "   2. (optional) Cloudflare WAF rule skip for cloud.$DOMAIN (desktop sync)"
+  echo "   3. Git remote 'homelab' points at git@github.com:friedutch/homelab.git —"
   echo "      rename the GitHub repo to match, or push will fail"
-  echo "   3. Post-migration doc pass: docs/ still name vhosts/debian until audited"
+  echo "   4. Mailboxes: make mail-add-user USER=name@$DOMAIN (or make mail-gen for a disposable)"
   echo "=============================================================="
 }
 

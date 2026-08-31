@@ -1,6 +1,6 @@
 # Migration (new VPS, new domain) — script-first
 
-The primary path is `scripts/install.sh` — a plug-and-play installer. It prompts for three values (domain, Cloudflare API token, Tailscale auth key), then runs unattended. It creates the `op` user, installs host services (docker, tailscale, dnsmasq, ttyd, ssh hardening, ufw, sysctl), clones the repo (which already carries the canonical `<domain>` naming — no renames are applied), and brings up the full stack: Caddy (`$DOMAIN`), Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Vaultwarden, Uptime Kuma, PufferPanel, and Docker Mailserver + Roundcube. It also creates the Cloudflare A records (`cloud`/`vault`/`kuma`/`www` proxied, `turn`/`mail`/`mc` DNS-only), sets the zone SSL mode to full, triggers Let's Encrypt issuance, and seeds Uptime Kuma (admin account included).
+The primary path is `scripts/install.sh` — a plug-and-play installer. It prompts for three values (domain, Cloudflare API token, Tailscale auth key), then runs unattended. It creates the `op` user, installs host services (docker, tailscale, dnsmasq, ttyd, ssh hardening, ufw, sysctl), clones the repo (which already carries the canonical `<domain>` naming — no renames are applied), and brings up the full stack: Caddy (`$DOMAIN`), Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Vaultwarden, Uptime Kuma, PufferPanel, and Docker Mailserver + Roundcube. It also creates the Cloudflare A records (`cloud`/`vault`/`kuma`/`www` proxied, `turn`/`mail`/`mc` DNS-only), sets the zone SSL mode to full, triggers Let's Encrypt issuance, seeds Uptime Kuma, and creates the Kuma + PufferPanel admin users automatically (passwords written to `kuma/admin-pass.txt` and `puffer/admin-pass.txt`). **Fully autonomous**: no manual confirmation steps block success — the only follow-ups are printed in the summary (Tailscale split-DNS, mailboxes).
 
 ## Run it
 
@@ -18,19 +18,20 @@ The installer's legacy `renames()` step — which transformed a pre-migration cl
 
 ## Prerequisites (manual, unavoidable)
 
-- Cloudflare zone `$DOMAIN` exists; API token with `Zone > DNS > Edit` for that zone.
+- Cloudflare zone `$DOMAIN` exists (checked up front — the script exits with a clear message if not); API token with `Zone > DNS > Edit` for that zone.
 - Tailscale auth key (admin console → Settings → Keys).
 - New VPS SSH key on GitHub — the script generates one and prints the pubkey; add it and re-run (state is saved, prompts are skipped).
 
 ## After the script finishes
 
-1. The installer lists the Tailscale split-DNS entry (`$DOMAIN` → the new VPS Tailscale IP) as an **expected** manual step in its error/re-check loop — it cannot be set with just an auth key. Confirm it in the admin console and the loop clears it; without it `shell.$DOMAIN` won't resolve for tailnet devices.
+1. Tailscale split-DNS (`$DOMAIN` → the new VPS Tailscale IP) is printed as a follow-up, not a blocking step — it cannot be set with just an auth key. Add it in the admin console so `shell.$DOMAIN` resolves for tailnet devices (dnsmasq on the VPS already answers it).
 2. Optional: Cloudflare WAF rule skip for `cloud.$DOMAIN` — Nextcloud desktop sync is bot-challenged otherwise (see `Intended` in `docs/ISSUES.md`).
-3. Doc pass: done for the Aug 2026 migration — the canonical repo now carries the `fxmq.net` / `op` / `shell.` names in code, docs, and Makefile.
+3. Mailboxes are not scripted — create them with `make mail-add-user` / `make mail-gen`.
+4. Doc pass: done for the Aug 2026 migration — the canonical repo now carries the `fxmq.net` / `op` / `shell.` names in code, docs, and Makefile.
 
 ## Minecraft server (PufferPanel + Geyser)
 
-`install.sh` brings up the panel container itself (PufferPanel at `mc.$DOMAIN/panel`; the first-run admin wizard is an **expected** manual step in its error loop). The game server, however, stays operator-managed (no sleep/wake stack — lazymc and mc-idle-sleeper were removed 2026-08-28). To carry it to a new VPS:
+`install.sh` brings up the panel container itself (PufferPanel at `mc.$DOMAIN/panel`) and creates its admin user automatically (password written to `puffer/admin-pass.txt`, same DB-insert pattern as GUIDE's admin-recovery). The game server, however, stays operator-managed (no sleep/wake stack — lazymc and mc-idle-sleeper were removed 2026-08-28). To carry it to a new VPS:
 
 1. The repo carries everything reproducible: the server template `config/pufferpanel/servers/2ecfbe8c.json` and the UFW ports (already in `install.sh`). After the base install: create the panel server from the template JSON (copy into `puffer/data/servers/<id>.json`) and start the game once from the panel UI so the daemon creates the container.
 2. Operator-only (not in repo, copy from the old host): the game server data dir `puffer/data/servers/2ecfbe8c/` (world, jars, plugin jars, Geyser cache/locales).

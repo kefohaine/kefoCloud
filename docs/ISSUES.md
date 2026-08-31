@@ -312,6 +312,7 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **`mc-ws` smoke check removed** — operator runs the browser-MC server on demand, not 24/7; smoke keeps `/play` (static Caddy mount) and no longer asserts a `/server` 101 upgrade (a stopped server 502s).
 - **NC system SMTP host fixed** — `mail_smtphost` was the bridge IP, so Symfony's STARTTLS check failed against the LE cert CN; now `mail.fxmq.net` (resolved via extra_hosts, like roundcube). Welcome/test mails send again.
 - **Mail data recipes added** — `mail-del-user-data` (Maildir cleanup), `mail-list-user-data` (folder listing), `mail-default-quota-set` (configurable `mail-gen` default via tracked `services/mailserver/default-quota`).
+- **install.sh fully autonomous** — PufferPanel + Kuma admin accounts created automatically (passwords in `admin-pass.txt` files), split-DNS demoted to a printed follow-up (no blocking confirmations), CF zone checked up front (fail-fast).
 
 ---
 
