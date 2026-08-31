@@ -155,6 +155,14 @@ services:
       - "49160-49200:49160-49200/udp"
       - "49160-49200:49160-49200/tcp"
     command: ["-c", "/etc/coturn/turnserver.conf", "--log-file=stdout", "--external-ip=$(detect-external-ip)"]
+    # Real STUN round-trip on 3478 (the image ships turnutils_stunclient;
+    # a bare TCP connect would pass while the TURN/STUN stack is broken).
+    healthcheck:
+      test: ["CMD", "turnutils_stunclient", "127.0.0.1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     volumes:
       # Rendered by `make talk-gen`. Static-auth-secret must match the
       # `occ talk:turn:add --secret` used in Nextcloud.
