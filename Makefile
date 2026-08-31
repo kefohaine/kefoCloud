@@ -183,7 +183,7 @@ list:
 >@tmux ls 2>/dev/null || echo "  (none)"
 >@echo ""
 >@echo "--- backups ---"
->@if [ -d "$(REPO)/backups" ]; then ls -1t "$(REPO)/backups" | head -10; else echo "  (none yet — run make backup)"; fi
+>@if [ -d "$(REPO)/backups" ]; then ls -1t "$(REPO)/backups"; else echo "  (none yet — run make backup)"; fi
 >@echo ""
 >@echo "--- mailboxes ---"
 >@docker exec mailserver setup email list 2>/dev/null || echo "  (mailserver not running)"
