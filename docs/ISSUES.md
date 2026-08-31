@@ -78,6 +78,18 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Fix**: Revoke the PAT at https://github.com/settings/tokens (or confirm it's already expired). Drop PAT usage entirely in favor of SSH.
 - **Why approval**: operator action on GitHub.
 
+#### Nextcloud 2FA not enforced  **[needs human approval]**
+- **File**: `services/nextcloud/docker-compose.yml` (app config via `occ`)
+- **Problem**: the setup check reports second-factor providers are available but two-factor authentication is not enforced — any stolen password alone grants access.
+- **Fix**: operator sets up a 2FA provider on their account (TOTP app), then `occ twofactorauth:enforce admin` (or `--all` for every user). Enforcing before the provider is configured can lock the account out.
+- **Why approval**: operator's own account; lockout risk.
+
+#### Nextcloud default phone region not set  **[needs human approval]**
+- **File**: app config via `occ`
+- **Problem**: `default_phone_region` is unset — profile phone numbers without a country code can't be validated (setup check warns).
+- **Fix**: `occ config:system:set default_phone_region --value <ISO-3166-1-ALPHA-2>` (e.g. `DE`, `FR`) — the operator picks their country code.
+- **Why approval**: operator-specific value.
+
 #### Re-apply Cloudflare WAF skip on the new domain
 - **File**: Cloudflare dashboard (fxmq.net zone)
 - **Problem**: after the migration, `cloud.fxmq.net` Nextcloud desktop sync is bot-challenged until the per-hostname WAF rule skip is re-created (same rationale as the `cloud.fxmq.net` `Intended` entry).
