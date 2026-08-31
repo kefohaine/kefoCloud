@@ -26,7 +26,7 @@ The installer's legacy `renames()` step — which transformed a pre-migration cl
 
 1. Tailscale split-DNS (`$DOMAIN` → the new VPS Tailscale IP) is printed as a follow-up, not a blocking step — it cannot be set with just an auth key. Add it in the admin console so `shell.$DOMAIN` resolves for tailnet devices (dnsmasq on the VPS already answers it).
 2. Optional: Cloudflare WAF rule skip for `cloud.$DOMAIN` — Nextcloud desktop sync is bot-challenged otherwise (see `Intended` in `docs/ISSUES.md`).
-3. Mailboxes are not scripted — create them with `make mail-add-user` / `make mail-gen`. The `nextcloud@$DOMAIN` SMTP sender mailbox used by Nextcloud's outbound mail is created automatically by the installer.
+3. Mailboxes are not scripted — create them with `make mail-add-user` / `make mail-gen`. The app SMTP sender mailboxes used for outbound mail are created automatically by the installer: `nextcloud@$DOMAIN` and `vaultwarden@$DOMAIN`.
 4. Doc pass: done for the Aug 2026 migration — the canonical repo now carries the `fxmq.net` / `op` / `shell.` names in code, docs, and Makefile.
 
 ## Minecraft server (PufferPanel)

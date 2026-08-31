@@ -4,6 +4,7 @@ __pycache__/
 services/cloud/.env
 services/nextcloud/.env
 services/mailserver/.env
+services/vaultwarden/.env
 # Runtime data dirs — canonical home is /var/www/custom/projects/homelab/
 # (siblings of repo/), never inside the repo. Ignored so a stray copy can't
 # be committed (2026-08-29 cleanup removed strays that were created in repo/).

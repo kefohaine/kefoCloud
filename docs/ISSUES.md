@@ -160,6 +160,7 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Default server seeded in the browser client** — `servers` hint added to `eaglercraftXOptsHints` (u53 supports `{addr,name}`; found by decompressing the client's 17.9 MB base64 payload); every fresh browser now pre-lists fxmq.net.
 - **Any-version Java access** — ViaBackwards + ViaRewind added (with ViaVersion): Java clients 1.7.10 → latest all connect to `mc.fxmq.net:25565`.
 - **Browser-MC port consolidated to 25565** — `07fd7727` now binds host-net 25565, shared with the protected `2ecfbe8c` (operator design: one server at a time); UFW 25567 closed, Caddy `/server` → `172.22.0.1:25565` (2026-08-31).
+- **Vaultwarden SMTP wired** — `vaultwarden@fxmq.net` sender mailbox + STARTTLS 587 via the local mailserver (SMTP vars in gitignored `services/vaultwarden/.env`); verification/invite/notification email now sends (2026-08-31).
 - **mc /server websocket smoke check removed** — operator: the game server isn't run 24/7, so a 502 while it's stopped is expected; smoke asserts `/play` 200 only (2026-08-31).
 - **Chunky installed for 1.12.2** — rebuilt from source (tag 1.1.21, the last pre-1.13 line): dead repo URLs swapped, BlueMap dep dropped, `api-version` + the hard ≥1.13.2 gate patched out; enables cleanly on Paper 1.12.2. Pregen: `chunky radius N` + `chunky start` in the panel console (no leading slash — see Lessons learned).
 - **Nextcloud integration** — first hosted on the VPS, migrated to `app.homelab.com/cloud`, reverted, then linked via PHP-FPM.
