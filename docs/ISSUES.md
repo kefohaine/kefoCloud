@@ -129,6 +129,15 @@ Looks like: DNS lookup fails for `shell.fxmq.net` outside Tailscale, *or* a `cur
 ### Cloudflare Bot Fight Mode blocks `curl` against `cloud.fxmq.net`
 Looks like: Cloudflare rejects `curl`/scripts hitting `cloud.fxmq.net` with a 403 / challenge. Reality: terminal traffic cannot solve the Browser Integrity Check. The intended fix is a per-hostname WAF rule skip on `cloud.fxmq.net` (desktop sync is bot-challenged otherwise); the goal is to keep Cloudflare's full protection on everywhere else.
 
+### Talk recording + SIP backends not configured
+Looks like: setup-check warnings "No recording backend configured" / "No SIP backend configured". Reality: a single-operator Talk instance has no recording server and no SIP trunk — the warnings are expected and not bugs. Revisit only if calls need recording or PSTN dial-in.
+
+### Talk HPB "missing features: changed-users"
+Looks like: Talk warns the signaling server doesn't support all features (`changed-users`). Reality: the official `strukturag/nextcloud-spreed-signaling:latest` image is 2.1.1 (built 2026-03-12, verified up to date) and predates that Talk feature — no newer image exists on Docker Hub. Do not chase this warning; it clears only when upstream ships a newer signaling server.
+
+### AppAPI disabled (no external apps)
+Looks like: "AppAPI default deploy daemon is not set" would appear if `app_api` were enabled. Reality: `occ app:disable app_api` was run 2026-08-31 — no External Apps (Ex-Apps) are used, so the framework is off and the warning gone. Re-enable (`occ app:enable app_api`) if ExApps are ever wanted.
+
 ---
 
 ## Solved
@@ -163,6 +172,8 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Vaultwarden SMTP wired** — `vaultwarden@fxmq.net` sender mailbox + STARTTLS 587 via the local mailserver (SMTP vars in gitignored `services/vaultwarden/.env`); verification/invite/notification email now sends (2026-08-31).
 - **NC setup warnings cleared (2026-08-31)** — `trusted_proxies` as a real array (the image env wrote a comma string into index 0), `mail_smtpsecure=tls` + `mail_smtpauthtype=LOGIN` (root cause of the 15:15 "Email could not be sent" test-mail failures), `maintenance_window_start=4`, `background:cron`, `db:add-missing-indices` + `maintenance:repair --include-expensive` run, opcache `memory_consumption` 96→256.
 - **Talk HPB single registration** — internal `http://172.22.0.12:8080` signaling entry removed (NC 34 deprecates multiple HPBs); clients + server use only the public `wss://turn.fxmq.net/signaling` (2026-08-31).
+- **NC 34.0.3 upgrade** — image tag bumped `34.0.2-fpm` → `34.0.3-fpm`; `occ upgrade` ran clean (2026-08-31).
+- **Setup-check noise silenced** — `serverid=1` (Configuration server ID check); AppAPI disabled (no external apps — see Intended); Talk recording + SIP backends intentionally unconfigured (see Intended) (2026-08-31).
 - **mc /server websocket smoke check removed** — operator: the game server isn't run 24/7, so a 502 while it's stopped is expected; smoke asserts `/play` 200 only (2026-08-31).
 - **Chunky installed for 1.12.2** — rebuilt from source (tag 1.1.21, the last pre-1.13 line): dead repo URLs swapped, BlueMap dep dropped, `api-version` + the hard ≥1.13.2 gate patched out; enables cleanly on Paper 1.12.2. Pregen: `chunky radius N` + `chunky start` in the panel console (no leading slash — see Lessons learned).
 - **Nextcloud integration** — first hosted on the VPS, migrated to `app.homelab.com/cloud`, reverted, then linked via PHP-FPM.
@@ -175,7 +186,7 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Custom Caddy image with `caddy-dns/cloudflare`** — `services/fxmq.net/Dockerfile` builds `fxmq.net:local` via xcaddy (Go 1.25 + cloudflare@a8737d0, which relaxed the API token regex to accept the 53-char CF token format).
 - **SSH hardened** — password auth + root login disabled, `AllowUsers op root`.
 - **Log rotation deployed** — all 3 containers with `json-file` size caps.
-- **Image tags pinned** — `caddy:2.11.4`, `coredns:1.14.6`, `nextcloud:34.0.2-fpm`.
+- **Image tags pinned** — `caddy:2.11.4`, `coredns:1.14.6`, `nextcloud:34.0.3-fpm`.
 - **PHP-FPM `ondemand`** — idle workers freed after 10s.
 - **CoreDNS multi-upstream** — `1.1.1.1 1.0.0.1 9.9.9.9` sequential.
 - **Caddy admin API closed** — `admin off` in global options block.

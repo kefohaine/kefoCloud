@@ -546,6 +546,14 @@ nextcloud_setup() {
   docker exec -u www-data nextcloud php occ config:system:set mail_smtpsecure --value tls >/dev/null 2>&1
   docker exec -u www-data nextcloud php occ config:system:set mail_smtpauthtype --value LOGIN >/dev/null 2>&1
 
+  # Single-PHP instance: serverid (int 0-511) silences the "Configuration
+  # server ID" setup check; AppAPI is disabled — no external apps are used
+  # (the "AppAPI default deploy daemon" check only fires while it's enabled).
+  if [ -z "$(docker exec -u www-data nextcloud php occ config:system:get serverid 2>/dev/null | tr -d '\n')" ]; then
+    docker exec -u www-data nextcloud php occ config:system:set serverid --value 1 --type integer >/dev/null 2>&1 || true
+  fi
+  docker exec -u www-data nextcloud php occ app:disable app_api >/dev/null 2>&1 || true
+
   # Talk signaling — ONE entry (the public URL): NC 34 deprecates multiple
   # high-performance backends. Clients get wss://turn.$DOMAIN/signaling; the
   # signaling server reaches NC back via its own [backend1] urls (extra_hosts),
