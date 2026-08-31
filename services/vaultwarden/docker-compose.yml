@@ -14,6 +14,24 @@ services:
       INVITATIONS_ALLOWED: "false"
       SHOW_PASSWORD_HINT: "false"
       ROCKET_PORT: "80"
+      # SMTP — verification / invite / notification emails via the local
+      # mailserver (vaultwarden@fxmq.net sender mailbox, STARTTLS on 587).
+      # Values come from services/vaultwarden/.env (gitignored — generated
+      # by scripts/install.sh seed_stack; see vaultwarden_setup).
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_SECURITY: ${SMTP_SECURITY}
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_FROM: ${SMTP_FROM}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME}
+      SMTP_AUTH_MECHANISM: ${SMTP_AUTH_MECHANISM}
+
+    extra_hosts:
+      # Map the cert FQDN to the mail container's bridge IP so SMTP TLS
+      # SNI + cert verification see mail.fxmq.net (same pattern as the
+      # nextcloud container — the LE cert CN must match the host).
+      - "mail.fxmq.net:172.22.0.9"
 
     volumes:
       - /var/www/custom/projects/homelab/vault/data:/data
