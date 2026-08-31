@@ -41,17 +41,30 @@ https://mc.fxmq.net {
 	# matches only the exact path, so /panel/* is needed for subpaths
 	# (including the bare trailing slash).
 	handle_path /panel {
-		reverse_proxy 172.22.0.8:8080
+		reverse_proxy 172.22.0.8:8080 {
+			# strip the panel's own security headers (site-level set yields one value)
+		header_down -X-Frame-Options
+		header_down -X-Content-Type-Options
+		header_down -Referrer-Policy
+		}
 	}
 	handle_path /panel/* {
-		reverse_proxy 172.22.0.8:8080
+		reverse_proxy 172.22.0.8:8080 {
+		header_down -X-Frame-Options
+		header_down -X-Content-Type-Options
+		header_down -Referrer-Policy
+		}
 	}
 	# PufferPanel's baked-absolute root routes (no subpath support): the
 	# SPA's history-mode pages, /api REST + websocket console, /auth web
 	# login, Vite /assets, and /swagger API docs.
 	@panel_infra path /api/* /auth* /js/* /wasm/* /css/* /img/* /fonts/* /assets/* /swagger* /home/* /nodes* /dashboard /self /servers* /settings /templates* /users* /favicon.png /manifest.json
 	handle @panel_infra {
-		reverse_proxy 172.22.0.8:8080
+		reverse_proxy 172.22.0.8:8080 {
+		header_down -X-Frame-Options
+		header_down -X-Content-Type-Options
+		header_down -Referrer-Policy
+		}
 	}
 	# File browser over the homelab/download drop folder. Two blocks for
 	# the same reason as /panel: `path /download` matches only the exact

@@ -26,6 +26,11 @@ https://cloud.fxmq.net {
     redir /.well-known/caldav /remote.php/dav 301
     php_fastcgi 172.22.0.5:9000 {
         root /var/www/html
+        # strip NC's own security headers so the site-level header set below
+        # yields exactly one value per field (Caddy appends, not replaces)
+		header_down -X-Frame-Options
+		header_down -X-Content-Type-Options
+		header_down -Referrer-Policy
         dial_timeout 10s
         read_timeout 300s
         write_timeout 300s

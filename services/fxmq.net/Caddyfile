@@ -16,20 +16,15 @@
 
 # ── snippets ────────────────────────────────────────────────────────────────
 
-# Security headers, delete-then-set: Caddy's `header` directive ADDS to
-# upstream values (it does not replace), so apps that already send these
-# headers (Nextcloud, Vaultwarden, Kuma) produced duplicates and a
-# conflicting Referrer-Policy (NC's no-referrer vs ours) — flagged by
-# scan.nextcloud.com. Deleting the field first guarantees exactly one
-# value per header on every vhost response.
+# Security headers. NOTE: Caddy's header directive APPENDS to upstream values
+# (set does not replace) and a delete+set pair for the SAME field in one block
+# ends up deleted (delete wins) — so app vhosts strip the upstream's own copies
+# with `header_down` at the proxy (cloud/vault/kuma/panel/roundcube/ttyd/hpb)
+# and this snippet only ever SETS. Never add `-<Field>` delete lines here.
 (security_headers) {
-    -Strict-Transport-Security
     Strict-Transport-Security "max-age=31536000"
-    -X-Content-Type-Options
     X-Content-Type-Options "nosniff"
-    -X-Frame-Options
     X-Frame-Options "SAMEORIGIN"
-    -Referrer-Policy
     Referrer-Policy "strict-origin-when-cross-origin"
 }
 

@@ -14,5 +14,10 @@ https://mail.fxmq.net {
     header {
         import security_headers
     }
-    reverse_proxy 172.22.0.10:80
+    reverse_proxy 172.22.0.10:80 {
+        # strip roundcube's own security headers so the site-level set yields one value
+		header_down -X-Frame-Options
+		header_down -X-Content-Type-Options
+		header_down -Referrer-Policy
+    }
 }
