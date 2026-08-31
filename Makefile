@@ -450,7 +450,7 @@ dok-stop-nextcloud-db:
 >$(COMPOSE) $(REPO)/repo/services/nextcloud/docker-compose.db.yml stop
 
 dok-logs-nextcloud-db:
->docker logs nextcloud-db --tail 50 -f
+>docker logs postgresql --tail 50 -f
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Bundles (live <-> tarball)
