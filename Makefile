@@ -190,6 +190,9 @@ list:
 >@echo ""
 >@echo "--- mail aliases ---"
 >@docker exec mailserver setup alias list 2>/dev/null || echo "  (mailserver not running)"
+>@echo ""
+>@echo "--- stored mail data (mailserver/data/fxmq.net/) ---"
+>@sudo ls -1 "$(REPO)/mailserver/data/fxmq.net/" 2>/dev/null || echo "  (no mail data yet)"
 
 # Shared bodies for the granular clean-* recipes. cleanup is the umbrella
 # recipe and inlines all three bodies — no chained make targets.
