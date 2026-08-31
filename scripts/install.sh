@@ -211,14 +211,14 @@ EOF
   fi
   ufw allow 80/tcp >/dev/null 2>&1
   ufw allow 443/tcp >/dev/null 2>&1
-  # Minecraft game ports — the PufferPanel-managed game server owns Java 25565; Geyser-Spigot
-  # on the game server owns Bedrock 19132/udp (only answers while server is up).
+  # Minecraft game ports — both PufferPanel servers bind host-net 25565
+  # (protected 2ecfbe8c Java + Geyser-Spigot Bedrock 19132/udp, and the
+  # browser-MC playground 07fd7727). They SHARE 25565 — one server runs
+  # at a time by design, so a single ANYWHERE rule covers both (19132/udp
+  # only answers while the game server with Geyser is up). 25567 closed
+  # 2026-08-31 (operator: port consolidation).
   ufw allow 25565/tcp >/dev/null 2>&1
   ufw allow 19132/udp >/dev/null 2>&1
-  # Browser-MC playground (server 07fd7727) — host-net Java port 25567 is PUBLIC
-  # (opened 2026-08-31: Java clients join mc.$DOMAIN:25567 directly; the eaglercraft
-  # websocket is multiplexed on the same port, so no separate rule is needed).
-  ufw allow 25567/tcp >/dev/null 2>&1
   # Self-hosted mail (Docker Mailserver): SMTP + submission + IMAPS. Inbound 25
   # can be provider-blocked on some VPSes — these are open so mail works the
   # moment the provider allows it.
