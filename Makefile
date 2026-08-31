@@ -291,7 +291,7 @@ mail-quota-set:
 
 # Disposable mailbox: random 7-letter local part + random 16-char password
 # (see scripts/mail-gen.sh). Local part is always generated — no custom
-# names. Credentials printed once, stored nowhere.
+# names. 1 GiB default quota applied. Credentials printed once, stored nowhere.
 mail-gen:
 >@bash scripts/mail-gen.sh
 
@@ -764,7 +764,7 @@ help:
 >@echo "  └  make tmux-kill TAG=   │kill target             │can also kill with 'exit'"
 >@echo ""
 >@echo "  Mail (Docker Mailserver — details in docs/GUIDE.md)"
->@echo "  │  make mail-gen                disposable mailbox: random 7-letter address + random 16-char password (printed once)"
+>@echo "  │  make mail-gen                disposable mailbox: random 7-letter address + random 16-char password + 1G quota (printed once)"
 >@echo "  │  make mail-alias-gen TO=…     disposable forwarding alias: random 7-digit address → TO (external only — same-domain refused)"
 >@echo "  │  make mail-alias-del ALIAS=… TO=…   remove a target from an alias (DMS needs both)"
 >@echo "  │  make mail-alias-list         list aliases"
