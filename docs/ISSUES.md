@@ -309,6 +309,7 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **RAM caps rebalanced** — redis 192m→128m, postgresql 768m→512m, roundcube got a 512m cap; NC stack ceiling now 1g+128m+256m+128m+512m = 2.02 GB.
 - **`talk-relay` healthcheck added** — real STUN binding probe (`turnutils_stunclient 127.0.0.1`, ships in the image); container now `healthy` like the rest of the stack.
 - **install.sh rewritten for the canonical repo** — legacy homelab.com/vhosts/debian renames and 4-container trimming dropped; deploys the full stack (panel + mail included), uses the committed kuma seed, adds mail/mc/www DNS records.
+- **`mc-ws` smoke check removed** — operator runs the browser-MC server on demand, not 24/7; smoke keeps `/play` (static Caddy mount) and no longer asserts a `/server` 101 upgrade (a stopped server 502s).
 
 ---
 
