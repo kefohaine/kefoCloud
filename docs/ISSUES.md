@@ -149,6 +149,7 @@ Resolved items grouped by month. One line per item, aggressively short.
 - **Terralith / Distant Horizons / Chunky not installable on this stack** — Terralith is 1.18+ Forge-only, Distant Horizons is client-side (browser client can't load mods), Chunky has no 1.12.2 artifacts on reachable mirrors; perf instead via Aikar flags + view-distance 6 + offline mode.
 - **07fd7727 registered in panel DB** — file-dropped server was daemon-visible but UI-invisible; added `servers`+`permissions` rows (admin scopes) → visible as "Browser Play"; ea3b4585's leftover DB rows purged (the earlier orphan file deletion had missed them).
 - **Playground tuning applied** — view-distance 4, eaglercraft render 4, entity limits halved, 4G heap, autorestart on (operator-set 2026-08-31).
+- **Web instance switched to EaglercraftX 1.8.8** — official u53 client at `/play`, ViaVersion on the 1.12.2 backend (official template combo), websocket renamed `/ws` → `/web`, Java port 25567 opened publicly (clients 1.8–1.12.2).
 - **Nextcloud integration** — first hosted on the VPS, migrated to `app.homelab.com/cloud`, reverted, then linked via PHP-FPM.
 - **Nextcloud backend upgrade** — image bump.
 - **CoreDNS isolated** — split into its own directory; config renamed.

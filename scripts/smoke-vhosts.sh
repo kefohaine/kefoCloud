@@ -65,7 +65,7 @@ check mc-download "mc.fxmq.net" "/download/"  "200 301 302 307 308" html
 check mc-play "mc.fxmq.net" "/play/" "200 301 302 307 308" html
 mc_ws=$(curl -s -o /dev/null -w '%{http_code}' --http1.1 --max-time 12 --resolve "mc.fxmq.net:443:127.0.0.1" \
   -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
-  "https://mc.fxmq.net/ws" 2>/dev/null)
+  "https://mc.fxmq.net/web" 2>/dev/null)
 if [ "$mc_ws" != "101" ]; then
   echo "FAIL mc-ws: websocket handshake got HTTP $mc_ws (want 101 — eaglercraft game server must answer via Caddy)"; fails=1
 else
