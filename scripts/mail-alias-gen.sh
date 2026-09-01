@@ -45,6 +45,6 @@ done
 docker exec mailserver setup alias add "$alias_addr" "$TO" >/dev/null
 
 echo "Disposable forwarding alias created:"
-echo "  alias    : $alias_addr"
-echo "  forwards : $TO"
-echo "  delete   : make mail-del-alias FROM=$alias_addr TO=$TO"
+echo "info:  alias $alias_addr created"
+echo "       forwards to $TO"
+echo "       delete with: make mail-del-alias FROM=$alias_addr TO=$TO"
