@@ -221,8 +221,11 @@ The repo is owned by `op:op` (the SSH/login user). Edit directly when signed in 
 git push homelab main
 ```
 
-## Operational gotchas
+## Generalization principle
 
+Scripts and manifests stay **global** — they derive everything from the live system instead of hardcoding instance specifics (see `docs/AGENTS.md` rule 12). In practice here: install.sh/storage.sh auto-detect container names, the datadirectory and DB credentials; user/group lists come from `occ`/`oc_users`, never a fixed roster; persistent recovery manifests are **generated** by `make nc-capture` into `config/nextcloud/` (marked GENERATED, re-run to refresh). Before writing a specific user, host, IP, port, path, or container name into a script or doc, ask whether it can change — if it can, detect or prompt for it instead. Existing hardcoded leftovers should be migrated to this pattern when touched.
+
+## Operational gotchas
 - A deliberate `systemctl stop dnsmasq` takes all tailnet-side `*.fxmq.net` resolution down. Restart with `make systemd-restart-dnsmasq`.
 - **A panel container restart stops a running game server** — the daemon reconciles at boot: if the game container is running when the panel restarts, it gracefully stops and removes it; players are kicked (world saved) and the server stays stopped until started manually from the panel. Disruptive but clean.
 - **Bedrock clients can't reach a stopped server** — Geyser lives inside the game server, so UDP 19132 only answers while the server is running.
