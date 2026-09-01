@@ -354,7 +354,7 @@ Resolved items grouped by month. One line per item, aggressively short.
 
 ### Sep 2026 — edge duplicate cleanup
 - **Duplicate edge container removed** — interrupted `--force-recreate` (2026-09-01) left a second Caddy running as `<old-container-id>_fxmq.net`; both removed, `make dok-recreate-fxmq.net` verified non-duplicating (4× runs incl. forced image rebuild), stale image pruned (see Lessons learned).
-- **`optimize.ts` universal VPS optimizer** — OPTIMIZE.md + repo tuning + strong standards merged into one idempotent Deno script (`--dry-run`/`--verify`/backups, auto-detects docker/dnsmasq/SSD/swap/services); applied on this host — configs already converged (sysctls live via 99-homelab.conf), remaining bits flagged (see GUIDE gotchas).
+- **`optimize.sh` universal VPS optimizer** — OPTIMIZE.md + repo tuning + strong standards merged into one idempotent bash script (`--dry-run`/`--verify`/backups, auto-detects docker/dnsmasq/SSD/swap/services); applied on this host — converged, created the missing 4G swapfile, added noatime (see GUIDE gotchas).
 
 ---
 
