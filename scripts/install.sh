@@ -578,6 +578,32 @@ nextcloud_setup() {
   # Background jobs via the host cron (config/cron/nextcloud, installed by install-config).
   docker exec -u www-data nextcloud php occ background:cron >/dev/null 2>&1 || true
 
+  # Recovery manifest: users + quotas (config/nextcloud/users.txt). Missing
+  # users are created with a generated password printed ONCE at the end (the
+  # pre-wipe passwords lived in the wiped DB — hand the new ones to the users).
+  if [ -f "$REPO/repo/config/nextcloud/users.txt" ]; then
+    while IFS='|' read -r uid quota _; do
+      [ -n "$uid" ] || continue
+      case "$uid" in \#*) continue ;; esac
+      if ! docker exec -u www-data nextcloud php occ user:list 2>/dev/null | grep -q "^  - $uid:"; then
+        NP=$(openssl rand -base64 12 | tr -d '/+=' | head -c 12)
+        docker exec -e OC_PASS="$NP" -u www-data nextcloud php occ user:add --password-from-env "$uid" >/dev/null 2>&1 \
+          && echo "[install] new user $uid — password: $NP (share with them)"
+      fi
+      [ -n "$quota" ] && docker exec -u www-data nextcloud php occ user:setting "$uid" files quota "$quota" >/dev/null 2>&1
+    done < "$REPO/repo/config/nextcloud/users.txt"
+  fi
+
+  # Recovery manifest: apps enabled beyond the image defaults
+  # (config/nextcloud/apps.txt).
+  if [ -f "$REPO/repo/config/nextcloud/apps.txt" ]; then
+    while read -r app; do
+      [ -n "$app" ] || continue
+      case "$app" in \#*) continue ;; esac
+      docker exec -u www-data nextcloud php occ app:enable "$app" >/dev/null 2>&1 || true
+    done < "$REPO/repo/config/nextcloud/apps.txt"
+  fi
+
   # Verify what the smoke/operational docs assert.
   docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN" \
     || fail nextcloud_setup "mail_smtphost not set"
