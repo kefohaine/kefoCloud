@@ -26,8 +26,4 @@ case "$MAIL" in *@*) ;; *) MAIL="$MAIL@fxmq.net" ;; esac
 printf '%s\n%s\n' "$PWD" "$PWD" | docker exec -i mailserver setup email add "$MAIL" >/dev/null
 docker exec mailserver setup quota set "$MAIL" "$QUOTA" >/dev/null
 
-echo "Mailbox created:"
-echo "  address:  $MAIL"
-echo "  password: $PWD"
-echo "  quota:    $QUOTA"
-echo "  website:  https://mail.fxmq.net (login with just the local part)"
+echo "info:  mailbox $MAIL created — password: $PWD, quota: $QUOTA, webmail https://mail.fxmq.net (login with the local part)"
