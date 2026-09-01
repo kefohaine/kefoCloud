@@ -28,8 +28,8 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 #### Storage VPS onboarded (Setup A) — files on Garage, DB stays on fxmq
 - **File**: `scripts/storage.sh` + storage VPS (100.111.139.13, tailnet-only)
 - **Problem**: the 1 TB / 2 GB storage VPS was meant for a DB relocation; Setup A was chosen instead: PostgreSQL stays on fxmq (11 GB RAM, DB latency local), the 1 TB box serves Nextcloud's user files.
-- **Status — SUPERSEDED by the 2026-09-01 reset**: the object-store migration (NC primary object store, `urn:oid:<fileid>` blobs, filecache storage switch) was abandoned after repeated filecache/scanner corruption — the instance was wiped and freshly installed instead (see "Nextcloud reset (2026-09-01)" below). PostgreSQL stays on fxmq; the storage VPS keeps Garage installed (bucket `nextcloud`, key `nc-s3`) and doubles as the nightly `pg_dump` target (`storage:/backups/nc`). `make storage` remains the future files-on-storage path (idempotent, with the correct urn:oid method now encoded); the bucket currently holds only orphaned blobs from the failed attempts.
-- **Residual**: local files under `cloud/users/` are the active store again; the object-store migration can be retried later via `make storage` when wanted.
+- **Status — SUPERSEDED (2026-09-01)**: the Garage/object-store path was abandoned (filecache corruption) and replaced. `scripts/storage.sh` is now an **NFS live-datadirectory tool**: it mounts the storage VPS's export at the NC datadirectory (`cloud/users`) over the tailnet, rsyncs the data over, prompts for the allocation size (validated against available disk) and whether to delete the local copies, and prints install.sh-style error tables + manual steps. Garage remains installed on storage (bucket holds orphaned blobs — harmless; remove with `docker rm -f garage` if unwanted). The nightly `pg_dump` → `storage:/backups/nc` coexists (backups, not the box's primary role).
+- **Residual**: the NFS migration has NOT been run yet (files still local on fxmq); run `make storage` from the NC host when ready. The 2026-09-01 reset (fresh install, recovery manifests) stands as the current working state.
 
 #### Nextcloud reset (2026-09-01) — fresh install, recovery manifests
 - **File**: `config/nextcloud/{users,apps}.txt` (recovery manifests) + `scripts/install.sh` `nextcloud_setup`
@@ -42,6 +42,11 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Problem**: `make backup` tars Nextcloud `/data` in maintenance mode; there was no consistent PostgreSQL snapshot and no off-site copy target. Since 2026-08-31 the DB side is covered: `scripts/storage.sh` installs a nightly cron that `pg_dump`s the `postgresql` container and pushes it to `storage:/backups/nc` (key auth, keeps 7). The FILE side: user files live in the Garage bucket on storage (their primary home) plus the untouched local copies under `cloud/users/` — but there is no off-site/DR copy of the bucket or a second location for the local copies.
 - **Fix**: add `scripts/backup.sh` (or extend the cron): `occ maintenance:mode --on` → `pg_dump` (already nightly) + rsync of the Garage bucket (`/var/lib/garage/data` on storage) to a second target, and/or rsync `cloud/users` while the local copies still exist → `--off`.
 - **Why approval**: operator picks the file-backup target (second disk / another provider / off-site).
+
+#### Nextcloud password policy disabled  **[needs human approval]**
+- **File**: NC app `password_policy` (disabled 2026-09-01 by the operator's request)
+- **Problem**: the operator asked for the admin password `silence` for easy login; NC's password_policy app rejected it (min 10 chars + common-list), so the app was disabled — weak passwords are now allowed for every user.
+- **Fix**: re-enable when wanted (`make nc-app-enable APP=password_policy`) and set a proper admin password; the admin one is still `silence` until then.
 
 ### Security
 

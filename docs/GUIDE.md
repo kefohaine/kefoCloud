@@ -59,7 +59,7 @@ make install-config   # one-shot host bootstrap: install ttyd, copy config/ to l
 make install-<file>   # per-file install from config/ → live (goose, ttyd, ssh, dnsmasq-conf, dnsmasq-override, docker, sysctl, cron)
 make kuma-import      # import an adapted Uptime Kuma db from another host (KUMA_DB=/path)
 make talk-gen         # generate Nextcloud-stack secrets + Talk/TURN configs (idempotent; writes services/nextcloud/.env + /var/www/custom/projects/homelab/talk/)
-make storage          # onboard the 1 TB storage VPS as Nextcloud object storage (Garage S3; PG stays on fxmq) — prompts for ssh password + tailscale auth key (scripts/storage.sh)
+make storage          # move Nextcloud's live datadirectory to the storage VPS (NFS over the tailnet; PG stays on fxmq) — prompts: ssh password + tailscale auth key + allocation size (scripts/storage.sh)
 make dok-recreate-nextcloud-db  # force-recreate the Nextcloud PostgreSQL unit (docker-compose.db.yml — stays on this host; the 1 TB VPS serves files via Garage instead, see make storage)
 make install-cron     # install /etc/cron.d/nextcloud (Nextcloud occ cron, every 5 min)
 make mail-add-user USER=name@fxmq.net  # create a mailbox — password is prompted via read -s, never on the command line
