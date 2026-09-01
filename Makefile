@@ -336,6 +336,44 @@ mail-alias-del:
 mail-alias-list:
 >@docker exec mailserver setup alias list
 
+# ─────────────────────────────────────────────────────────────────────────────
+# PufferPanel accounts (CLI `pufferpanel user` — binary at /pufferpanel/bin/)
+# Users table in puffer/data/pufferpanel.db; passwords live in the DB and are
+# never printed. panel-passwd is not exposed — the CLI's `user edit` has no
+# working password flag in this version; reset passwords from the panel UI.
+# ─────────────────────────────────────────────────────────────────────────────
+panel-list-users:
+>@bash scripts/panel-user.sh list
+
+panel-add-user:
+>@[ "$(origin USER)" = "command line" ] || { echo "Usage: make panel-add-user USER=<email> NAME=<name> [PASS=…] [ADMIN=1]"; exit 1; }
+>@[ -n "$(NAME)" ] || { echo "NAME=<name> required"; exit 1; }
+>@[ -n "$(PASS)" ] || read -s -p "Password for $(USER): " PASS; echo; \
+  bash scripts/panel-user.sh add "$(USER)" "$(NAME)" "$$PASS" $(if $(ADMIN),admin)
+
+panel-del-user:
+>@[ "$(origin USER)" = "command line" ] || { echo "Usage: make panel-del-user USER=<email>"; exit 1; }
+>@bash scripts/panel-user.sh del "$(USER)"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Uptime Kuma accounts (no CLI — scripts/kuma-user.sh: bcryptjs hash in the
+# container + host sqlite3 on kuma/data/kuma.db; plaintext never crosses)
+# ─────────────────────────────────────────────────────────────────────────────
+kuma-list-users:
+>@bash scripts/kuma-user.sh list
+
+kuma-add-user:
+>@[ -n "$(USER)" ] && [ -n "$(PASS)" ] || { echo "Usage: make kuma-add-user USER=<name> PASS=<password>"; exit 1; }
+>@bash scripts/kuma-user.sh add "$(USER)" "$(PASS)"
+
+kuma-passwd:
+>@[ -n "$(USER)" ] && [ -n "$(PASS)" ] || { echo "Usage: make kuma-passwd USER=<name> PASS=<newpassword>"; exit 1; }
+>@bash scripts/kuma-user.sh passwd "$(USER)" "$(PASS)"
+
+kuma-del-user:
+>@[ -n "$(USER)" ] || { echo "Usage: make kuma-del-user USER=<name>"; exit 1; }
+>@bash scripts/kuma-user.sh del "$(USER)"
+
 # Import an adapted Uptime Kuma db from another host (KUMA_DB=/path).
 kuma-import:
 >sudo scripts/kuma-import.sh $(KUMA_DB)
@@ -942,7 +980,7 @@ help:
 >@echo "  │  make talk-gen              │generate Nextcloud-stack secrets + Talk/TURN configs (idempotent)"
 >@echo "  │  make nc-capture            │snapshot live NC users/groups/quotas into config/nextcloud/ (recovery manifests — re-run after user changes)"
 >@echo "  │  make storage               │move Nextcloud's LIVE datadirectory to the storage VPS (NFS over tailnet; PG stays on fxmq) — prompts: ssh + tailscale key + allocation size"
->@echo "  │  make dok-recreate-nextcloud-db │force-recreate the Nextcloud PostgreSQL unit (runs on this host until the 1 TB VPS joins)"
+>@echo "  │  make dok-recreate-nextcloud-db │force-recreate the Nextcloud PostgreSQL unit (DB stays on fxmq — the storage VPS serves files, not the DB)"
 >@echo "  │  make install-config        │one-shot host bootstrap: copy config/ to live paths"
 >@echo "  │  make install-<file>        │per-file install from config/ → live (goose, ttyd, ssh, dnsmasq-conf, dnsmasq-override, docker, sysctl, cron)"
 >@echo "  │  make bkp-cloud             │Nextcloud snapshot (maintenance mode during copy)"
@@ -987,6 +1025,15 @@ help:
 >@echo "  │  make mail-quota [MAIL=] QUOTA= / quota set as default if 'mail' field empty"
 >@echo "  │  make mail-password MAIL= [PWD=] / rotate mailbox password (auto gen & print 16-char password if 'pwd' field is empty)"
 >@echo "  └  make mail-card MAIL= / show all info about one email (name, password, mailbox website, quota, etc..)"
+>@echo ""
+>@echo "  Panel & Uptime Kuma accounts"
+>@echo "  │  make panel-list-users       list PufferPanel users (id/username/email — passwords never shown)"
+>@echo "  │  make panel-add-user USER=… NAME=… [PASS=…] [ADMIN=1]   add a panel user (PASS prompted; ADMIN=1 = --admin)"
+>@echo "  │  make panel-del-user USER=…  delete a panel user + their permissions (no panel-passwd: CLI user edit is broken — reset from the UI)"
+>@echo "  │  make kuma-list-users        list Uptime Kuma users"
+>@echo "  │  make kuma-add-user USER=… PASS=…   add a Kuma user (bcrypt hash generated in the container)"
+>@echo "  │  make kuma-passwd USER=… PASS=…    rotate a Kuma user's password"
+>@echo "  └  make kuma-del-user USER=…  delete a Kuma user + their monitors/notifications"
 >@echo ""
 >@echo "  Nextcloud (occ — every command runs as www-data in the nextcloud container)"
 >@echo "  │  make nc-occ CMD='…'      any occ command verbatim (escape hatch, e.g. CMD='status')"

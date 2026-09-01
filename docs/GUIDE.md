@@ -68,6 +68,13 @@ make mail-passwd USER=name@fxmq.net    # rotate a mailbox password (also prompte
 make mail-del-user USER=name@fxmq.net  # delete mailbox + aliases + quota
 make mail-list-users                   # list mailboxes (with quota usage)
 make mail-quota-set MAIL=name@fxmq.net QUOTA=2G  # set a mailbox storage quota (B/k/M/G/T suffix; 0 = no limit)
+make panel-list-users                  # list PufferPanel users (id/username/email — passwords never shown)
+make panel-add-user USER=email NAME=name [PASS=…] [ADMIN=1]  # add a panel user (PASS prompted; ADMIN=1 = admin)
+make panel-del-user USER=email         # delete a panel user + their permissions (no panel-passwd — CLI user edit is broken; reset from the UI)
+make kuma-list-users                   # list Uptime Kuma users
+make kuma-add-user USER=name PASS=…    # add a Kuma user (bcrypt hash generated in the container)
+make kuma-passwd USER=name PASS=…      # rotate a Kuma user's password
+make kuma-del-user USER=name           # delete a Kuma user + their monitors/notifications
 make mail-gen                          # disposable mailbox: random 7-letter address + random 16-char password + default quota (services/mailserver/default-quota), printed once
 make mail-list-user-data               # list stored-mail folders under mailserver/data/fxmq.net/
 make mail-del-user-data USER=<local>   # delete one user's stored mail (the Maildir folder; account untouched)
