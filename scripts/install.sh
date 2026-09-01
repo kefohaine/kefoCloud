@@ -546,6 +546,10 @@ nextcloud_setup() {
   fi
   docker exec -u www-data nextcloud php occ config:system:set mail_smtpsecure --value tls >/dev/null 2>&1
   docker exec -u www-data nextcloud php occ config:system:set mail_smtpauthtype --value LOGIN >/dev/null 2>&1
+  # Without mail_smtpauth=true NC connects anonymously and the submission
+  # server rejects every send ("Client host rejected: Access denied") — the
+  # UI test email fails even though the credentials are valid.
+  docker exec -u www-data nextcloud php occ config:system:set mail_smtpauth --value true >/dev/null 2>&1
 
   # Single-PHP instance: serverid (int 0-511) silences the "Configuration
   # server ID" setup check; AppAPI is disabled — no external apps are used
