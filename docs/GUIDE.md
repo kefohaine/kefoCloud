@@ -197,7 +197,7 @@ Nextcloud tells clients about the public endpoint (`https://turn.fxmq.net/signal
   `docker exec -u www-data nextcloud php occ talk:turn:add turn turn.fxmq.net:3478 --secret <TURN_SECRET> --udp --tcp`
   `docker exec -u www-data nextcloud php occ talk:turn:add turns turn.fxmq.net:5349 --secret <TURN_SECRET>`
 - **turn.fxmq.net** — the A record MUST be DNS-only at Cloudflare (grey cloud): TURN speaks UDP/TCP on 3478/5349 + relay 49160-49200, which the CF proxy can't carry. UFW opens those ports (`sudo ufw allow 3478/udp,tcp; 5349/tcp; 49160:49200/udp,tcp`). Caddy issues the turn.fxmq.net LE cert via DNS-01 (needed by coturn for TURNS on 5349 — coturn mounts `caddy_data` at `/caddy:ro`); start coturn only after the cert exists. `make smoke` asserts the `/signaling` websocket answers (a bare `ok` stub fails it).
-- **Ordering after a fresh deploy** — DNS record → `make dok-recreate-fxmq.net` (issues the turn cert) → `make talk-gen` → `make dok-recreate-nextcloud-db` → `make dok-recreate-nextcloud` → occ app/config setup → `make install-cron`.
+- **Ordering after a fresh deploy** — DNS record → `make dok-recreate-fxmq.net` (issues the turn cert) → `make talk-gen` → `make dok-recreate-nextcloud-db` → `make dok-recreate-nextcloud` → occ app/config setup → `make install-cron`. (`install.sh` does all of this automatically — including publishing the DKIM TXT — leaving only the PTR record provider-side.)
 
 ### Nextcloud DB (PostgreSQL)
 

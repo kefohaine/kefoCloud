@@ -583,6 +583,11 @@ nextcloud_setup() {
   # Background jobs via the host cron (config/cron/nextcloud, installed by install-config).
   docker exec -u www-data nextcloud php occ background:cron >/dev/null 2>&1 || true
 
+  # Silence the recurring "Skipping updater backup clean-up" warning: the
+  # cleanup job expects /data/updater-<instanceid>/backups to exist.
+  IID=$(docker exec -u www-data nextcloud php occ config:system:get instanceid 2>/dev/null | tr -d '\n')
+  [ -n "$IID" ] && docker exec -u www-data nextcloud sh -c "mkdir -p /data/updater-$IID/backups" >/dev/null 2>&1 || true
+
   # Recovery manifest: users + quotas (config/nextcloud/users.txt). Missing
   # users are created with a generated password printed ONCE at the end (the
   # pre-wipe passwords lived in the wiped DB — hand the new ones to the users).
@@ -663,6 +668,41 @@ vaultwarden_setup() {
       | docker exec -i mailserver setup email add "vaultwarden@$DOMAIN" >/dev/null 2>&1 \
       || fail vaultwarden_setup "mailbox vaultwarden@$DOMAIN not created"
   fi
+}
+
+# Publish the mailserver's DKIM key as a TXT record via the Cloudflare API —
+# the whole mail-authentication stack (SPF/DKIM/DMARC + PTR) then only needs
+# the operator's provider-side PTR. Runs after the mailserver is up
+# (containers_up); requires ENABLE_OPENDKIM=0 in the mailserver compose
+# (Rspamd signs — otherwise `setup config dkim` aborts on the conflict).
+dkim_setup() {
+  cd "$REPO" || exit 1
+  local rec value zone id
+  docker exec mailserver setup config dkim domain "$DOMAIN" >/dev/null 2>&1 || fail dkim_setup "keygen"
+  # the zone file splits the key across quoted segments — concatenate the p= parts
+  rec=$(docker exec mailserver sh -c 'cat /tmp/docker-mailserver/rspamd/dkim/*.public.txt' 2>/dev/null \
+    | grep -oE 'p=[A-Za-z0-9+/=]+' | sed 's/p=//' | tr -d '\n')
+  [ -n "$rec" ] || fail dkim_setup "no public key"
+  value="v=DKIM1; k=rsa; p=$rec"
+  zone=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" \
+    | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['result'][0]['id'] if d.get('result') else '')" 2>/dev/null)
+  [ -n "$zone" ] || fail dkim_setup "zone lookup"
+  # drop any stale mail._domainkey TXT records, then publish ours
+  for id in $(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
+      "https://api.cloudflare.com/client/v4/zones/$zone/dns_records?type=TXT&name=mail._domainkey.$DOMAIN" \
+      | python3 -c "import sys,json; [print(r['id']) for r in (json.load(sys.stdin).get('result') or [])]" 2>/dev/null); do
+    curl -s -X DELETE -H "Authorization: Bearer $CF_API_TOKEN" \
+      "https://api.cloudflare.com/client/v4/zones/$zone/dns_records/$id" >/dev/null
+  done
+  python3 - "$CF_API_TOKEN" "$zone" "$value" <<'EOF' || fail dkim_setup "record publish"
+import sys, json, urllib.request
+tok, zone, val = sys.argv[1], sys.argv[2], sys.argv[3]
+req = urllib.request.Request(f"https://api.cloudflare.com/client/v4/zones/{zone}/dns_records",
+  data=json.dumps({"type": "TXT", "name": "mail._domainkey", "content": val, "ttl": 1, "proxied": False}).encode(),
+  headers={"Authorization": "Bearer " + tok, "Content-Type": "application/json"}, method="POST")
+sys.exit(0 if json.loads(urllib.request.urlopen(req).read().decode()).get("success") else 1)
+EOF
+  log "DKIM published: mail._domainkey TXT for $DOMAIN (PTR remains provider-side)"
 }
 
 ssl_mode_full() {
@@ -769,6 +809,7 @@ phase2_op() {
   containers_up
   nextcloud_setup
   vaultwarden_setup
+  dkim_setup
   issue_certs
   kuma_seed
   panel_servers
@@ -806,6 +847,7 @@ problem() {
     sweep)          echo "old project name is still referenced in the repo tree" ;;
     sslmode)        echo "Cloudflare SSL/TLS mode is not Full (or strict)" ;;
     nextcloud_setup) echo "Nextcloud occ wiring incomplete (Talk signaling/TURN, SMTP, background cron)" ;;
+    dkim_setup)      echo "DKIM key / mail._domainkey TXT record not published" ;;
     vaultwarden_setup) echo "Vaultwarden SMTP sender mailbox missing (vaultwarden@$DOMAIN)" ;;
     panel_servers)  echo "PufferPanel server templates not deployed (puffer/data/servers/)" ;;
     clone)          echo "repo clone failed" ;;
@@ -841,6 +883,7 @@ hint() {
     sweep)          echo "rename or remove the files listed by: grep -rl jehpok $REPO --exclude-dir=.git" ;;
     sslmode)        echo "Cloudflare dashboard -> SSL/TLS -> Overview -> set mode to Full (or Full strict), then re-check" ;;
     nextcloud_setup) echo "run the occ steps from docs/GUIDE.md 'Ordering after a fresh deploy' (talk:signaling:add x2, talk:turn:add x2, config:system:set mail_*, background:cron) — see the nextcloud_setup function in this script, then re-check" ;;
+    dkim_setup)      echo "run: docker exec mailserver setup config dkim domain $DOMAIN; ensure ENABLE_OPENDKIM=0 in the mailserver compose (Rspamd signs); verify the CF token has Zone > DNS > Edit; then dig @<zone NS> TXT mail._domainkey.$DOMAIN" ;;
     vaultwarden_setup) echo "run: printf '%s\\n%s\\n' <pass> <pass> | docker exec -i mailserver setup email add vaultwarden@$DOMAIN, then re-check" ;;
     panel_servers)  echo "run: sudo cp config/pufferpanel/servers/*.json /var/www/custom/projects/homelab/puffer/data/servers/, then re-check" ;;
     clone)          echo "add the key printed above to GitHub (Settings -> SSH keys), then re-run the script" ;;
@@ -875,6 +918,7 @@ recheck() {
     sweep) ! grep -rl 'jehpok' "$REPO" --exclude-dir=.git 2>/dev/null | grep -qv "^$REPO/scripts/install.sh$" ;;
     sslmode) ssl_mode_full ;;
     nextcloud_setup) docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN" && docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://turn.$DOMAIN/signaling" && docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "turn.$DOMAIN:3478" ;;
+    dkim_setup)      dig +short TXT "mail._domainkey.$DOMAIN" @"$(dig +short NS "$DOMAIN" | head -1)" 2>/dev/null | grep -q "v=DKIM1" ;;
     vaultwarden_setup) docker exec mailserver setup email list 2>/dev/null | grep -qiE "^[* ] *vaultwarden@$DOMAIN( |\$|\[)" ;;
     panel_servers)  [ "$(sudo ls /var/www/custom/projects/homelab/puffer/data/servers/*.json 2>/dev/null | wc -l)" -gt 0 ] ;;
     *) false ;;
