@@ -29,10 +29,11 @@
 #   bash scripts/optimize.sh --dry-run      # print the plan, change nothing
 #   bash scripts/optimize.sh --verify       # re-check applied state only
 #
-# Env overrides: SWAP_GB= NOATIME=0/1 FORCE_SWAP=0/1 FORCE_FSTRIM=0/1
+# Env overrides: SWAP_GB= (default RAM/3 rounded up, recreated every run;
+# 0 = skip swap) NOATIME=0/1 FORCE_FSTRIM=0/1
 # WITH_IRQBALANCE=0/1 WITH_EARLYOOM=0/1 (both auto-install; 0 = opt out)
-# SETRA=<sectors> (HDD readahead via blockdev --setra; interactive: asks once
-# "is the main disk an HDD?" and applies automatically on yes; 0 = skip)
+# SETRA=<sectors> (HDD readahead via blockdev --setra; auto-applies 512 on
+# rotational disks with no prompt; 0 = skip)
 # WITH_TUNED=0/1 (tuned auto profile via 'tuned-adm recommend'; tuned keeps its
 # unique values, our sysctl values override it on conflicting keys — tuned's
 # sysctl plugin re-applies /etc/sysctl.d and defers to it by design)
@@ -66,7 +67,7 @@ BACKUP_DIR="${BACKUP_DIR:-/root/optimize-backup-$TS}"
 ERR_TAGS=()
 declare -A ERR_DETAIL=()
 CHANGED=0   # any config actually written this run -> reboot shows as a manual step
-NPROC=1; MEM_GB=1; MEM_KB=0; MIN_FREE_KB=0; HAS_DOCKER=0; HAS_DNSMASQ=0; ROT=""; ACTIVE_SWAP=""; SSD=0; SRA_DEV=""; SETRA=""
+NPROC=1; MEM_GB=1; MEM_KB=0; MIN_FREE_KB=0; SWAP_DEF=4; HAS_DOCKER=0; HAS_DNSMASQ=0; ROT=""; ACTIVE_SWAP=""; SSD=0; SRA_DEV=""; SETRA=""
 
 log()  { echo "[$(date +%H:%M:%S)] $*"; }
 fail() {
@@ -125,6 +126,7 @@ detect() {
   NPROC="$(nproc)"; MEM_GB="$(awk '/MemTotal/{printf "%d", $2/1024/1024}' /proc/meminfo)"; [ -z "$MEM_GB" ] && MEM_GB=1
   MEM_KB="$(awk '/MemTotal/{print $2}' /proc/meminfo)"; [ -z "$MEM_KB" ] && MEM_KB=$(( MEM_GB * 1024 * 1024 ))
   MIN_FREE_KB=$(( MEM_KB / 100 ))   # 1% of total RAM
+  SWAP_DEF=$(( (MEM_KB / 3 + 1048575) / 1048576 ))   # RAM/3 rounded up to whole GB
   ok command -v docker && HAS_DOCKER=1 || HAS_DOCKER=0
   ok command -v dnsmasq && HAS_DNSMASQ=1 || HAS_DNSMASQ=0
   ROT="$(cat /sys/block/*/queue/rotational 2>/dev/null | sort -u)"
@@ -136,44 +138,33 @@ detect() {
 ask_inputs() {
   # non-interactive / plan / verify: use defaults, never prompt
   if [ "$DRY" = 1 ] || [ "$VERIFY" = 1 ] || [ "$YES" = 1 ]; then
-    SWAP_GB="${SWAP_GB:-4}"; NOATIME="${NOATIME:-1}"
-    [ -n "${FORCE_SWAP:-}" ] || FORCE_SWAP=0
+    SWAP_GB="${SWAP_GB:-$SWAP_DEF}"; NOATIME="${NOATIME:-1}"
     [ -n "${FORCE_FSTRIM:-}" ] || FORCE_FSTRIM=0
+    [ -n "${SETRA:-}" ] || { [ "$ROT" = 1 ] && SETRA=512 || SETRA=0; }
     [ -n "${WITH_IRQBALANCE:-}" ] || WITH_IRQBALANCE=1
     [ -n "${WITH_EARLYOOM:-}" ] || WITH_EARLYOOM=1
-    [ -n "${SETRA:-}" ] || SETRA=0
     [ -n "${WITH_TUNED:-}" ] || WITH_TUNED=1
-    local SW_NOTE=""; [ "$FORCE_SWAP" = 1 ] && SW_NOTE=" (recreate)"
     local YES_NOTE=""; [ "$YES" = 1 ] && YES_NOTE=" (--yes)"
-    log "plan: swap=${SWAP_GB}G${SW_NOTE} noatime=${NOATIME} fstrim=${FORCE_FSTRIM} setra=${SETRA} irqbalance=${WITH_IRQBALANCE} earlyoom=${WITH_EARLYOOM} tuned=${WITH_TUNED}${YES_NOTE}"
+    log "plan: swap=${SWAP_GB}G (RAM/3 rounded up, recreated) noatime=${NOATIME} fstrim=${FORCE_FSTRIM} setra=${SETRA} irqbalance=${WITH_IRQBALANCE} earlyoom=${WITH_EARLYOOM} tuned=${WITH_TUNED}${YES_NOTE}"
     return 0
   fi
   if [ -z "$SWAP_GB" ]; then
-    read -rp "swapfile size in GB [4 (0 = half of RAM)]: " SWAP_GB
-    SWAP_GB="${SWAP_GB:-4}"
+    read -rp "swapfile size in GB [$SWAP_DEF (auto = RAM/3 rounded up)]: " SWAP_GB
+    SWAP_GB="${SWAP_GB:-$SWAP_DEF}"
   fi
   case "$SWAP_GB" in ''|*[!0-9]*) echo "invalid swap size"; exit 1;; esac
   if [ -z "$NOATIME" ]; then
     read -rp "add noatime,nodiratime to the root mount? [Y/n] " a
     case "${a:-y}" in y|Y|yes) NOATIME=1;; *) NOATIME=0;; esac
   fi
-  if [ -n "$ACTIVE_SWAP" ] && [ -z "${FORCE_SWAP:-}" ]; then
-    read -rp "swap already active — recreate as /swapfile (${SWAP_GB}G)? [y/N] " a
-    case "$a" in y|Y|yes) FORCE_SWAP=1;; *) FORCE_SWAP=0;; esac
-  fi
-  [ -n "${FORCE_SWAP:-}" ] || FORCE_SWAP=0
   [ -n "${FORCE_FSTRIM:-}" ] || FORCE_FSTRIM=0   # fstrim stays an env opt-in (FORCE_FSTRIM=1)
-  if [ "$ROT" = 1 ] && [ -z "${SETRA:-}" ]; then
-    read -rp "is the main storage unit an HDD? (disk reports rotational) [y/N] " a
-    case "$a" in y|Y|yes) SETRA=512;; *) SETRA=0;; esac
-  fi
-  [ -n "${SETRA:-}" ] || SETRA=0
+  # SETRA: no prompt — auto-applies 512 sectors when the disk reports rotational
+  [ -n "${SETRA:-}" ] || { [ "$ROT" = 1 ] && SETRA=512 || SETRA=0; }
   # irqbalance + earlyoom: auto-installed when missing (opt out with =0)
   [ -n "${WITH_IRQBALANCE:-}" ] || WITH_IRQBALANCE=1
   [ -n "${WITH_EARLYOOM:-}" ] || WITH_EARLYOOM=1
   [ -n "${WITH_TUNED:-}" ] || WITH_TUNED=1
-  local SW_NOTE=""; [ "$FORCE_SWAP" = 1 ] && SW_NOTE=" (recreate)"
-  log "plan: swap=${SWAP_GB}G${SW_NOTE} noatime=${NOATIME} fstrim=${FORCE_FSTRIM} setra=${SETRA} irqbalance=${WITH_IRQBALANCE} earlyoom=${WITH_EARLYOOM} tuned=${WITH_TUNED}"
+  log "plan: swap=${SWAP_GB}G (RAM/3 rounded up, recreated) noatime=${NOATIME} fstrim=${FORCE_FSTRIM} setra=${SETRA} irqbalance=${WITH_IRQBALANCE} earlyoom=${WITH_EARLYOOM} tuned=${WITH_TUNED}"
 }
 
 # ------------------------------------------------------------------ 1. apt cleanup (make cleanup minus backups)
@@ -283,20 +274,18 @@ DefaultTasksMax=infinity
 
 # ------------------------------------------------------------------ 4. swap
 swap_tune() {
-  log "swap: ensuring a swapfile"
-  if [ -n "$ACTIVE_SWAP" ] && [ "$FORCE_SWAP" = 0 ]; then
-    log "  ok: swap already active ($(echo "$ACTIVE_SWAP" | head -1))"
+  log "swap: recreating the swapfile (RAM/3 rounded up, forced each run)"
+  local SIZE="${SWAP_GB:-$SWAP_DEF}"
+  if [ "$SIZE" -le 0 ]; then log "  skipped: size 0"; return 0; fi
+  if [ "$DRY" = 1 ] || [ "$VERIFY" = 1 ]; then
+    log "  would recreate /swapfile ${SIZE}G"
     return 0
   fi
-  local SIZE="${SWAP_GB:-4}"; [ "$SIZE" -le 0 ] && SIZE=$(( MEM_GB / 2 ))
-  [ "$FORCE_SWAP" = 1 ] && { swapoff -a 2>/dev/null; rm -f /swapfile; }
-  if [ "$DRY" = 1 ] || [ "$VERIFY" = 1 ]; then
-    log "  would create /swapfile ${SIZE}G"
-  elif fallocate -l "${SIZE}G" /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=$(( SIZE * 1024 )) status=none; then
+  swapoff -a 2>/dev/null; rm -f /swapfile
+  if fallocate -l "${SIZE}G" /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=$(( SIZE * 1024 )) status=none; then
     chmod 600 /swapfile && mkswap /swapfile >/dev/null && swapon /swapfile || { fail swap "mkswap/swapon failed"; return; }
     append_lines /etc/fstab '/swapfile none swap defaults 0 0'
-    CHANGED=1
-    log "  ok: /swapfile ${SIZE}G active"
+    log "  ok: /swapfile ${SIZE}G active (recreated)"
   else
     fail swap "could not allocate /swapfile"
   fi
