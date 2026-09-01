@@ -43,10 +43,9 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Fix**: add `scripts/backup.sh` (or extend the cron): `occ maintenance:mode --on` → `pg_dump` (already nightly) + rsync of the Garage bucket (`/var/lib/garage/data` on storage) to a second target, and/or rsync `cloud/users` while the local copies still exist → `--off`.
 - **Why approval**: operator picks the file-backup target (second disk / another provider / off-site).
 
-#### Nextcloud password policy disabled  **[needs human approval]**
-- **File**: NC app `password_policy` (disabled 2026-09-01 by the operator's request)
-- **Problem**: the operator asked for the admin password `silence` for easy login; NC's password_policy app rejected it (min 10 chars + common-list), so the app was disabled — weak passwords are now allowed for every user.
-- **Fix**: re-enable when wanted (`make nc-app-enable APP=password_policy`) and set a proper admin password; the admin one is still `silence` until then.
+#### Nextcloud password policy re-enabled + hardened  (resolved 2026-09-01)
+- **File**: NC app `password_policy`
+- **Done**: the app was briefly disabled so the operator could log in with the temporary password `silence`; re-enabled and hardened the same day — `minLength=16` (the app reads `minLength`, not `minimumLength`), upper+lower+special+numeric required, the 1M common-password list + compromised-list checks on. The operator has since set a proper admin password.
 
 ### Security
 
