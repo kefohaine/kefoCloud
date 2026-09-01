@@ -87,6 +87,7 @@ make nc-apps                           # occ app:list
 make nc-app-enable APP=... / nc-app-disable APP=...  # occ app:enable / app:disable
 make nc-config-get KEY=...             # occ config:system:get
 make nc-config-set KEY=... VALUE=... [TYPE=...]  # occ config:system:set (TYPE: string|integer|boolean|array)
+make nc-default-user-quota VALUE='100 GB'  # default quota for NEW users (files app default_quota — an APP config, not system; also syncs config/nextcloud/default-quota so fresh installs reproduce it)
 make nc-users                          # occ user:list
 make nc-user-add USER=... [PASS=...]   # occ user:add (prompts for the password without PASS)
 make nc-user-del USER=...              # occ user:delete
