@@ -618,6 +618,24 @@ nextcloud_setup() {
   docker exec -u www-data nextcloud php occ db:add-missing-columns >/dev/null 2>&1 || true
   docker exec -u www-data nextcloud php occ db:add-missing-primary-keys >/dev/null 2>&1 || true
 
+  # Recovery manifest: default quota for new users (config/nextcloud/default-quota)
+  if [ -f "$REPO/repo/config/nextcloud/default-quota" ]; then
+    DQ=$(grep -v '^#' "$REPO/repo/config/nextcloud/default-quota" | head -1)
+    [ -n "$DQ" ] && docker exec -u www-data nextcloud php occ config:app:set files default_quota --value "$DQ" >/dev/null 2>&1 || true
+  fi
+
+  # Recovery manifest: groups (config/nextcloud/groups.txt)
+  if [ -f "$REPO/repo/config/nextcloud/groups.txt" ]; then
+    while IFS='|' read -r grp members _; do
+      [ -n "$grp" ] || continue
+      case "$grp" in \#*) continue ;; esac
+      docker exec -u www-data nextcloud php occ group:addgroup "$grp" >/dev/null 2>&1 || true
+      for m in ${members//,/ }; do
+        [ -n "$m" ] && docker exec -u www-data nextcloud php occ group:adduser "$grp" "$m" >/dev/null 2>&1 || true
+      done
+    done < "$REPO/repo/config/nextcloud/groups.txt"
+  fi
+
   # Verify what the smoke/operational docs assert.
   docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN" \
     || fail nextcloud_setup "mail_smtphost not set"
