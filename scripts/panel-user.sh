@@ -18,7 +18,7 @@ case "${1:-}" in
 import sqlite3, sys
 c = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
 for r in c.execute("SELECT id, username, email FROM users ORDER BY id"):
-    print(f"{r[0]}\t{r[1]}\t{r[2]}")
+    print(f"info:  id={r[0]} username={r[1]} email={r[2]}")
 EOF
     ;;
   add)
@@ -33,12 +33,12 @@ EOF
 import sqlite3, sys
 db = sqlite3.connect(sys.argv[1]); c = db.cursor()
 row = c.execute("SELECT id FROM users WHERE email = ?", (sys.argv[2],)).fetchone()
-if not row: print("no panel user with email", sys.argv[2]); sys.exit(1)
+if not row: print(f"error: no panel user with email {sys.argv[2]}"); sys.exit(1)
 uid = row[0]
 c.execute("DELETE FROM permissions WHERE user_id = ?", (uid,))
 c.execute("DELETE FROM user_settings WHERE user_id = ?", (uid,))
 c.execute("DELETE FROM users WHERE id = ?", (uid,))
-db.commit(); print("panel user", sys.argv[2], "deleted")
+db.commit(); print(f"info:  panel user {sys.argv[2]} deleted (permissions + settings removed)")
 EOF
     ;;
   *) echo "usage: panel-user.sh list|add <email> <name> <pass> [admin]|del <email>"; exit 1 ;;
