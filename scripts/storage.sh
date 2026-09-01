@@ -31,7 +31,7 @@
 set -uo pipefail
 
 NC_CONTAINER="${NC_CONTAINER:-nextcloud}"
-QUOTA="${QUOTA:-300 GB}"
+QUOTA="${QUOTA:-}"
 NC_MOUNT="${NC_MOUNT:-/srv/nextcloud-data}"          # dir on the storage VPS
 LOCAL_MOUNT=/var/www/custom/projects/homelab/cloud/users   # NC datadirectory (host path)
 
@@ -65,6 +65,11 @@ STORAGE_SSH="${STORAGE_SSH:-}"
 [ -n "${TS_AUTHKEY:-}" ] || read -r -s -p "tailscale auth key: " TS_AUTHKEY; echo
 [ -n "$STORAGE_PASS" ] || die "storage password empty"
 [ -n "$TS_AUTHKEY" ] || die "tailscale auth key empty"
+QUOTA_USER="${QUOTA_USER:-}"
+[ -n "$QUOTA_USER" ] || read -r -p "your Nextcloud user id [${FIRST_USER:-admin}]: " QUOTA_USER
+QUOTA_USER="${QUOTA_USER:-${FIRST_USER:-admin}}"
+[ -n "$QUOTA" ] || read -r -p "quota for '$QUOTA_USER' (empty = leave their current quota): " QUOTA
+OCC user:list 2>/dev/null | grep -q "$QUOTA_USER" || log "WARN: user '$QUOTA_USER' not found (check with 'make nc-users')"
 export SSHPASS="$STORAGE_PASS"
 command -v sshpass >/dev/null || sudo apt-get install -y -qq sshpass >/dev/null || die "sshpass install failed"
 
@@ -225,8 +230,12 @@ if [ -d "$LOCAL_MOUNT.local-backup" ] && [ "$(sudo ls -A "$LOCAL_MOUNT.local-bac
 fi
 
 # ---------- quota + off-host DB backup (coexists; the box is live storage now) ----------
-OCC user:setting "$QUOTA_USER" files quota "$QUOTA" >/dev/null 2>&1 \
-  && log "quota set: $QUOTA_USER = $QUOTA" || fail quota "user '$QUOTA_USER'"
+if [ -n "$QUOTA" ]; then
+  OCC user:setting "$QUOTA_USER" files quota "$QUOTA" >/dev/null 2>&1 \
+    && log "quota set: $QUOTA_USER = $QUOTA" || fail quota "user '$QUOTA_USER'"
+else
+  log "quota left unchanged for $QUOTA_USER"
+fi
 sudo test -f /root/.ssh/id_ed25519 || sudo ssh-keygen -t ed25519 -N "" -f /root/.ssh/id_ed25519 >/dev/null
 sudo SSHPASS="$SSHPASS" sshpass -e ssh-copy-id -o StrictHostKeyChecking=accept-new "root@$TS_IP" >/dev/null 2>&1 \
   || fail cron "ssh key copy"
@@ -272,7 +281,7 @@ echo " SUCCESS — Nextcloud's live datadirectory is now on the storage VPS:"
 echo "   datadirectory  $TS_IP:$NC_MOUNT (${SIZE_GB} GB allocated) mounted at $LOCAL_MOUNT"
 echo "   PostgreSQL     stays on this host ($PG_CONTAINER, bridge-only)"
 echo "   backups        nightly pg_dump -> storage:/backups/nc (keeps 7)"
-echo "   quota          $QUOTA_USER = $QUOTA"
+if [ -n "$QUOTA" ]; then echo "   quota          $QUOTA_USER = $QUOTA"; fi
 echo ""
 echo " Manual steps (none block the service):"
 echo "   1. Verify from the web UI: log in, upload a file, and confirm it lands on"
