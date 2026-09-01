@@ -48,7 +48,7 @@ define dok_recreate_rule
 dok-recreate-$1:
 >@if [ "$1" = "fxmq.net" ]; then \
     if ! $(COMPOSE) $(call compose-file-of,$1) up -d --force-recreate --build; then \
-      echo "compose build unavailable (buildx < 0.17 on trixie) — falling back to docker build + compose up"; \
+      scripts/mklog warn "compose build unavailable (buildx < 0.17 on trixie) — falling back to docker build + compose up"; \
       docker build -t fxmq.net:local $(REPO)/repo/services/fxmq.net \
         && $(COMPOSE) $(call compose-file-of,$1) up -d --force-recreate; \
     fi; \
@@ -85,7 +85,7 @@ define dok_recreate_all_cmds
 @for f in $(REPO)/repo/services/*/docker-compose.yml; do \
     if [ "$$f" = "$(REPO)/repo/services/fxmq.net/docker-compose.yml" ]; then \
       if ! $(COMPOSE) "$$f" up -d --force-recreate --build; then \
-        echo "compose build unavailable (buildx < 0.17 on trixie) — falling back to docker build + compose up"; \
+        scripts/mklog warn "compose build unavailable (buildx < 0.17 on trixie) — falling back to docker build + compose up"; \
         docker build -t fxmq.net:local $(REPO)/repo/services/fxmq.net \
           && $(COMPOSE) "$$f" up -d --force-recreate; \
       fi; \
@@ -114,16 +114,16 @@ dok-logs-all:
   done; wait'
 
 dok-recreate:
->@echo "Usage: make dok-recreate-<ctn>  (one of: $(CONTAINERS))"
+>@scripts/mklog error "Usage: make dok-recreate-<ctn>  (one of: $(CONTAINERS))"
 >@echo "       make dok-recreate-all"
 dok-restart:
->@echo "Usage: make dok-restart-<ctn>  (one of: $(CONTAINERS))"
+>@scripts/mklog error "Usage: make dok-restart-<ctn>  (one of: $(CONTAINERS))"
 >@echo "       make dok-restart-all"
 dok-stop:
->@echo "Usage: make dok-stop-<ctn>  (one of: $(CONTAINERS))"
+>@scripts/mklog error "Usage: make dok-stop-<ctn>  (one of: $(CONTAINERS))"
 >@echo "       make dok-stop-all"
 dok-logs:
->@echo "Usage: make dok-logs-<ctn>  (one of: $(CONTAINERS))"
+>@scripts/mklog error "Usage: make dok-logs-<ctn>  (one of: $(CONTAINERS))"
 >@echo "       make dok-logs-all"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -155,10 +155,10 @@ systemd-log-all:
   done; wait'
 
 systemd-restart:
->@echo "Usage: make systemd-restart-<svc>  (one of: $(HOST))"
+>@scripts/mklog error "Usage: make systemd-restart-<svc>  (one of: $(HOST))"
 >@echo "       make systemd-restart-all"
 systemd-log:
->@echo "Usage: make systemd-log-<svc>  (one of: $(HOST))"
+>@scripts/mklog error "Usage: make systemd-log-<svc>  (one of: $(HOST))"
 >@echo "       make systemd-log-all"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -211,7 +211,7 @@ define clean_backups_cmds
 @for pattern in cloud-backup-* share-backup-*.db vault-backup-*.tar.gz secrets-bundle-*.tar.gz 'mc-backup-*.tar.gz minecraft-backup-*.tar.gz'; do \
     sudo ls -1dt $(REPO)/backups/$$pattern 2>/dev/null | tail -n +4 | sudo xargs -r rm -rf; \
   done
-@echo "Pruned backups older than the 3 most recent per pattern."
+@scripts/mklog info "pruned backups older than the 3 most recent per pattern"
 endef
 
 clean-docker:
@@ -237,7 +237,7 @@ update:
 >sudo apt-get upgrade -y
 >@for f in $(REPO)/repo/services/*/docker-compose.yml; do \
     if grep -qE '^[[:space:]]*build:' "$$f"; then \
-      echo "skip pull (built locally): $$f"; \
+      scripts/mklog info "skip pull (built locally): $$f"; \
     else \
       $(COMPOSE) "$$f" pull; \
     fi; \
@@ -256,7 +256,7 @@ install-hooks:
 >@mkdir -p .git/hooks
 >@cp scripts/hooks/pre-commit scripts/hooks/pre-push .git/hooks/
 >@chmod +x .git/hooks/pre-commit .git/hooks/pre-push
->@echo "Installed git hooks: pre-commit (Caddy validate + app-vhost stub guard), pre-push (live vhost smoke)."
+>@scripts/mklog info "installed git hooks: pre-commit (Caddy validate + app-vhost stub guard), pre-push (live vhost smoke)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Mailserver Registry (Docker Mailserver CLI — see `make help` > Mailserver
@@ -278,55 +278,54 @@ mail-gen:
 # (see scripts/mail-alias-gen.sh). No mailbox is consumed; same-domain
 # targets are refused by the script (see docs/GUIDE.md).
 mail-gen-alias:
->@[ -n "$(TO)" ] || { echo "Usage: make mail-gen-alias TO=target@example.com"; exit 1; }
+>@[ -n "$(TO)" ] || { scripts/mklog error "usage: make mail-gen-alias TO=target@example.com"; exit 1; }
 >@bash scripts/mail-alias-gen.sh "$(TO)"
 
 # Delete an address AND all its stored mailbox data (DMS never deletes
 # Maildirs on its own — this removes the folder under
-# mailserver/data/fxmq.net/<local>/ too).
+# mailserver/data/fxmq.net/<local>/ too). One merged info line.
 mail-del:
->@[ -n "$(MAIL)" ] || { echo "Usage: make mail-del MAIL=name@fxmq.net"; exit 1; }
->@docker exec mailserver setup email del "$(MAIL)" && \
-  local=$${MAIL%@*}; \
-  if [ -d "$(REPO)/mailserver/data/fxmq.net/$$local" ]; then \
-    sudo rm -rf "$(REPO)/mailserver/data/fxmq.net/$$local" && echo "stored mail removed (mailserver/data/fxmq.net/$$local)"; \
-  else echo "no stored mail to remove"; fi
+>@[ -n "$(MAIL)" ] || { scripts/mklog error "usage: make mail-del MAIL=name@fxmq.net"; exit 1; }
+>@if docker exec mailserver setup email del "$(MAIL)" >/dev/null 2>&1; then \
+    local=$${MAIL%@*}; \
+    if [ -d "$(REPO)/mailserver/data/fxmq.net/$$local" ]; then \
+      sudo rm -rf "$(REPO)/mailserver/data/fxmq.net/$$local" && scripts/mklog info "$(MAIL) deleted — account, aliases, quota and stored mail"; \
+    else scripts/mklog info "$(MAIL) deleted — account, aliases, quota (no stored mail)"; fi \
+  else scripts/mklog error "$(MAIL) not found — nothing deleted"; exit 1; fi
 
 # Remove one target from an alias (DMS needs both).
 mail-del-alias:
->@[ -n "$(FROM)" ] && [ -n "$(TO)" ] || { echo "Usage: make mail-del-alias FROM=x@fxmq.net TO=target@example.com"; exit 1; }
->@docker exec mailserver setup alias del "$(FROM)" "$(TO)"
+>@[ -n "$(FROM)" ] && [ -n "$(TO)" ] || { scripts/mklog error "usage: make mail-del-alias FROM=x@fxmq.net TO=target@example.com"; exit 1; }
+>@docker exec mailserver setup alias del "$(FROM)" "$(TO)" >/dev/null && scripts/mklog info "alias $(FROM) -> $(TO) removed"
 
 # Quota setter: with MAIL = per-mailbox quota; without MAIL = the default
 # quota that mail-gen applies (persisted in services/mailserver/default-quota).
 # B/k/M/G/T suffix or 0 (no limit).
 mail-quota:
->@[ -n "$(QUOTA)" ] || { echo "Usage: make mail-quota [MAIL=name@fxmq.net] QUOTA=2G (MAIL empty = set the default for mail-gen)"; exit 1; }
->@echo "$(QUOTA)" | grep -qE '^([0-9]+(B|k|M|G|T)|0)$$' || { echo "Invalid QUOTA — B/k/M/G/T suffix, or 0 (no limit)"; exit 1; }
->@if [ -n "$(MAIL)" ]; then docker exec mailserver setup quota set "$(MAIL)" "$(QUOTA)"; \
-  else printf '%s\n' "$(QUOTA)" > services/mailserver/default-quota && echo "default quota for mail-gen set to $(QUOTA) (services/mailserver/default-quota) — git add/commit to keep it"; fi
+>@[ -n "$(QUOTA)" ] || { scripts/mklog error "usage: make mail-quota [MAIL=name@fxmq.net] QUOTA=2G (MAIL empty = set the default for mail-gen)"; exit 1; }
+>@echo "$(QUOTA)" | grep -qE '^([0-9]+(B|k|M|G|T)|0)$$' || { scripts/mklog error "invalid QUOTA '$(QUOTA)' — B/k/M/G/T suffix, or 0 (no limit)"; exit 1; }
+>@if [ -n "$(MAIL)" ]; then docker exec mailserver setup quota set "$(MAIL)" "$(QUOTA)" >/dev/null && scripts/mklog info "quota for $(MAIL) set to $(QUOTA)"; \
+  else printf '%s\n' "$(QUOTA)" > services/mailserver/default-quota && scripts/mklog info "default quota for mail-gen set to $(QUOTA) (services/mailserver/default-quota) — git add/commit to keep it"; fi
 
 # Rotate a mailbox password. PWD empty = auto-generate a 16-char password and
 # print it once. (PWD is make's cwd builtin — only a command-line PWD= is used.)
 mail-password:
->@[ -n "$(MAIL)" ] || { echo "Usage: make mail-password MAIL=name@fxmq.net [PWD=…]"; exit 1; }
+>@[ -n "$(MAIL)" ] || { scripts/mklog error "usage: make mail-password MAIL=name@fxmq.net [PWD=…]"; exit 1; }
 >@if [ "$(origin PWD)" = "command line" ] && [ -n "$(PWD)" ]; then \
-    docker exec mailserver setup email update "$(MAIL)" "$(PWD)"; \
+    docker exec mailserver setup email update "$(MAIL)" "$(PWD)" >/dev/null && scripts/mklog info "password updated for $(MAIL)"; \
   else p=$$(openssl rand -base64 12 | tr -d '\n'); \
-    docker exec mailserver setup email update "$(MAIL)" "$$p" && echo "New password for $(MAIL): $$p"; fi
+    docker exec mailserver setup email update "$(MAIL)" "$$p" >/dev/null && scripts/mklog info "password for $(MAIL) updated — new password: $$p"; fi
 
 # Card for one address: existence, quota (dovecot-quotas.cf), webmail URL.
 # The password is a hash and cannot be shown — rotate with mail-password.
 mail-card:
->@[ -n "$(MAIL)" ] || { echo "Usage: make mail-card MAIL=name@fxmq.net"; exit 1; }
+>@[ -n "$(MAIL)" ] || { scripts/mklog error "usage: make mail-card MAIL=name@fxmq.net"; exit 1; }
 >@local=$${MAIL%@*}; \
   if docker exec mailserver setup email list | grep -q "^[* ]*$$local@"; then \
-    echo "address:  $(MAIL) (exists)"; \
     q=$$(grep "^$(MAIL):" "$(REPO)/mailserver/config/dovecot-quotas.cf" 2>/dev/null | cut -d: -f2); \
-    echo "quota:    $${q:-unlimited}"; \
-    echo "website:  https://mail.fxmq.net (login with local part '$$local')"; \
-    echo "password: hashed — not retrievable; rotate with make mail-password MAIL=$(MAIL)"; \
-  else echo "address:  $(MAIL) — NOT found (use make mail-gen [MAIL=…])"; fi
+    scripts/mklog info "address $(MAIL) — exists, quota $${q:-unlimited}, webmail https://mail.fxmq.net (login with '$$local')"; \
+    scripts/mklog warn "password is hashed — rotate with make mail-password MAIL=$(MAIL)"; \
+  else scripts/mklog error "$(MAIL) not found — create with make mail-gen [MAIL=…]"; exit 1; fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PufferPanel accounts (CLI `pufferpanel user` — binary at /pufferpanel/bin/)
@@ -338,13 +337,13 @@ panel-list-users:
 >@bash scripts/panel-user.sh list
 
 panel-add-user:
->@[ "$(origin USER)" = "command line" ] || { echo "Usage: make panel-add-user USER=<email> NAME=<name> [PASS=…] [ADMIN=1]"; exit 1; }
+>@[ "$(origin USER)" = "command line" ] || { scripts/mklog error "Usage: make panel-add-user USER=<email> NAME=<name> [PASS=…] [ADMIN=1]"; exit 1; }
 >@[ -n "$(NAME)" ] || { echo "NAME=<name> required"; exit 1; }
 >@[ -n "$(PASS)" ] || read -s -p "Password for $(USER): " PASS; echo; \
   bash scripts/panel-user.sh add "$(USER)" "$(NAME)" "$$PASS" $(if $(ADMIN),admin)
 
 panel-del-user:
->@[ "$(origin USER)" = "command line" ] || { echo "Usage: make panel-del-user USER=<email>"; exit 1; }
+>@[ "$(origin USER)" = "command line" ] || { scripts/mklog error "Usage: make panel-del-user USER=<email>"; exit 1; }
 >@bash scripts/panel-user.sh del "$(USER)"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -355,15 +354,15 @@ kuma-list-users:
 >@bash scripts/kuma-user.sh list
 
 kuma-add-user:
->@[ -n "$(USER)" ] && [ -n "$(PASS)" ] || { echo "Usage: make kuma-add-user USER=<name> PASS=<password>"; exit 1; }
+>@[ -n "$(USER)" ] && [ -n "$(PASS)" ] || { scripts/mklog error "Usage: make kuma-add-user USER=<name> PASS=<password>"; exit 1; }
 >@bash scripts/kuma-user.sh add "$(USER)" "$(PASS)"
 
 kuma-passwd:
->@[ -n "$(USER)" ] && [ -n "$(PASS)" ] || { echo "Usage: make kuma-passwd USER=<name> PASS=<newpassword>"; exit 1; }
+>@[ -n "$(USER)" ] && [ -n "$(PASS)" ] || { scripts/mklog error "Usage: make kuma-passwd USER=<name> PASS=<newpassword>"; exit 1; }
 >@bash scripts/kuma-user.sh passwd "$(USER)" "$(PASS)"
 
 kuma-del-user:
->@[ -n "$(USER)" ] || { echo "Usage: make kuma-del-user USER=<name>"; exit 1; }
+>@[ -n "$(USER)" ] || { scripts/mklog error "Usage: make kuma-del-user USER=<name>"; exit 1; }
 >@bash scripts/kuma-user.sh del "$(USER)"
 
 # Import an adapted Uptime Kuma db from another host (KUMA_DB=/path).
@@ -398,13 +397,13 @@ storage:
 # body plus the secrets extraction so it never chains another make target.
 define install_config_cmds
 @if ! command -v ttyd >/dev/null 2>&1; then \
-    echo "Installing ttyd..."; \
+    scripts/mklog info "installing ttyd..."; \
     curl -fsSL -o /tmp/ttyd https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64; \
     chmod +x /tmp/ttyd; \
     sudo install -m 0755 /tmp/ttyd /usr/local/bin/ttyd; \
     rm -f /tmp/ttyd; \
   else \
-    echo "ttyd already installed at $$(command -v ttyd)"; \
+    scripts/mklog info "ttyd already installed at $$(command -v ttyd)"; \
   fi
 sudo cp $(REPO)/repo/config/goose/goose.service /etc/systemd/system/goose.service
 sudo cp $(REPO)/repo/config/ssh/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf
@@ -414,12 +413,12 @@ sudo cp $(REPO)/repo/config/dnsmasq/dnsmasq.service.conf /etc/systemd/system/dns
 sudo cp $(REPO)/repo/config/sysctl/99-homelab.conf /etc/sysctl.d/99-homelab.conf
 sudo sysctl --system >/dev/null
 @if ! diff -q /etc/docker/daemon.json $(REPO)/repo/config/docker/daemon.json >/dev/null 2>&1; then \
-    echo "Installing /etc/docker/daemon.json (Docker daemon restart required to take effect)."; \
+    scripts/mklog info "installing /etc/docker/daemon.json (Docker daemon restart required to take effect)"; \
     sudo mkdir -p /etc/docker; \
     sudo cp $(REPO)/repo/config/docker/daemon.json /etc/docker/daemon.json; \
-    echo "Run: sudo systemctl restart docker  (containers stay up via live-restore)."; \
+    scripts/mklog info "run: sudo systemctl restart docker (containers stay up via live-restore)"; \
   else \
-    echo "Docker daemon config already up to date."; \
+    scripts/mklog info "docker daemon config already up to date"; \
   fi
 sudo cp $(REPO)/repo/config/ttyd/ttyd.service /etc/systemd/system/ttyd.service
 sudo cp $(REPO)/repo/config/fail2ban/jail.d/sshd.conf /etc/fail2ban/jail.d/sshd.conf
@@ -430,7 +429,7 @@ sudo ufw allow from 172.22.0.0/16 to any port 7681 proto tcp
 sudo systemctl daemon-reload
 sudo systemctl enable --now goose ttyd
 sudo systemctl restart sshd dnsmasq
-@echo "Host install-config complete: goose + ttyd + dnsmasq + fail2ban + sshd + cron installed."
+@scripts/mklog info "host install-config complete: goose + ttyd + dnsmasq + fail2ban + sshd + cron installed"
 endef
 
 install-config:
@@ -560,15 +559,15 @@ define install_secrets_cmds
 @if [ -z "$(BUNDLE)" ]; then \
     BUNDLE="$$(ls -1t $(BKP_DIR)/secrets-bundle-*.tar.gz 2>/dev/null | head -1)"; \
     if [ -z "$$BUNDLE" ]; then \
-      echo "No secrets-bundle-*.tar.gz found in $(BKP_DIR)."; \
+      scripts/mklog error "no secrets-bundle-*.tar.gz found in $(BKP_DIR)"; \
       exit 1; \
     fi; \
-    echo "Using latest bundle: $$BUNDLE"; \
+    scripts/mklog info "using latest bundle: $$BUNDLE"; \
   else \
     BUNDLE="$(BUNDLE)"; \
   fi; \
   sudo tar xzf "$$BUNDLE" -C /; \
-  echo "Installed $$BUNDLE to live paths."
+  scripts/mklog info "installed $$BUNDLE to live paths"
 endef
 
 install-secrets:
@@ -583,7 +582,7 @@ bundle-config:
   sudo mkdir -p "$(BKP_DIR)"; \
   sudo tar czf "$$dest" -C $(REPO)/repo config; \
   sudo chown op:op "$$dest"; \
-  echo "Config bundle at $$dest"
+  scripts/mklog info "config bundle at $$dest"
 
 # Extract a config bundle tarball over $(REPO)/repo/config/. Defaults
 # to the newest config-bundle-*.tar.gz under $(BKP_DIR); override with
@@ -592,21 +591,21 @@ bundle-config:
 # populate config/ before running `make install-config`.
 install-config-bundle:
 >@if [ ! -d "$(REPO)/repo" ]; then \
-    echo "$(REPO)/repo does not exist. Create it first (clone the repo, or mkdir)."; \
+    scripts/mklog error "$(REPO)/repo does not exist — clone the repo first"; \
     exit 1; \
   fi; \
   if [ -z "$(BUNDLE)" ]; then \
     BUNDLE="$$(ls -1t $(BKP_DIR)/config-bundle-*.tar.gz 2>/dev/null | head -1)"; \
     if [ -z "$$BUNDLE" ]; then \
-      echo "No config-bundle-*.tar.gz found in $(BKP_DIR)."; \
+      scripts/mklog error "no config-bundle-*.tar.gz found in $(BKP_DIR)"; \
       exit 1; \
     fi; \
-    echo "Using latest bundle: $$BUNDLE"; \
+    scripts/mklog info "using latest bundle: $$BUNDLE"; \
   else \
     BUNDLE="$(BUNDLE)"; \
   fi; \
   tar xzf "$$BUNDLE" -C $(REPO)/repo; \
-  echo "Installed $$BUNDLE into $(REPO)/repo/config/"
+  scripts/mklog info "installed $$BUNDLE into $(REPO)/repo/config/"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Backups (rename: backup-* → bkp-*)
@@ -633,14 +632,14 @@ define bkp_cloud_cmds
   sudo chown -R 33:33 "$$dest"; \
   trap - EXIT; \
   docker exec -w /var/www/html nextcloud php occ maintenance:mode --off; \
-  echo "Backup at $$dest"
+  scripts/mklog info "backup at $$dest"
 endef
 
 define bkp_vault_cmds
 @dest=$(BKP_DIR)/vault-backup-$$(date +%Y%m%d).tar.gz; \
   sudo mkdir -p "$(BKP_DIR)"; \
   sudo tar czf "$$dest" -C $(REPO)/vault data; \
-  echo "Backup at $$dest"
+  scripts/mklog info "backup at $$dest"
 endef
 
 bkp-cloud:
@@ -658,7 +657,7 @@ backup:
 >$(bkp_cloud_cmds)
 >$(bkp_vault_cmds)
 >$(bundle_secrets_cmds)
->@echo "--- pulling live config into repo/config/ ---"
+>@scripts/mklog info "pulling live config into repo/config/"
 >@sudo mkdir -p $(REPO)/repo/config
 >@sudo cp /etc/systemd/system/goose.service $(REPO)/repo/config/goose/goose.service
 >@sudo cp /etc/systemd/system/ttyd.service $(REPO)/repo/config/ttyd/ttyd.service
@@ -670,7 +669,7 @@ backup:
 >@sudo cp /etc/fail2ban/jail.d/sshd.conf $(REPO)/repo/config/fail2ban/jail.d/sshd.conf
 >@sudo cp /etc/cron.d/nextcloud $(REPO)/repo/config/cron/nextcloud
 >@sudo chown -R op:op $(REPO)/repo/config
->@echo "Live config pulled into $(REPO)/repo/config/ — git add/commit to sync the repo."
+>@scripts/mklog info "live config pulled into $(REPO)/repo/config/ — git add/commit to sync the repo"
 
 # Show every backup artifact currently on disk, newest first. Includes
 # secrets bundles — the names/contents are not enumerated, just listed.
@@ -702,7 +701,7 @@ bkp-list:
 
 tmux-new:
 >@if [ -z "$(TAG)" ]; then \
-    echo "Usage: make tmux-new TAG=<session>   (TAG is required)"; \
+    scripts/mklog error "Usage: make tmux-new TAG=<session>   (TAG is required)"; \
     exit 1; \
   fi
 >@if tmux has-session -t "$(TAG)" 2>/dev/null; then \
@@ -715,7 +714,7 @@ tmux-new:
 
 tmux-open:
 >@if [ -z "$(TAG)" ]; then \
-    echo "Usage: make tmux-open TAG=<session>"; \
+    scripts/mklog error "Usage: make tmux-open TAG=<session>"; \
     exit 1; \
   fi
 >@if ! tmux has-session -t "$(TAG)" 2>/dev/null; then \
@@ -726,7 +725,7 @@ tmux-open:
 
 tmux-kill:
 >@if [ -z "$(TAG)" ]; then \
-    echo "Usage: make tmux-kill TAG=<session>"; \
+    scripts/mklog error "Usage: make tmux-kill TAG=<session>"; \
     exit 1; \
   fi
 >@if ! tmux has-session -t "$(TAG)" 2>/dev/null; then \
@@ -759,7 +758,7 @@ NC_OCC := docker exec -u www-data nextcloud php occ
 
 nc-occ:
 >@if [ -z "$(CMD)" ]; then \
-    echo "Usage: make nc-occ CMD='<occ command + args>'  (e.g. CMD='status' or CMD='app:list')"; \
+    scripts/mklog error "Usage: make nc-occ CMD='<occ command + args>'  (e.g. CMD='status' or CMD='app:list')"; \
     exit 1; \
   fi
 >$(NC_OCC) $(CMD)
@@ -807,20 +806,20 @@ nc-apps:
 >$(NC_OCC) app:list
 
 nc-app-enable:
->@if [ -z "$(APP)" ]; then echo "Usage: make nc-app-enable APP=<app-id>"; exit 1; fi
+>@if [ -z "$(APP)" ]; then scripts/mklog error "Usage: make nc-app-enable APP=<app-id>"; exit 1; fi
 >$(NC_OCC) app:enable $(APP)
 
 nc-app-disable:
->@if [ -z "$(APP)" ]; then echo "Usage: make nc-app-disable APP=<app-id>"; exit 1; fi
+>@if [ -z "$(APP)" ]; then scripts/mklog error "Usage: make nc-app-disable APP=<app-id>"; exit 1; fi
 >$(NC_OCC) app:disable $(APP)
 
 nc-config-get:
->@if [ -z "$(KEY)" ]; then echo "Usage: make nc-config-get KEY=<config-key>"; exit 1; fi
+>@if [ -z "$(KEY)" ]; then scripts/mklog error "Usage: make nc-config-get KEY=<config-key>"; exit 1; fi
 >$(NC_OCC) config:system:get $(KEY)
 
 nc-config-set:
 >@if [ -z "$(KEY)" ] || [ -z "$(VALUE)" ]; then \
-    echo "Usage: make nc-config-set KEY=<key> VALUE=<value> [TYPE=string|integer|boolean|array]"; \
+    scripts/mklog error "Usage: make nc-config-set KEY=<key> VALUE=<value> [TYPE=string|integer|boolean|array]"; \
     exit 1; \
   fi
 >$(NC_OCC) config:system:set $(KEY) --value "$(VALUE)" $(TYPE:%=--type %)
@@ -830,7 +829,7 @@ nc-config-set:
 # the recovery manifest so a fresh install reproduces it.
 nc-default-user-quota:
 >@if [ -z "$(VALUE)" ]; then \
-    echo "Usage: make nc-default-user-quota VALUE='100 GB'  (or 'none' for unlimited)"; \
+    scripts/mklog error "Usage: make nc-default-user-quota VALUE='100 GB'  (or 'none' for unlimited)"; \
     exit 1; \
   fi
 >$(NC_OCC) config:app:set files default_quota --value "$(VALUE)"
@@ -840,7 +839,7 @@ nc-users:
 >$(NC_OCC) user:list
 
 nc-user-add:
->@if [ -z "$(USER)" ]; then echo "Usage: make nc-user-add USER=<uid> [PASS=<password>]"; exit 1; fi
+>@if [ -z "$(USER)" ]; then scripts/mklog error "Usage: make nc-user-add USER=<uid> [PASS=<password>]"; exit 1; fi
 >@if [ -n "$(PASS)" ]; then \
     OC_PASS="$(PASS)" $(NC_OCC) user:add --password-from-env "$(USER)"; \
   else \
@@ -848,11 +847,11 @@ nc-user-add:
   fi
 
 nc-user-del:
->@if [ -z "$(USER)" ]; then echo "Usage: make nc-user-del USER=<uid>"; exit 1; fi
+>@if [ -z "$(USER)" ]; then scripts/mklog error "Usage: make nc-user-del USER=<uid>"; exit 1; fi
 >$(NC_OCC) user:delete "$(USER)"
 
 nc-user-password:
->@if [ -z "$(USER)" ]; then echo "Usage: make nc-user-password USER=<uid> [PASS=<password>]"; exit 1; fi
+>@if [ -z "$(USER)" ]; then scripts/mklog error "Usage: make nc-user-password USER=<uid> [PASS=<password>]"; exit 1; fi
 >@if [ -n "$(PASS)" ]; then \
     OC_PASS="$(PASS)" $(NC_OCC) user:resetpassword --password-from-env "$(USER)"; \
   else \
@@ -861,7 +860,7 @@ nc-user-password:
 
 nc-user-setting:
 >@if [ -z "$(USER)" ] || [ -z "$(KEY)" ] || [ -z "$(VALUE)" ]; then \
-    echo "Usage: make nc-user-setting USER=<uid> KEY=<setting-key> VALUE=<value>  (e.g. KEY=email)"; \
+    scripts/mklog error "Usage: make nc-user-setting USER=<uid> KEY=<setting-key> VALUE=<value>  (e.g. KEY=email)"; \
     exit 1; \
   fi
 >$(NC_OCC) user:setting "$(USER)" settings "$(KEY)" "$(VALUE)"
@@ -884,13 +883,13 @@ nc-talk-signaling:
 
 nc-talk-signaling-add:
 >@if [ -z "$(URL)" ] || [ -z "$(SECRET)" ]; then \
-    echo "Usage: make nc-talk-signaling-add URL=<server-url> SECRET=<shared-secret>"; \
+    scripts/mklog error "Usage: make nc-talk-signaling-add URL=<server-url> SECRET=<shared-secret>"; \
     exit 1; \
   fi
 >$(NC_OCC) talk:signaling:add "$(URL)" "$(SECRET)"
 
 nc-talk-signaling-del:
->@if [ -z "$(URL)" ]; then echo "Usage: make nc-talk-signaling-del URL=<server-url>"; exit 1; fi
+>@if [ -z "$(URL)" ]; then scripts/mklog error "Usage: make nc-talk-signaling-del URL=<server-url>"; exit 1; fi
 >$(NC_OCC) talk:signaling:delete "$(URL)"
 
 nc-talk-turn:
@@ -898,17 +897,17 @@ nc-talk-turn:
 
 nc-talk-turn-add:
 >@if [ -z "$(SERVER)" ] || [ -z "$(SECRET)" ]; then \
-    echo "Usage: make nc-talk-turn-add SERVER='scheme host:port [--udp] [--tcp]' SECRET=<shared-secret>"; \
+    scripts/mklog error "Usage: make nc-talk-turn-add SERVER='scheme host:port [--udp] [--tcp]' SECRET=<shared-secret>"; \
     exit 1; \
   fi
 >$(NC_OCC) talk:turn:add $(SERVER) --secret "$(SECRET)"
 
 nc-talk-turn-del:
->@if [ -z "$(SERVER)" ]; then echo "Usage: make nc-talk-turn-del SERVER='scheme host:port'"; exit 1; fi
+>@if [ -z "$(SERVER)" ]; then scripts/mklog error "Usage: make nc-talk-turn-del SERVER='scheme host:port'"; exit 1; fi
 >$(NC_OCC) talk:turn:delete $(SERVER)
 
 nc-2fa-enforce:
->@if [ -z "$(USER)" ]; then echo "Usage: make nc-2fa-enforce USER=<uid>"; exit 1; fi
+>@if [ -z "$(USER)" ]; then scripts/mklog error "Usage: make nc-2fa-enforce USER=<uid>"; exit 1; fi
 >$(NC_OCC) twofactorauth:enforce "$(USER)"
 
 nc-logs:
@@ -937,7 +936,7 @@ git-add:
 
 git-com:
 >@if [ -z "$(MSG)" ]; then \
-    echo "Usage: make git-com MSG=\"...\"  (MSG is required)"; \
+    scripts/mklog error "Usage: make git-com MSG=\"...\"  (MSG is required)"; \
     exit 1; \
   fi
 >cd $(REPO)/repo && git commit -m "$(MSG)"

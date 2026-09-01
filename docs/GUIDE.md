@@ -24,6 +24,8 @@ Manual — no CI/CD, pushes to `main` trigger nothing. Use the `Makefile` recipe
 
 `make help` lists every recipe with its usage — it is the single source of truth for the command surface (this section used to duplicate it; a duplicate drifts). `make list` gives the AIO overview (git/systemd/docker/tmux/backups/mails). Raw `git`, `docker compose`, `docker exec`, `systemctl restart`, and `tar` are reserved for cases no recipe covers (one-off diagnostics the operator asked for, log/file inspection, ad-hoc reads).
 
+**Recipe output is uniform** — every recipe speaks three lines: `info:  <what it did>` (completion), `warn:  <non-fatal issue>` and `error: <failure>` (recipe exits 1). All messages go through `scripts/mklog`; usage mistakes print `error: usage: …` and exit 1. The raw tool output (occ, docker, DMS setup) stays unmodified where it is the result itself.
+
 `make git-com MSG="…"` takes a single-sentence `MSG` only — embedded newlines break the `git commit -m` quoting (`unexpected EOF` before the commit lands) and embedded double quotes break the recipe's `$(MSG)` substitution (`[: too many arguments]`). If the message needs a quote mark, wrap the whole `MSG=` in single quotes — the shell does not interpolate inside single quotes, so the embedded `"` survives intact.
 
 ## Protected host resources
