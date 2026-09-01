@@ -30,7 +30,8 @@
 #   bash scripts/optimize.sh --verify       # re-check applied state only
 #
 # Env overrides: SWAP_GB= NOATIME=0/1 FORCE_SWAP=0/1 FORCE_FSTRIM=0/1
-# WITH_EARLYOOM=0/1 YES=1 BACKUP_DIR=...
+# WITH_IRQBALANCE=0/1 WITH_EARLYOOM=0/1 (both auto-install; 0 = opt out)
+# YES=1 BACKUP_DIR=...
 
 set -uo pipefail
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
@@ -125,10 +126,11 @@ ask_inputs() {
     SWAP_GB="${SWAP_GB:-4}"; NOATIME="${NOATIME:-1}"
     [ -n "${FORCE_SWAP:-}" ] || FORCE_SWAP=0
     [ -n "${FORCE_FSTRIM:-}" ] || FORCE_FSTRIM=0
-    [ -n "${WITH_EARLYOOM:-}" ] || WITH_EARLYOOM=0
+    [ -n "${WITH_IRQBALANCE:-}" ] || WITH_IRQBALANCE=1
+    [ -n "${WITH_EARLYOOM:-}" ] || WITH_EARLYOOM=1
     local SW_NOTE=""; [ "$FORCE_SWAP" = 1 ] && SW_NOTE=" (recreate)"
     local YES_NOTE=""; [ "$YES" = 1 ] && YES_NOTE=" (--yes)"
-    log "plan: swap=${SWAP_GB}G${SW_NOTE} noatime=${NOATIME} fstrim=${FORCE_FSTRIM} earlyoom=${WITH_EARLYOOM}${YES_NOTE}"
+    log "plan: swap=${SWAP_GB}G${SW_NOTE} noatime=${NOATIME} fstrim=${FORCE_FSTRIM} irqbalance=${WITH_IRQBALANCE} earlyoom=${WITH_EARLYOOM}${YES_NOTE}"
     return 0
   fi
   if [ -z "$SWAP_GB" ]; then
@@ -150,13 +152,11 @@ ask_inputs() {
     case "$a" in y|Y|yes) FORCE_FSTRIM=1;; *) FORCE_FSTRIM=0;; esac
   fi
   [ -n "${FORCE_FSTRIM:-}" ] || FORCE_FSTRIM=0
-  if [ -z "${WITH_EARLYOOM:-}" ] && ! ok command -v earlyoom; then
-    read -rp "install earlyoom (low-RAM OOM guard, ~1 MB)? [y/N] " a
-    case "$a" in y|Y|yes) WITH_EARLYOOM=1;; *) WITH_EARLYOOM=0;; esac
-  fi
-  [ -n "${WITH_EARLYOOM:-}" ] || WITH_EARLYOOM=0
+  # irqbalance + earlyoom: auto-installed when missing (opt out with =0)
+  [ -n "${WITH_IRQBALANCE:-}" ] || WITH_IRQBALANCE=1
+  [ -n "${WITH_EARLYOOM:-}" ] || WITH_EARLYOOM=1
   local SW_NOTE=""; [ "$FORCE_SWAP" = 1 ] && SW_NOTE=" (recreate)"
-  log "plan: swap=${SWAP_GB}G${SW_NOTE} noatime=${NOATIME} fstrim=${FORCE_FSTRIM} earlyoom=${WITH_EARLYOOM}"
+  log "plan: swap=${SWAP_GB}G${SW_NOTE} noatime=${NOATIME} fstrim=${FORCE_FSTRIM} irqbalance=${WITH_IRQBALANCE} earlyoom=${WITH_EARLYOOM}"
 }
 
 # ------------------------------------------------------------------ 1. apt cleanup (make cleanup minus backups)
@@ -180,6 +180,8 @@ fs.aio-max-nr|1048576|async IO headroom (databases, heavy IO)
 fs.inotify.max_user_watches|524288|file-watcher headroom (editors, sync tools, apps)
 fs.inotify.max_user_instances|1024|inotify instance headroom
 kernel.numa_balancing|0|disable NUMA migrations on a single-socket VM
+kernel.nmi_watchdog|0|no NMI watchdog on VMs (false soft-lockups, perf-counter cost)
+kernel.sched_autogroup_enabled|0|server: disable per-session CPU groups (predictable scheduling)
 net.core.somaxconn|65535|listen backlog for busy proxies/web servers
 net.core.netdev_max_backlog|16384|packet backlog before the stack drops
 net.core.rmem_max|16777216|allow large TCP receive windows
@@ -370,38 +372,47 @@ fstrim_tune() {
 
 # ------------------------------------------------------------------ 11. THP -> madvise
 thp_tune() {
-  log "thp: transparent huge pages -> madvise (fewer latency spikes)"
+  log "thp: transparent huge pages -> madvise (enabled + defrag; fewer latency spikes)"
   local EN=/sys/kernel/mm/transparent_hugepage/enabled
+  local DF=/sys/kernel/mm/transparent_hugepage/defrag
   [ -r "$EN" ] || { log "  skipped: THP not exposed"; return 0; }
-  if grep -q '\[madvise\]' "$EN"; then log "  ok: already madvise"; return 0; fi
+  local need=0
+  grep -q '\[madvise\]' "$EN" || need=1
+  [ -r "$DF" ] && ! grep -q '\[madvise\]' "$DF" && need=1
+  [ "$need" = 0 ] && { log "  ok: already madvise (enabled + defrag)"; return 0; }
   if write_file /etc/tmpfiles.d/99-optimize.conf "w $EN - - - - madvise
+w $DF - - - - madvise
 "; then
     if [ "$DRY" = 0 ] && [ "$VERIFY" = 0 ]; then
-      echo madvise > "$EN" 2>/dev/null || { fail thp "runtime set failed"; return; }
+      echo madvise > "$EN" 2>/dev/null || { fail thp "runtime set failed (enabled)"; return; }
+      [ -w "$DF" ] && echo madvise > "$DF" 2>/dev/null
     fi
     log "  ok: THP=madvise (runtime + persists via tmpfiles.d)"
   fi
 }
 
-# ------------------------------------------------------------------ 12. optional packages (only with --yes)
+# ------------------------------------------------------------------ 12. packages: irqbalance + earlyoom (auto-install when missing)
 pkg_tune() {
-  if [ "$NPROC" -ge 8 ] && [ "$YES" = 1 ]; then
-    if ! ok command -v irqbalance; then
-      if [ "$DRY" = 0 ] && [ "$VERIFY" = 0 ]; then
-        apt-get install -y -qq irqbalance >/dev/null 2>&1 && systemctl enable --now irqbalance 2>/dev/null || { fail pkg "irqbalance install failed"; return; }
-      fi
+  # Both install automatically on every host (opt out: WITH_IRQBALANCE=0 / WITH_EARLYOOM=0).
+  if [ "${WITH_IRQBALANCE:-1}" = 1 ] && ! ok command -v irqbalance; then
+    if [ "$DRY" = 0 ] && [ "$VERIFY" = 0 ]; then
+      apt-get install -y -qq irqbalance >/dev/null 2>&1 && systemctl enable --now irqbalance 2>/dev/null \
+        || { fail pkg "irqbalance install failed"; return; }
       log "  ok: irqbalance installed+enabled"
-    else log "  ok: irqbalance"
+    else
+      log "  would install+enable irqbalance"
     fi
+  elif [ "${WITH_IRQBALANCE:-1}" = 1 ]; then log "  ok: irqbalance"
   fi
-  if [ "${WITH_EARLYOOM:-0}" = 1 ] && [ "$YES" = 1 ]; then
-    if ! ok command -v earlyoom; then
-      if [ "$DRY" = 0 ] && [ "$VERIFY" = 0 ]; then
-        apt-get install -y -qq earlyoom >/dev/null 2>&1 && systemctl enable --now earlyoom 2>/dev/null || { fail pkg "earlyoom install failed"; return; }
-      fi
+  if [ "${WITH_EARLYOOM:-1}" = 1 ] && ! ok command -v earlyoom; then
+    if [ "$DRY" = 0 ] && [ "$VERIFY" = 0 ]; then
+      apt-get install -y -qq earlyoom >/dev/null 2>&1 && systemctl enable --now earlyoom 2>/dev/null \
+        || { fail pkg "earlyoom install failed"; return; }
       log "  ok: earlyoom installed+enabled"
-    else log "  ok: earlyoom"
+    else
+      log "  would install+enable earlyoom"
     fi
+  elif [ "${WITH_EARLYOOM:-1}" = 1 ]; then log "  ok: earlyoom"
   fi
 }
 
@@ -474,8 +485,9 @@ recheck() {
     dnsmasq)      [ "$HAS_DNSMASQ" = 0 ] || grep -rsq '^cache-size=' /etc/dnsmasq.conf /etc/dnsmasq.d/ 2>/dev/null ;;
     noatime)      [ "$NOATIME" = 0 ] || findmnt -no OPTIONS / | grep -q noatime ;;
     fstrim)       [ "$SSD" = 0 ] || systemctl is-enabled --quiet fstrim.timer ;;
-    thp)          [ -r /sys/kernel/mm/transparent_hugepage/enabled ] && grep -q '\[madvise\]' /sys/kernel/mm/transparent_hugepage/enabled ;;
-    pkg)          [ "$YES" = 1 ] && { [ "$NPROC" -lt 8 ] || ok command -v irqbalance; } && { [ "${WITH_EARLYOOM:-0}" = 0 ] || ok command -v earlyoom; } ;;
+    thp)          grep -q '\[madvise\]' /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null \
+                    && { [ ! -r /sys/kernel/mm/transparent_hugepage/defrag ] || grep -q '\[madvise\]' /sys/kernel/mm/transparent_hugepage/defrag; } ;;
+    pkg)          { [ "${WITH_IRQBALANCE:-1}" = 0 ] || ok command -v irqbalance; } && { [ "${WITH_EARLYOOM:-1}" = 0 ] || ok command -v earlyoom; } ;;
     reboot)       return 0 ;;   # informational — acknowledged on Enter
     *)            false ;;
   esac
@@ -500,7 +512,7 @@ verify_all() { # fail() any tag whose state is not converged, so the loop re-che
   recheck noatime || fail noatime
   recheck fstrim || fail fstrim
   recheck thp || fail thp
-  [ "$YES" = 1 ] && { recheck pkg || fail pkg; }
+  recheck pkg || fail pkg
   # reboot is never automatic — it is a manual step in the debug report whenever
   # this run changed anything; pressing Enter acknowledges it (an in-process
   # reboot would kill the script, so it can't be re-checked for real).
