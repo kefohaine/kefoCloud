@@ -608,6 +608,15 @@ nextcloud_setup() {
     done < "$REPO/repo/config/nextcloud/apps.txt"
   fi
 
+  # Fresh installs ship with pending maintenance work that the setup check
+  # surfaces as warnings — run it all up front so a fresh install is clean:
+  #   - mimetype migrations (occ maintenance:repair --include-expensive)
+  #   - missing DB indices/columns/primary keys (the mail app adds several)
+  docker exec -u www-data nextcloud php occ maintenance:repair --include-expensive >/dev/null 2>&1 || true
+  docker exec -u www-data nextcloud php occ db:add-missing-indices >/dev/null 2>&1 || true
+  docker exec -u www-data nextcloud php occ db:add-missing-columns >/dev/null 2>&1 || true
+  docker exec -u www-data nextcloud php occ db:add-missing-primary-keys >/dev/null 2>&1 || true
+
   # Verify what the smoke/operational docs assert.
   docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN" \
     || fail nextcloud_setup "mail_smtphost not set"
