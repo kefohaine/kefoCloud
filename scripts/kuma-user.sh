@@ -24,7 +24,7 @@ case "${1:-}" in
 import sqlite3, sys
 c = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
 for r in c.execute("SELECT id, username, active FROM user ORDER BY id"):
-    print(f"{r[0]}\t{r[1]}\t{'active' if r[2] else 'disabled'}")
+    print(f"info:  id={r[0]} username={r[1]} {'active' if r[2] else 'disabled'}")
 EOF
     ;;
   add)
@@ -36,8 +36,8 @@ db = sqlite3.connect(sys.argv[1]); c = db.cursor()
 try:
     c.execute("INSERT INTO user (username, password, active, timezone) VALUES (?,?,1,'Europe/Paris')", (sys.argv[2], sys.argv[3]))
 except sqlite3.IntegrityError:
-    print(f"user '{sys.argv[2]}' already exists"); sys.exit(1)
-db.commit(); print(f"kuma user '{sys.argv[2]}' created")
+    print(f"error: user '{sys.argv[2]}' already exists"); sys.exit(1)
+db.commit(); print(f"info:  kuma user '{sys.argv[2]}' created")
 EOF
     ;;
   passwd)
@@ -47,9 +47,9 @@ EOF
 import sqlite3, sys
 db = sqlite3.connect(sys.argv[1]); c = db.cursor()
 row = c.execute("SELECT id FROM user WHERE username = ?", (sys.argv[2],)).fetchone()
-if not row: print(f"user '{sys.argv[2]}' not found"); sys.exit(1)
+if not row: print(f"error: user '{sys.argv[2]}' not found"); sys.exit(1)
 c.execute("UPDATE user SET password = ? WHERE id = ?", (sys.argv[3], row[0]))
-db.commit(); print(f"kuma password updated for '{sys.argv[2]}'")
+db.commit(); print(f"info:  kuma password updated for '{sys.argv[2]}'")
 EOF
     ;;
   del)
@@ -58,12 +58,12 @@ EOF
 import sqlite3, sys
 db = sqlite3.connect(sys.argv[1]); c = db.cursor()
 row = c.execute("SELECT id FROM user WHERE username = ?", (sys.argv[2],)).fetchone()
-if not row: print(f"user '{sys.argv[2]}' not found"); sys.exit(1)
+if not row: print(f"error: user '{sys.argv[2]}' not found"); sys.exit(1)
 uid = row[0]
 for t in ("notification", "monitor"):
     c.execute(f"DELETE FROM {t} WHERE user_id = ?", (uid,))
 c.execute("DELETE FROM user WHERE id = ?", (uid,))
-db.commit(); print(f"kuma user '{sys.argv[2]}' and their monitors/notifications deleted")
+db.commit(); print(f"info:  kuma user '{sys.argv[2]}' and their monitors/notifications deleted")
 EOF
     ;;
   *) echo "usage: kuma-user.sh list|add <user> <pass>|passwd <user> <pass>|del <user>"; exit 1 ;;
