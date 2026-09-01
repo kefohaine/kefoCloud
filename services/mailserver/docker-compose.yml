@@ -37,7 +37,9 @@ services:
       SPOOF_PROTECTION: 1
       ENABLE_RSPAMD: 1
       ENABLE_FAIL2BAN: 1
-      ENABLE_OPENDKIM: 1
+      # Rspamd signs DKIM (its dkim_signing module) — OpenDKIM must stay OFF
+      # or DMS's `setup config dkim` refuses to generate keys (conflict).
+      ENABLE_OPENDKIM: 0
       ENABLE_OPENDMARC: 1
       # Lightweight: no ClamAV.
       ENABLE_CLAMAV: 0
