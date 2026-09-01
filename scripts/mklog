@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+#
+# scripts/mklog — uniform output for the make recipes: every recipe emits
+#   info:  <what it did / the result>       (normal completion)
+#   warn:  <non-fatal issue, action taken>  (expected deviation)
+#   error: <failure>                        (recipe exits 1 after this)
+# Usage: scripts/mklog info "message" | warn "message" | error "message"
+# Levels are case-insensitive; unknown levels print the message bare.
+
+set -uo pipefail
+
+case "${1,,}" in
+  info)  printf 'info:  %s\n' "$2" ;;
+  warn)  printf 'warn:  %s\n' "$2" ;;
+  error) printf 'error: %s\n' "$2" ;;
+  *)     printf '%s\n' "${2:-}" ;;
+esac
