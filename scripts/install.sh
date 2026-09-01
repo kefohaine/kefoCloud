@@ -490,7 +490,8 @@ panel_servers() {
     # chown only the JSONs — daemon-created server subdirs stay root-owned.
     sudo chown $OP_USER:$OP_USER "$dst"/*.json 2>/dev/null || true
   fi
-  sudo test -f "$dst/07fd7727.json" && sudo test -f "$dst/2ecfbe8c.json" || fail panel_servers
+  # any templates present in the repo are deployed — no hardcoded IDs
+  [ "$(sudo ls "$dst"/*.json 2>/dev/null | wc -l)" -gt 0 ] || fail panel_servers
 }
 
 # Post-boot Nextcloud occ wiring: Talk signaling + TURN registration, NC
@@ -871,7 +872,7 @@ recheck() {
     sslmode) ssl_mode_full ;;
     nextcloud_setup) docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN" && docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://turn.$DOMAIN/signaling" && docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "turn.$DOMAIN:3478" ;;
     vaultwarden_setup) docker exec mailserver setup email list 2>/dev/null | grep -qiE "^[* ] *vaultwarden@$DOMAIN( |\$|\[)" ;;
-    panel_servers)  sudo test -f /var/www/custom/projects/homelab/puffer/data/servers/07fd7727.json && sudo test -f /var/www/custom/projects/homelab/puffer/data/servers/2ecfbe8c.json ;;
+    panel_servers)  [ "$(sudo ls /var/www/custom/projects/homelab/puffer/data/servers/*.json 2>/dev/null | wc -l)" -gt 0 ] ;;
     *) false ;;
   esac
 }
@@ -956,7 +957,7 @@ success_block() {
   echo "      rename the GitHub repo to match, or push will fail"
   echo "   4. Mailboxes: make mail-add-user USER=name@$DOMAIN (or make mail-gen for a disposable);"
   echo "      the nextcloud@$DOMAIN SMTP sender mailbox is created automatically"
-  echo "   5. Game servers: the panel templates are deployed (07fd7727 browser-MC + 2ecfbe8c)."
+  echo "   5. Game servers: the panel templates under config/pufferpanel/servers/ are deployed."
   echo "      Register them in the panel DB to make them visible in the UI (docs/GUIDE.md"
   echo "      'Registering a file-dropped server'), drop the operator jars into"
   echo "      puffer/data/servers/<id>/, then start from the panel (docs/MIGRATE.md)"

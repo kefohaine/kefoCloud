@@ -26,7 +26,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Fix**: operator decision — either set spigot.yml `world-settings.default.view-distance: 4` (matches the tuning intent) or accept 6 and update the docs. Requires a server restart (spigot.yml is read at world load).
 
 #### Storage VPS onboarded (Setup A) — files on Garage, DB stays on fxmq
-- **File**: `scripts/storage.sh` + storage VPS (100.111.139.13, tailnet-only)
+- **File**: `scripts/storage.sh` + storage VPS (1 TB / 2 GB, tailnet-only)
 - **Problem**: the 1 TB / 2 GB storage VPS was meant for a DB relocation; Setup A was chosen instead: PostgreSQL stays on fxmq (11 GB RAM, DB latency local), the 1 TB box serves Nextcloud's user files.
 - **Status — SUPERSEDED (2026-09-01)**: the Garage/object-store path was abandoned (filecache corruption) and replaced. `scripts/storage.sh` is now an **NFS live-datadirectory tool**: it mounts the storage VPS's export at the NC datadirectory (`cloud/users`) over the tailnet, rsyncs the data over, prompts for the allocation size (validated against available disk) and whether to delete the local copies, and prints install.sh-style error tables + manual steps. Garage remains installed on storage (bucket holds orphaned blobs — harmless; remove with `docker rm -f garage` if unwanted). The nightly `pg_dump` → `storage:/backups/nc` coexists (backups, not the box's primary role).
 - **Residual**: the NFS migration has NOT been run yet (files still local on fxmq); run `make storage` from the NC host when ready. The 2026-09-01 reset (fresh install, recovery manifests) stands as the current working state.
