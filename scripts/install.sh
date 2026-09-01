@@ -538,7 +538,7 @@ nextcloud_setup() {
   # Output redirected: occ config:system:set echoes secret values to stdout.
   if [ -z "$(docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | tr -d '\n')" ]; then
     docker exec -u www-data nextcloud php occ config:system:set mail_smtphost --value "mail.$DOMAIN" >/dev/null 2>&1
-    docker exec -u www-data nextcloud php occ config:system:set mail_smtpport --value 587 --type integer >/dev/null 2>&1
+    docker exec -u www-data nextcloud php occ config:system:set mail_smtpport --value 587 >/dev/null 2>&1
     docker exec -u www-data nextcloud php occ config:system:set mail_smtpname --value "nextcloud@$DOMAIN" >/dev/null 2>&1
     docker exec -u www-data nextcloud php occ config:system:set mail_smtppassword --value "$SMTP_PASSWORD" >/dev/null 2>&1
     docker exec -u www-data nextcloud php occ config:system:set mail_from_address --value nextcloud >/dev/null 2>&1
