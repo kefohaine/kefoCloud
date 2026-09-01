@@ -32,6 +32,25 @@ check() {
   fi
 }
 
+# Security headers: every app vhost must serve EXACTLY ONE of each — Caddy's
+# `header` directive appends to upstream values (a same-field delete+set even
+# ends up deleted), so the fix is header_down at the proxy + a set-only
+# snippet. A regression (missing or duplicated XFO/XCTO/HSTS — the
+# scan.nextcloud.com flags) must fail the smoke and block the push.
+check_sec_headers() {
+  local name="$1" host="$2" path="${3:-/}"
+  local args=(--resolve "$host:443:127.0.0.1" -sI --max-time 12)
+  local xfo xcto hsts
+  xfo=$(curl "${args[@]}" "https://$host$path" | grep -icE '^x-frame-options: SAMEORIGIN')
+  xcto=$(curl "${args[@]}" "https://$host$path" | grep -icE '^x-content-type-options: nosniff')
+  hsts=$(curl "${args[@]}" "https://$host$path" | grep -icE '^strict-transport-security: max-age=31536000')
+  if [ "$xfo" != 1 ] || [ "$xcto" != 1 ] || [ "$hsts" != 1 ]; then
+    echo "FAIL $name sec-headers: xfo=$xfo xcto=$xcto hsts=$hsts (want exactly 1 each) — https://$host$path"; fails=1
+  else
+    echo "ok   $name sec-headers: xfo/xcto/hsts x1"
+  fi
+}
+
 # Public vhosts. App vhosts must answer with real content, never text/plain.
 check cloud "cloud.fxmq.net" "/"        "200 301 302 307 308" html
 # turn.fxmq.net — Talk HPB + TURN. The backend API must answer with the
@@ -64,7 +83,13 @@ check mc-download "mc.fxmq.net" "/download/"  "200 301 302 307 308" html
 # not fail the smoke. /play is a static Caddy bind-mount and stays testable.
 check mc-play "mc.fxmq.net" "/play/" "200 301 302 307 308" html
 check mail  "mail.fxmq.net" "/"        "200 301 302 307 308" html
-# www is a health/landing stub BY DESIGN — just needs to answer.
+# Security-header integrity (the scan.nextcloud.com XFO/XCTO checks) — the
+# header_down fix regressed once; these assertions make a regression fatal.
+check_sec_headers cloud  "cloud.fxmq.net"
+check_sec_headers vault  "vault.fxmq.net"
+check_sec_headers kuma   "kuma.fxmq.net"
+check_sec_headers mail   "mail.fxmq.net"
+check_sec_headers mc     "mc.fxmq.net"# www is a health/landing stub BY DESIGN — just needs to answer.
 check www   "www.fxmq.net" "/" "200 301 302 307 308"
 # shell is Tailscale-only: a non-tailnet source (this host's 127.0.0.1) must get 403.
 check shell "shell.fxmq.net" "/" "403"
