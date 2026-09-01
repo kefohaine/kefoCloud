@@ -53,7 +53,7 @@ BACKUP_DIR="${BACKUP_DIR:-/root/optimize-backup-$TS}"
 # ------------------------------------------------------------------ state
 ERR_TAGS=()
 declare -A ERR_DETAIL=()
-REBOOT_NEEDED=0
+CHANGED=0   # any config actually written this run -> reboot shows as a manual step
 NPROC=1; MEM_GB=1; HAS_DOCKER=0; HAS_DNSMASQ=0; ROT=""; ACTIVE_SWAP=""; SSD=0
 
 log()  { echo "[$(date +%H:%M:%S)] $*"; }
@@ -95,7 +95,7 @@ write_file() { # path, content — exact-bytes compare; returns 0 when written/w
   if [ -f "$p" ] && cmp -s "$p" <(printf '%s' "$c"); then log "  ok: $p (unchanged)"; return 1; fi
   backup "$p"
   [ "$DRY" = 1 ] && { log "  would write: $p"; return 0; }
-  mkdir -p "${p%/*}"; printf '%s' "$c" > "$p"; log "  wrote: $p"; return 0
+  mkdir -p "${p%/*}"; printf '%s' "$c" > "$p"; CHANGED=1; log "  wrote: $p"; return 0
 }
 append_lines() { # path, lines... — returns 0 when appended/would-append, 1 when unchanged
   local p="$1"; shift; local cur missing=() l
@@ -105,7 +105,7 @@ append_lines() { # path, lines... — returns 0 when appended/would-append, 1 wh
   backup "$p"
   [ "$DRY" = 1 ] && { log "  would append ${#missing[@]} line(s) to $p"; return 0; }
   { printf '%s' "$cur"; [ -n "$cur" ] && printf '\n'; printf '%s\n' "${missing[@]}"; } >> "$p"
-  log "  appended ${#missing[@]} line(s) to $p"; return 0
+  CHANGED=1; log "  appended ${#missing[@]} line(s) to $p"; return 0
 }
 
 # ------------------------------------------------------------------ detection
@@ -226,7 +226,6 @@ DefaultLimitNOFILE=65535
 DefaultTasksMax=infinity
 "
   if write_file /etc/systemd/system.conf.d/99-optimize.conf "$SYS"; then
-    REBOOT_NEEDED=1
     [ "$DRY" = 0 ] && [ "$VERIFY" = 0 ] && systemctl daemon-reexec 2>/dev/null
   fi
   log "  ok: limits set"
@@ -246,6 +245,7 @@ swap_tune() {
   elif fallocate -l "${SIZE}G" /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=$(( SIZE * 1024 )) status=none; then
     chmod 600 /swapfile && mkswap /swapfile >/dev/null && swapon /swapfile || { fail swap "mkswap/swapon failed"; return; }
     append_lines /etc/fstab '/swapfile none swap defaults 0 0'
+    CHANGED=1
     log "  ok: /swapfile ${SIZE}G active"
   else
     fail swap "could not allocate /swapfile"
@@ -501,7 +501,10 @@ verify_all() { # fail() any tag whose state is not converged, so the loop re-che
   recheck fstrim || fail fstrim
   recheck thp || fail thp
   [ "$YES" = 1 ] && { recheck pkg || fail pkg; }
-  [ "$REBOOT_NEEDED" = 1 ] && fail reboot
+  # reboot is never automatic — it is a manual step in the debug report whenever
+  # this run changed anything; pressing Enter acknowledges it (an in-process
+  # reboot would kill the script, so it can't be re-checked for real).
+  [ "$CHANGED" = 1 ] && fail reboot
 }
 
 resolve_errors() {
@@ -573,7 +576,7 @@ success_block() {
   echo " Every edited file is backed up under: $BACKUP_DIR"
   echo ""
   echo " Follow-ups (none block the service):"
-  [ "$REBOOT_NEEDED" = 1 ] && echo "   1. Reboot when convenient: sudo reboot (applies systemd limits to new services)"
+  [ "$CHANGED" = 1 ] && echo "   1. Reboot when convenient: sudo reboot (never done automatically; applies systemd limits to new services)"
   [ -n "$ROT" ] && [ "$ROT" = 1 ] && [ "$FORCE_FSTRIM" != 1 ] && \
     echo "   2. If the disk is actually SSD-backed (VirtIO often reports rotational): FORCE_FSTRIM=1 bash scripts/optimize.sh"
   [ "$WITH_EARLYOOM" = 1 ] && echo "   earlyoom guards against OOM hangs (low-RAM host)."
