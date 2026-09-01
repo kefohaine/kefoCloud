@@ -31,7 +31,16 @@
 #
 # Env overrides: SWAP_GB= NOATIME=0/1 FORCE_SWAP=0/1 FORCE_FSTRIM=0/1
 # WITH_IRQBALANCE=0/1 WITH_EARLYOOM=0/1 (both auto-install; 0 = opt out)
+# SETRA=<sectors> (HDD readahead via blockdev --setra, e.g. 512; 0 = skip)
 # YES=1 BACKUP_DIR=...
+#
+# Documented options (real benefit with trade-offs, deliberately NOT default):
+#   - /tmp on tmpfs: systemctl enable tmp.mount — RAM-backed temp I/O, but costs RAM
+#   - tuned profiles: apt install tuned && tuned-adm profile virtual-guest — validated
+#     bundle, but duplicates/overrides these sysctls (conflict risk)
+#   - zram: compressed RAM swap for <=4 GB hosts — faster than disk swap, added complexity
+#   - net.ipv4.tcp_mtu_probing=1 / net.ipv4.tcp_max_tw_buckets=524288: only for
+#     specific network issues (MTU paths / time-wait bucket overflow in dmesg)
 
 set -uo pipefail
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
@@ -55,7 +64,7 @@ BACKUP_DIR="${BACKUP_DIR:-/root/optimize-backup-$TS}"
 ERR_TAGS=()
 declare -A ERR_DETAIL=()
 CHANGED=0   # any config actually written this run -> reboot shows as a manual step
-NPROC=1; MEM_GB=1; HAS_DOCKER=0; HAS_DNSMASQ=0; ROT=""; ACTIVE_SWAP=""; SSD=0
+NPROC=1; MEM_GB=1; MEM_KB=0; MIN_FREE_KB=0; HAS_DOCKER=0; HAS_DNSMASQ=0; ROT=""; ACTIVE_SWAP=""; SSD=0; SRA_DEV=""; SETRA=""
 
 log()  { echo "[$(date +%H:%M:%S)] $*"; }
 fail() {
@@ -112,6 +121,8 @@ append_lines() { # path, lines... — returns 0 when appended/would-append, 1 wh
 # ------------------------------------------------------------------ detection
 detect() {
   NPROC="$(nproc)"; MEM_GB="$(awk '/MemTotal/{printf "%d", $2/1024/1024}' /proc/meminfo)"; [ -z "$MEM_GB" ] && MEM_GB=1
+  MEM_KB="$(awk '/MemTotal/{print $2}' /proc/meminfo)"; [ -z "$MEM_KB" ] && MEM_KB=$(( MEM_GB * 1024 * 1024 ))
+  MIN_FREE_KB=$(( MEM_KB / 100 ))   # 1% of total RAM
   ok command -v docker && HAS_DOCKER=1 || HAS_DOCKER=0
   ok command -v dnsmasq && HAS_DNSMASQ=1 || HAS_DNSMASQ=0
   ROT="$(cat /sys/block/*/queue/rotational 2>/dev/null | sort -u)"
@@ -128,9 +139,10 @@ ask_inputs() {
     [ -n "${FORCE_FSTRIM:-}" ] || FORCE_FSTRIM=0
     [ -n "${WITH_IRQBALANCE:-}" ] || WITH_IRQBALANCE=1
     [ -n "${WITH_EARLYOOM:-}" ] || WITH_EARLYOOM=1
+    [ -n "${SETRA:-}" ] || SETRA=0
     local SW_NOTE=""; [ "$FORCE_SWAP" = 1 ] && SW_NOTE=" (recreate)"
     local YES_NOTE=""; [ "$YES" = 1 ] && YES_NOTE=" (--yes)"
-    log "plan: swap=${SWAP_GB}G${SW_NOTE} noatime=${NOATIME} fstrim=${FORCE_FSTRIM} irqbalance=${WITH_IRQBALANCE} earlyoom=${WITH_EARLYOOM}${YES_NOTE}"
+    log "plan: swap=${SWAP_GB}G${SW_NOTE} noatime=${NOATIME} fstrim=${FORCE_FSTRIM} setra=${SETRA} irqbalance=${WITH_IRQBALANCE} earlyoom=${WITH_EARLYOOM}${YES_NOTE}"
     return 0
   fi
   if [ -z "$SWAP_GB" ]; then
@@ -152,11 +164,16 @@ ask_inputs() {
     case "$a" in y|Y|yes) FORCE_FSTRIM=1;; *) FORCE_FSTRIM=0;; esac
   fi
   [ -n "${FORCE_FSTRIM:-}" ] || FORCE_FSTRIM=0
+  if [ "$ROT" = 1 ] && [ -z "${SETRA:-}" ]; then
+    read -rp "HDD readahead (blockdev --setra sectors; 512 = 256 KB, helps sequential reads)? [y/N] " a
+    case "$a" in y|Y|yes) SETRA=512;; *) SETRA=0;; esac
+  fi
+  [ -n "${SETRA:-}" ] || SETRA=0
   # irqbalance + earlyoom: auto-installed when missing (opt out with =0)
   [ -n "${WITH_IRQBALANCE:-}" ] || WITH_IRQBALANCE=1
   [ -n "${WITH_EARLYOOM:-}" ] || WITH_EARLYOOM=1
   local SW_NOTE=""; [ "$FORCE_SWAP" = 1 ] && SW_NOTE=" (recreate)"
-  log "plan: swap=${SWAP_GB}G${SW_NOTE} noatime=${NOATIME} fstrim=${FORCE_FSTRIM} irqbalance=${WITH_IRQBALANCE} earlyoom=${WITH_EARLYOOM}"
+  log "plan: swap=${SWAP_GB}G${SW_NOTE} noatime=${NOATIME} fstrim=${FORCE_FSTRIM} setra=${SETRA} irqbalance=${WITH_IRQBALANCE} earlyoom=${WITH_EARLYOOM}"
 }
 
 # ------------------------------------------------------------------ 1. apt cleanup (make cleanup minus backups)
@@ -182,6 +199,7 @@ fs.inotify.max_user_instances|1024|inotify instance headroom
 kernel.numa_balancing|0|disable NUMA migrations on a single-socket VM
 kernel.nmi_watchdog|0|no NMI watchdog on VMs (false soft-lockups, perf-counter cost)
 kernel.sched_autogroup_enabled|0|server: disable per-session CPU groups (predictable scheduling)
+kernel.core_pattern|/dev/null|discard core dumps (no giant core files on crash)
 net.core.somaxconn|65535|listen backlog for busy proxies/web servers
 net.core.netdev_max_backlog|16384|packet backlog before the stack drops
 net.core.rmem_max|16777216|allow large TCP receive windows
@@ -370,6 +388,25 @@ fstrim_tune() {
   log "  ok: fstrim.timer enabled"
 }
 
+# ------------------------------------------------------------------ 10b. HDD readahead (opt-in: SETRA=<sectors>, only for rotational disks)
+setra_tune() {
+  [ "${SETRA:-0}" != 0 ] || { log "setra: skipped (SETRA unset/0 — HDD readahead is opt-in)"; return 0; }
+  case "$SETRA" in ''|*[!0-9]*) fail setra "invalid SETRA value"; return;; esac
+  local SRC ROTDEV KB
+  SRC="$(findmnt -no SOURCE /)"
+  SRA_DEV="$(lsblk -no PKNAME "$SRC" 2>/dev/null | head -1)"
+  [ -n "$SRA_DEV" ] || SRA_DEV="$(echo "$SRC" | sed 's|/dev/||; s/p[0-9]*$//; s/[0-9]*$//')"
+  ROTDEV="$(cat "/sys/block/$SRA_DEV/queue/rotational" 2>/dev/null)"
+  [ "$ROTDEV" = 1 ] || { log "  skipped: /dev/$SRA_DEV not rotational (readahead is an HDD tuning)"; return 0; }
+  KB=$(( SETRA * 512 / 1024 ))
+  if [ "$DRY" = 0 ] && [ "$VERIFY" = 0 ]; then
+    blockdev --setra "$SETRA" "/dev/$SRA_DEV" 2>/dev/null || { fail setra "blockdev --setra failed"; return; }
+  fi
+  write_file /etc/udev/rules.d/99-readahead.rules "ACTION==\"add\", SUBSYSTEM==\"block\", KERNEL==\"$SRA_DEV\", ATTR{queue/read_ahead_kb}=\"$KB\"
+" >/dev/null
+  log "  ok: readahead ${SETRA} sectors (${KB} kB) on /dev/$SRA_DEV (runtime + udev persistence)"
+}
+
 # ------------------------------------------------------------------ 11. THP -> madvise
 thp_tune() {
   log "thp: transparent huge pages -> madvise (enabled + defrag; fewer latency spikes)"
@@ -437,6 +474,7 @@ problem() {
     dnsmasq)      echo "dnsmasq cache-size not applied" ;;
     noatime)      echo "noatime not active on the root mount" ;;
     fstrim)       echo "fstrim timer not enabled" ;;
+    setra)        echo "HDD readahead not set" ;;
     thp)          echo "transparent huge pages still not madvise" ;;
     pkg)          echo "optional package install failed" ;;
     reboot)       echo "reboot pending (recommended after first run)" ;;
@@ -456,6 +494,7 @@ hint() {
     dnsmasq)      echo "run: systemctl restart dnsmasq, then re-check" ;;
     noatime)      echo "run: sed -i to add noatime,nodiratime to the / line of /etc/fstab && mount -o remount /, then re-check" ;;
     fstrim)       echo "run: systemctl enable --now fstrim.timer, then re-check" ;;
+    setra)        echo "run: blockdev --setra <sectors> /dev/<disk>; udev rule at /etc/udev/rules.d/99-readahead.rules, then re-check" ;;
     thp)          echo "run: echo madvise > /sys/kernel/mm/transparent_hugepage/enabled, then re-check" ;;
     pkg)          echo "run: apt-get install -y <package>, then re-check" ;;
     reboot)       echo "run: sudo reboot (optional but recommended; press Enter to acknowledge for now)" ;;
@@ -485,6 +524,9 @@ recheck() {
     dnsmasq)      [ "$HAS_DNSMASQ" = 0 ] || grep -rsq '^cache-size=' /etc/dnsmasq.conf /etc/dnsmasq.d/ 2>/dev/null ;;
     noatime)      [ "$NOATIME" = 0 ] || findmnt -no OPTIONS / | grep -q noatime ;;
     fstrim)       [ "$SSD" = 0 ] || systemctl is-enabled --quiet fstrim.timer ;;
+    setra)        [ "${SETRA:-0}" = 0 ] && return 0
+                  local D="${SRA_DEV:-$(lsblk -no PKNAME "$(findmnt -no SOURCE /)" 2>/dev/null | head -1)}"
+                  [ -n "$D" ] && [ "$(cat "/sys/block/$D/queue/read_ahead_kb" 2>/dev/null)" = "$(( SETRA * 512 / 1024 ))" ] ;;
     thp)          grep -q '\[madvise\]' /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null \
                     && { [ ! -r /sys/kernel/mm/transparent_hugepage/defrag ] || grep -q '\[madvise\]' /sys/kernel/mm/transparent_hugepage/defrag; } ;;
     pkg)          { [ "${WITH_IRQBALANCE:-1}" = 0 ] || ok command -v irqbalance; } && { [ "${WITH_EARLYOOM:-1}" = 0 ] || ok command -v earlyoom; } ;;
@@ -511,6 +553,7 @@ verify_all() { # fail() any tag whose state is not converged, so the loop re-che
   recheck dnsmasq || fail dnsmasq
   recheck noatime || fail noatime
   recheck fstrim || fail fstrim
+  recheck setra || fail setra
   recheck thp || fail thp
   recheck pkg || fail pkg
   # reboot is never automatic — it is a manual step in the debug report whenever
@@ -601,6 +644,9 @@ main() {
   grep -qE '^ID=(debian|ubuntu)$' /etc/os-release || { echo "optimize.sh targets Debian-family systems only" >&2; exit 1; }
   [ "$VERIFY" = 0 ] && banner
   detect
+  # vm.min_free_kbytes is RAM-derived (1% of total), so it joins the list at runtime
+  SYSCTLS="${SYSCTLS}
+vm.min_free_kbytes|${MIN_FREE_KB}|1% of RAM (emergency allocation headroom, computed)"
   ask_inputs
 
   if [ "$VERIFY" = 0 ]; then
@@ -614,6 +660,7 @@ main() {
     dnsmasq_tune
     noatime_tune
     fstrim_tune
+    setra_tune
     thp_tune
     pkg_tune
     aptconf_tune

@@ -354,7 +354,7 @@ Resolved items grouped by month. One line per item, aggressively short.
 
 ### Sep 2026 — edge duplicate cleanup
 - **Duplicate edge container removed** — interrupted `--force-recreate` (2026-09-01) left a second Caddy running as `<old-container-id>_fxmq.net`; both removed, `make dok-recreate-fxmq.net` verified non-duplicating (4× runs incl. forced image rebuild), stale image pruned (see Lessons learned).
-- **`optimize.sh` universal VPS optimizer (install.sh/storage.sh style)** — banner + defaulted prompts + unattended run + Enter-refresh error loop → SUCCESS only when green; merges OPTIMIZE.md, repo tuning and `make cleanup`'s apt/docker part; applied here — swap 4G created, noatime, THP=madvise (+defrag), nmi_watchdog/autogroup sysctls, apt/docker cleanup, irqbalance+earlyoom auto-installed (see GUIDE gotchas).
+- **`optimize.sh` universal VPS optimizer (install.sh/storage.sh style)** — banner + defaulted prompts + unattended run + Enter-refresh error loop → SUCCESS only when green; merges OPTIMIZE.md, repo tuning and `make cleanup`'s apt/docker part; applied here — swap 4G created, noatime, THP=madvise (+defrag), nmi_watchdog/autogroup/min_free_kbytes(1%)/core_pattern sysctls, apt/docker cleanup, irqbalance+earlyoom auto-installed, SETRA HDD-readahead option (see GUIDE gotchas).
 
 ---
 
