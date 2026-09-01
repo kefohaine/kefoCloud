@@ -594,6 +594,10 @@ nextcloud_setup() {
     done < "$REPO/repo/config/nextcloud/users.txt"
   fi
 
+  # Fresh occ maintenance:install only trusts localhost — the vhost domain
+  # must be added or NC 400s every request on that Host.
+  docker exec -u www-data nextcloud php occ config:system:set trusted_domains 1 --value "$DOMAIN" >/dev/null 2>&1 || true
+
   # Recovery manifest: apps enabled beyond the image defaults
   # (config/nextcloud/apps.txt).
   if [ -f "$REPO/repo/config/nextcloud/apps.txt" ]; then
