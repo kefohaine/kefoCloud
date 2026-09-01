@@ -31,13 +31,15 @@
 #
 # Env overrides: SWAP_GB= NOATIME=0/1 FORCE_SWAP=0/1 FORCE_FSTRIM=0/1
 # WITH_IRQBALANCE=0/1 WITH_EARLYOOM=0/1 (both auto-install; 0 = opt out)
-# SETRA=<sectors> (HDD readahead via blockdev --setra, e.g. 512; 0 = skip)
+# SETRA=<sectors> (HDD readahead via blockdev --setra; interactive: asks once
+# "is the main disk an HDD?" and applies automatically on yes; 0 = skip)
+# WITH_TUNED=0/1 (tuned auto profile via 'tuned-adm recommend'; tuned keeps its
+# unique values, our sysctl values override it on conflicting keys — tuned's
+# sysctl plugin re-applies /etc/sysctl.d and defers to it by design)
 # YES=1 BACKUP_DIR=...
 #
 # Documented options (real benefit with trade-offs, deliberately NOT default):
 #   - /tmp on tmpfs: systemctl enable tmp.mount — RAM-backed temp I/O, but costs RAM
-#   - tuned profiles: apt install tuned && tuned-adm profile virtual-guest — validated
-#     bundle, but duplicates/overrides these sysctls (conflict risk)
 #   - zram: compressed RAM swap for <=4 GB hosts — faster than disk swap, added complexity
 #   - net.ipv4.tcp_mtu_probing=1 / net.ipv4.tcp_max_tw_buckets=524288: only for
 #     specific network issues (MTU paths / time-wait bucket overflow in dmesg)
@@ -140,9 +142,10 @@ ask_inputs() {
     [ -n "${WITH_IRQBALANCE:-}" ] || WITH_IRQBALANCE=1
     [ -n "${WITH_EARLYOOM:-}" ] || WITH_EARLYOOM=1
     [ -n "${SETRA:-}" ] || SETRA=0
+    [ -n "${WITH_TUNED:-}" ] || WITH_TUNED=1
     local SW_NOTE=""; [ "$FORCE_SWAP" = 1 ] && SW_NOTE=" (recreate)"
     local YES_NOTE=""; [ "$YES" = 1 ] && YES_NOTE=" (--yes)"
-    log "plan: swap=${SWAP_GB}G${SW_NOTE} noatime=${NOATIME} fstrim=${FORCE_FSTRIM} setra=${SETRA} irqbalance=${WITH_IRQBALANCE} earlyoom=${WITH_EARLYOOM}${YES_NOTE}"
+    log "plan: swap=${SWAP_GB}G${SW_NOTE} noatime=${NOATIME} fstrim=${FORCE_FSTRIM} setra=${SETRA} irqbalance=${WITH_IRQBALANCE} earlyoom=${WITH_EARLYOOM} tuned=${WITH_TUNED}${YES_NOTE}"
     return 0
   fi
   if [ -z "$SWAP_GB" ]; then
@@ -165,15 +168,16 @@ ask_inputs() {
   fi
   [ -n "${FORCE_FSTRIM:-}" ] || FORCE_FSTRIM=0
   if [ "$ROT" = 1 ] && [ -z "${SETRA:-}" ]; then
-    read -rp "HDD readahead (blockdev --setra sectors; 512 = 256 KB, helps sequential reads)? [y/N] " a
+    read -rp "is the main storage unit an HDD? (disk reports rotational) [y/N] " a
     case "$a" in y|Y|yes) SETRA=512;; *) SETRA=0;; esac
   fi
   [ -n "${SETRA:-}" ] || SETRA=0
   # irqbalance + earlyoom: auto-installed when missing (opt out with =0)
   [ -n "${WITH_IRQBALANCE:-}" ] || WITH_IRQBALANCE=1
   [ -n "${WITH_EARLYOOM:-}" ] || WITH_EARLYOOM=1
+  [ -n "${WITH_TUNED:-}" ] || WITH_TUNED=1
   local SW_NOTE=""; [ "$FORCE_SWAP" = 1 ] && SW_NOTE=" (recreate)"
-  log "plan: swap=${SWAP_GB}G${SW_NOTE} noatime=${NOATIME} fstrim=${FORCE_FSTRIM} setra=${SETRA} irqbalance=${WITH_IRQBALANCE} earlyoom=${WITH_EARLYOOM}"
+  log "plan: swap=${SWAP_GB}G${SW_NOTE} noatime=${NOATIME} fstrim=${FORCE_FSTRIM} setra=${SETRA} irqbalance=${WITH_IRQBALANCE} earlyoom=${WITH_EARLYOOM} tuned=${WITH_TUNED}"
 }
 
 # ------------------------------------------------------------------ 1. apt cleanup (make cleanup minus backups)
@@ -184,6 +188,34 @@ apt_clean() {
   DEBIAN_FRONTEND=noninteractive apt-get autoremove -y -qq || fail apt "autoremove failed"
   apt-get clean || fail apt "apt-get clean failed"
   log "  ok: apt updated, autoremoved, cleaned"
+}
+
+# ------------------------------------------------------------------ 1b. tuned (auto profile via recommend)
+# Cooperation model: tuned applies its profile first; our /etc/sysctl.d values
+# then override it on conflicting keys. This is tuned's own behavior — its
+# sysctl plugin "reapplies system sysctl" (re-reads /etc/sysctl.d) and defers
+# to it, so our universal values win the conflicts while tuned keeps its
+# unique ones (cpu governor, energy-perf bias, THP, ...). tuned-adm verify may
+# report diffs on those keys — expected by design.
+tuned_tune() {
+  [ "${WITH_TUNED:-1}" = 1 ] || { log "tuned: skipped (WITH_TUNED=0)"; return 0; }
+  log "tuned: auto profile (tuned-adm recommend)"
+  if ! ok command -v tuned-adm; then
+    if [ "$DRY" = 0 ] && [ "$VERIFY" = 0 ]; then
+      apt-get install -y -qq tuned >/dev/null 2>&1 || { fail tuned "tuned install failed"; return; }
+    else
+      log "  would install tuned"
+      return 0
+    fi
+  fi
+  local prof
+  prof="$(tuned-adm recommend 2>/dev/null | head -1)"
+  [ -n "$prof" ] || { fail tuned "no profile recommended"; return; }
+  if [ "$DRY" = 0 ] && [ "$VERIFY" = 0 ]; then
+    systemctl enable --now tuned >/dev/null 2>&1
+    tuned-adm profile "$prof" >/dev/null 2>&1 || { fail tuned "profile '$prof' apply failed"; return; }
+  fi
+  log "  ok: tuned profile '$prof' active (our sysctl values win conflicts; tuned keeps unique ones)"
 }
 
 # ------------------------------------------------------------------ 2. kernel / memory / network
@@ -222,9 +254,11 @@ kernel_tune() {
   log "kernel: sysctl tuning"
   local CTL="# Generated by optimize.sh — universal VPS tuning (re-run to refresh)."
   local key val cmt
-  while IFS='|' read -r key val cmt; do CTL="${CTL}
+  while IFS='|' read -r key val cmt; do
+    CTL="${CTL}
 # $cmt
-$key = $val"; done <<< "$SYSCTLS"
+$key = $val"
+  done <<< "$SYSCTLS"
   write_file /etc/sysctl.d/99-optimize.conf "${CTL}
 " || true
   if [ "$DRY" = 0 ] && [ "$VERIFY" = 0 ]; then
@@ -477,6 +511,7 @@ problem() {
     setra)        echo "HDD readahead not set" ;;
     thp)          echo "transparent huge pages still not madvise" ;;
     pkg)          echo "optional package install failed" ;;
+    tuned)        echo "tuned auto profile not active" ;;
     reboot)       echo "reboot pending (recommended after first run)" ;;
     *)            echo "$1" ;;
   esac
@@ -497,6 +532,7 @@ hint() {
     setra)        echo "run: blockdev --setra <sectors> /dev/<disk>; udev rule at /etc/udev/rules.d/99-readahead.rules, then re-check" ;;
     thp)          echo "run: echo madvise > /sys/kernel/mm/transparent_hugepage/enabled, then re-check" ;;
     pkg)          echo "run: apt-get install -y <package>, then re-check" ;;
+    tuned)        echo "run: apt-get install -y tuned && systemctl enable --now tuned && tuned-adm profile \"\$(tuned-adm recommend)\", then re-check" ;;
     reboot)       echo "run: sudo reboot (optional but recommended; press Enter to acknowledge for now)" ;;
     *)            echo "" ;;
   esac
@@ -530,6 +566,7 @@ recheck() {
     thp)          grep -q '\[madvise\]' /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null \
                     && { [ ! -r /sys/kernel/mm/transparent_hugepage/defrag ] || grep -q '\[madvise\]' /sys/kernel/mm/transparent_hugepage/defrag; } ;;
     pkg)          { [ "${WITH_IRQBALANCE:-1}" = 0 ] || ok command -v irqbalance; } && { [ "${WITH_EARLYOOM:-1}" = 0 ] || ok command -v earlyoom; } ;;
+    tuned)        [ "${WITH_TUNED:-1}" = 0 ] || { ok command -v tuned-adm && systemctl is-active --quiet tuned && [ -n "$(tuned-adm active 2>/dev/null | sed -n 's/^Current active profile: //p' | head -1)" ]; } ;;
     reboot)       return 0 ;;   # informational — acknowledged on Enter
     *)            false ;;
   esac
@@ -556,6 +593,7 @@ verify_all() { # fail() any tag whose state is not converged, so the loop re-che
   recheck setra || fail setra
   recheck thp || fail thp
   recheck pkg || fail pkg
+  recheck tuned || fail tuned
   # reboot is never automatic — it is a manual step in the debug report whenever
   # this run changed anything; pressing Enter acknowledges it (an in-process
   # reboot would kill the script, so it can't be re-checked for real).
@@ -651,6 +689,7 @@ vm.min_free_kbytes|${MIN_FREE_KB}|1% of RAM (emergency allocation headroom, comp
 
   if [ "$VERIFY" = 0 ]; then
     apt_clean
+    tuned_tune
     kernel_tune
     limits_tune
     swap_tune
