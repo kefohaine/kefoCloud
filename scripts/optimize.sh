@@ -162,11 +162,7 @@ ask_inputs() {
     case "$a" in y|Y|yes) FORCE_SWAP=1;; *) FORCE_SWAP=0;; esac
   fi
   [ -n "${FORCE_SWAP:-}" ] || FORCE_SWAP=0
-  if [ "$ROT" = 1 ] && [ -z "${FORCE_FSTRIM:-}" ]; then
-    read -rp "disk reports rotational — force fstrim anyway (SSD-backed VirtIO)? [y/N] " a
-    case "$a" in y|Y|yes) FORCE_FSTRIM=1;; *) FORCE_FSTRIM=0;; esac
-  fi
-  [ -n "${FORCE_FSTRIM:-}" ] || FORCE_FSTRIM=0
+  [ -n "${FORCE_FSTRIM:-}" ] || FORCE_FSTRIM=0   # fstrim stays an env opt-in (FORCE_FSTRIM=1)
   if [ "$ROT" = 1 ] && [ -z "${SETRA:-}" ]; then
     read -rp "is the main storage unit an HDD? (disk reports rotational) [y/N] " a
     case "$a" in y|Y|yes) SETRA=512;; *) SETRA=0;; esac
