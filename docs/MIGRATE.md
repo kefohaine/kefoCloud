@@ -26,7 +26,7 @@ The installer's legacy `renames()` step — which transformed a pre-migration cl
 
 1. Tailscale split-DNS (`$DOMAIN` → the new VPS Tailscale IP) is printed as a follow-up, not a blocking step — it cannot be set with just an auth key. Add it in the admin console so `shell.$DOMAIN` resolves for tailnet devices (dnsmasq on the VPS already answers it).
 2. Optional: Cloudflare WAF rule skip for `cloud.$DOMAIN` — Nextcloud desktop sync is bot-challenged otherwise (see `Intended` in `docs/ISSUES.md`).
-3. Mailboxes are not scripted — create them with `make mail-add-user` / `make mail-gen`. The app SMTP sender mailboxes used for outbound mail are created automatically by the installer: `nextcloud@$DOMAIN` and `vaultwarden@$DOMAIN`.
+3. Mailboxes are not scripted — create them with `make mail-gen [MAIL=…]` (or `mail-gen-alias TO=…` for a forwarder). The app SMTP sender mailboxes used for outbound mail are created automatically by the installer: `nextcloud@$DOMAIN` and `vaultwarden@$DOMAIN`.
 4. Doc pass: done for the Aug 2026 migration — the canonical repo now carries the `fxmq.net` / `op` / `shell.` names in code, docs, and Makefile.
 
 ## Minecraft server (PufferPanel)
@@ -39,7 +39,7 @@ The installer's legacy `renames()` step — which transformed a pre-migration cl
 
 ## Self-hosted mail (Docker Mailserver + Roundcube)
 
-`install.sh` brings up the mail platform too (`make dok-recreate-mailserver` → `mailserver` at 172.22.0.9 + `roundcube` at 172.22.0.10; the UFW ports are opened by the installer). What is NOT scripted: mailbox accounts (create with `make mail-add-user`/`mail-gen`). To carry existing mail to a new VPS:
+`install.sh` brings up the mail platform too (`make dok-recreate-mailserver` → `mailserver` at 172.22.0.9 + `roundcube` at 172.22.0.10; the UFW ports are opened by the installer). What is NOT scripted: mailbox accounts (create with `make mail-gen [MAIL=…]`). To carry existing mail to a new VPS:
 
 1. Operator-only (copy from the old host): `/var/www/custom/projects/homelab/mailserver/` (Maildirs, DMS config + DKIM keys, roundcube sqlite), `services/mailserver/.env` (mailbox passwords), and the CF DNS records (MX, mail A DNS-only, SPF, DMARC, DKIM TXT).
 2. Re-issue the mail.fxmq.net LE cert via the Caddy vhost; DMS reads it from caddy_data.

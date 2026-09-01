@@ -259,82 +259,74 @@ install-hooks:
 >@echo "Installed git hooks: pre-commit (Caddy validate + app-vhost stub guard), pre-push (live vhost smoke)."
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Mail accounts (Docker Mailserver CLI). USER=<addr> required; add/passwd
-# prompt via `read -s` so the password never lands in shell history or the
-# process list. Friends log in at https://mail.fxmq.net with just the local
-# part (ROUNDCUBEMAIL_USERNAME_DOMAIN=fxmq.net).
+# Mailserver Registry (Docker Mailserver CLI — see `make help` > Mailserver
+# Registry). Passwords never land in shell history or the process list.
+# Friends log in at https://mail.fxmq.net with just the local part
+# (ROUNDCUBEMAIL_USERNAME_DOMAIN=fxmq.net).
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: mail-add-user mail-passwd mail-del-user mail-del-user-data mail-list-users mail-list-user-data mail-gen mail-alias-gen mail-alias-del mail-alias-list mail-quota-set mail-default-quota-set
+.PHONY: mail-gen mail-gen-alias mail-del mail-del-alias mail-quota mail-password mail-card
 
-mail-add-user:
->@[ "$(origin USER)" = "command line" ] || { echo "Usage: make mail-add-user USER=name@fxmq.net [QUOTA=100M]"; exit 1; }
->@read -s -p "Password for $(USER): " pass; echo; \
-  docker exec mailserver setup email add "$(USER)" "$$pass" && \
-  docker exec mailserver setup quota set "$(USER)" "$(if $(QUOTA),$(QUOTA),$(shell cat services/mailserver/default-quota 2>/dev/null || echo 1G))"
-
-mail-passwd:
->@[ "$(origin USER)" = "command line" ] || { echo "Usage: make mail-passwd USER=name@fxmq.net"; exit 1; }
->@read -s -p "New password for $(USER): " pass; echo; \
-  docker exec mailserver setup email update "$(USER)" "$$pass"
-
-mail-del-user:
->@[ "$(origin USER)" = "command line" ] || { echo "Usage: make mail-del-user USER=name@fxmq.net"; exit 1; }
->@docker exec mailserver setup email del "$(USER)"
-
-mail-list-users:
->@docker exec mailserver setup email list
-
-# Per-mailbox storage quota (bytes with B/k/M/G/T suffix; 0 = no limit).
-# Writes mailserver/config/dovecot-quotas.cf — DMS changedetector reloads
-# dovecot automatically, no container restart needed.
-mail-quota-set:
->@[ "$(origin MAIL)" = "command line" ] && [ -n "$(QUOTA)" ] || { echo "Usage: make mail-quota-set MAIL=name@fxmq.net QUOTA=2G"; exit 1; }
->@echo "$(QUOTA)" | grep -qE '^([0-9]+(B|k|M|G|T)|0)$$' || { echo "Invalid QUOTA — B/k/M/G/T suffix, or 0 (no limit)"; exit 1; }
->@docker exec mailserver setup quota set "$(MAIL)" "$(QUOTA)"
-
-# Stored-mail cleanup: `mail-del-user` only removes the account entry (DMS
-# never deletes Maildirs). This removes the actual stored mail (the folder
-# under mailserver/data/fxmq.net/). USER is the folder/local part, not the
-# full address (e.g. qkzfwbc, not qkzfwbc@fxmq.net).
-mail-del-user-data:
->@[ "$(origin USER)" = "command line" ] || { echo "Usage: make mail-del-user-data USER=<folder-name>"; exit 1; }
->@echo "$(USER)" | grep -qE '^[a-z0-9._-]+$$' && [ "$(USER)" != "." ] && [ "$(USER)" != ".." ] || { echo "Invalid USER — use the folder name under mailserver/data/fxmq.net/ (a-z0-9._-)"; exit 1; }
->@if [ -d "$(REPO)/mailserver/data/fxmq.net/$(USER)" ]; then sudo rm -rf "$(REPO)/mailserver/data/fxmq.net/$(USER)" && echo "Deleted stored mail for $(USER) (mailserver/data/fxmq.net/$(USER))"; else echo "No stored mail for '$(USER)' (mailserver/data/fxmq.net/$(USER) not found) — nothing to delete"; fi
-
-# List every stored-mail folder (one per mailbox) under mailserver/data/fxmq.net/.
-mail-list-user-data:
->@sudo ls -1 "$(REPO)/mailserver/data/fxmq.net/" 2>/dev/null || echo "(no mail data yet — run make mail-gen)"
-
-# Default quota that make mail-gen applies to new disposable mailboxes.
-# Persisted in services/mailserver/default-quota (tracked; mail-gen reads
-# it, falling back to 1G on a fresh clone).
-mail-default-quota-set:
->@[ -n "$(QUOTA)" ] || { echo "Usage: make mail-default-quota-set QUOTA=2G"; exit 1; }
->@echo "$(QUOTA)" | grep -qE '^([0-9]+(B|k|M|G|T)|0)$$' || { echo "Invalid QUOTA — B/k/M/G/T suffix, or 0 (no limit)"; exit 1; }
->@printf '%s\n' "$(QUOTA)" > services/mailserver/default-quota
->@echo "Default quota for make mail-gen set to $(QUOTA) (services/mailserver/default-quota) — git add/commit to keep it."
-
-# Disposable mailbox: random 7-letter local part + random 16-char password
-# (see scripts/mail-gen.sh). Local part is always generated — no custom
-# names. Default quota from services/mailserver/default-quota (see
-# mail-default-quota-set). Credentials printed once, stored nowhere.
+# Mailbox with everything auto-generated when the field is empty: MAIL =
+# custom address or local part (empty = random 7-letter), PWD = custom
+# password (empty = random 16-char, printed once), QUOTA = custom quota
+# (empty = default from services/mailserver/default-quota).
 mail-gen:
->@bash scripts/mail-gen.sh
+>@bash scripts/mail-gen.sh "$(MAIL)" "$(if $(filter command line,$(origin PWD)),$(PWD))" "$(QUOTA)"
 
 # Disposable forwarding alias: random 7-digit local part forwarding to TO
-# (see scripts/mail-alias-gen.sh). No mailbox is consumed; delete with
-# mail-alias-del (needs ALIAS + TO).
-mail-alias-gen:
->@[ -n "$(TO)" ] || { echo "Usage: make mail-alias-gen TO=target@example.com"; exit 1; }
+# (see scripts/mail-alias-gen.sh). No mailbox is consumed; same-domain
+# targets are refused by the script (see docs/GUIDE.md).
+mail-gen-alias:
+>@[ -n "$(TO)" ] || { echo "Usage: make mail-gen-alias TO=target@example.com"; exit 1; }
 >@bash scripts/mail-alias-gen.sh "$(TO)"
 
-mail-alias-del:
->@[ -n "$(ALIAS)" ] && [ -n "$(TO)" ] || { echo "Usage: make mail-alias-del ALIAS=x@fxmq.net TO=target@example.com"; exit 1; }
->@docker exec mailserver setup alias del "$(ALIAS)" "$(TO)"
+# Delete an address AND all its stored mailbox data (DMS never deletes
+# Maildirs on its own — this removes the folder under
+# mailserver/data/fxmq.net/<local>/ too).
+mail-del:
+>@[ -n "$(MAIL)" ] || { echo "Usage: make mail-del MAIL=name@fxmq.net"; exit 1; }
+>@docker exec mailserver setup email del "$(MAIL)" && \
+  local=$${MAIL%@*}; \
+  if [ -d "$(REPO)/mailserver/data/fxmq.net/$$local" ]; then \
+    sudo rm -rf "$(REPO)/mailserver/data/fxmq.net/$$local" && echo "stored mail removed (mailserver/data/fxmq.net/$$local)"; \
+  else echo "no stored mail to remove"; fi
 
-mail-alias-list:
->@docker exec mailserver setup alias list
+# Remove one target from an alias (DMS needs both).
+mail-del-alias:
+>@[ -n "$(FROM)" ] && [ -n "$(TO)" ] || { echo "Usage: make mail-del-alias FROM=x@fxmq.net TO=target@example.com"; exit 1; }
+>@docker exec mailserver setup alias del "$(FROM)" "$(TO)"
+
+# Quota setter: with MAIL = per-mailbox quota; without MAIL = the default
+# quota that mail-gen applies (persisted in services/mailserver/default-quota).
+# B/k/M/G/T suffix or 0 (no limit).
+mail-quota:
+>@[ -n "$(QUOTA)" ] || { echo "Usage: make mail-quota [MAIL=name@fxmq.net] QUOTA=2G (MAIL empty = set the default for mail-gen)"; exit 1; }
+>@echo "$(QUOTA)" | grep -qE '^([0-9]+(B|k|M|G|T)|0)$$' || { echo "Invalid QUOTA — B/k/M/G/T suffix, or 0 (no limit)"; exit 1; }
+>@if [ -n "$(MAIL)" ]; then docker exec mailserver setup quota set "$(MAIL)" "$(QUOTA)"; \
+  else printf '%s\n' "$(QUOTA)" > services/mailserver/default-quota && echo "default quota for mail-gen set to $(QUOTA) (services/mailserver/default-quota) — git add/commit to keep it"; fi
+
+# Rotate a mailbox password. PWD empty = auto-generate a 16-char password and
+# print it once. (PWD is make's cwd builtin — only a command-line PWD= is used.)
+mail-password:
+>@[ -n "$(MAIL)" ] || { echo "Usage: make mail-password MAIL=name@fxmq.net [PWD=…]"; exit 1; }
+>@if [ "$(origin PWD)" = "command line" ] && [ -n "$(PWD)" ]; then \
+    docker exec mailserver setup email update "$(MAIL)" "$(PWD)"; \
+  else p=$$(openssl rand -base64 12 | tr -d '\n'); \
+    docker exec mailserver setup email update "$(MAIL)" "$$p" && echo "New password for $(MAIL): $$p"; fi
+
+# Card for one address: existence, quota (dovecot-quotas.cf), webmail URL.
+# The password is a hash and cannot be shown — rotate with mail-password.
+mail-card:
+>@[ -n "$(MAIL)" ] || { echo "Usage: make mail-card MAIL=name@fxmq.net"; exit 1; }
+>@local=$${MAIL%@*}; \
+  if docker exec mailserver setup email list | grep -q "^[* ]*$$local@"; then \
+    echo "address:  $(MAIL) (exists)"; \
+    q=$$(grep "^$(MAIL):" "$(REPO)/mailserver/config/dovecot-quotas.cf" 2>/dev/null | cut -d: -f2); \
+    echo "quota:    $${q:-unlimited}"; \
+    echo "website:  https://mail.fxmq.net (login with local part '$$local')"; \
+    echo "password: hashed — not retrievable; rotate with make mail-password MAIL=$(MAIL)"; \
+  else echo "address:  $(MAIL) — NOT found (use make mail-gen [MAIL=…])"; fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PufferPanel accounts (CLI `pufferpanel user` — binary at /pufferpanel/bin/)
