@@ -10,12 +10,12 @@
 # containers or service names are assumed. Files are only touched when the
 # state actually differs; every edit is backed up to /root/optimize-backup-*.
 #
-# Style mirrors install.sh / storage.sh: welcome banner + description, a few
-# input prompts at the beginning (with defaults, skipped when env vars or
-# --yes are set), then fully unattended work. At the end any failures and
-# manual steps are reported with a problem + hint each; every time you press
-# Enter the script re-checks them, clears the solved ones, and only prints
-# SUCCESS when no issues remain.
+# Style mirrors install.sh / storage.sh: welcome banner + description, no
+# interactive prompts (every choice is auto-detected or env-overridable),
+# fully unattended work. At the end any failures and manual steps are
+# reported with a problem + hint each; every time you press Enter the script
+# re-checks them, clears the solved ones, and only prints SUCCESS when no
+# issues remain.
 #
 # Sources merged: OPTIMIZE.md (Debian 13 setup), the repo's tuned values
 # (config/sysctl, docker daemon, dnsmasq cache, storage-box swap), `make
@@ -24,16 +24,17 @@
 # fstrim, THP=madvise, IRQ balance, earlyoom).
 #
 # Usage (as root):
-#   bash scripts/optimize.sh                # interactive: prompts then unattended
-#   bash scripts/optimize.sh --yes          # no prompts, allow package installs
+#   bash scripts/optimize.sh                # fully automatic (no prompts)
+#   bash scripts/optimize.sh --yes          # same, non-interactive
 #   bash scripts/optimize.sh --dry-run      # print the plan, change nothing
 #   bash scripts/optimize.sh --verify       # re-check applied state only
 #
-# Env overrides: SWAP_GB= (default RAM/3 rounded up, recreated every run;
-# 0 = skip swap) NOATIME=0/1 FORCE_FSTRIM=0/1
+# No interactive prompts. Auto choices: swap = RAM/3 rounded up (recreated only
+# when the live size differs), noatime/nodiratime on, SSD/HDD auto-detected
+# (nvme name, rotational flag, discard support) -> SSD gets fstrim, HDD gets
+# SETRA. Env overrides: SWAP_GB= (0 = skip swap) NOATIME=0/1 FORCE_FSTRIM=0/1
 # WITH_IRQBALANCE=0/1 WITH_EARLYOOM=0/1 (both auto-install; 0 = opt out)
-# SETRA=<sectors> (HDD readahead via blockdev --setra; auto-applies 512 on
-# rotational disks with no prompt; 0 = skip)
+# SETRA=<sectors> (HDD readahead via blockdev --setra; auto 512 on HDD; 0 = skip)
 # WITH_TUNED=0/1 (tuned auto profile via 'tuned-adm recommend'; tuned keeps its
 # unique values, our sysctl values override it on conflicting keys — tuned's
 # sysctl plugin re-applies /etc/sysctl.d and defers to it by design)
@@ -67,7 +68,7 @@ BACKUP_DIR="${BACKUP_DIR:-/root/optimize-backup-$TS}"
 ERR_TAGS=()
 declare -A ERR_DETAIL=()
 CHANGED=0   # any config actually written this run -> reboot shows as a manual step
-NPROC=1; MEM_GB=1; MEM_KB=0; MIN_FREE_KB=0; SWAP_DEF=4; HAS_DOCKER=0; HAS_DNSMASQ=0; ROT=""; ACTIVE_SWAP=""; SSD=0; SRA_DEV=""; SETRA=""
+NPROC=1; MEM_GB=1; MEM_KB=0; MIN_FREE_KB=0; SWAP_DEF=4; HAS_DOCKER=0; HAS_DNSMASQ=0; ROOT_DEV=""; KIND="unknown"; ACTIVE_SWAP=""; SSD=0; SETRA=""
 
 log()  { echo "[$(date +%H:%M:%S)] $*"; }
 fail() {
@@ -122,6 +123,17 @@ append_lines() { # path, lines... — returns 0 when appended/would-append, 1 wh
 }
 
 # ------------------------------------------------------------------ detection
+disk_kind() { # root-disk SSD/HDD: nvme name => ssd; rotational=0 => ssd;
+  # discard-capable => ssd; otherwise hdd (VirtIO without discard reports hdd)
+  local dev="$1" rot disc
+  case "$dev" in nvme*) echo ssd; return;; esac
+  rot="$(cat "/sys/block/$dev/queue/rotational" 2>/dev/null)"
+  [ "$rot" = 0 ] && { echo ssd; return; }
+  disc="$(cat "/sys/block/$dev/queue/discard_max_bytes" 2>/dev/null)"
+  { [ -n "$disc" ] && [ "$disc" -gt 0 ]; } 2>/dev/null && { echo ssd; return; }
+  echo hdd
+}
+
 detect() {
   NPROC="$(nproc)"; MEM_GB="$(awk '/MemTotal/{printf "%d", $2/1024/1024}' /proc/meminfo)"; [ -z "$MEM_GB" ] && MEM_GB=1
   MEM_KB="$(awk '/MemTotal/{print $2}' /proc/meminfo)"; [ -z "$MEM_KB" ] && MEM_KB=$(( MEM_GB * 1024 * 1024 ))
@@ -129,42 +141,28 @@ detect() {
   SWAP_DEF=$(( (MEM_KB / 3 + 1048575) / 1048576 ))   # RAM/3 rounded up to whole GB
   ok command -v docker && HAS_DOCKER=1 || HAS_DOCKER=0
   ok command -v dnsmasq && HAS_DNSMASQ=1 || HAS_DNSMASQ=0
-  ROT="$(cat /sys/block/*/queue/rotational 2>/dev/null | sort -u)"
   ACTIVE_SWAP="$(swapon --show --noheadings 2>/dev/null)"
-  log "detected: ${NPROC} cpu, ~${MEM_GB} GB RAM, docker=${HAS_DOCKER}, dnsmasq=${HAS_DNSMASQ}, swap=${ACTIVE_SWAP:+active}"
+  local SRC="$(findmnt -no SOURCE /)"
+  ROOT_DEV="$(lsblk -no PKNAME "$SRC" 2>/dev/null | head -1)"
+  [ -n "$ROOT_DEV" ] || ROOT_DEV="$(echo "$SRC" | sed 's|/dev/||; s/p[0-9]*$//; s/[0-9]*$//')"
+  KIND="$(disk_kind "$ROOT_DEV")"
+  log "detected: ${NPROC} cpu, ~${MEM_GB} GB RAM, docker=${HAS_DOCKER}, dnsmasq=${HAS_DNSMASQ}, swap=${ACTIVE_SWAP:+active}, disk=${ROOT_DEV} (${KIND})"
 }
 
 # ------------------------------------------------------------------ prompts (beginning only)
-ask_inputs() {
-  # non-interactive / plan / verify: use defaults, never prompt
-  if [ "$DRY" = 1 ] || [ "$VERIFY" = 1 ] || [ "$YES" = 1 ]; then
-    SWAP_GB="${SWAP_GB:-$SWAP_DEF}"; NOATIME="${NOATIME:-1}"
-    [ -n "${FORCE_FSTRIM:-}" ] || FORCE_FSTRIM=0
-    [ -n "${SETRA:-}" ] || { [ "$ROT" = 1 ] && SETRA=512 || SETRA=0; }
-    [ -n "${WITH_IRQBALANCE:-}" ] || WITH_IRQBALANCE=1
-    [ -n "${WITH_EARLYOOM:-}" ] || WITH_EARLYOOM=1
-    [ -n "${WITH_TUNED:-}" ] || WITH_TUNED=1
-    local YES_NOTE=""; [ "$YES" = 1 ] && YES_NOTE=" (--yes)"
-    log "plan: swap=${SWAP_GB}G (RAM/3 rounded up, recreated) noatime=${NOATIME} fstrim=${FORCE_FSTRIM} setra=${SETRA} irqbalance=${WITH_IRQBALANCE} earlyoom=${WITH_EARLYOOM} tuned=${WITH_TUNED}${YES_NOTE}"
-    return 0
-  fi
-  if [ -z "$SWAP_GB" ]; then
-    read -rp "swapfile size in GB [$SWAP_DEF (auto = RAM/3 rounded up)]: " SWAP_GB
-    SWAP_GB="${SWAP_GB:-$SWAP_DEF}"
-  fi
-  case "$SWAP_GB" in ''|*[!0-9]*) echo "invalid swap size"; exit 1;; esac
-  if [ -z "$NOATIME" ]; then
-    read -rp "add noatime,nodiratime to the root mount? [Y/n] " a
-    case "${a:-y}" in y|Y|yes) NOATIME=1;; *) NOATIME=0;; esac
-  fi
-  [ -n "${FORCE_FSTRIM:-}" ] || FORCE_FSTRIM=0   # fstrim stays an env opt-in (FORCE_FSTRIM=1)
-  # SETRA: no prompt — auto-applies 512 sectors when the disk reports rotational
-  [ -n "${SETRA:-}" ] || { [ "$ROT" = 1 ] && SETRA=512 || SETRA=0; }
-  # irqbalance + earlyoom: auto-installed when missing (opt out with =0)
+ask_inputs() { # no prompts — every choice is auto-detected or env-overridable
+  SWAP_GB="${SWAP_GB:-$SWAP_DEF}"
+  case "$SWAP_GB" in ''|*[!0-9]*) echo "invalid SWAP_GB: $SWAP_GB" >&2; exit 1;; esac
+  NOATIME="${NOATIME:-1}"
+  [ -n "${FORCE_FSTRIM:-}" ] || FORCE_FSTRIM=0
+  SSD=0; [ "$KIND" = ssd ] && SSD=1; [ "$FORCE_FSTRIM" = 1 ] && SSD=1
+  [ -n "${SETRA:-}" ] || { [ "$KIND" = hdd ] && SETRA=512 || SETRA=0; }
+  # irqbalance + earlyoom + tuned: auto-installed when missing (opt out with =0)
   [ -n "${WITH_IRQBALANCE:-}" ] || WITH_IRQBALANCE=1
   [ -n "${WITH_EARLYOOM:-}" ] || WITH_EARLYOOM=1
   [ -n "${WITH_TUNED:-}" ] || WITH_TUNED=1
-  log "plan: swap=${SWAP_GB}G (RAM/3 rounded up, recreated) noatime=${NOATIME} fstrim=${FORCE_FSTRIM} setra=${SETRA} irqbalance=${WITH_IRQBALANCE} earlyoom=${WITH_EARLYOOM} tuned=${WITH_TUNED}"
+  local YES_NOTE=""; [ "$YES" = 1 ] && YES_NOTE=" (--yes)"
+  log "plan: swap=${SWAP_GB}G (RAM/3 rounded up) noatime=${NOATIME} disk=${ROOT_DEV} (${KIND}) setra=${SETRA} fstrim=${FORCE_FSTRIM} irqbalance=${WITH_IRQBALANCE} earlyoom=${WITH_EARLYOOM} tuned=${WITH_TUNED}${YES_NOTE}"
 }
 
 # ------------------------------------------------------------------ 1. apt cleanup (make cleanup minus backups)
@@ -274,18 +272,24 @@ DefaultTasksMax=infinity
 
 # ------------------------------------------------------------------ 4. swap
 swap_tune() {
-  log "swap: recreating the swapfile (RAM/3 rounded up, forced each run)"
+  log "swap: auto size = RAM/3 rounded up (${SWAP_DEF}G)"
   local SIZE="${SWAP_GB:-$SWAP_DEF}"
   if [ "$SIZE" -le 0 ]; then log "  skipped: size 0"; return 0; fi
+  local target=$(( SIZE * 1073741824 )) cur=""
+  [ -f /swapfile ] && cur="$(stat -c %s /swapfile)"
+  if [ -n "$cur" ] && [ "$cur" = "$target" ] && [ -n "$ACTIVE_SWAP" ]; then
+    log "  ok: /swapfile already ${SIZE}G (matches auto size) — skipping recreate"
+    return 0
+  fi
   if [ "$DRY" = 1 ] || [ "$VERIFY" = 1 ]; then
-    log "  would recreate /swapfile ${SIZE}G"
+    log "  would recreate /swapfile ${SIZE}G (current: ${cur:-none})"
     return 0
   fi
   swapoff -a 2>/dev/null; rm -f /swapfile
   if fallocate -l "${SIZE}G" /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=$(( SIZE * 1024 )) status=none; then
     chmod 600 /swapfile && mkswap /swapfile >/dev/null && swapon /swapfile || { fail swap "mkswap/swapon failed"; return; }
     append_lines /etc/fstab '/swapfile none swap defaults 0 0'
-    log "  ok: /swapfile ${SIZE}G active (recreated)"
+    log "  ok: /swapfile ${SIZE}G active (recreated — size differed)"
   else
     fail swap "could not allocate /swapfile"
   fi
@@ -397,9 +401,11 @@ noatime_tune() {
 
 # ------------------------------------------------------------------ 10. fstrim
 fstrim_tune() {
-  if [ -n "$ROT" ] && [ "$ROT" != 1 ]; then SSD=1; elif [ "$FORCE_FSTRIM" = 1 ]; then SSD=1; else SSD=0; fi
-  if [ "$SSD" = 0 ]; then log "fstrim: skipped (disks report rotational — use FORCE_FSTRIM=1 if SSD-backed)"; return 0; fi
-  log "fstrim: enabling weekly trim"
+  if [ "$SSD" = 0 ]; then
+    log "fstrim: skipped (disk ${ROOT_DEV} = ${KIND}; fstrim is for SSD — FORCE_FSTRIM=1 to override)"
+    return 0
+  fi
+  log "fstrim: enabling weekly trim (${ROOT_DEV} is SSD)"
   if [ "$DRY" = 0 ] && [ "$VERIFY" = 0 ]; then
     systemctl enable --now fstrim.timer 2>/dev/null || fail fstrim "timer enable failed"
     fstrim --fstab -v 2>/dev/null || true
@@ -409,21 +415,16 @@ fstrim_tune() {
 
 # ------------------------------------------------------------------ 10b. HDD readahead (opt-in: SETRA=<sectors>, only for rotational disks)
 setra_tune() {
-  [ "${SETRA:-0}" != 0 ] || { log "setra: skipped (SETRA unset/0 — HDD readahead is opt-in)"; return 0; }
+  [ "${SETRA:-0}" != 0 ] || { log "setra: skipped (disk ${ROOT_DEV} = ${KIND}; SETRA is for HDD — SETRA=<n> to force)"; return 0; }
   case "$SETRA" in ''|*[!0-9]*) fail setra "invalid SETRA value"; return;; esac
-  local SRC ROTDEV KB
-  SRC="$(findmnt -no SOURCE /)"
-  SRA_DEV="$(lsblk -no PKNAME "$SRC" 2>/dev/null | head -1)"
-  [ -n "$SRA_DEV" ] || SRA_DEV="$(echo "$SRC" | sed 's|/dev/||; s/p[0-9]*$//; s/[0-9]*$//')"
-  ROTDEV="$(cat "/sys/block/$SRA_DEV/queue/rotational" 2>/dev/null)"
-  [ "$ROTDEV" = 1 ] || { log "  skipped: /dev/$SRA_DEV not rotational (readahead is an HDD tuning)"; return 0; }
-  KB=$(( SETRA * 512 / 1024 ))
+  [ "$KIND" = hdd ] || log "  note: ${ROOT_DEV} detected as ${KIND} — SETRA applied because SETRA=$SETRA is set"
+  local KB=$(( SETRA * 512 / 1024 ))
   if [ "$DRY" = 0 ] && [ "$VERIFY" = 0 ]; then
-    blockdev --setra "$SETRA" "/dev/$SRA_DEV" 2>/dev/null || { fail setra "blockdev --setra failed"; return; }
+    blockdev --setra "$SETRA" "/dev/$ROOT_DEV" 2>/dev/null || { fail setra "blockdev --setra failed"; return; }
   fi
-  write_file /etc/udev/rules.d/99-readahead.rules "ACTION==\"add\", SUBSYSTEM==\"block\", KERNEL==\"$SRA_DEV\", ATTR{queue/read_ahead_kb}=\"$KB\"
+  write_file /etc/udev/rules.d/99-readahead.rules "ACTION==\"add\", SUBSYSTEM==\"block\", KERNEL==\"$ROOT_DEV\", ATTR{queue/read_ahead_kb}=\"$KB\"
 " >/dev/null
-  log "  ok: readahead ${SETRA} sectors (${KB} kB) on /dev/$SRA_DEV (runtime + udev persistence)"
+  log "  ok: readahead ${SETRA} sectors (${KB} kB) on /dev/$ROOT_DEV (runtime + udev persistence)"
 }
 
 # ------------------------------------------------------------------ 11. THP -> madvise
@@ -546,8 +547,7 @@ recheck() {
     noatime)      [ "$NOATIME" = 0 ] || findmnt -no OPTIONS / | grep -q noatime ;;
     fstrim)       [ "$SSD" = 0 ] || systemctl is-enabled --quiet fstrim.timer ;;
     setra)        [ "${SETRA:-0}" = 0 ] && return 0
-                  local D="${SRA_DEV:-$(lsblk -no PKNAME "$(findmnt -no SOURCE /)" 2>/dev/null | head -1)}"
-                  [ -n "$D" ] && [ "$(cat "/sys/block/$D/queue/read_ahead_kb" 2>/dev/null)" = "$(( SETRA * 512 / 1024 ))" ] ;;
+                  [ -n "$ROOT_DEV" ] && [ "$(cat "/sys/block/$ROOT_DEV/queue/read_ahead_kb" 2>/dev/null)" = "$(( SETRA * 512 / 1024 ))" ] ;;
     thp)          grep -q '\[madvise\]' /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null \
                     && { [ ! -r /sys/kernel/mm/transparent_hugepage/defrag ] || grep -q '\[madvise\]' /sys/kernel/mm/transparent_hugepage/defrag; } ;;
     pkg)          { [ "${WITH_IRQBALANCE:-1}" = 0 ] || ok command -v irqbalance; } && { [ "${WITH_EARLYOOM:-1}" = 0 ] || ok command -v earlyoom; } ;;
@@ -655,8 +655,8 @@ success_block() {
   echo ""
   echo " Follow-ups (none block the service):"
   [ "$CHANGED" = 1 ] && echo "   1. Reboot when convenient: sudo reboot (never done automatically; applies systemd limits to new services)"
-  [ -n "$ROT" ] && [ "$ROT" = 1 ] && [ "$FORCE_FSTRIM" != 1 ] && \
-    echo "   2. If the disk is actually SSD-backed (VirtIO often reports rotational): FORCE_FSTRIM=1 bash scripts/optimize.sh"
+  [ "$KIND" = hdd ] && [ "$FORCE_FSTRIM" != 1 ] && \
+    echo "   2. If $ROOT_DEV is actually SSD-backed (VirtIO without discard reports hdd): FORCE_FSTRIM=1 bash scripts/optimize.sh"
   [ "$WITH_EARLYOOM" = 1 ] && echo "   earlyoom guards against OOM hangs (low-RAM host)."
   echo "=============================================================="
 }

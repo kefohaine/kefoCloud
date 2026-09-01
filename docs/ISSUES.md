@@ -354,7 +354,7 @@ Resolved items grouped by month. One line per item, aggressively short.
 
 ### Sep 2026 — edge duplicate cleanup
 - **Duplicate edge container removed** — interrupted `--force-recreate` (2026-09-01) left a second Caddy running as `<old-container-id>_fxmq.net`; both removed, `make dok-recreate-fxmq.net` verified non-duplicating (4× runs incl. forced image rebuild), stale image pruned (see Lessons learned).
-- **`optimize.sh` universal VPS optimizer (install.sh/storage.sh style)** — banner + defaulted prompts + unattended run + Enter-refresh error loop → SUCCESS only when green; merges OPTIMIZE.md, repo tuning and `make cleanup`'s apt/docker part; applied here — swap recreated every run at RAM/3 rounded up (4G), noatime, THP=madvise (+defrag), nmi_watchdog/autogroup/min_free_kbytes(1%)/core_pattern sysctls, apt/docker cleanup, tuned(auto virtual-guest)+irqbalance+earlyoom auto-installed with sysctl-wins-on-conflicts model, SETRA auto on rotational disks (see GUIDE gotchas).
+- **`optimize.sh` universal VPS optimizer (install.sh/storage.sh style)** — banner, **zero prompts**, unattended run + Enter-refresh error loop → SUCCESS only when green; merges OPTIMIZE.md, repo tuning and `make cleanup`'s apt/docker part; applied here — swap auto RAM/3 rounded up (recreated only when size differs; 4G), noatime auto, THP=madvise (+defrag), nmi_watchdog/autogroup/min_free_kbytes(1%)/core_pattern sysctls, apt/docker cleanup, tuned(auto virtual-guest)+irqbalance+earlyoom auto-installed with sysctl-wins-on-conflicts model, SSD/HDD auto-detect → fstrim or SETRA (vda = hdd → SETRA active) (see GUIDE gotchas).
 
 ---
 
