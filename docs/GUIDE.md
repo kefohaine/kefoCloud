@@ -63,7 +63,7 @@ make nc-capture       # snapshot live NC users/groups/quotas into config/nextclo
 make storage          # move Nextcloud's live datadirectory to the storage VPS (NFS over the tailnet; PG stays on fxmq) — prompts: ssh password + tailscale auth key + allocation size (scripts/storage.sh)
 make dok-recreate-nextcloud-db  # force-recreate the Nextcloud PostgreSQL unit (docker-compose.db.yml — stays on this host; the 1 TB VPS serves files via Garage instead, see make storage)
 make install-cron     # install /etc/cron.d/nextcloud (Nextcloud occ cron, every 5 min)
-make mail-add-user USER=name@fxmq.net  # create a mailbox — password is prompted via read -s, never on the command line
+make mail-add-user USER=name@fxmq.net [QUOTA=…]  # create a mailbox — password is prompted via read -s, never on the command line; applies the default quota from services/mailserver/default-quota (same as mail-gen), override with QUOTA=
 make mail-passwd USER=name@fxmq.net    # rotate a mailbox password (also prompted)
 make mail-del-user USER=name@fxmq.net  # delete mailbox + aliases + quota
 make mail-list-users                   # list mailboxes (with quota usage)

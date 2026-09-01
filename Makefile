@@ -268,9 +268,10 @@ install-hooks:
 .PHONY: mail-add-user mail-passwd mail-del-user mail-del-user-data mail-list-users mail-list-user-data mail-gen mail-alias-gen mail-alias-del mail-alias-list mail-quota-set mail-default-quota-set
 
 mail-add-user:
->@[ "$(origin USER)" = "command line" ] || { echo "Usage: make mail-add-user USER=name@fxmq.net"; exit 1; }
+>@[ "$(origin USER)" = "command line" ] || { echo "Usage: make mail-add-user USER=name@fxmq.net [QUOTA=100M]"; exit 1; }
 >@read -s -p "Password for $(USER): " pass; echo; \
-  docker exec mailserver setup email add "$(USER)" "$$pass"
+  docker exec mailserver setup email add "$(USER)" "$$pass" && \
+  docker exec mailserver setup quota set "$(USER)" "$(if $(QUOTA),$(QUOTA),$(shell cat services/mailserver/default-quota 2>/dev/null || echo 1G))"
 
 mail-passwd:
 >@[ "$(origin USER)" = "command line" ] || { echo "Usage: make mail-passwd USER=name@fxmq.net"; exit 1; }
@@ -986,7 +987,7 @@ help:
 >@echo "  │  make mail-alias-gen TO=…     disposable forwarding alias: random 7-digit address → TO (external only — same-domain refused)"
 >@echo "  │  make mail-alias-del ALIAS=… TO=…   remove a target from an alias (DMS needs both)"
 >@echo "  │  make mail-alias-list         list aliases"
->@echo "  │  make mail-add-user USER=…    named mailbox (password prompted via read -s)"
+>@echo "  │  make mail-add-user USER=… [QUOTA=…]    named mailbox (password prompted; default quota from services/mailserver/default-quota, same as mail-gen)"
 >@echo "  │  make mail-passwd USER=…      rotate a mailbox password (prompted)"
 >@echo "  │  make mail-del-user USER=…    delete a mailbox"
 >@echo "  │  make mail-list-users         list mailboxes"
