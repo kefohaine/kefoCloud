@@ -582,7 +582,7 @@ nextcloud_setup() {
   # users are created with a generated password printed ONCE at the end (the
   # pre-wipe passwords lived in the wiped DB — hand the new ones to the users).
   if [ -f "$REPO/repo/config/nextcloud/users.txt" ]; then
-    while IFS='|' read -r uid quota _; do
+    while IFS='|' read -r uid quota email _; do
       [ -n "$uid" ] || continue
       case "$uid" in \#*) continue ;; esac
       if ! docker exec -u www-data nextcloud php occ user:list 2>/dev/null | grep -q "^  - $uid:"; then
@@ -591,6 +591,7 @@ nextcloud_setup() {
           && echo "[install] new user $uid — password: $NP (share with them)"
       fi
       [ -n "$quota" ] && docker exec -u www-data nextcloud php occ user:setting "$uid" files quota "$quota" >/dev/null 2>&1
+      [ -n "$email" ] && docker exec -u www-data nextcloud php occ user:setting "$uid" settings email "$email" >/dev/null 2>&1
     done < "$REPO/repo/config/nextcloud/users.txt"
   fi
 
