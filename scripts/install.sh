@@ -226,7 +226,7 @@ EOF
   ufw allow 465/tcp >/dev/null 2>&1
   ufw allow 587/tcp >/dev/null 2>&1
   ufw allow 993/tcp >/dev/null 2>&1
-  # Nextcloud Talk: TURN/STUN + relay range (turn.$DOMAIN must stay DNS-only).
+  # Nextcloud Talk: TURN/STUN + relay range (talk.$DOMAIN must stay DNS-only).
   ufw allow 3478/udp >/dev/null 2>&1
   ufw allow 3478/tcp >/dev/null 2>&1
   ufw allow 5349/tcp >/dev/null 2>&1
@@ -560,24 +560,24 @@ nextcloud_setup() {
   docker exec -u www-data nextcloud php occ app:disable app_api >/dev/null 2>&1 || true
 
   # Talk signaling — ONE entry (the public URL): NC 34 deprecates multiple
-  # high-performance backends. Clients get wss://turn.$DOMAIN/signaling; the
+  # high-performance backends. Clients get wss://talk.$DOMAIN/signaling; the
   # signaling server reaches NC back via its own [backend1] urls (extra_hosts),
   # so no internal URL registration is needed.
   local sig
   sig=$(docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null)
-  if ! echo "$sig" | grep -q "https://turn.$DOMAIN/signaling"; then
-    docker exec -u www-data nextcloud php occ talk:signaling:add "https://turn.$DOMAIN/signaling" "$SIGNALING_SECRET" >/dev/null 2>&1 || true
+  if ! echo "$sig" | grep -q "https://talk.$DOMAIN/signaling"; then
+    docker exec -u www-data nextcloud php occ talk:signaling:add "https://talk.$DOMAIN/signaling" "$SIGNALING_SECRET" >/dev/null 2>&1 || true
   fi
   docker exec -u www-data nextcloud php occ talk:signaling:remove "http://172.22.0.12:8080" >/dev/null 2>&1 || true
 
   # Talk TURN/STUN — udp+tcp on 3478, tls on 5349 (secret matches turnserver.conf).
   local trn
   trn=$(docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null)
-  if ! echo "$trn" | grep -q "turn.$DOMAIN:3478"; then
-    docker exec -u www-data nextcloud php occ talk:turn:add turn "turn.$DOMAIN:3478" --secret "$TURN_SECRET" --udp --tcp >/dev/null 2>&1 || true
+  if ! echo "$trn" | grep -q "talk.$DOMAIN:3478"; then
+    docker exec -u www-data nextcloud php occ talk:turn:add turn "talk.$DOMAIN:3478" --secret "$TURN_SECRET" --udp --tcp >/dev/null 2>&1 || true
   fi
-  if ! echo "$trn" | grep -q "turn.$DOMAIN:5349"; then
-    docker exec -u www-data nextcloud php occ talk:turn:add turns "turn.$DOMAIN:5349" --secret "$TURN_SECRET" >/dev/null 2>&1 || true
+  if ! echo "$trn" | grep -q "talk.$DOMAIN:5349"; then
+    docker exec -u www-data nextcloud php occ talk:turn:add turns "talk.$DOMAIN:5349" --secret "$TURN_SECRET" >/dev/null 2>&1 || true
   fi
 
   # Background jobs via the host cron (config/cron/nextcloud, installed by install-config).
@@ -650,9 +650,9 @@ nextcloud_setup() {
   # Verify what the smoke/operational docs assert.
   docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN" \
     || fail nextcloud_setup "mail_smtphost not set"
-  docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://turn.$DOMAIN/signaling" \
+  docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://talk.$DOMAIN/signaling" \
     || fail nextcloud_setup "talk signaling not registered"
-  docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "turn.$DOMAIN:3478" \
+  docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "talk.$DOMAIN:3478" \
     || fail nextcloud_setup "talk turn not registered"
 }
 
@@ -745,7 +745,7 @@ cf_dns() {
   # UDP/TCP 3478/5349 + 49160-49200, SMTP/IMAP and the MC game ports also
   # bypass the CF proxy (HTTP(S) only). Caddy still gets their LE certs
   # via DNS-01.
-  for h in turn mail mc; do
+  for h in talk mail mc; do
     local rid
     rid=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
       "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$h.$DOMAIN" | jq -r '.result[0].id // empty')
@@ -765,11 +765,11 @@ cf_dns() {
 }
 
 issue_certs() {
-  for h in cloud vault kuma turn www mail mc; do
+  for h in cloud vault kuma talk www mail mc; do
     curl -sk --resolve "$h.$DOMAIN:443:127.0.0.1" -o /dev/null "https://$h.$DOMAIN/" >>"$LOG" 2>&1 || true
     sleep 3
   done
-  for h in cloud vault kuma turn www mail mc; do
+  for h in cloud vault kuma talk www mail mc; do
     local iss
     iss=$(echo | timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$h.$DOMAIN" 2>/dev/null \
       | openssl x509 -noout -issuer 2>/dev/null | cut -d'=' -f2-)
@@ -917,7 +917,7 @@ recheck() {
     cert_*) local h=${1#cert_}; echo | timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$h.$DOMAIN" 2>/dev/null | openssl x509 -noout -issuer 2>/dev/null | grep -q "Let's Encrypt" ;;
     sweep) ! grep -rl 'jehpok' "$REPO" --exclude-dir=.git 2>/dev/null | grep -qv "^$REPO/scripts/install.sh$" ;;
     sslmode) ssl_mode_full ;;
-    nextcloud_setup) docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN" && docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://turn.$DOMAIN/signaling" && docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "turn.$DOMAIN:3478" ;;
+    nextcloud_setup) docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN" && docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://talk.$DOMAIN/signaling" && docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "talk.$DOMAIN:3478" ;;
     dkim_setup)      dig +short TXT "mail._domainkey.$DOMAIN" @"$(dig +short NS "$DOMAIN" | head -1)" 2>/dev/null | grep -q "v=DKIM1" ;;
     vaultwarden_setup) docker exec mailserver setup email list 2>/dev/null | grep -qiE "^[* ] *vaultwarden@$DOMAIN( |\$|\[)" ;;
     panel_servers)  [ "$(sudo ls /var/www/custom/projects/homelab/puffer/data/servers/*.json 2>/dev/null | wc -l)" -gt 0 ] ;;
@@ -992,14 +992,14 @@ success_block() {
   echo "   Uptime Kuma  https://kuma.$DOMAIN       admin / ${KUMA_PASS:-<see kuma/admin-pass.txt>}"
   echo "   PufferPanel  https://mc.$DOMAIN/panel   admin / ${PANEL_PASS:-<see puffer/admin-pass.txt>}"
   echo "   Webmail      https://mail.$DOMAIN       (mailboxes via make mail-gen)"
-  echo "   Shell        https://shell.$DOMAIN      (tailnet-only)"
+  echo "   Shell        https://tail.$DOMAIN      (tailnet-only)"
   echo "   VPS IP ${VPS_IP:-?}   Tailscale IP ${TS_IP:-?}"
   echo ""
   echo " SSH: root and '$OP_USER' both log in with keys (tailnet-only, port 22)."
   echo ""
   echo " Follow-ups (none block the install):"
   echo "   1. Tailscale split-DNS: admin console -> DNS -> add $DOMAIN -> ${TS_IP:-<tailscale IP>}"
-  echo "      so shell.$DOMAIN resolves for tailnet devices (dnsmasq on the VPS already answers it)"
+  echo "      so tail.$DOMAIN resolves for tailnet devices (dnsmasq on the VPS already answers it)"
   echo "   2. (optional) Cloudflare WAF rule skip for cloud.$DOMAIN (desktop sync)"
   echo "   3. Git remote 'homelab' points at git@github.com:friedutch/homelab.git —"
   echo "      rename the GitHub repo to match, or push will fail"
