@@ -1,6 +1,11 @@
 # Known issues and improvements
 
-Tracked for follow-up. Items marked **[needs human approval]** require a decision or credential from the operator before an agent should act. Behaviours that look like bugs but are deliberate design choices are documented as rationale in `docs/GUIDE.md` — do not "fix" them. Resolved items are recorded under `## Solved`, one sentence each.
+Tracked for follow-up. Items marked **[needs human approval]** require a decision or credential from the operator before an agent should act. Behaviours that look like bugs but are deliberate design choices are documented as rationale in `docs/GUIDE.md` — do not "fix" them. Resolved items are recorded under `#### install.sh hardcodes `admin@fxmq.net` for the PufferPanel admin  **[generalization drift]**
+- **File**: `scripts/install.sh` (panel_admin seed + smoke recheck)
+- **Problem**: rule 12 (stay global) — the panel admin email is hardcoded to `fxmq.net` while the rest of install.sh is `$DOMAIN`-driven; a fresh install for another domain still seeds an `@fxmq.net` admin, and `scripts/smoke-vhosts.sh` asserts it.
+- **Fix**: derive the admin email from `$DOMAIN` (or accept fxmq.net as canonical and document it in GUIDE); needs an operator decision on whether the panel admin domain may ever differ.
+
+## Solved`, one sentence each.
 
 ---
 
