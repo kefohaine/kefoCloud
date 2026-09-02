@@ -249,7 +249,7 @@ ensure_repo() {
   if [ -d "$REPO/.git" ]; then
     # Repo already present (re-run or pre-cloned): make sure the remote is wired.
     git -C "$REPO" remote rename origin homelab 2>/dev/null || true
-    git -C "$REPO" remote set-url homelab git@github.com:kefohaine/homelab.git 2>/dev/null || true
+    git -C "$REPO" remote set-url homelab git@github.com:kefohaine/server.git 2>/dev/null || true
     log "repo present at $REPO"
     return
   fi
@@ -271,7 +271,7 @@ EOF
     echo "============================================================"
   fi
   if GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new" \
-       git clone git@github.com:kefohaine/homelab.git "$REPO" >>"$LOG" 2>&1; then
+       git clone git@github.com:kefohaine/server.git "$REPO" >>"$LOG" 2>&1; then
     :
   else
     echo "============================================================"
@@ -283,7 +283,7 @@ EOF
     exit 1
   fi
   git -C "$REPO" remote rename origin homelab
-  git -C "$REPO" remote set-url homelab git@github.com:kefohaine/homelab.git
+  git -C "$REPO" remote set-url homelab git@github.com:kefohaine/server.git
 }
 
 prep_dirs() {
@@ -996,7 +996,7 @@ success_block() {
   echo "   1. Tailscale split-DNS: admin console -> DNS -> add $DOMAIN -> ${TS_IP:-<tailscale IP>}"
   echo "      so tail.$DOMAIN resolves for tailnet devices (dnsmasq on the VPS already answers it)"
   echo "   2. (optional) Cloudflare WAF rule skip for cloud.$DOMAIN (desktop sync)"
-  echo "   3. Git remote 'homelab' points at git@github.com:kefohaine/homelab.git —"
+  echo "   3. Git remote 'homelab' points at git@github.com:kefohaine/server.git —"
   echo "      rename the GitHub repo to match, or push will fail"
   echo "   4. Mailboxes: make mail-gen MAIL=name@$DOMAIN (or bare make mail-gen for a disposable);"
   echo "      the nextcloud@$DOMAIN SMTP sender mailbox is created automatically"
