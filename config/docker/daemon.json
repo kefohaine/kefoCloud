@@ -1,13 +1,13 @@
 {
-  "log-driver": "json-file",
-  "log-opts": {
-    "max-size": "10m",
-    "max-file": "3"
-  },
-  "storage-driver": "overlay2",
-  "default-runtime": "runc",
-  "live-restore": true,
-  "max-concurrent-downloads": 10,
-  "max-concurrent-uploads": 10,
-  "userland-proxy": false
+    "log-driver": "json-file",
+    "log-opts": {
+        "max-size": "10m",
+        "max-file": "3"
+    },
+    "storage-driver": "overlay2",
+    "default-runtime": "runc",
+    "live-restore": true,
+    "max-concurrent-downloads": 10,
+    "max-concurrent-uploads": 10,
+    "userland-proxy": false
 }

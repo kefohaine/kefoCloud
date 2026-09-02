@@ -24,8 +24,8 @@ The installer's legacy `renames()` step — which transformed a pre-migration cl
 
 ## After the script finishes
 
-1. Tailscale split-DNS (`$DOMAIN` → the new VPS Tailscale IP) is printed as a follow-up, not a blocking step — it cannot be set with just an auth key. Add it in the admin console so `shell.$DOMAIN` resolves for tailnet devices (dnsmasq on the VPS already answers it).
-2. Optional: Cloudflare WAF rule skip for `cloud.$DOMAIN` — Nextcloud desktop sync is bot-challenged otherwise (see `Intended` in `docs/ISSUES.md`).
+1. Tailscale split-DNS (`$DOMAIN` → the new VPS Tailscale IP) is printed as a follow-up, not a blocking step — it cannot be set with just an auth key. Add it in the admin console so `tail.$DOMAIN` resolves for tailnet devices (dnsmasq on the VPS already answers it).
+2. Optional: Cloudflare WAF rule skip for `cloud.$DOMAIN` — Nextcloud desktop sync is bot-challenged otherwise (rationale in `docs/GUIDE.md`).
 3. Mailboxes are not scripted — create them with `make mail-gen [MAIL=…]` (or `mail-gen-alias TO=…` for a forwarder). The app SMTP sender mailboxes used for outbound mail are created automatically by the installer: `nextcloud@$DOMAIN` and `vaultwarden@$DOMAIN`.
 4. Doc pass: done for the Aug 2026 migration — the canonical repo now carries the `fxmq.net` / `op` / `shell.` names in code, docs, and Makefile.
 
@@ -34,7 +34,7 @@ The installer's legacy `renames()` step — which transformed a pre-migration cl
 `install.sh` brings up the panel container itself (PufferPanel at `mc.$DOMAIN/panel`), creates its admin user automatically (password written to `puffer/admin-pass.txt`, same DB-insert pattern as GUIDE's admin-recovery), and drops both server templates into `puffer/data/servers/` (`07fd7727.json` browser-MC playground + `2ecfbe8c.json` the protected game server) — the daemon picks them up at boot. The game data dirs themselves stay operator-managed (no sleep/wake stack — lazymc and mc-idle-sleeper were removed 2026-08-28). To carry the servers to a new VPS:
 
 1. The repo carries everything reproducible: the server templates `config/pufferpanel/servers/{2ecfbe8c,07fd7727}.json` and the UFW ports (already in `install.sh` — `25565/tcp` is shared by both servers; one runs at a time by design). After the base install, register the file-dropped servers in the panel DB (see `docs/GUIDE.md` "Registering a file-dropped server") so they're visible in the web UI, then start the protected server once from the panel UI so the daemon creates its container.
-2. Operator-only (not in repo, copy from the old host): the game data dirs `puffer/data/servers/2ecfbe8c/` (world, jars, plugin jars, Geyser cache/locales) and `puffer/data/servers/07fd7727/` (the hand-placed `server.jar` — the paperdl build 1205 ships a broken old paperclip, see Lessons learned — plus plugins EaglerXServer/SkinsRestorer/Via family/Chunky, configs, worlds).
+2. Operator-only (not in repo, copy from the old host): the game data dirs `puffer/data/servers/2ecfbe8c/` (world, jars, plugin jars, Geyser cache/locales) and `puffer/data/servers/07fd7727/` (the hand-placed `server.jar` — the paperdl build 1205 ships a broken old paperclip, see `docs/GUIDE.md` — plus plugins EaglerXServer/SkinsRestorer/Via family/Chunky, configs, worlds).
 3. Gotchas that must hold on the new host: the panel template writes `server.properties` at install from its `ip`/`port` data fields (both templates bind `server-port=25565` — the servers share the port and must not run simultaneously); RCON disabled; the game domain's CF A record is DNS-only.
 
 ## Self-hosted mail (Docker Mailserver + Roundcube)
