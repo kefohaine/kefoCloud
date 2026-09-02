@@ -1,12 +1,14 @@
-# www.fxmq.net — landing stub + the public download drop folder + showcase indexes.
+# www.fxmq.net — static pages: an empty homepage, the public download drop
+# folder, and two showcase indexes.
+#   /           serves ./www/index.html — an empty placeholder (0 bytes);
+#               the showcases live at /1 /2, not on the homepage.
 #   /download*  Caddy file_server browse over homelab/download (mounted at
 #               /download:ro in the caddy container — drop files here).
 #   /1 /2       static showcase pages (maximalist vhost indexes) served from
 #               ./www (this dir, mounted at /etc/caddy/www) — two editions of
 #               "everything fxmq.net runs". Source HTML lives in the repo at
 #               services/fxmq.net/www/{1,2}.html.
-#   everything else, including / — plain "ok" stub (homepage stays a stub;
-#               the showcases live at /1 /2, not on the homepage).
+#   everything else — plain "ok" stub (unknown paths like /3 answer ok).
 # TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/cloud.fxmq.net.caddy).
 
 https://www.fxmq.net {
@@ -38,6 +40,12 @@ https://www.fxmq.net {
     handle @show2 {
         root * /etc/caddy/www
         rewrite /2.html
+        file_server
+    }
+    # Homepage: serve the empty index.html placeholder instead of the ok stub.
+    @home path /
+    handle @home {
+        root * /etc/caddy/www
         file_server
     }
     handle {
