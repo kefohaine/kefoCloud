@@ -27,6 +27,7 @@ https://tail.fxmq.net {
     }
     # Home page: every fxmq.net vhost as a plain list of links.
     handle / {
+        header Content-Type text/html
         respond `<!doctype html><html><head><title>fxmq.net</title></head><body style="font-family:monospace;margin:2em">
 <h1>fxmq.net</h1><ul>
 <li><a href="https://cloud.fxmq.net/">cloud.fxmq.net</a> — Nextcloud</li>
