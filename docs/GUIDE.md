@@ -232,6 +232,8 @@ The repo is owned by `op:op` (the SSH/login user). Edit directly when signed in 
 ## Git remotes
 
 - `homelab` — SSH remote (`git@github.com:kefohaine/server.git`). The only remote; use for pushes and pulls.
+- **Git identity** — all commits are authored `kefohaine <[redacted]>` (repo-local `git config`). For the GitHub contribution graph, `[redacted]` must be added + verified under GitHub → Settings → Emails — a commit only counts once its author email is linked to the account (the `268671487+kefohaine@users.noreply.github.com` noreply form auto-attributes without a verification click).
+- **History rewrites (lesson 2026-09-02)** — `git filter-branch` silently drops one side of this repo's merge DAG (651 → 520 commits, the jehpok-era line) even on a pristine clone; never use it here. Rewrites use a plumbing rebuild (`git hash-object -t commit`, parents-first DFS) that preserves trees/dates/messages exactly. Pre-rewrite history stays on the remote tag `history-backup-20260902` (rollback: `git reset --hard history-backup-20260902` + force-push).
 
 ```bash
 git push homelab main
