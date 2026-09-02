@@ -3,10 +3,12 @@
 # Two guards:
 #  1. If any file under services/fxmq.net/ is staged, the Caddyfile must
 #     validate (via the running fxmq.net container, when it's up).
-#  2. A bare `respond "ok"` in an APP vhost (cloud/kuma/mail/mc/vault) is
+#  2. A bare `respond "ok"` in an APP vhost (cloud/kuma/mail/vault) is
 #     blocked — that is the stub that took every public subdomain offline on
 #     2026-08-28. Operator-approved maintenance can pass with EDGE_OVERRIDE=1.
-#     www (health stub by design) and shell (legit `ok` paths) are exempt.
+#     Exempt by design: www (health stub + /download), tail (legit `ok` paths)
+#     and mc (its catch-all IS `ok`; its real-app routes are guarded by the
+#     pre-push smoke instead).
 set -uo pipefail
 
 staged=$(git diff --cached --name-only)
@@ -24,7 +26,7 @@ if echo "$staged" | grep -q '^services/fxmq.net/'; then
 fi
 
 # 2. Stub guard on the app vhosts.
-app_vhosts="cloud.fxmq.net.caddy kuma.fxmq.net.caddy mail.fxmq.net.caddy mc.fxmq.net.caddy vault.fxmq.net.caddy"
+app_vhosts="cloud.fxmq.net.caddy kuma.fxmq.net.caddy mail.fxmq.net.caddy vault.fxmq.net.caddy"
 for f in $app_vhosts; do
   if echo "$staged" | grep -q "^services/fxmq.net/vhosts/$f$"; then
     if git show :"services/fxmq.net/vhosts/$f" 2>/dev/null | grep -qE '^\s*respond "ok"'; then
