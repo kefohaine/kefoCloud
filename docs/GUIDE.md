@@ -2,7 +2,108 @@
 
 How to operate `fxmq.net` — the project's repository layout, deployment commands, protected host resources, per-service edit-safe facts, and operational gotchas. Read this before editing anything.
 
-For system architecture and design rationale, see `README.md`. For agent rules, see `docs/AGENTS.md`. For open problems and improvements, see `docs/ISSUES.md`.
+This guide is the only project-specific reference — architecture and design rationale included. The repo-page pitch lives in `README.md`; agent rules in `docs/AGENTS.md`; open problems in `docs/ISSUES.md`; the migration runbook in `docs/MIGRATE.md`.
+
+## What runs here
+
+One Debian VPS runs the whole lab in Docker Compose — 11 containers: the Caddy edge (`fxmq.net`, host-network reverse proxy with per-vhost Let's Encrypt certs), the Nextcloud stack (FPM app, PostgreSQL, Redis, Talk HPB, coturn TURN), Vaultwarden, Uptime Kuma, PufferPanel (its Paper MC servers run on demand), and the mail platform (Docker Mailserver + Roundcube webmail). Three host services sit beside the containers — ttyd (web terminal), dnsmasq (tailnet DNS) and the goose agent (service table below). Seven hostnames are public through Cloudflare (`cloud` `kuma` `mail` `mc` `talk` `vault` `www`); `tail.fxmq.net` is Tailscale-only. A second tailnet-only VPS (1 TB / 2 GB) receives the nightly Nextcloud `pg_dump` (`/etc/cron.d/nc-storage`, installed by `scripts/storage.sh`, last 7 kept) and is the intended future home of Nextcloud's user files (Garage S3 installed; migration pending — see `docs/ISSUES.md`).
+
+## Request flow
+
+```
+                   ┌─────────────────────────────────────────────┐
+    Public DNS ──► │            Cloudflare (proxy)               │
+                   │          cloud / vault / kuma / www         │
+                   └──────────────┬──────────────────────────────┘
+                                  │ HTTPS (LE cert via DNS-01)
+                                  ▼
+                           ┌──────────────┐
+                           │    Caddy     │  port 80 → 308 redirect
+                           │  (fxmq.net)  │  port 443 (per-vhost LE)
+                           └──────┬───────┘  custom image with the
+                ┌─────────────────┼─────────────────┐     caddy-dns/
+                │                 │                 │     cloudflare
+                ▼                 ▼                 ▼     plugin
+           reverse_proxy    reverse_proxy      php_fastcgi
+           vaultwarden      uptime-kuma        nextcloud:9000
+           (172.22.0.4:80)  (172.22.0.6:3001)  (Nextcloud FPM)
+           (also: pufferpanel 172.22.0.8:8080,
+            roundcube webmail 172.22.0.10:80 —
+            mail platform Postfix/Dovecot at 172.22.0.9, ports 25/465/587/993)
+
+    tail.fxmq.net is tailnet-only (not in public DNS) — "/" lists
+    every vhost as links and "/ttyd" opens the host terminal;
+    non-tailnet sources get 403.
+
+                     ┌─────────────────────────────────────────────┐
+                     │ Tailscale MagicDNS / split DNS              │
+                     │ forwards tail.fxmq.net queries to the VPS   │
+                     │ resolver (bound to Tailscale IP only)       │
+                     └──────────────┬──────────────────────────────┘
+                                    │ UDP/TCP 100.117.144.0:53
+                                    ▼
+                             ┌──────────────┐
+                             │   dnsmasq    │  host systemd service
+                             │  (host)      │  (not a container)
+                             │  - address=/tail.fxmq.net/100.117.144.0
+                             │  - forward . 1.1.1.1 1.0.0.1 9.9.9.9
+                             └──────────────┘
+```
+
+One host, two ingress paths. Cloudflare fronts the seven public hostnames — proxied (TLS terminates at the CF edge and is re-encrypted to the origin with the per-vhost LE cert): `cloud` `vault` `kuma` `www`; DNS-only (grey cloud — their traffic is not HTTP(S)): `mail` `mc` `talk`. Caddy on the origin 308-redirects port 80 and terminates per-vhost HTTPS on 443. `tail.fxmq.net` never enters public DNS: tailnet clients resolve it through the VPS dnsmasq (bound to the Tailscale IP only), and Caddy's `@not_tailnet` matcher 403s any other source — so the vhost is unreachable off the tailnet even with a forged Host header against the public IP.
+
+## Domains and access model
+
+| Hostname | Cloudflare mode | Reachable by | What you get there |
+|----------|----------------|--------------|--------------------|
+| cloud.fxmq.net | proxied | anyone | Nextcloud |
+| vault.fxmq.net | proxied | anyone | Vaultwarden |
+| kuma.fxmq.net | proxied | anyone | Uptime Kuma |
+| www.fxmq.net | proxied | anyone | empty homepage, `/download` drop folder, `/1` `/2` showcases |
+| mail.fxmq.net | DNS-only | anyone | Roundcube webmail + SMTP/IMAP |
+| mc.fxmq.net | DNS-only | anyone | PufferPanel `/panel`, browser Minecraft `/play`, Java :25565 |
+| talk.fxmq.net | DNS-only | anyone | Talk signaling `/signaling` + TURN/STUN |
+| tail.fxmq.net | not in public DNS | tailnet only | vhost index, ttyd at `/ttyd`, else `ok` |
+
+Per-hostname operational detail lives in the service-reference bullets; the cross-cutting rules are that anything whose traffic is not HTTP(S) (mail, mc, talk) must stay grey-cloud at Cloudflare, and the tailnet hostname never enters public DNS.
+
+## Design rationale
+
+Why the layout is the way it is, in one place. Where a choice already has a dedicated section or gotcha below, this section points there instead of restating it.
+
+### Edge: Caddy over nginx / Traefik, Cloudflare in front
+
+- The Caddyfile maps one vhost per file (`services/fxmq.net/vhosts/<host>.caddy`), each owning its own TLS block; ACME renewal is built in, and the `caddy-dns/cloudflare` plugin enables DNS-01 so certs issue whether or not port 80 reaches the origin. Certs persist in the bind-mounted `/data` dir, so container recreates don't restart the 90-day clock. HTTP/3 needs no extra config.
+- Cloudflare in front hides the origin IP and adds DDoS protection, bot challenge and rate limiting at the edge.
+- Trade-off: Cloudflare Bot Fight Mode challenges clients that can't run JS (curl, desktop sync). The fix is a per-hostname WAF rule skip for `cloud.fxmq.net` — see the `cloud` rationale bullet.
+
+### `tail.fxmq.net`: why it never enters public DNS
+
+- The admin hostname should be reachable only from the operator's devices; public DNS would hand every bot a port that isn't meant to be public.
+- Tailscale split-DNS means the name resolves the moment a device joins the network — no port forwards, no firewall holes — and the vhost uses a normal LE cert, so tailnet clients get a clean handshake instead of a self-signed warning.
+- The VPS also advertises exit-node routes; IPv4+IPv6 forwarding lives in `config/sysctl/99-homelab.conf` so tailnet devices can route their internet traffic through it.
+
+### Mail: why Docker Mailserver
+
+- One Postfix + Dovecot container (active monthly releases; DKIM/DMARC/fail2ban/Rspamd built in) plus the official Roundcube image — the lightest trusted option next to Mailu (~8 containers) and Mailcow (~12 containers, 6–8 GB RAM). TLS reuse, DNS-only records, quotas and spoof-proofing are in the `mail` bullet.
+
+### dnsmasq: why on the host, bound to the Tailscale IP
+
+- Tailscale split-DNS on the operator's devices forwards `tail.fxmq.net` queries to a resolver on the VPS that answers that one name and forwards everything else; one small host dnsmasq file does both.
+- On the host (not in Docker), DNS survives `docker stop`, image pulls and `systemctl restart docker` — the failure modes a container `restart: unless-stopped` policy cannot cover — with a `Restart=always` systemd unit as the only supervisor.
+- dnsmasq binds port 53 only to `100.117.144.0` (the Tailscale IP), never `0.0.0.0`, so the VPS is not an open resolver. systemd-resolved could do the job, but binding it to `0.0.0.0:53` on the host would fight Docker's port mapping.
+
+### The `net` bridge: why a user-defined external network
+
+- Inter-container DNS needs a user-defined bridge network; Docker's embedded resolver (127.0.0.11) answers container names automatically, so no Consul or service registry is needed. One shared `172.22.0.0/16` network (`external: true`) is reused across every compose file so the pinned bridge IPs attach cleanly (creation and the pin list: see the note under the service table).
+
+### Nextcloud stack: why PostgreSQL + Redis + self-hosted TURN
+
+- PostgreSQL replaced the stock SQLite, whose file-level locking caused intermittent 504s under concurrent sync and made consistent backups hard. The data dir is portable so the DB can move to a bigger host if it ever outgrows this one (see "Nextcloud DB").
+- Redis is a pure cache with no persistence (see the Redis gotcha).
+- Talk calls run on the official Go signaling server (`talk-hpb`) plus a self-hosted coturn, so call media never touches a public STUN/TURN service (see "Talk stack").
+- The whole stack is RAM-capped to the operator's 3 GB ceiling with per-container `mem_limit`/`memswap_limit`.
+- The mail ecosystem is reciprocal: Nextcloud (Mail app, outbound SMTP, notifications) and Vaultwarden (verification/invite email) both send through the same local mailserver mailboxes over the bridge.
 
 ## Repository layout
 
@@ -76,7 +177,7 @@ When you need to know "what does X do / where do I edit Y", read the file at the
 
 - **`fxmq.net`** (Caddy) — vhosts, snippets, header policy: `services/fxmq.net/Caddyfile` (top-level config + per-vhost imports) and `services/fxmq.net/vhosts/*.caddy` (one per hostname: `cloud`, `kuma`, `mail`, `mc`, `tail`, `talk`, `vault`, `www`). Compose + bind mounts + custom Dockerfile (Caddy built with the `caddy-dns/cloudflare` plugin for ACME DNS-01): `services/fxmq.net/docker-compose.yml`. Runs `network_mode: host` — see note above. Every vhost has its own `tls { dns cloudflare { env.CF_API_TOKEN } }` block; don't replace it with `tls internal` / `tls off` / `tls self_signed`. This dir is bind-mounted into the running container at `/etc/caddy` — vhost edits are live config and take effect on the next `docker restart fxmq.net`; after any such restart run `make smoke`. The pre-commit hook blocks bare `respond "ok"` stubs in the app vhosts (cloud/kuma/mail/vault; mc/www/tail are exempt by design — see the edge-guardrail gotcha). **`www.fxmq.net`**: `/` serves an empty `index.html` placeholder; `/download` serves the public drop folder browse; `/1` `/2` serve two showcase vhost-index pages — static HTML in `services/fxmq.net/www/{1,2}.html` (same bind mount, file root `/etc/caddy/www`). **`talk.fxmq.net`**: `/signaling*` → `talk-hpb:8080` (Talk HPB websocket); everything else answers a plain `ok` by design — the vhost exists to give clients a public wss endpoint and to make Caddy issue the talk.fxmq.net LE cert that talk-relay (coturn) reuses for TURNS on 5349. Its A record MUST stay DNS-only at Cloudflare (grey cloud — TURN speaks UDP/TCP, CF only proxies HTTP(S)); smoke asserts the `/signaling` websocket endpoint answers.
 - **`cloud`** — Nextcloud env, PHP-FPM pool tuning, bind mounts: `services/nextcloud/docker-compose.yml` + `services/nextcloud/php-fpm.d/zz-custom.conf`. Admin creds: `services/nextcloud/.env` (gitignored — read access only via the operator). The compose file carries the Talk stack (`redis` 172.22.0.11, `talk-hpb` 172.22.0.12, `talk-relay` 172.22.0.14) — see the "Talk stack" section below. `extra_hosts` maps `mail.fxmq.net` → 172.22.0.9 so the Mail app + NC's own SMTP see the LE-cert FQDN over the bridge. **Login by email works** — the login form accepts `admin@fxmq.net` (NC resolves a unique email to its user); the same address is the password-reset channel (SMTP out via the local mailserver, sender `nextcloud@fxmq.net`).
-- **`cloud` rationale** — AppAPI stays disabled (no external-app support needed; keeps the attack surface small); Cloudflare Bot Fight Mode challenges non-browser clients (curl, Nextcloud desktop sync) — the workaround is a per-hostname WAF rule skip for `cloud.fxmq.net` (see README).
+- **`cloud` rationale** — AppAPI stays disabled (no external-app support needed; keeps the attack surface small); Cloudflare Bot Fight Mode challenges non-browser clients (curl, Nextcloud desktop sync) — the workaround is a per-hostname WAF rule skip for `cloud.fxmq.net` (see the Cloudflare-edge rationale in "Design rationale").
 - **`vault`** — env, bind mount, admin token, SMTP: `services/vaultwarden/docker-compose.yml`. Outbound email (verification/invite/notification) goes through the local mailserver as `vaultwarden@fxmq.net` (STARTTLS 587; SMTP vars interpolated from the gitignored `services/vaultwarden/.env` — generated by `scripts/install.sh` `seed_stack`, mailbox created by `vaultwarden_setup`).
 - **`kuma`** — image, bind mount, healthcheck: `services/uptimekuma/docker-compose.yml`. Monitor definitions live in Kuma's SQLite (`services/uptimekuma/seed-monitors.sql` seeds them; applied by the installer).
 - **`panel`** — PufferPanel game panel: `services/pufferpanel/docker-compose.yml`. Served at `https://mc.fxmq.net/panel` (Caddy vhost `services/fxmq.net/vhosts/mc.fxmq.net.caddy`): `/panel` is prefix-stripped, and because the panel SPA has no subpath support (absolute history-mode routes), its baked root routes (API, auth pages, SPA pages + chunks at `/js` `/assets`, swagger, favicon/manifest) are proxied by the vhost's `@panel_infra` block — the exact path list lives in the vhost file. The vhost overrides PufferPanel's `max-age=60` on static chunks with 1-day cache headers (panel upgrades self-invalidate via hashed chunk names). SFTP on the bridge at `:5657`; mounts the Docker socket rw (required to start). Admin credentials: `/var/www/custom/projects/homelab/puffer/admin-pass.txt` (created at setup; update it after any password reset).

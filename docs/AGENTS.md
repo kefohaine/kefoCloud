@@ -32,12 +32,12 @@ These are non-negotiable. Follow them on every task. Project-specific facts (pat
 
 Each `.md` file in the repo has a single purpose. Don't blur them.
 
-- **`README.md`** — visitor-facing. "What is real, and why." The system as it exists today: architecture, request flow, domain/access model, design choices. No planned features, no uncertainty, no operational details, no volatile state.
+- **`README.md`** — the GitHub repo page (visitor pitch). What the project is, what it runs, how to deploy it, where the docs live. Short and factual: no architecture, no operational detail, no volatile state (those live in `docs/GUIDE.md`).
 - **`docs/AGENTS.md`** (this file) — agent-facing rules. Portable to any look-alike system. The "how an agent must behave" — not "how this project works". Project-specific facts (recipe names, paths, vhost lists, port numbers) belong in `docs/GUIDE.md`, not here.
-- **`docs/GUIDE.md`** — project-facing operator guide. "How to do x, where is y, what's z" for this specific repo. Layout, deployment commands, protected resources, per-service edit-safe facts, operational gotchas, lessons, intended-behaviour rationales. This is the ONLY file that carries project-specific facts.
+- **`docs/GUIDE.md`** — project-facing operator guide. "How to do x, where is y, what's z" for this specific repo. Layout, deployment commands, protected resources, per-service edit-safe facts, operational gotchas, lessons, intended-behaviour rationales, architecture and design rationale. This is the ONLY file that carries project-specific facts.
 - **`docs/ISSUES.md`** — task tracker. Open problems (bugs, security gaps, efficiency losses, robustness risks) that are not yet fixed; resolved problems for history, one sentence each. No rationale prose, no lessons, no intended-behaviour documentation — those live in `docs/GUIDE.md`.
 
-When a fact fits two files, it belongs in the lower one in this list. A future agent reading only `README.md` should understand the system; a future agent reading only `docs/AGENTS.md` should understand the rules; a future agent reading only `docs/GUIDE.md` should be able to deploy and operate the system.
+When a fact fits two files, it belongs in the lower one in this list. A future agent reading only `README.md` should understand what the project is and offers; a future agent reading only `docs/AGENTS.md` should understand the rules; a future agent reading only `docs/GUIDE.md` should be able to deploy and operate the system.
 
 ## Doc-audit directives
 
@@ -79,14 +79,13 @@ These directives govern how agents detect and correct drift, stale content, and 
 
 ## Workflow
 
-1. Read `README.md` to understand the system.
-2. Read `docs/GUIDE.md` to learn the project's layout, commands, and protected resources.
-3. Read `docs/AGENTS.md` (this file) for the rules.
-4. Check `docs/ISSUES.md` for known problems or in-progress work.
-5. Make changes following the rules.
-6. Verify the change works (run the project's status / logs / smoke commands listed in `docs/GUIDE.md`).
-7. Update `.md` files if the change altered layout, architecture, or design.
-8. Commit and push (Safety rule 3).
+1. Read `README.md` for the project pitch, then `docs/GUIDE.md` for how the system is built and operated.
+2. Read `docs/AGENTS.md` (this file) for the rules.
+3. Check `docs/ISSUES.md` for known problems or in-progress work.
+4. Make changes following the rules.
+5. Verify the change works (run the project's status / logs / smoke commands listed in `docs/GUIDE.md`).
+6. Update `.md` files if the change altered layout, architecture, or design.
+7. Commit and push (Safety rule 3).
 
 ## Before finishing a task
 
@@ -96,7 +95,7 @@ These directives govern how agents detect and correct drift, stale content, and 
    - **Delete stale** — anything that no longer matches the running system: outdated paths, ports, container names, unit names, hardened/locked-down claims, decommissioned services, retired rationale, volatile operator-editable state, "currently" / "right now" snapshots that have drifted, "now removed" commentary. For every path/port/hostname/unit/container in the doc, confirm it still exists on disk. For Solved entries, confirm the change they describe actually happened — a Solved entry that lies is worse than no entry.
    - **Correct drift** — every fact in every `.md` (commands, ports, paths, file references, env vars, image tags, log caps, route matchers, behaviour claims) must match the executable source (compose files, Makefile, systemd units, Caddyfile, Dockerfile, app source). Diff docs against the source; if they disagree, the source wins and the doc is wrong. Use `grep` to verify each concrete fact.
    - **Organize duplicates** — each fact lives in exactly one place. If a sentence appears in two files, delete the one in the higher file (per the boundaries list). If a Solved entry is multi-line, collapse to one line (writing rule 10). If a section restates another doc, point at the other doc instead.
-4. Update `README.md` if the architecture, request flow, or design choices changed.
+4. Update `README.md` only if the project pitch (services offered, deploy flow) changed — architecture and design changes land in `docs/GUIDE.md`.
 5. Update `docs/GUIDE.md` if the layout, commands, per-service facts, or lessons changed.
 6. Update or resolve items in `docs/ISSUES.md` if you fixed something listed there.
 7. Add new issues you discovered to `docs/ISSUES.md`.

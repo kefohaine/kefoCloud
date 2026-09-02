@@ -52,6 +52,11 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **File**: NC app `password_policy`
 - **Done**: the app was briefly disabled so the operator could log in with the temporary password `silence`; re-enabled and hardened the same day — `minLength=16` (the app reads `minLength`, not `minimumLength`), upper+lower+special+numeric required, the 1M common-password list + compromised-list checks on. The operator has since set a proper admin password.
 
+#### GUIDE "Nextcloud DB" migration steps contradict ISSUES Setup A
+- **File**: `docs/GUIDE.md` (Nextcloud DB section) vs `docs/ISSUES.md` "Storage VPS onboarded (Setup A)"
+- **Problem**: Setup A (2026-09-01) keeps PostgreSQL on fxmq and moves only Nextcloud's user files to the 1 TB VPS, but the GUIDE section still documents moving the whole DB there "when it joins the tailnet" — and it has already joined (nightly `pg_dump` lands on it). One of the two is the plan.
+- **Fix**: operator decision — delete the DB-migration steps from GUIDE (Setup A won) or re-document them as the option if the DB ever outgrows fxmq.
+
 ### Security
 
 #### Mail platform: no PTR record (operator will set at AlphaVPS)  **[needs human approval]**
