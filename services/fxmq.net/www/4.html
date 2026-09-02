@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fxmq.net — the black grimoire // index 04</title>
+<meta name="description" content="fxmq.net — the gothic edition. A cathedral of self-hosted services: cloud, vault, kuma, mc, mail, tail, www.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230a0807'/%3E%3Ctext x='16' y='22' font-family='serif' font-size='15' fill='%23c9a227' text-anchor='middle'%3E%E2%9C%A6%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=UnifrakturMaguntia&family=Cinzel:wght@500;600;700;900&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0807; --panel:#131009; --panel2:#191410; --line:#2b2318; --line2:#3a2f1e;
+    --parch:#d6c9ab; --dim:#93856a; --faint:#5c523f; --gold:#c9a227; --goldhi:#e6c968; --blood:#9c1a22; --bone:#e8ddc2;
+    --c-cloud:#6b9fd8; --c-vault:#8f7bd9; --c-kuma:#5fae7f; --c-mc:#c07a3e; --c-mail:#b05a63; --c-tail:#a069b3; --c-www:#4c9f92;
+    --black:'UnifrakturMaguntia','UnifrakturCook',serif;
+    --disp:'Cinzel','Trajan Pro',serif;
+    --body:'Cormorant Garamond','Cormorant',Georgia,serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:
+      radial-gradient(1400px 800px at 50% -12%, rgba(201,162,39,.06), transparent 60%),
+      radial-gradient(900px 600px at 105% 45%, rgba(156,26,34,.05), transparent 55%),
+      repeating-linear-gradient(0deg, rgba(214,201,171,.012) 0 1px, transparent 1px 4px),
+      var(--bg);
+    color:var(--parch);font-family:var(--body);font-size:19px;line-height:1.6}
+  ::selection{background:var(--blood);color:#f3e7c9}
+  a{color:var(--goldhi);text-decoration:none}
+  a:hover{color:#fff2cf;text-shadow:0 0 14px rgba(230,201,104,.6)}
+  .wrap{max-width:980px;margin:0 auto;padding:0 24px}
+
+  /* ── stations (nav) ─────────────────────── */
+  nav.stations{position:sticky;top:0;z-index:60;background:rgba(10,8,7,.9);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);text-align:center;padding:10px 12px}
+  nav.stations .inner{display:flex;gap:2px 18px;justify-content:center;flex-wrap:wrap}
+  nav.stations a{font-family:var(--disp);font-size:12px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;
+    color:var(--dim);padding:4px 2px}
+  nav.stations a:hover{color:var(--goldhi)}
+  nav.stations a b{color:var(--blood);font-weight:700;margin-right:4px}
+  nav.stations .orn{color:var(--faint);font-family:var(--body);font-size:13px;letter-spacing:0;text-transform:none;align-self:center}
+
+  /* ── facade ─────────────────────────────── */
+  header.hero{text-align:center;padding:56px 0 30px;position:relative}
+  .orn-band{display:flex;align-items:center;justify-content:center;gap:18px;color:var(--gold);opacity:.8;font-size:15px;margin-bottom:10px}
+  .orn-band::before,.orn-band::after{content:"";height:1px;width:min(200px,26vw);
+    background:linear-gradient(90deg,transparent,var(--gold));opacity:.55}
+  .orn-band::after{background:linear-gradient(90deg,var(--gold),transparent)}
+  h1.wordmark{font-family:var(--black);font-weight:400;font-size:clamp(64px,13vw,150px);line-height:.9;
+    margin:6px 0 0;color:var(--bone);letter-spacing:.02em;
+    text-shadow:0 0 40px rgba(201,162,39,.25),0 2px 0 #000}
+  h1.wordmark .tld{color:var(--gold)}
+  .kicker{font-family:var(--disp);font-size:12px;letter-spacing:.5em;text-transform:uppercase;color:var(--dim);margin:20px 0 8px}
+  .kicker b{color:var(--gold)}
+  .lede{font-style:italic;font-size:21px;color:var(--dim);max-width:56ch;margin:6px auto 0}
+  .lede em{color:var(--parch)}
+  .rose-hero{margin:26px auto 4px;width:min(230px,60vw)}
+  .rose-hero circle{filter:drop-shadow(0 0 6px rgba(201,162,39,.4))}
+  .facade-strip{margin-top:20px;font-family:var(--disp);font-size:11px;letter-spacing:.3em;color:var(--faint);text-transform:uppercase}
+  .facade-strip .sq{color:var(--blood)}
+
+  /* ── chapters ───────────────────────────── */
+  main{padding-bottom:20px}
+  .chap{scroll-margin-top:70px;margin:54px 0}
+  .chap .arch{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line2);
+    border-top:2px solid var(--line2);border-radius:190px 190px 14px 14px / 90px 90px 14px 14px;
+    padding:40px 46px 36px;position:relative;text-align:center}
+  .chap .arch::before{content:"";position:absolute;inset:10px;border:1px solid var(--line);border-radius:170px 170px 8px 8px / 80px 80px 8px 8px;pointer-events:none}
+  .arch .glyph-badge{width:74px;height:74px;margin:-70px auto 0;display:grid;place-items:center;border-radius:50%;
+    background:radial-gradient(circle at 34% 28%, color-mix(in srgb,var(--sc) 65%, #000), var(--panel));
+    border:2px solid color-mix(in srgb,var(--sc) 70%, var(--gold));box-shadow:0 0 26px color-mix(in srgb,var(--sc) 45%, transparent), inset 0 0 18px rgba(0,0,0,.7)}
+  .chap-no{font-family:var(--disp);font-size:12px;font-weight:700;letter-spacing:.42em;text-transform:uppercase;color:var(--blood);margin:16px 0 2px}
+  .chap h2{font-family:var(--disp);font-weight:900;text-transform:uppercase;letter-spacing:.06em;
+    font-size:clamp(27px,4.6vw,44px);margin:0;color:var(--bone)}
+  .chap h2 .host{display:block;font-family:var(--body);font-style:italic;font-weight:500;text-transform:none;
+    letter-spacing:.02em;color:var(--gold);font-size:clamp(19px,2.4vw,26px);margin-top:2px}
+  .motto{margin:14px auto 10px;font-style:italic;color:var(--dim);font-size:19px}
+  .motto b{color:var(--goldhi);font-weight:600}
+  .verse{max-width:62ch;margin:10px auto;color:#b3a588;font-size:19px;text-align:center}
+  .verse .drop::first-letter{font-family:var(--disp);font-size:2.6em;color:var(--gold);float:left;line-height:.85;padding:4px 8px 0 0}
+  .relics{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:20px auto 0}
+  .relic{font-family:var(--disp);font-size:11.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
+    border:1px solid var(--line2);color:var(--dim);padding:7px 16px;border-radius:2px;background:rgba(0,0,0,.25)}
+  .relic:hover{border-color:var(--gold);color:var(--goldhi);text-shadow:none}
+  .relic.door{border-color:color-mix(in srgb,var(--sc) 55%, #000);color:color-mix(in srgb,var(--sc) 85%, #fff)}
+  .relic.door:hover{background:var(--sc);color:#0a0807}
+  .relic .x{color:var(--blood);margin-right:6px}
+  .orn-div{text-align:center;color:var(--gold);opacity:.7;font-size:20px;margin:26px 0 -30px;letter-spacing:.6em}
+  .orn-div span{display:inline-block}
+
+  /* ── crypt (footer) ─────────────────────── */
+  footer{margin-top:70px;border-top:1px solid var(--line);position:relative;
+    background:linear-gradient(180deg,transparent,rgba(20,16,9,.9));padding:44px 0 50px}
+  footer .colwrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:30px}
+  footer h3{font-family:var(--disp);font-size:11px;letter-spacing:.34em;text-transform:uppercase;color:var(--gold);margin:8px 0 12px}
+  footer ul{list-style:none;margin:0;padding:0}
+  footer li{margin:7px 0;font-size:18px}
+  footer li a{color:var(--parch)}
+  footer li a:hover{color:#fff}
+  footer li .lc{color:var(--faint);margin-right:8px}
+  footer li .lc.cc{color:var(--c-cloud)} footer li .lc.cv{color:var(--c-vault)} footer li .lc.ck{color:var(--c-kuma)}
+  footer li .lc.cm{color:var(--c-mc)} footer li .lc.cl{color:var(--c-mail)} footer li .lc.ct{color:var(--c-tail)} footer li .lc.cw{color:var(--c-www)}
+  .colophon{text-align:center;margin-top:40px;border-top:1px solid var(--line);padding-top:28px}
+  .colophon .big{font-family:var(--black);font-size:clamp(52px,11vw,120px);line-height:.9;color:var(--bone);margin:0}
+  .colophon .big span{color:var(--blood)}
+  .colophon p{color:var(--faint);font-family:var(--disp);font-size:10.5px;letter-spacing:.34em;text-transform:uppercase;margin:8px 0 0}
+  .editions a{margin:0 6px}
+  .note{font-style:italic;font-size:16.5px;color:var(--faint);max-width:72ch;margin:16px auto 0}
+</style>
+</head>
+<body>
+
+<nav class="stations">
+  <div class="inner">
+    <a href="#top"><b>I</b>facade</a><span class="orn">❦</span>
+    <a href="#cloud"><b>I</b>cloud</a><span class="orn">❦</span>
+    <a href="#vault"><b>II</b>vault</a><span class="orn">❦</span>
+    <a href="#kuma"><b>III</b>kuma</a><span class="orn">❦</span>
+    <a href="#mc"><b>IV</b>mc</a><span class="orn">❦</span>
+    <a href="#mail"><b>V</b>mail</a><span class="orn">❦</span>
+    <a href="#tail"><b>VI</b>tail</a><span class="orn">❦</span>
+    <a href="#www"><b>VII</b>www</a><span class="orn">❦</span>
+    <a href="#crypt">crypt</a><span class="orn">❦</span>
+    <a href="https://github.com/kefohaine/server" target="_blank" rel="noopener">codex ↗</a>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="orn-band"><span>✠</span></div>
+  <h1 class="wordmark">fxmq<span class="tld">.net</span></h1>
+  <p class="kicker">the black grimoire · <b>gothic edition</b> · folio 04 of 05</p>
+  <p class="lede">In the year of our uptime, upon one blessed VPS there standeth <em>seven doors</em> — each tended
+  by a faithful daemon, each entered through the self-same gate of Caddy. <em>talk.fxmq.net</em> lieth beyond these
+  pages, a reliquary of signalling only, and is not numbered among the seven.</p>
+  <div class="rose-hero" aria-hidden="true">
+    <svg viewBox="0 0 220 220">
+      <g fill="none" stroke="#c9a227" stroke-width="1.6" opacity=".9">
+        <circle cx="110" cy="110" r="104" stroke-width="3"/>
+        <circle cx="110" cy="110" r="88" stroke-dasharray="2 6"/>
+        <circle cx="110" cy="110" r="52" stroke-width="1.2" opacity=".6"/>
+      </g>
+      <g fill="#9c1a22" opacity=".85">
+        <ellipse cx="110" cy="40" rx="16" ry="26"/><ellipse cx="110" cy="180" rx="16" ry="26"/>
+        <ellipse cx="40" cy="110" rx="26" ry="16"/><ellipse cx="180" cy="110" rx="26" ry="16"/>
+      </g>
+      <g fill="#0a0807" stroke="#c9a227" stroke-width="1.4">
+        <circle cx="110" cy="110" r="40" fill="none" opacity=".9"/>
+        <circle cx="110" cy="110" r="16" fill="#c9a227"/>
+        <circle cx="110" cy="110" r="16" fill="none" stroke="#0a0807" stroke-dasharray="1 3" stroke-width="2"/>
+      </g>
+    </svg>
+  </div>
+  <p class="facade-strip">hinc illae lacrimae · <span class="sq">☩</span> · data vestra, regula vestra</p>
+</header>
+
+<main class="wrap">
+
+  <!-- I · CLOUD -->
+  <section class="chap" id="cloud" style="--sc:var(--c-cloud)">
+    <div class="arch">
+      <span class="glyph-badge" aria-hidden="true">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#e8ddc2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 .42-8.98 6 6 0 0 0-11.7 1.8A4 4 0 0 0 6.5 19z"/><path d="M8.5 15.5l2.3 2.3 4.7-4.6"/></svg>
+      </span>
+      <p class="chap-no">chapter the first · the cloud</p>
+      <h2>cloud.fxmq.net<span class="host">Nextcloud 34 — where thy data may dwell in peace</span></h2>
+      <p class="motto"><b>“Hic habitant data tua.”</b> — here dwells thy data.</p>
+      <p class="verse"><span class="drop">I</span>n this keep are kept thy files, thy calendars and thy countenances —
+      photos, ledger-books of days and the very words thou speakest in talk. It is tended by the FPM, guarded by the
+      scribe <i>php_fastcgi</i>, and its memory is kept in the red vault of <i>redis</i> while its truth reposes in the
+      stone table of <i>postgres 17</i>. Clients of the desktop and of the palm may come and go as they please.</p>
+      <div class="relics">
+        <a class="relic door" href="https://cloud.fxmq.net" target="_blank" rel="noopener"><span class="x">✠</span>the door</a>
+        <a class="relic" href="https://github.com/kefohaine/server/tree/main/services/nextcloud" target="_blank" rel="noopener"><span class="x">☩</span>the codex · kefohaine/server</a>
+        <a class="relic" href="https://github.com/nextcloud/server" target="_blank" rel="noopener">the order · nextcloud ↗</a>
+      </div>
+    </div>
+    <p class="orn-div"><span>❦</span><span>✧</span><span>❦</span></p>
+  </section>
+
+  <!-- II · VAULT -->
+  <section class="chap" id="vault" style="--sc:var(--c-vault)">
+    <div class="arch">
+      <span class="glyph-badge" aria-hidden="true">
+        <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="#e8ddc2" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l7 3v6c0 5-3.2 8.6-7 10-3.8-1.4-7-5-7-10V5z"/><circle cx="12" cy="10" r="2.2"/><path d="M12 12.2V15"/></svg>
+      </span>
+      <p class="chap-no">chapter the second · the vault</p>
+      <h2>vault.fxmq.net<span class="host">Vaultwarden — one key to every lock thou ownest</span></h2>
+      <p class="motto"><b>“Clavis unica, thesaurus tuus.”</b> — one key alone, and all thy treasure.</p>
+      <p class="verse"><span class="drop">B</span>ehind a single shield of rust lieth every password, every passkey,
+      every burning secret of the heart — in the tongue of Bitwarden, so that all the familiar clients may kneel before
+      it and none need trust a foreign host. Its letters of verification are carried hence by the lab's own courier,
+      from the self-same chapel of mail.</p>
+      <div class="relics">
+        <a class="relic door" href="https://vault.fxmq.net" target="_blank" rel="noopener"><span class="x">✠</span>the door</a>
+        <a class="relic" href="https://github.com/kefohaine/server/tree/main/services/vaultwarden" target="_blank" rel="noopener"><span class="x">☩</span>the codex · kefohaine/server</a>
+        <a class="relic" href="https://github.com/dani-garcia/vaultwarden" target="_blank" rel="noopener">the order · vaultwarden ↗</a>
+      </div>
+    </div>
+    <p class="orn-div"><span>❦</span><span>✧</span><span>❦</span></p>
+  </section>
+
+  <!-- III · KUMA -->
+  <section class="chap" id="kuma" style="--sc:var(--c-kuma)">
+    <div class="arch">
+      <span class="glyph-badge" aria-hidden="true">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#e8ddc2" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 10.5c0 5.3-8.8 10.5-8.8 10.5S3.2 15.8 3.2 10.5A4.8 4.8 0 0 1 12 7.3a4.8 4.8 0 0 1 8.8 3.2z"/><path d="M7 11.5l1.8 1.8L12 10l1.6 1.6L15 10.4"/></svg>
+      </span>
+      <p class="chap-no">chapter the third · the watchman</p>
+      <h2>kuma.fxmq.net<span class="host">Uptime Kuma — it sleepeth not, that all may sleep</span></h2>
+      <p class="motto"><b>“Vigilat ut omnes vigilent.”</b> — it keeps watch so that all may know.</p>
+      <p class="verse"><span class="drop">T</span>hough the seven doors stand fast, no keep is safe without a watcher.
+      Kuma beats the heart of every vhost — http, tcp, and the pulse of the ports — and paints upon the wall each
+      servant's condition, green of health or red of peril, for any pilgrim who cares to look.</p>
+      <div class="relics">
+        <a class="relic door" href="https://kuma.fxmq.net" target="_blank" rel="noopener"><span class="x">✠</span>the door</a>
+        <a class="relic" href="https://github.com/kefohaine/server/tree/main/services/uptimekuma" target="_blank" rel="noopener"><span class="x">☩</span>the codex · kefohaine/server</a>
+        <a class="relic" href="https://github.com/louislam/uptime-kuma" target="_blank" rel="noopener">the order · uptime-kuma ↗</a>
+      </div>
+    </div>
+    <p class="orn-div"><span>❦</span><span>✧</span><span>❦</span></p>
+  </section>
+
+  <!-- IV · MC -->
+  <section class="chap" id="mc" style="--sc:var(--c-mc)">
+    <div class="arch">
+      <span class="glyph-badge" aria-hidden="true">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="#e8ddc2"><path fill-rule="evenodd" d="M4 4h16v16H4zM8 8h2v2h2V8h4v2h-2v2h2v4h-2v-2h-2v2h-4v-4h2v-2H8z" clip-rule="evenodd"/></svg>
+      </span>
+      <p class="chap-no">chapter the fourth · the game-hall</p>
+      <h2>mc.fxmq.net<span class="host">PufferPanel &amp; Minecraft — where blocks are hewn in the browser</span></h2>
+      <p class="motto"><b>“Ludere sine labore.”</b> — to play without toil of installation.</p>
+      <p class="verse"><span class="drop">W</span>ithin this hall, at the station of <i>/play</i>, a full world of
+      Minecraft 1.8.8 is conjured in the very browser — no parchment to download, no seal of account required. Java
+      pilgrims of every version from 1.7.10 to the newest enter upon port 25565 through the Via family. The
+      <i>PufferPanel</i> at <i>/panel</i> commands the servers; the gate of public registration is shut, and new
+      names are given only by the keeper.</p>
+      <div class="relics">
+        <a class="relic door" href="https://mc.fxmq.net/play/" target="_blank" rel="noopener"><span class="x">✠</span>the play-hall</a>
+        <a class="relic" href="https://mc.fxmq.net/panel" target="_blank" rel="noopener">the panel</a>
+        <a class="relic" href="https://github.com/kefohaine/server/tree/main/config/pufferpanel/servers" target="_blank" rel="noopener"><span class="x">☩</span>the codex · templates</a>
+        <a class="relic" href="https://github.com/PufferPanel/PufferPanel" target="_blank" rel="noopener">the order · PufferPanel ↗</a>
+      </div>
+    </div>
+    <p class="orn-div"><span>❦</span><span>✧</span><span>❦</span></p>
+  </section>
+
+  <!-- V · MAIL -->
+  <section class="chap" id="mail" style="--sc:var(--c-mail)">
+    <div class="arch">
+      <span class="glyph-badge" aria-hidden="true">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#e8ddc2" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3.5 7l8.5 6 8.5-6"/></svg>
+      </span>
+      <p class="chap-no">chapter the fifth · the letters</p>
+      <h2>mail.fxmq.net<span class="host">Roundcube &amp; Docker Mailserver — letters by thine own hand</span></h2>
+      <p class="motto"><b>“Epistulae per manus tuas.”</b> — the letters pass through thine own hands.</p>
+      <p class="verse"><span class="drop">T</span>he post of the realm runneth upon <i>Postfix</i> and <i>Dovecot</i>,
+      with seals of DKIM, SPF and DMARC affixed that none may forge the sender's name. Read thy correspondence in the
+      round tower of <i>Roundcube</i>, or by any true client through the ports 25, 465, 587 and 993. Even the seal of
+      the chapel's own certificate is the same wax as this very page — one trust, for web and letter alike.</p>
+      <div class="relics">
+        <a class="relic door" href="https://mail.fxmq.net" target="_blank" rel="noopener"><span class="x">✠</span>the door</a>
+        <a class="relic" href="https://github.com/kefohaine/server/tree/main/services/mailserver" target="_blank" rel="noopener"><span class="x">☩</span>the codex · kefohaine/server</a>
+        <a class="relic" href="https://github.com/docker-mailserver/docker-mailserver" target="_blank" rel="noopener">the order · docker-mailserver ↗</a>
+      </div>
+    </div>
+    <p class="orn-div"><span>❦</span><span>✧</span><span>❦</span></p>
+  </section>
+
+  <!-- VI · TAIL -->
+  <section class="chap" id="tail" style="--sc:var(--c-tail)">
+    <div class="arch">
+      <span class="glyph-badge" aria-hidden="true">
+        <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="#e8ddc2" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="5" r="2.2"/><circle cx="5" cy="18" r="2.2"/><circle cx="19" cy="18" r="2.2"/><path d="M11 7.2L6.4 16M13 7.2L17.6 16M7 18h10"/></svg>
+      </span>
+      <p class="chap-no">chapter the sixth · the hidden gate</p>
+      <h2>tail.fxmq.net<span class="host">the cockpit — a door that is not in any map</span></h2>
+      <p class="motto"><b>“Porta quae non est.”</b> — the door which is not.</p>
+      <p class="verse"><span class="drop">B</span>ehold the secret gate of the keeper, written in no public book of
+      names. Only those within the <i>Tailscale</i> shroud may find it; all others are answered with the number 403.
+      Within lieth the index of every door at <i>/</i> and, at <i>/ttyd</i>, a window upon the very soul of the machine —
+      a living terminal of the host. If thou canst open it, thou art meant to be here.</p>
+      <div class="relics">
+        <a class="relic door" href="https://tail.fxmq.net" target="_blank" rel="noopener"><span class="x">✠</span>the hidden gate</a>
+        <a class="relic" href="https://tail.fxmq.net/ttyd" target="_blank" rel="noopener">the terminal</a>
+        <a class="relic" href="https://github.com/kefohaine/server/tree/main/services/fxmq.net" target="_blank" rel="noopener"><span class="x">☩</span>the codex · vhosts</a>
+        <a class="relic" href="https://github.com/tailscale/tailscale" target="_blank" rel="noopener">the order · tailscale ↗</a>
+      </div>
+    </div>
+    <p class="orn-div"><span>❦</span><span>✧</span><span>❦</span></p>
+  </section>
+
+  <!-- VII · WWW -->
+  <section class="chap" id="www" style="--sc:var(--c-www)">
+    <div class="arch">
+      <span class="glyph-badge" aria-hidden="true">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#e8ddc2" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9S14.5 18.4 12 21c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3z"/></svg>
+      </span>
+      <p class="chap-no">chapter the seventh · the porch</p>
+      <h2>www.fxmq.net<span class="host">the front door — porch, drop-chest and the five folios</span></h2>
+      <p class="motto"><b>“Ianua omnium.”</b> — the gate of all.</p>
+      <p class="verse"><span class="drop">T</span>his is the porch thou standest upon. At <i>/</i> the house answers
+      but a modest "ok", keeping the threshold plain; at <i>/download</i> a chest stands open where any traveller may
+      leave or take a file; and here in the folios <i>/1</i> through <i>/5</i> the seven doors are recounted five ways —
+      this black grimoire is the fourth telling. Every word of it is bound in the codex of the keeper.</p>
+      <div class="relics">
+        <a class="relic door" href="https://www.fxmq.net/download/" target="_blank" rel="noopener"><span class="x">✠</span>the drop-chest</a>
+        <a class="relic" href="/1">folio /1</a>
+        <a class="relic" href="/2">folio /2</a>
+        <a class="relic" href="/3">folio /3</a>
+        <a class="relic" href="/5">folio /5</a>
+        <a class="relic" href="https://github.com/kefohaine/server/tree/main/services/fxmq.net/www" target="_blank" rel="noopener"><span class="x">☩</span>this folio in the codex</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer id="crypt">
+  <div class="wrap">
+    <div class="orn-band" style="margin-bottom:30px"><span>✠</span></div>
+    <div class="colwrap">
+      <div>
+        <h3>the seven doors</h3>
+        <ul>
+          <li><span class="lc cc">❧</span><a href="https://cloud.fxmq.net" target="_blank" rel="noopener">cloud.fxmq.net — the cloud</a></li>
+          <li><span class="lc cv">❧</span><a href="https://vault.fxmq.net" target="_blank" rel="noopener">vault.fxmq.net — the vault</a></li>
+          <li><span class="lc ck">❧</span><a href="https://kuma.fxmq.net" target="_blank" rel="noopener">kuma.fxmq.net — the watchman</a></li>
+          <li><span class="lc cm">❧</span><a href="https://mc.fxmq.net/panel" target="_blank" rel="noopener">mc.fxmq.net — the game-hall</a></li>
+          <li><span class="lc cl">❧</span><a href="https://mail.fxmq.net" target="_blank" rel="noopener">mail.fxmq.net — the letters</a></li>
+          <li><span class="lc ct">❧</span><a href="https://tail.fxmq.net" target="_blank" rel="noopener">tail.fxmq.net — the hidden gate</a></li>
+          <li><span class="lc cw">❧</span><a href="https://www.fxmq.net/download/" target="_blank" rel="noopener">www.fxmq.net — the drop-chest</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>the five folios</h3>
+        <ul>
+          <li><a href="/1">/1 — the terminal registry</a></li>
+          <li><a href="/2">/2 — the poster</a></li>
+          <li><a href="/3">/3 — the map of the realm</a></li>
+          <li><a href="/4">/4 — this black grimoire</a></li>
+          <li><a href="/5">/5 — the cutecore bestiary</a></li>
+        </ul>
+        <h3>the codex</h3>
+        <ul>
+          <li><a href="https://github.com/kefohaine/server" target="_blank" rel="noopener">github.com/kefohaine/server ↗</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>the machinery of the abbey</h3>
+        <ul style="font-size:17px;color:var(--dim)">
+          <li>debian · docker · caddy 2.11</li>
+          <li>cloudflare · let's encrypt (per-vhost)</li>
+          <li>nextcloud 34 · postgres 17 · redis</li>
+          <li>vaultwarden · uptime kuma · pufferpanel</li>
+          <li>paper mc · docker mailserver · roundcube</li>
+          <li>tailscale · ttyd</li>
+        </ul>
+      </div>
+      <div>
+        <h3>marginalia</h3>
+        <ul style="font-size:17px;color:var(--dim)">
+          <li>talk.fxmq.net is real (signalling + TURN) — omitted by request.</li>
+          <li>proxied doors may challenge the bots — come as a browser.</li>
+          <li>mc &amp; mail are grey-cloud; their ports are not of HTTP.</li>
+          <li>the hidden gate answers 403 beyond the shroud — by design.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="colophon">
+      <p class="big">fxmq<span>.net</span></p>
+      <p>one abbey · seven doors · five folios · <span style="color:var(--gold)">☩</span> · folio 04 of 05</p>
+      <p class="editions" style="margin-top:14px">
+        <a href="/1">⟨ /1 ⟩</a><a href="/2">⟨ /2 ⟩</a><a href="/3">⟨ /3 ⟩</a><a href="/5">⟨ /5 ⟩</a>
+      </p>
+      <p class="note">illuminated from the single codex <a href="https://github.com/kefohaine/server" target="_blank" rel="noopener">kefohaine/server</a> — every door, every folio, one repository. <i>data vestra, regula vestra.</i></p>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
