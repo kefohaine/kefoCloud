@@ -130,7 +130,7 @@ The repo is owned by `op:op` (the SSH/login user). Edit directly when signed in 
 
 ## Git remotes
 
-- `homelab` — SSH remote (`git@github.com:friedutch/homelab.git`). The only remote; use for pushes and pulls.
+- `homelab` — SSH remote (`git@github.com:kefohaine/homelab.git`). The only remote; use for pushes and pulls.
 
 ```bash
 git push homelab main
