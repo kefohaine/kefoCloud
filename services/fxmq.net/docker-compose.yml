@@ -14,7 +14,7 @@ services:
     # Host network so Caddy sees the real client source IP — without it,
     # Docker DNAT rewrites every packet to 172.22.0.1 (the bridge gateway)
     # before Caddy sees it, which breaks the @not_tailnet remote_ip matcher
-    # on https://shell.fxmq.net. The host network namespace is on the
+    # on https://tail.fxmq.net. The host network namespace is on the
     # `net` bridge at 172.22.0.0/16, so Caddy can still reach upstream
     # containers by their bridge IP (172.22.0.4 .. .15 — see Caddyfile).
     network_mode: host
@@ -27,7 +27,7 @@ services:
 
     volumes:
       - /var/www/custom/projects/homelab/cloud/html:/nextcloud:ro
-      # homelab/download — the mc.fxmq.net/download file browser's root
+      # homelab/download — the www.fxmq.net/download file browser's root
       # (drop files here; Caddy serves them read-only).
       - /var/www/custom/projects/homelab/download:/download:ro
       # homelab/eaglercraft — the mc.fxmq.net/play in-browser Minecraft

@@ -1,0 +1,46 @@
+# tail.fxmq.net — tailnet-only home for the operator's own tools. ttyd host
+# terminal at /ttyd (ttyd runs with -b /ttyd); / shows a plain list of
+# clickable links to every fxmq.net vhost; all other paths respond "ok".
+# Non-tailnet sources get 403 on every path (Tailscale membership is the
+# access control — see README "Domains and access model").
+
+https://tail.fxmq.net {
+    tls {
+        dns cloudflare {env.CF_API_TOKEN}
+    }
+    import compress
+    header {
+        import security_headers
+    }
+    @not_tailnet not remote_ip 100.64.0.0/10
+    handle @not_tailnet {
+        respond 403
+    }
+    # ttyd host terminal. Base path is /ttyd (ttyd -b /ttyd), so the full
+    # path is proxied as-is — do not strip the prefix.
+    handle /ttyd* {
+        reverse_proxy 172.22.0.1:7681 {
+            transport http {
+                versions 1.1
+            }
+        }
+    }
+    # Home page: every fxmq.net vhost as a plain list of links.
+    handle / {
+        respond `<!doctype html><html><head><title>fxmq.net</title></head><body style="font-family:monospace;margin:2em">
+<h1>fxmq.net</h1><ul>
+<li><a href="https://cloud.fxmq.net/">cloud.fxmq.net</a> — Nextcloud</li>
+<li><a href="https://vault.fxmq.net/">vault.fxmq.net</a> — Vaultwarden</li>
+<li><a href="https://kuma.fxmq.net/">kuma.fxmq.net</a> — Uptime Kuma</li>
+<li><a href="https://mail.fxmq.net/">mail.fxmq.net</a> — webmail</li>
+<li><a href="https://mc.fxmq.net/">mc.fxmq.net</a> — <a href="https://mc.fxmq.net/panel">panel</a> · <a href="https://mc.fxmq.net/play/">play</a></li>
+<li><a href="https://talk.fxmq.net/signaling">talk.fxmq.net</a> — Talk signaling</li>
+<li><a href="https://www.fxmq.net/">www.fxmq.net</a> — <a href="https://www.fxmq.net/download/">download</a></li>
+<li><a href="https://tail.fxmq.net/ttyd">tail.fxmq.net/ttyd</a> — terminal</li>
+</ul></body></html>` 200
+    }
+    # Everything else is the plain "ok" stub.
+    handle {
+        respond "ok" 200
+    }
+}

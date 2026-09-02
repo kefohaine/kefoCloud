@@ -22,8 +22,8 @@ https://cloud.fxmq.net {
     }
     @blocked path /data/* /config/* /lib/* /3rdparty/* /templates/* /occ /console.php /db/* /updater/*
     respond @blocked "not found" 404
-    redir /.well-known/carddav /remote.php/dav 301
-    redir /.well-known/caldav /remote.php/dav 301
+    redir /.well-known/carddav /remote.php/dav 308
+    redir /.well-known/caldav /remote.php/dav 308
     php_fastcgi 172.22.0.5:9000 {
         root /var/www/html
         # strip NC's own security headers so the site-level header set below

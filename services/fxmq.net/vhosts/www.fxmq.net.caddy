@@ -1,4 +1,7 @@
-# www.fxmq.net — basic health/landing stub: responds "ok" on /.
+# www.fxmq.net — landing stub + the public download drop folder.
+#   /download*  Caddy file_server browse over homelab/download (mounted at
+#               /download:ro in the caddy container — drop files here).
+#   everything else, including / — plain "ok" stub.
 # TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/cloud.fxmq.net.caddy).
 
 https://www.fxmq.net {
@@ -9,5 +12,15 @@ https://www.fxmq.net {
     header {
         import security_headers
     }
-    respond "ok" 200
+    handle_path /download {
+        root * /download
+        file_server browse
+    }
+    handle_path /download/* {
+        root * /download
+        file_server browse
+    }
+    handle {
+        respond "ok" 200
+    }
 }

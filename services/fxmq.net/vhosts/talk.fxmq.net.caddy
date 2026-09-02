@@ -1,17 +1,17 @@
-# turn.fxmq.net — Nextcloud Talk High Performance Backend (signaling) + TURN.
+# talk.fxmq.net — Nextcloud Talk High Performance Backend (signaling) + TURN.
 #
 # /signaling* reverse-proxies the spreed-signaling websocket (container
 # talk-hpb at 172.22.0.12:8080) — this is the wss:// endpoint Talk
 # clients connect to. Everything else answers a plain ok by design: the
 # vhost exists so clients have a public websocket URL and so Caddy issues
-# the turn.fxmq.net LE cert (DNS-01) that talk-relay (coturn) reuses for
+# the talk.fxmq.net LE cert (DNS-01) that talk-relay (coturn) reuses for
 # TURNS on 5349.
 #
-# The turn.fxmq.net A record MUST stay DNS-only (grey cloud) at Cloudflare:
+# The talk.fxmq.net A record MUST stay DNS-only (grey cloud) at Cloudflare:
 # TURN speaks UDP/TCP on 3478/5349 + relay 49160-49200, which the CF proxy
 # cannot carry (HTTP(S) only). Same constraint as mail.fxmq.net / mc.fxmq.net.
 
-https://turn.fxmq.net {
+https://talk.fxmq.net {
     tls {
         dns cloudflare {env.CF_API_TOKEN}
     }
@@ -23,7 +23,7 @@ https://turn.fxmq.net {
     # The signaling server serves its websocket + API at the root of its own
     # listener, so the /signaling prefix is stripped before proxying (the
     # official nginx template does the same with `proxy_pass .../`). Clients
-    # still connect to wss://turn.fxmq.net/signaling.
+    # still connect to wss://talk.fxmq.net/signaling.
     handle_path /signaling* {
         reverse_proxy 172.22.0.12:8080
     }

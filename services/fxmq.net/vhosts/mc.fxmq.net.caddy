@@ -1,13 +1,13 @@
-# mc.fxmq.net — PufferPanel at /panel, Caddy file browser at /download.
-#   /panel    PufferPanel web UI (172.22.0.8:8080). The panel SPA has no
-#             subpath support (absolute history-mode routes), so /panel is
-#             prefix-stripped and its baked root routes (/api, /auth, SPA
-#             pages, /assets, /swagger) are proxied by @panel_infra below.
-#   /download Caddy file_server browse over homelab/download (mounted into
-#             the caddy container at /download:ro — see docker-compose.yml).
+# mc.fxmq.net — PufferPanel at /panel, browser Minecraft at /play.
+#   /panel     PufferPanel web UI (172.22.0.8:8080), prefix-stripped; its
+#              baked root routes (/api, /auth, SPA pages, /assets, /swagger)
+#              are proxied by @panel_infra below.
+#   /play      EaglercraftX 1.8.8 client (static, /eaglercraft bind-mount)
+#   /play/server  browser-MC WebSocket -> EaglerXServer on the game port
+#              (host-net server, 172.22.0.1:25565)
 # TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/cloud.fxmq.net.caddy).
-# /register is blocked (403) at the edge — public account creation closed
-# by operator request; accounts are admin-created in the panel.
+# /register is 403 at the edge — public account creation is closed; accounts
+# are admin-created in the panel. Unknown paths answer the usual ok stub.
 
 https://mc.fxmq.net {
 	tls {
@@ -20,11 +20,8 @@ https://mc.fxmq.net {
 	header {
 		import security_headers
 	}
-	# /register is blocked (403) at the edge — public account creation closed
-	# by operator request; accounts are admin-created in the panel. Covers the
-	# UI route (/panel/register), the prefix-stripped API route
-	# (/panel/auth/register → /auth/register) and the root passthrough path
-	# (/auth/register) — the 2026-08-30 incident left the API path open.
+	# Registration closed (403): UI route, prefix-stripped API route and the
+	# root passthrough path are all covered.
 	@register path /panel/register* /auth/register* /panel/auth/register*
 	handle @register {
 		respond 403
@@ -38,8 +35,7 @@ https://mc.fxmq.net {
 	header @panel_static Vary "Accept-Encoding"
 	# PufferPanel — prefix stripped so the panel sees its canonical root
 	# paths (/dashboard, /servers, /api/...). Two blocks: `path /panel`
-	# matches only the exact path, so /panel/* is needed for subpaths
-	# (including the bare trailing slash).
+	# matches only the exact path, so /panel/* is needed for subpaths.
 	handle_path /panel {
 		reverse_proxy 172.22.0.8:8080 {
 			# strip the panel's own security headers (site-level set yields one value)
@@ -66,52 +62,31 @@ https://mc.fxmq.net {
 		header_down -Referrer-Policy
 		}
 	}
-	# File browser over the homelab/download drop folder. Two blocks for
-	# the same reason as /panel: `path /download` matches only the exact
-	# path (which 308s to /download/), so /download/* serves the listing.
-	handle_path /download {
-		root * /download
-		file_server browse
-	}
-	handle_path /download/* {
-		root * /download
-		file_server browse
-	}
-	# `/` points at the panel (homepage app removed).
+	# `/` points at the panel.
 	@root path /
 	handle @root {
 		redir * /panel 308
 	}
-	# In-browser Minecraft (eaglercraft 1.12.2): static client at /play,
-	# WebSocket at /server (Caddy strips the prefix; EaglerXServer
-	# multiplexes the websocket on the game server's own port — host-net
-	# server on 172.22.0.1:25565, renamed from /ws→/web→/server 2026-08-31).
-	# 07fd7727 and 2ecfbe8c SHARE 25565 — one server runs at a time by
-	# design, so /server only websockets while 07fd7727 is the one up.
-	# /play serves the client files from the homelab/eaglercraft dir
-	# (bind-mounted at /eaglercraft:ro — see docker-compose.yml).
-	# /play must keep the trailing slash: the client resolves its assets
+	# In-browser Minecraft: /play serves the client, /play/server is the
+	# websocket. /play keeps its trailing slash — the client resolves assets
 	# (classes.js, assets.epk) RELATIVE to the page URL, so serving index.html
-	# at /play (no slash) breaks every asset path (they resolve to /assets.epk
-	# → 404 → black page). 308 to /play/ so the base URL is always the dir.
+	# at /play (no slash) breaks every asset path. 308 to /play/ keeps the
+	# base URL on the dir.
 	@play_root path /play
 	redir @play_root /play/ 308
+	# Eaglercraft clients connect to wss://mc.fxmq.net/play/server; the
+	# websocket is multiplexed by EaglerXServer on the game server's own port
+	# (host-net 172.22.0.1:25565, shared with the Java server — one runs at a
+	# time). Must precede the /play/* static handler.
+	handle_path /play/server {
+		reverse_proxy 172.22.0.1:25565
+	}
 	handle_path /play/* {
 		root * /eaglercraft
 		file_server
 	}
-	# Eaglercraft clients connect to wss://mc.fxmq.net/server; reverse_proxy
-	# passes the WebSocket upgrade through to the EaglerXServer plugin,
-	# which multiplexes the websocket on the SAME Netty channel as the
-	# MC protocol (EaglerXServer 1.1.1 injects its handler into the
-	# game server's port — host-net server on 172.22.0.1:25565, shared
-	# with 2ecfbe8c; one game server runs at a time by design).
-	handle_path /server {
-		reverse_proxy 172.22.0.1:25565
-	}
-	# Catch-all: nothing else matched → 404 (without this, unmatched paths
-	# fall through to an empty 200 from net/http).
+	# Catch-all: the usual ok stub.
 	handle {
-		respond 404
+		respond "ok" 200
 	}
 }

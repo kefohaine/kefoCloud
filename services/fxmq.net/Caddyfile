@@ -49,8 +49,8 @@ http:// {
 # back all vhosts is no longer referenced — per-vhost ACME certs are scoped
 # to their own SNI (see ./vhosts/cloud.fxmq.net.caddy for the rationale).
 
-import vhosts/shell.fxmq.net.caddy
-import vhosts/turn.fxmq.net.caddy
+import vhosts/tail.fxmq.net.caddy
+import vhosts/talk.fxmq.net.caddy
 import vhosts/mc.fxmq.net.caddy
 import vhosts/vault.fxmq.net.caddy
 import vhosts/cloud.fxmq.net.caddy
