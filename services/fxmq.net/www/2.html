@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fxmq.net — the big board // index 02</title>
+<meta name="description" content="fxmq.net — one self-hosted box, seven doors. The maximalist poster edition: cloud, vault, kuma, mc, mail, tail, www.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2314110b'/%3E%3Ctext x='16' y='22' font-family='Arial Black' font-size='14' font-weight='900' fill='%23f3efe3' text-anchor='middle'%3Efxmq%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f3efe3; --card:#fffdf4; --ink:#14110b; --dim:#6b6352; --line:#14110b;
+    --c-cloud:#3aa0ff; --c-vault:#7c5cff; --c-kuma:#2fbf71; --c-mc:#ff8c42; --c-mail:#ff4d5e; --c-tail:#d16bff; --c-www:#0fb9a4;
+    --disp:'Archivo Black','Arial Black',Impact,sans-serif;
+    --body:'Space Grotesk',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    --mono:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.5}
+  a{color:inherit}
+  img,svg{vertical-align:middle}
+
+  /* ── top menu ─────────────────────────── */
+  nav.menu{position:sticky;top:0;z-index:60;background:var(--ink);color:var(--paper);border-bottom:4px solid var(--ink)}
+  .menu-in{max-width:1200px;margin:0 auto;padding:0 18px;display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+  .menu-in .brand{font-family:var(--disp);font-size:19px;letter-spacing:1px;padding:12px 14px 12px 0;margin-right:6px;white-space:nowrap}
+  .menu-in .brand span{color:var(--c-www)}
+  .menu-in a.mi{font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase;text-decoration:none;
+    padding:8px 10px;border:2px solid transparent}
+  .menu-in a.mi:hover{border-color:var(--paper);background:var(--paper);color:var(--ink)}
+  .menu-in a.mi i{font-style:normal;opacity:.45;margin-right:3px}
+  .menu-in .right{margin-left:auto;display:flex;flex-wrap:wrap}
+  .menu-in a.github{font-family:var(--mono);font-size:12px;border:2px solid var(--paper);padding:6px 10px;text-decoration:none;margin:8px 0}
+
+  /* ── marquee ──────────────────────────── */
+  .marquee{background:var(--ink);color:var(--paper);overflow:hidden;border-bottom:4px solid var(--ink)}
+  .marquee .track{display:flex;gap:0;white-space:nowrap;animation:slide 30s linear infinite;width:max-content}
+  .marquee span{font-family:var(--disp);font-size:15px;letter-spacing:.14em;padding:7px 0}
+  .marquee b{color:var(--c-www);padding:0 22px;font-weight:400}
+  @keyframes slide{to{transform:translateX(-50%)}}
+
+  /* ── hero ─────────────────────────────── */
+  header.hero{max-width:1200px;margin:0 auto;padding:54px 18px 26px;position:relative}
+  .hero .kicker{font-family:var(--mono);font-size:13px;letter-spacing:.3em;text-transform:uppercase;color:var(--dim);
+    border-top:3px solid var(--ink);border-bottom:3px solid var(--ink);display:inline-block;padding:6px 14px;margin:0 0 22px}
+  .hero h1{font-family:var(--disp);font-size:clamp(44px,8.4vw,118px);line-height:.92;letter-spacing:-.01em;margin:0 0 18px;text-transform:uppercase}
+  .hero h1 .out{color:transparent;-webkit-text-stroke:2.5px var(--ink)}
+  .hero h1 .fill{background:var(--ink);color:var(--paper);padding:0 .12em;display:inline-block;box-shadow:8px 8px 0 var(--c-mc)}
+  .hero .lede{font-size:clamp(17px,2.1vw,23px);font-weight:600;max-width:60ch;margin:8px 0 26px}
+  .hero .lede a{color:var(--ink);box-shadow:inset 0 -0.45em 0 var(--c-www);text-decoration:none;font-weight:700}
+  .strip{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px}
+  .strip a{font-family:var(--mono);font-size:13px;border:3px solid var(--ink);background:var(--card);text-decoration:none;
+    padding:8px 13px;font-weight:500;box-shadow:4px 4px 0 var(--ink);transition:.08s linear}
+  .strip a:hover{transform:translate(3px,3px);box-shadow:1px 1px 0 var(--ink)}
+  .strip a:nth-child(1){background:var(--c-cloud)} .strip a:nth-child(2){background:var(--c-vault)}
+  .strip a:nth-child(3){background:var(--c-kuma)} .strip a:nth-child(4){background:var(--c-mc)}
+  .strip a:nth-child(5){background:var(--c-mail)} .strip a:nth-child(6){background:var(--c-tail)}
+  .strip a:nth-child(7){background:var(--c-www)}
+
+  /* ── service sections ─────────────────── */
+  main{max-width:1200px;margin:0 auto;padding:10px 18px}
+  .svc{scroll-margin-top:70px;margin:54px 0;position:relative}
+  .svc-head{display:flex;align-items:flex-start;gap:20px;margin-bottom:6px;flex-wrap:wrap}
+  .num{font-family:var(--disp);font-size:clamp(64px,9vw,150px);line-height:.8;color:transparent;
+    -webkit-text-stroke:2.5px var(--ink);letter-spacing:-.03em;user-select:none;flex:0 0 auto;margin-top:-6px}
+  .svc-head h2{margin:6px 0 2px;font-size:clamp(26px,3.6vw,46px);text-transform:uppercase;line-height:1;letter-spacing:-.01em;font-family:var(--disp)}
+  .svc-head h2 .host{display:block;font-family:var(--mono);font-size:clamp(15px,1.8vw,22px);text-transform:none;
+    letter-spacing:.02em;margin-top:6px;color:var(--ink)}
+  .stamp{margin-left:auto;flex:0 0 auto;border:3px solid var(--ink);padding:7px 14px;font-family:var(--disp);
+    font-size:14px;letter-spacing:.12em;text-transform:uppercase;transform:rotate(3deg);box-shadow:4px 4px 0 var(--ink);background:var(--card)}
+  .stamp.fill{background:var(--ink);color:var(--paper)}
+  .card{border:3px solid var(--ink);background:var(--card);box-shadow:8px 8px 0 var(--ink);padding:22px 24px 24px;
+    position:relative;margin-top:8px}
+  .card::after{content:"";position:absolute;inset:6px;border:2px dashed color-mix(in srgb,var(--sc) 55%,transparent);pointer-events:none}
+  .card > *{position:relative;z-index:1}
+  .card-top{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+  .glyph{flex:0 0 88px;width:88px;height:88px;border:3px solid var(--ink);background:var(--sc);display:grid;place-items:center;
+    box-shadow:4px 4px 0 var(--ink);transform:rotate(-2deg)}
+  .claim{font-size:clamp(19px,2.4vw,27px);font-weight:700;line-height:1.22;margin:2px 0 6px;max-width:34ch}
+  .claim .u{text-decoration:underline;text-decoration-thickness:5px;text-decoration-color:var(--sc);text-underline-offset:3px}
+  .blurb{font-size:15.5px;max-width:72ch;margin:8px 0 14px;color:#332d21}
+  .blurb b{background:#ffe9a8;padding:0 3px}
+  .feats{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 16px}
+  .feat{font-family:var(--mono);font-size:12.5px;border:2px solid var(--ink);padding:4px 9px;background:var(--paper)}
+  .feat::before{content:"▸ ";color:var(--sc);font-weight:700}
+  .links{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  .btn{font-family:var(--body);font-weight:700;font-size:15px;text-transform:uppercase;letter-spacing:.06em;
+    border:3px solid var(--ink);padding:9px 16px;text-decoration:none;display:inline-block;background:var(--card);
+    box-shadow:4px 4px 0 var(--ink);transition:.06s linear}
+  .btn:hover{transform:translate(3px,3px);box-shadow:1px 1px 0 var(--ink)}
+  .btn.open{background:var(--sc)}
+  .btn.ghost{background:var(--paper)}
+  .btn .arr{font-family:var(--disp)}
+  .gh{font-family:var(--mono);font-size:13px;color:var(--dim);margin-left:2px}
+  .gh a{font-weight:500;color:var(--ink)}
+  .gh a:hover{background:var(--sc)}
+
+  /* poster big rule between sections */
+  .svc + .svc{border-top:3px dashed #a9a08a;padding-top:46px}
+
+  /* footer */
+  footer{background:var(--ink);color:var(--paper);margin-top:70px;border-top:10px solid var(--ink);position:relative;overflow:hidden}
+  footer::before{content:"fxmq";position:absolute;right:-30px;bottom:-90px;font-family:var(--disp);font-size:44vw;
+    line-height:1;color:rgba(255,255,255,.045);pointer-events:none;letter-spacing:-.04em}
+  .foot{max-width:1200px;margin:0 auto;padding:46px 18px 30px;position:relative}
+  .foot .giant{font-family:var(--disp);font-size:clamp(58px,13vw,190px);line-height:.85;text-transform:uppercase;letter-spacing:-.02em;margin:0 0 8px;color:var(--paper)}
+  .foot .giant b{color:var(--c-www)}
+  .foot .slog{font-family:var(--mono);letter-spacing:.16em;text-transform:uppercase;font-size:13px;color:#cfc8b6;margin:0 0 34px}
+  .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:30px;position:relative}
+  .cols h4{font-family:var(--disp);font-size:13px;letter-spacing:.2em;text-transform:uppercase;margin:0 0 12px;color:var(--c-www)}
+  .cols ul{list-style:none;margin:0;padding:0}
+  .cols li{margin:7px 0;font-size:15px}
+  .cols a{color:var(--paper);text-decoration:none;box-shadow:inset 0 -2px 0 rgba(255,255,255,.25)}
+  .cols a:hover{box-shadow:inset 0 -1.4em 0 var(--sc,var(--c-www));color:var(--ink)}
+  .cols .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .cols .chips span{font-family:var(--mono);font-size:12px;border:1.5px solid #55503f;padding:3px 8px;color:#e7e1d0}
+  .colophon{display:flex;gap:14px;flex-wrap:wrap;align-items:center;border-top:2px solid #3a362a;margin-top:38px;padding-top:20px;
+    font-family:var(--mono);font-size:12.5px;color:#b7b0a0}
+  .colophon .stamp{transform:rotate(-3deg);background:var(--c-mc);color:var(--ink)}
+  @media(max-width:700px){.stamp{margin-left:0}.glyph{flex-basis:72px;width:72px;height:72px}}
+</style>
+</head>
+<body>
+
+<nav class="menu">
+  <div class="menu-in">
+    <a class="brand" href="#top">fxmq<span>.</span>net</a>
+    <a class="mi" href="#top"><i>00</i>board</a>
+    <a class="mi" href="#cloud"><i>01</i>cloud</a>
+    <a class="mi" href="#vault"><i>02</i>vault</a>
+    <a class="mi" href="#kuma"><i>03</i>kuma</a>
+    <a class="mi" href="#mc"><i>04</i>mc</a>
+    <a class="mi" href="#mail"><i>05</i>mail</a>
+    <a class="mi" href="#tail"><i>06</i>tail</a>
+    <a class="mi" href="#www"><i>07</i>www</a>
+    <span class="right"><a class="github" href="https://github.com/kefohaine/server" target="_blank" rel="noopener">★ github/kefohaine/server</a></span>
+  </div>
+</nav>
+
+<div class="marquee" aria-hidden="true">
+  <div class="track" style="--rep:2">
+    <span>SELF-HOSTED<b>✦</b>ONE BOX<b>✦</b>SEVEN DOORS<b>✦</b>FXMQ.NET<b>✦</b>NO CLOUD BUT YOURS<b>✦</b>FREE YOUR DATA<b>✦</b>OPEN SOURCE<b>✦</b>MINECRAFT IN THE BROWSER<b>✦</b>MAIL ON YOUR OWN DOMAIN<b>✦</b>BITWARDEN-COMPATIBLE<b>✦</b>TAILNET ONLY<b>✦</b>SELF-HOSTED<b>✦</b>ONE BOX<b>✦</b>SEVEN DOORS<b>✦</b>FXMQ.NET<b>✦</b>NO CLOUD BUT YOURS<b>✦</b>FREE YOUR DATA<b>✦</b>OPEN SOURCE<b>✦</b>MINECRAFT IN THE BROWSER<b>✦</b>MAIL ON YOUR OWN DOMAIN<b>✦</b>BITWARDEN-COMPATIBLE<b>✦</b>TAILNET ONLY<b>✦</b></span>
+  </div>
+</div>
+
+<header class="hero" id="top">
+  <p class="kicker">the big board · poster edition · index 02/03</p>
+  <h1>YOUR DATA.<br><span class="out">YOUR BOX.</span> <span class="fill">YOUR RULES.</span></h1>
+  <p class="lede">Seven services. One Debian VPS. Zero rented clouds. Every door below runs from one repo —
+  <a href="https://github.com/kefohaine/server" target="_blank" rel="noopener">kefohaine/server</a> — behind a Cloudflare edge and a Caddy reverse proxy. <em>(talk.fxmq.net is real but stays off this board — signaling only.)</em></p>
+  <div class="strip">
+    <a href="#cloud">01 cloud.fxmq.net</a><a href="#vault">02 vault.fxmq.net</a><a href="#kuma">03 kuma.fxmq.net</a>
+    <a href="#mc">04 mc.fxmq.net</a><a href="#mail">05 mail.fxmq.net</a><a href="#tail">06 tail.fxmq.net</a><a href="#www">07 www.fxmq.net</a>
+  </div>
+</header>
+
+<main>
+
+  <!-- 01 CLOUD -->
+  <section class="svc" id="cloud" style="--sc:var(--c-cloud)">
+    <div class="svc-head">
+      <span class="num">01</span>
+      <div>
+        <h2>Cloud<span class="host">cloud.fxmq.net → Nextcloud 34</span></h2>
+      </div>
+      <span class="stamp fill">public · open</span>
+    </div>
+    <div class="card">
+      <div class="card-top">
+        <span class="glyph"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="#14110b" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 .42-8.98 6 6 0 0 0-11.7 1.8A4 4 0 0 0 6.5 19z"/><path d="M8.5 15.5l2.3 2.3 4.7-4.6"/></svg></span>
+        <p class="claim">Stop paying rent for your own files. <span class="u">This cloud is yours</span> — the landlord is a container.</p>
+      </div>
+      <p class="blurb">Your <b>files, calendar, contacts, photos</b> and even <b>video calls</b> on your own domain.
+      Sync with desktop &amp; mobile apps, or use the web. CardDAV/CalDAV auto-discovery means your phone finds the
+      address book and calendars with zero fiddling. Every email this lab sends comes from its own mailserver — no
+      Google, no Microsoft in the loop.</p>
+      <div class="feats"><span class="feat">files &amp; sync</span><span class="feat">calendar · contacts</span><span class="feat">photos</span><span class="feat">talk chat &amp; calls</span><span class="feat">mail app</span><span class="feat">postgres 17 + redis</span></div>
+      <div class="links">
+        <a class="btn open" href="https://cloud.fxmq.net" target="_blank" rel="noopener">open the cloud <span class="arr">→</span></a>
+        <a class="btn" href="https://github.com/kefohaine/server/tree/main/services/nextcloud" target="_blank" rel="noopener">homelab config</a>
+        <span class="gh">repo page: <a href="https://github.com/nextcloud/server" target="_blank" rel="noopener">nextcloud/server ↗</a></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 02 VAULT -->
+  <section class="svc" id="vault" style="--sc:var(--c-vault)">
+    <div class="svc-head">
+      <span class="num">02</span>
+      <div><h2>Vault<span class="host">vault.fxmq.net → Vaultwarden</span></h2></div>
+      <span class="stamp">public · encrypted</span>
+    </div>
+    <div class="card">
+      <div class="card-top">
+        <span class="glyph"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#14110b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l7 3v6c0 5-3.2 8.6-7 10-3.8-1.4-7-5-7-10V5z"/><circle cx="12" cy="10" r="2.2"/><path d="M12 12.2V15"/></svg></span>
+        <p class="claim">One vault for every password — <span class="u">Bitwarden-compatible</span>, but the keyholder is you.</p>
+      </div>
+      <p class="blurb">A drop-in Bitwarden server in a single Rust container. Point the official <b>Bitwarden
+      browser extension</b>, desktop or mobile app at vault.fxmq.net and your passwords, passkeys and TOTP codes live in
+      your own vault. Invites &amp; verifications arrive from the lab's own mailserver — proof of life without a SaaS middleman.</p>
+      <div class="feats"><span class="feat">passwords</span><span class="feat">passkeys</span><span class="feat">TOTP seeds</span><span class="feat">secure notes</span><span class="feat">any bitwarden client</span></div>
+      <div class="links">
+        <a class="btn open" href="https://vault.fxmq.net" target="_blank" rel="noopener">open the vault <span class="arr">→</span></a>
+        <a class="btn" href="https://github.com/kefohaine/server/tree/main/services/vaultwarden" target="_blank" rel="noopener">homelab config</a>
+        <span class="gh">repo page: <a href="https://github.com/dani-garcia/vaultwarden" target="_blank" rel="noopener">dani-garcia/vaultwarden ↗</a></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 03 KUMA -->
+  <section class="svc" id="kuma" style="--sc:var(--c-kuma)">
+    <div class="svc-head">
+      <span class="num">03</span>
+      <div><h2>Kuma<span class="host">kuma.fxmq.net → Uptime Kuma</span></h2></div>
+      <span class="stamp">public · watchdog</span>
+    </div>
+    <div class="card">
+      <div class="card-top">
+        <span class="glyph"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="#14110b" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 10.5c0 5.3-8.8 10.5-8.8 10.5S3.2 15.8 3.2 10.5A4.8 4.8 0 0 1 12 7.3a4.8 4.8 0 0 1 8.8 3.2z"/><path d="M7 11.5l1.8 1.8L12 10l1.6 1.6L15 10.4"/></svg></span>
+        <p class="claim">Every service on this board has a <span class="u">watchdog</span>. Kuma barks in green and red.</p>
+      </div>
+      <p class="blurb">Uptime Kuma runs heartbeat, HTTP(S) and port checks against the whole stack and paints it on a
+      live dashboard. When something below dies, it doesn't stay dead silently — the dashboard is public so the status
+      of every door here is on display, including the monitor's own opinion of itself.</p>
+      <div class="feats"><span class="feat">http(s) checks</span><span class="feat">tcp checks</span><span class="feat">status page</span><span class="feat">notifications</span></div>
+      <div class="links">
+        <a class="btn open" href="https://kuma.fxmq.net" target="_blank" rel="noopener">see the watchdogs <span class="arr">→</span></a>
+        <a class="btn" href="https://github.com/kefohaine/server/tree/main/services/uptimekuma" target="_blank" rel="noopener">homelab config</a>
+        <span class="gh">repo page: <a href="https://github.com/louislam/uptime-kuma" target="_blank" rel="noopener">louislam/uptime-kuma ↗</a></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 MC -->
+  <section class="svc" id="mc" style="--sc:var(--c-mc)">
+    <div class="svc-head">
+      <span class="num">04</span>
+      <div><h2>Mc<span class="host">mc.fxmq.net → PufferPanel + Minecraft</span></h2></div>
+      <span class="stamp fill">no sign-up · play</span>
+    </div>
+    <div class="card">
+      <div class="card-top">
+        <span class="glyph"><svg width="50" height="50" viewBox="0 0 24 24" fill="#14110b"><path fill-rule="evenodd" d="M4 4h16v16H4zM8 8h2v2h2V8h4v2h-2v2h2v4h-2v-2h-2v2h-4v-4h2v-2H8z" clip-rule="evenodd"/></svg></span>
+        <p class="claim">Minecraft, <span class="u">zero install</span>. Open a tab, click, and you're mining.</p>
+      </div>
+      <p class="blurb">The play corner of the lab. <b>/play</b> loads a full Minecraft 1.8.8 client (EaglercraftX)
+      straight in the browser — no download, no login, no account. Java veterans on any version from 1.7.10 to latest
+      drop in over port 25565 through the Via family. Behind it all, <b>PufferPanel</b> at <b>/panel</b> manages the
+      servers (registration is closed; accounts are made by the operator on request).</p>
+      <div class="feats"><span class="feat">/play in-browser 1.8.8</span><span class="feat">/panel server UI</span><span class="feat">java :25565 (1.7.10→latest)</span><span class="feat">paper servers</span></div>
+      <div class="links">
+        <a class="btn open" href="https://mc.fxmq.net/play/" target="_blank" rel="noopener">play in the browser <span class="arr">→</span></a>
+        <a class="btn" href="https://mc.fxmq.net/panel" target="_blank" rel="noopener">open the panel</a>
+        <a class="btn ghost" href="https://github.com/kefohaine/server/tree/main/config/pufferpanel/servers" target="_blank" rel="noopener">server templates</a>
+        <span class="gh">repo page: <a href="https://github.com/PufferPanel/PufferPanel" target="_blank" rel="noopener">PufferPanel ↗</a> · <a href="https://github.com/eaglercraft/eaglercraft" target="_blank" rel="noopener">eaglercraft ↗</a></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 05 MAIL -->
+  <section class="svc" id="mail" style="--sc:var(--c-mail)">
+    <div class="svc-head">
+      <span class="num">05</span>
+      <div><h2>Mail<span class="host">mail.fxmq.net → Roundcube + Docker Mailserver</span></h2></div>
+      <span class="stamp">public · dns-only</span>
+    </div>
+    <div class="card">
+      <div class="card-top">
+        <span class="glyph"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="#14110b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3.5 7l8.5 6 8.5-6"/></svg></span>
+        <p class="claim">Mail on <span class="u">your own domain</span> — read it in the browser, or with any real client.</p>
+      </div>
+      <p class="blurb">Webmail (Roundcube) plus a full Postfix/Dovecot platform behind it: SMTP on 25/465/587 and IMAPS
+      on 993. <b>DKIM, SPF and DMARC</b> are published; spoof protection means a mailbox can only ever send as itself.
+      The TLS certificate is the very same Let's Encrypt cert as this website — web and mail share one trust anchor.
+      Every service in this lab uses it to send you email: that's the whole point of owning a domain.</p>
+      <div class="feats"><span class="feat">webmail</span><span class="feat">smtp 25/465/587</span><span class="feat">imaps 993</span><span class="feat">dkim · spf · dmarc</span><span class="feat">spoof-proof</span><span class="feat">quotas</span></div>
+      <div class="links">
+        <a class="btn open" href="https://mail.fxmq.net" target="_blank" rel="noopener">open webmail <span class="arr">→</span></a>
+        <a class="btn" href="https://github.com/kefohaine/server/tree/main/services/mailserver" target="_blank" rel="noopener">homelab config</a>
+        <span class="gh">repo page: <a href="https://github.com/docker-mailserver/docker-mailserver" target="_blank" rel="noopener">docker-mailserver ↗</a> · <a href="https://github.com/roundcube/roundcubemail" target="_blank" rel="noopener">roundcube ↗</a></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 06 TAIL -->
+  <section class="svc" id="tail" style="--sc:var(--c-tail)">
+    <div class="svc-head">
+      <span class="num">06</span>
+      <div><h2>Tail<span class="host">tail.fxmq.net → the operator's cockpit</span></h2></div>
+      <span class="stamp fill">tailnet only · 403 outside</span>
+    </div>
+    <div class="card">
+      <div class="card-top">
+        <span class="glyph"><svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="#14110b" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="5" r="2.2"/><circle cx="5" cy="18" r="2.2"/><circle cx="19" cy="18" r="2.2"/><path d="M11 7.2L6.4 16M13 7.2L17.6 16M7 18h10"/></svg></span>
+        <p class="claim">The <span class="u">back door that isn't a door</span>: only your own devices can even find it.</p>
+      </div>
+      <p class="blurb">This one isn't for the public. tail.fxmq.net exists only inside the Tailscale network — it isn't
+      in public DNS and Caddy answers <b>403 to everyone else</b>, forged Host headers included. On the net it's the
+      cockpit: <b>/</b> lists every door, <b>/ttyd</b> opens a real terminal on the host. If you can open it, you're
+      supposed to be here.</p>
+      <div class="feats"><span class="feat">/ vhost index</span><span class="feat">/ttyd host terminal</span><span class="feat">not in public dns</span><span class="feat">tailscale split-dns</span></div>
+      <div class="links">
+        <a class="btn open" href="https://tail.fxmq.net" target="_blank" rel="noopener">enter the cockpit <span class="arr">→</span></a>
+        <a class="btn ghost" href="https://tail.fxmq.net/ttyd" target="_blank" rel="noopener">/ttyd terminal</a>
+        <span class="gh">repo page: <a href="https://github.com/tailscale/tailscale" target="_blank" rel="noopener">tailscale ↗</a> · <a href="https://github.com/tsl0922/ttyd" target="_blank" rel="noopener">ttyd ↗</a></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 07 WWW -->
+  <section class="svc" id="www" style="--sc:var(--c-www)">
+    <div class="svc-head">
+      <span class="num">07</span>
+      <div><h2>Www<span class="host">www.fxmq.net → this board · drop folder · stubs</span></h2></div>
+      <span class="stamp">public · you are here</span>
+    </div>
+    <div class="card">
+      <div class="card-top">
+        <span class="glyph"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="#14110b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9S14.5 18.4 12 21c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3z"/></svg></span>
+        <p class="claim">The front door of the domain — <span class="u">and a drop folder</span> anyone can reach.</p>
+      </div>
+      <p class="blurb">www.fxmq.net keeps the lights low: <b>/</b> answers a plain stub, <b>/download</b> is a read-only
+      public drop folder served by Caddy's file browser (drop a file, share the link), and <b>/1 · /2 · /3</b> are three
+      maximalist showcases of everything on this board — this poster is /2. Talk to the lab: the whole thing ships from
+      one repo, so every page you see is version-controlled.</p>
+      <div class="feats"><span class="feat">/download drop folder</span><span class="feat">/1 terminal registry</span><span class="feat">/2 poster (this)</span><span class="feat">/3 network map</span></div>
+      <div class="links">
+        <a class="btn open" href="/1">see edition /1 <span class="arr">→</span></a>
+        <a class="btn" href="/3">see edition /3</a>
+        <a class="btn ghost" href="https://www.fxmq.net/download/" target="_blank" rel="noopener">the drop folder</a>
+        <span class="gh">repo page: <a href="https://github.com/caddyserver/caddy" target="_blank" rel="noopener">caddyserver/caddy ↗</a></span>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="foot">
+    <p class="giant">fxmq<b>.</b>net</p>
+    <p class="slog">ONE BOX · SEVEN DOORS · NO CLOUD BUT YOURS · INDEX 02/03</p>
+    <div class="cols">
+      <div>
+        <h4>all the doors</h4>
+        <ul>
+          <li><a href="https://cloud.fxmq.net" target="_blank" rel="noopener" style="--sc:var(--c-cloud)">cloud.fxmq.net — Nextcloud</a></li>
+          <li><a href="https://vault.fxmq.net" target="_blank" rel="noopener" style="--sc:var(--c-vault)">vault.fxmq.net — Vaultwarden</a></li>
+          <li><a href="https://kuma.fxmq.net" target="_blank" rel="noopener" style="--sc:var(--c-kuma)">kuma.fxmq.net — Uptime Kuma</a></li>
+          <li><a href="https://mc.fxmq.net/panel" target="_blank" rel="noopener" style="--sc:var(--c-mc)">mc.fxmq.net — panel · <span style="font-family:var(--mono)">/play</span></a></li>
+          <li><a href="https://mail.fxmq.net" target="_blank" rel="noopener" style="--sc:var(--c-mail)">mail.fxmq.net — webmail</a></li>
+          <li><a href="https://tail.fxmq.net" target="_blank" rel="noopener" style="--sc:var(--c-tail)">tail.fxmq.net — cockpit (tailnet)</a></li>
+          <li><a href="https://www.fxmq.net/download/" target="_blank" rel="noopener" style="--sc:var(--c-www)">www.fxmq.net/download — drop folder</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>the editions</h4>
+        <ul>
+          <li><a href="/1" style="--sc:var(--c-www)">/1 — terminal registry (dark)</a></li>
+          <li><a href="/2" style="--sc:var(--c-www)">/2 — poster editorial (this one)</a></li>
+          <li><a href="/3" style="--sc:var(--c-www)">/3 — network map (glass)</a></li>
+        </ul>
+        <h4>the source</h4>
+        <ul>
+          <li><a href="https://github.com/kefohaine/server" target="_blank" rel="noopener" style="--sc:var(--c-mc)">github.com/kefohaine/server</a></li>
+          <li><a href="https://github.com/kefohaine/server/tree/main/services/fxmq.net/www" target="_blank" rel="noopener" style="--sc:var(--c-mc)">these pages in the repo</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>the machinery</h4>
+        <p class="chips">
+          <span>debian</span><span>docker</span><span>caddy</span><span>cloudflare</span><span>let's encrypt</span><span>nextcloud</span><span>postgres</span><span>redis</span><span>vaultwarden</span><span>uptime kuma</span><span>pufferpanel</span><span>paper mc</span><span>docker mailserver</span><span>roundcube</span><span>tailscale</span><span>ttyd</span>
+        </p>
+      </div>
+      <div>
+        <h4>fine print</h4>
+        <ul>
+          <li>talk.fxmq.net exists (Talk signaling + TURN) — omitted from this board by request.</li>
+          <li>cloud · vault · kuma sit behind Cloudflare bot challenges — bring a browser.</li>
+          <li>mc &amp; mail are grey-cloud (DNS-only): their traffic isn't HTTP(S).</li>
+          <li>tail.fxmq.net 403s off the tailnet — by design, not a bug.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="colophon">
+      <span class="stamp">self-hosted</span>
+      <span>© fxmq.net homelab · edition /2 of 3 · <a href="/1">← /1 terminal</a> · <a href="/3">/3 network map →</a></span>
+      <span style="margin-left:auto;font-family:var(--body)">built from <a href="https://github.com/kefohaine/server" target="_blank" rel="noopener">kefohaine/server</a>, committed like everything else</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
