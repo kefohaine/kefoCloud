@@ -53,34 +53,32 @@ check_sec_headers() {
 
 # Public vhosts. App vhosts must answer with real content, never text/plain.
 check cloud "cloud.fxmq.net" "/"        "200 301 302 307 308" html
-# turn.fxmq.net — Talk HPB + TURN. The backend API must answer with the
+# talk.fxmq.net — Talk HPB + TURN. The backend API must answer with the
 # signaling server's Welcome JSON and the client websocket route must reject
 # an unauthenticated handshake (400/426/101). A bare `respond "ok"` stub
-# returns 200 on both and fails here — the 2026-08-28-style guard for Talk.
-check turn-root "turn.fxmq.net" "/" "200"
-turn_welcome=$(curl -s --max-time 12 --resolve "turn.fxmq.net:443:127.0.0.1" "https://turn.fxmq.net/signaling/api/v1/welcome" 2>/dev/null)
-if ! echo "$turn_welcome" | grep -q '"Welcome"'; then
-  echo "FAIL turn-signaling: /signaling/api/v1/welcome is not the signaling server: $(echo "$turn_welcome" | head -c 80)"; fails=1
+# returns 200 on both and fails here — the ok-stub guard for Talk.
+check talk-root "talk.fxmq.net" "/" "200"
+talk_welcome=$(curl -s --max-time 12 --resolve "talk.fxmq.net:443:127.0.0.1" "https://talk.fxmq.net/signaling/api/v1/welcome" 2>/dev/null)
+if ! echo "$talk_welcome" | grep -q '"Welcome"'; then
+  echo "FAIL talk-signaling: /signaling/api/v1/welcome is not the signaling server: $(echo "$talk_welcome" | head -c 80)"; fails=1
 else
-  echo "ok   turn-signaling: backend API answered"
+  echo "ok   talk-signaling: backend API answered"
 fi
-turn_ws=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 --resolve "turn.fxmq.net:443:127.0.0.1" \
+talk_ws=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 --resolve "talk.fxmq.net:443:127.0.0.1" \
   -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
-  "https://turn.fxmq.net/signaling/spreed" 2>/dev/null)
-if [ "$turn_ws" != "400" ] && [ "$turn_ws" != "426" ] && [ "$turn_ws" != "101" ]; then
-  echo "FAIL turn-signaling: websocket handshake got HTTP $turn_ws (want 400/426/101 — signaling server must answer)"; fails=1
+  "https://talk.fxmq.net/signaling/spreed" 2>/dev/null)
+if [ "$talk_ws" != "400" ] && [ "$talk_ws" != "426" ] && [ "$talk_ws" != "101" ]; then
+  echo "FAIL talk-signaling: websocket handshake got HTTP $talk_ws (want 400/426/101 — signaling server must answer)"; fails=1
 else
-  echo "ok   turn-signaling: websocket endpoint answered ($turn_ws)"
+  echo "ok   talk-signaling: websocket endpoint answered ($talk_ws)"
 fi
 check vault "vault.fxmq.net" "/"        "200 301 302 307 308" html
 check kuma  "kuma.fxmq.net"  "/"        "200 301 302 307 308" html
 check mc-root     "mc.fxmq.net" "/"           "200 301 302 307 308" html
 check mc-panel    "mc.fxmq.net" "/panel"      "200 301 302 307 308" html
-check mc-download "mc.fxmq.net" "/download/"  "200 301 302 307 308" html
 # In-browser Minecraft: /play must serve the eaglercraft client page. The
-# /server websocket check was REMOVED 2026-08-31 (operator): the game server
-# (07fd7727) is not run 24/7, so a 502 when it's stopped is expected and must
-# not fail the smoke. /play is a static Caddy bind-mount and stays testable.
+# /play/server websocket is not smoke-tested: the game server is not run
+# 24/7, so a 502 when it's stopped is expected and must not fail the smoke.
 check mc-play "mc.fxmq.net" "/play/" "200 301 302 307 308" html
 check mail  "mail.fxmq.net" "/"        "200 301 302 307 308" html
 # Security-header integrity (the scan.nextcloud.com XFO/XCTO checks) — the
@@ -89,10 +87,11 @@ check_sec_headers cloud  "cloud.fxmq.net"
 check_sec_headers vault  "vault.fxmq.net"
 check_sec_headers kuma   "kuma.fxmq.net"
 check_sec_headers mail   "mail.fxmq.net"
-check_sec_headers mc     "mc.fxmq.net"# www is a health/landing stub BY DESIGN — just needs to answer.
-check www   "www.fxmq.net" "/" "200 301 302 307 308"
-# shell is Tailscale-only: a non-tailnet source (this host's 127.0.0.1) must get 403.
-check shell "shell.fxmq.net" "/" "403"
+check_sec_headers mc     "mc.fxmq.net"# www is a landing stub + the download drop folder.
+check www          "www.fxmq.net" "/" "200 301 302 307 308"
+check www-download "www.fxmq.net" "/download/" "200 301 302 307 308" html
+# tail is Tailscale-only: a non-tailnet source (this host's 127.0.0.1) must get 403.
+check tail "tail.fxmq.net" "/" "403"
 
 # TLS issuer must stay Let's Encrypt (per-vhost DNS-01 ACME).
 issuer=$(echo | timeout 6 openssl s_client -connect 127.0.0.1:443 -servername cloud.fxmq.net 2>/dev/null \
