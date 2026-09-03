@@ -72,12 +72,6 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Problem**: inbound TCP 25 is now open (verified 2026-08-28: external nodes connect, postfix serves `220 mail.fxmq.net ESMTP` with the LE cert). The remaining blocker: 82.118.230.117 has **no PTR** — outbound mail to Gmail/Outlook will be rejected or spam-foldered until reverse DNS exists. The reverse zone is provider-hosted, not delegated to us, so only the operator can set it.
 - **Fix** (operator, ~2 min): provider is **AlphaVPS** (netname `DAGroup`, RIPE `AA29428-RIPE`, block `82.118.230.0/24`). In the AlphaVPS client area (VPS → rDNS/Reverse DNS) set `82.118.230.117` → `mail.fxmq.net`, or ticket `support@alphavps.bg` / `abuse@alphavps.bg` with: *"Please set reverse DNS for 82.118.230.117 to `mail.fxmq.net`."* Must match postfix HELO + the `mail.fxmq.net` A record (both already `mail.fxmq.net`). Verify with `dig -x 82.118.230.117`, then send a test to an external inbox.
 
-#### Nextcloud admin password was in git history  **[needs human approval]**
-- **File**: `services/nextcloud/.env` (removed from the git index 2026-08-28; file stays on disk, gitignored)
-- **Problem**: the Nextcloud admin password was committed to the repo. It is now untracked and future changes are gitignored, but the value remains in git history — if the GitHub repo is or was public, the password is exposed.
-- **History purged 2026-09-03**: `services/nextcloud/.env` removed from every commit on GitHub (`main`, commit `6522736`) via `drop-path.sh` plumbing rebuild — 661 commits / 2 roots / 9 merges preserved, tip tree byte-identical, verified `.env` absent from all reachable history. The value may still exist in the **local-only** backup tags (`history-backup-20260902` etc.) and in the running server's `.env`.
-- **Fix (remaining, operator)**: rotate the Nextcloud admin password (`occ user:resetpassword admin`, update `services/nextcloud/.env`) — the value was exposed while the repo was public, so treat it as compromised regardless of the purge.
-
 #### Tailscale tailnet has 2 stale devices  **[needs human approval]**
 - **File**: Tailscale admin console (outside repo)
 - **Problem**: `kaliusb` (linux, 18d offline) and `iosphone` (iOS, 6h offline) are still registered in the tailnet. `kaliusb` is a Kali USB stick — likely a forensic / on-demand tool, not a daily driver. Stale devices widen the ACL blast radius.
@@ -266,3 +260,5 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **All 301 redirects upgraded to 308** — CardDAV/CalDAV well-known redirects included.
 - **Docs restructured** — AGENTS.md portable-only (project specifics + lessons + intended moved to GUIDE.md), ISSUES.md Solved one sentence per record, volatile operator-editable state removed everywhere.
 - **`kefohaine/server` GitHub web page restored after history rewrite** — web code views 404'd and git-data API 500'd while git/raw/codeload stayed healthy; fixed by pushing an empty nudge commit (`daf119d`), which rebuilt GitHub's index (intermittent 500s for ~10 min while settling).
+- **`services/nextcloud/.env` purged from all GitHub history** — removed from every commit via `scripts/drop-path.sh` plumbing rebuild (661 commits / 2 roots / 9 merges preserved, tip tree byte-identical); the exposed NC admin password is moot — the account no longer exists.
+- **Local backup tags destroyed** — `history-backup-20260902` / `history-20260902-noreply` / `history-developer-email-20260903` deleted + objects pruned (`gc --prune=now`); the jehpok-era record lives on only inside `main` under the noreply identity, per operator choice.
