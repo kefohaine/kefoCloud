@@ -20,10 +20,11 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### Robustness
 
-#### Profile contribution graph empty despite noreply identity rewrite  **[needs human approval]**
-- **File**: GitHub profile (outside repo)
-- **Problem**: on 2026-09-03 both repos' histories were rewritten to `kefohaine <268671487+kefohaine@users.noreply.github.com>` (auto-attributing, no verification step) to fix the empty profile graph, but GitHub's contribution aggregates lag and may need hours-to-days to recompute; the repo contributors page also showed a stale ghost contributor ("claude", 47 commits — in no real history).
-- **Fix**: check `https://github.com/users/kefohaine/contributions` for non-zero `data-level` cells (and the profile graph) after GitHub recomputes; if still empty after ~48h, open a GitHub support ticket citing the guaranteed-attribution noreply emails + the ghost contributor as evidence of stale aggregates.
+#### GitHub stats/aggregates polluted after the triple history rewrite  **[needs human approval]**
+- **File**: GitHub (Pulse/Insights + profile graph + contributors — outside repo)
+- **Problem**: after three full-history rewrites in 24h (2026-09-02/03), GitHub's aggregate stats are poisoned: Pulse showed 2389 "commits to all branches" (660 real) and ghost authors claude (188) + op (170) that exist in no current history — the op count matched the 172 `[redacted]` commits in the pre-rewrite history, proving GitHub aggregates **remote tags** (which also re-exposed the scrubbed old identities). The profile contribution graph also stayed empty because `[redacted]` was never verified.
+- **Done 2026-09-03**: both repos rewritten to the account-noreply email (`268671487+kefohaine@users.noreply.github.com`, auto-attributing, no verification step); all backup tags deleted from the remote (kept local-only — see GUIDE lesson).
+- **Fix (remaining)**: GitHub's recompute must converge — check the Pulse page (expect 1 author, ~600-660 commits) and `https://github.com/users/kefohaine/contributions` (non-zero `data-level` cells). If ghosts (claude) or impossible counts persist after ~48h, open a GitHub support ticket citing: noreply-guaranteed attribution, deleted remote tags, and the ghost contributors as evidence the stats DB retained superseded push states.
 
 
 
