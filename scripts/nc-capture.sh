@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
 # scripts/nc-capture.sh — snapshot the LIVE Nextcloud user/group/quota state
-# into config/nextcloud/{users,groups}.txt + default-quota. These are
-# GENERATED recovery manifests: install.sh's nextcloud_setup recreates
+# into homelab/cloud/recovery/ ({users,groups}.txt + default-quota, OUTSIDE
+# the repo — instance recovery state, like pgdata; never commit these). These
+# are GENERATED recovery manifests: install.sh's nextcloud_setup recreates
 # exactly what this captures on a fresh install — no hardcoded lists, so
 # nothing drifts as users/groups change. Run `make nc-capture` on a healthy
 # instance before wiping/migrating (and re-run it after any user change).
@@ -16,7 +17,7 @@ set -uo pipefail
 
 NC_CONTAINER="${NC_CONTAINER:-nextcloud}"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OUT="$REPO_DIR/config/nextcloud"
+OUT="$(dirname "$REPO_DIR")/cloud/recovery"
 OCC() { docker exec -u www-data "$NC_CONTAINER" php occ "$@"; }
 
 docker ps --format '{{.Names}}' | grep -qx "$NC_CONTAINER" \
