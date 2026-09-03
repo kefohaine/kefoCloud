@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# pre-push hook — runs the live vhost smoke test before every push
-# (installed via `make install-hooks`). Blocks pushing while the edge is
-# broken (apps answering "ok" text/plain, dead SMTP/IMAP, etc.). This is the
-# last line of defence against committing a stub deployment: the 2026-08-28
-# incident shipped an edge-wide change whose failure mode this test catches.
+# pre-push hook — runs the live vhost smoke test before every push, and
+# warns when a push replaces remote history (installed via `make
+# install-hooks`). Blocks pushing while the edge is broken (apps answering
+# "ok" text/plain, dead SMTP/IMAP, etc.). This is the last line of defence
+# against committing a stub deployment: the 2026-08-28 incident shipped an
+# edge-wide change whose failure mode this test catches.
 # Override with SKIP_SMOKE=1 only when the operator says the smoke is a false
 # alarm (e.g. containers down for maintenance).
 set -uo pipefail
@@ -22,5 +23,22 @@ if ! bash "$smoke" >/dev/null 2>&1; then
   echo "  (bash $smoke  — full output; SKIP_SMOKE=1 to override, not on a whim)"
   exit 1
 fi
+
+# History-rewrite guard. A normal push is a fast-forward: the remote tip is an
+# ancestor of what we're pushing. If it isn't, this push replaces remote
+# history (force-pushed rewrite) — which can leave GitHub's web git-data
+# index 404/500 while git stays healthy (the 2026-09-03 incident; fixed by a
+# nudge commit). Warn only — rewrites are legitimate, but the operator must
+# verify with `make gh-web-health` once the push lands.
+while read -r lref lsha rref rsha; do
+  [ "$lsha" = "0000000000000000000000000000000000000000" ] && continue  # deletion
+  [ "$rsha" = "0000000000000000000000000000000000000000" ] && continue  # new branch
+  [ "$lsha" = "$rsha" ] && continue
+  if ! git merge-base --is-ancestor "$rsha" "$lsha" 2>/dev/null; then
+    echo "pre-push: WARNING — this push replaces existing remote history (not a fast-forward)."
+    echo "  After it lands, github.com may 404/500 while git stays healthy (2026-09-03 lesson)."
+    echo "  Verify with: make gh-web-health   (remedy if red: an empty nudge commit re-triggers the rebuild)"
+  fi
+done < /dev/stdin
 
 exit 0
