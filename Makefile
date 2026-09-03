@@ -165,7 +165,7 @@ systemd-log:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: list smoke install-hooks clean-docker clean-apt clean-backups update install-config kuma-import help talk-gen
+.PHONY: list smoke gh-web-health install-hooks clean-docker clean-apt clean-backups update install-config kuma-import help talk-gen
 .PHONY: deploy backup cleanup
 
 # One-shot overview per the help line: git; systemd; docker; tmux; backups; mails.
@@ -250,13 +250,22 @@ update:
 smoke:
 >@bash scripts/smoke-vhosts.sh
 
+# GitHub web git-data health (see scripts/gh-web-health.sh). Run after any
+# full-history rewrite + force-push: a rewritten history can leave the GitHub
+# web page 404/500 while git stays healthy (2026-09-03 incident); the remedy
+# is a nudge commit, which triggers GitHub's rebuild. The pre-push hook
+# warns whenever a push replaces remote history.
+gh-web-health:
+>@bash scripts/gh-web-health.sh
+
 # Install the repo's git hooks (pre-commit: Caddy validate + app-vhost stub
-# guard; pre-push: live vhost smoke test). Re-run after cloning.
+# guard; pre-push: live vhost smoke test + history-rewrite warning). Re-run
+# after cloning or after editing a hook.
 install-hooks:
 >@mkdir -p .git/hooks
 >@cp scripts/hooks/pre-commit scripts/hooks/pre-push .git/hooks/
 >@chmod +x .git/hooks/pre-commit .git/hooks/pre-push
->@scripts/mklog info "installed git hooks: pre-commit (Caddy validate + app-vhost stub guard), pre-push (live vhost smoke)"
+>@scripts/mklog info "installed git hooks: pre-commit (Caddy validate + app-vhost stub guard), pre-push (live vhost smoke + history-rewrite warning)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Mailserver Registry (Docker Mailserver CLI — see `make help` > Mailserver
