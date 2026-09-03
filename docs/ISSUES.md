@@ -20,6 +20,13 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### Robustness
 
+#### Profile contribution graph empty despite noreply identity rewrite  **[needs human approval]**
+- **File**: GitHub profile (outside repo)
+- **Problem**: on 2026-09-03 both repos' histories were rewritten to `kefohaine <268671487+kefohaine@users.noreply.github.com>` (auto-attributing, no verification step) to fix the empty profile graph, but GitHub's contribution aggregates lag and may need hours-to-days to recompute; the repo contributors page also showed a stale ghost contributor ("claude", 47 commits — in no real history).
+- **Fix**: check `https://github.com/users/kefohaine/contributions` for non-zero `data-level` cells (and the profile graph) after GitHub recomputes; if still empty after ~48h, open a GitHub support ticket citing the guaranteed-attribution noreply emails + the ghost contributor as evidence of stale aggregates.
+
+
+
 #### Undocumented host process: `node server/server.js` (dumb-init "extra")
 - **File**: host (not in repo) — `ps` shows `dumb-init -- extra` (PID 51742) → `node server/server.js` (PID 51776, up since Aug 24, ~170 MB RSS, cwd `/`)
 - **Problem**: matches no compose file, systemd unit, or script in the repo; purpose unknown. Not touched by any agent task.
