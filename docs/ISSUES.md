@@ -25,6 +25,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Problem**: after three full-history rewrites in 24h (2026-09-02/03), GitHub's aggregate stats are poisoned: Pulse showed 2389 "commits to all branches" (660 real) and ghost authors claude (188) + op (170) that exist in no current history — the op count matched the 172 commits in the pre-rewrite history under a retired identity, proving GitHub aggregates **remote tags** (which also re-exposed the scrubbed old identities). The profile contribution graph also stayed empty because the retired custom email was never verified.
 - **Done 2026-09-03**: both repos rewritten to the account-noreply email (`268671487+kefohaine@users.noreply.github.com`, auto-attributing, no verification step); all backup tags deleted from the remote (kept local-only — see GUIDE lesson).
 - **Fix (remaining)**: GitHub's recompute must converge — check the Pulse page (expect 1 author, ~600-660 commits) and `https://github.com/users/kefohaine/contributions` (non-zero `data-level` cells). If ghosts (claude) or impossible counts persist after ~48h, open a GitHub support ticket citing: noreply-guaranteed attribution, deleted remote tags, and the ghost contributors as evidence the stats DB retained superseded push states.
+- **Progress 2026-09-03 eve**: Pulse converged from kefohaine 2219 / claude 188 / op 170 to kefohaine 607 (real) / claude 47 / op 0 — tag deletion cleared op; claude is the last retained pre-rewrite counter and drops with each recompute pass.
 
 
 
