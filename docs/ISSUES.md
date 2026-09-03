@@ -75,7 +75,8 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 #### Nextcloud admin password was in git history  **[needs human approval]**
 - **File**: `services/nextcloud/.env` (removed from the git index 2026-08-28; file stays on disk, gitignored)
 - **Problem**: the Nextcloud admin password was committed to the repo. It is now untracked and future changes are gitignored, but the value remains in git history — if the GitHub repo is or was public, the password is exposed.
-- **Fix**: operator decision — rotate the Nextcloud admin password (`occ user:resetpassword admin`, update `services/nextcloud/.env`), and if the repo is public, purge history or treat the password as compromised.
+- **History purged 2026-09-03**: `services/nextcloud/.env` removed from every commit on GitHub (`main`, commit `6522736`) via `drop-path.sh` plumbing rebuild — 661 commits / 2 roots / 9 merges preserved, tip tree byte-identical, verified `.env` absent from all reachable history. The value may still exist in the **local-only** backup tags (`history-backup-20260902` etc.) and in the running server's `.env`.
+- **Fix (remaining, operator)**: rotate the Nextcloud admin password (`occ user:resetpassword admin`, update `services/nextcloud/.env`) — the value was exposed while the repo was public, so treat it as compromised regardless of the purge.
 
 #### Tailscale tailnet has 2 stale devices  **[needs human approval]**
 - **File**: Tailscale admin console (outside repo)
