@@ -57,11 +57,6 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Problem**: Setup A (2026-09-01) keeps PostgreSQL on fxmq and moves only Nextcloud's user files to the 1 TB VPS, but the GUIDE section still documents moving the whole DB there "when it joins the tailnet" — and it has already joined (nightly `pg_dump` lands on it). One of the two is the plan.
 - **Fix**: operator decision — delete the DB-migration steps from GUIDE (Setup A won) or re-document them as the option if the DB ever outgrows fxmq.
 
-#### `kefohaine/server` GitHub web page 404s after the history rewrite  **[needs human approval]**
-- **File**: GitHub (repo `kefohaine/server`, not the repo files)
-- **Problem**: `github.com/kefohaine/server` (root, `/tree/main`, `/commits`) returns "Page not found" and the git-data REST endpoints 500 (`api.github.com/repos/kefohaine/server/commits`, `/git/ref/heads/main`) since the 2026-09-02 full-history rewrite + force-push. Not a takedown: git (SSH + HTTPS), `raw.githubusercontent.com`, `codeload`, and the issues/pulse/releases tabs all work; local main == remote main (`6e4079e`); web-app repo is healthy everywhere.
-- **Fix**: operator contacts GitHub support (https://support.github.com) asking to rebuild the repo's web git-data index, citing the 500-vs-200 A/B evidence; or trigger a reindex with a new (even empty) commit to `main`. Verify recovery: `curl -s -o /dev/null -w '%{http_code}' https://api.github.com/repos/kefohaine/server/commits` → 200.
-
 ### Security
 
 #### Mail platform: no PTR record (operator will set at AlphaVPS)  **[needs human approval]**
@@ -261,3 +256,4 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **mc.fxmq.net paths reworked** — websocket moved to `/play/server`, `/download` moved to `www.fxmq.net/download`, unknown paths answer the usual `ok`, catch-all 404 dropped.
 - **All 301 redirects upgraded to 308** — CardDAV/CalDAV well-known redirects included.
 - **Docs restructured** — AGENTS.md portable-only (project specifics + lessons + intended moved to GUIDE.md), ISSUES.md Solved one sentence per record, volatile operator-editable state removed everywhere.
+- **`kefohaine/server` GitHub web page restored after history rewrite** — web code views 404'd and git-data API 500'd while git/raw/codeload stayed healthy; fixed by pushing an empty nudge commit (`daf119d`), which rebuilt GitHub's index (intermittent 500s for ~10 min while settling).
