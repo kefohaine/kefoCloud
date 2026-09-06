@@ -20,4 +20,3 @@ services/vaultwarden/.env
 /mailserver/
 /pgdata/
 /talk/
-.claude/

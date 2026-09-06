@@ -203,7 +203,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Static site placeholders** — non-blank `index.html` on www/app/vps.
 - **Healthchecks** — domain + cloud healthy.
 - **Security headers** — HSTS/XCTO/XFO/Referrer-Policy on all vhosts.
-- **Claude Code project safety rail** — deny-only settings deployed, later removed from the repo.
+- **AI-assistant project safety rail** — deny-only settings deployed, later removed from the repo.
 - **Backup + migrate recipes fixed** — sudo destinations, tar-stream cloud backup, migrate recipe restored.
 - **Makefile `set -u` foot-gun fixed** — `SHELL := /bin/bash` set explicitly.
 - **`bkp-cloud` maintenance trap** — `occ maintenance:mode --off` on EXIT.
@@ -244,7 +244,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Terminal `host-exec` shim** — chroot-to-host wrapper for glibc binaries in the Alpine ttyd container.
 
 ### Sep 2026 — edge renames + docs overhaul
-- **GitHub graph empty + "claude" contributor fixed** — two-root merge DAG made GitHub's date queries 500 (graph empty since 08-01); single-root linearization restored the cells and scrubbing `Co-Authored-By: Claude` trailer credits removed the claude contributor (details in the GUIDE 2026-09-06 debug-hell lesson); the two-root repo was deleted and the clean history is now canonical on `kefohaine/server` (scratch repos deleted).
+- **GitHub graph empty + ghost contributor fixed** — two-root merge DAG made GitHub's date queries 500 (graph empty since 08-01); single-root linearization restored the cells and scrubbing `Co-Authored-By:` AI-assistant trailer credits removed the ghost contributor (details in the GUIDE 2026-09-06 debug-hell lesson); the two-root repo was deleted and the clean history is now canonical on `kefohaine/server` (scratch repos deleted).
 - **Duplicate `fxmq.net` edge container cleaned up** — an interrupted `--force-recreate` had left two host-network Caddys on :80/:443 sharing the cert store; both removed, recreate verified non-duplicating.
 - **`optimize.sh` universal VPS optimizer** — OPTIMIZE.md + repo tuning + `make cleanup`'s apt/docker part merged into one idempotent, zero-prompt bash script with an Enter-refresh error loop; applied here (swap RAM/3, noatime, THP, sysctls, tuned/irqbalance/earlyoom auto, SSD/HDD auto-detect → fstrim or SETRA).
 - **`turn.fxmq.net` renamed `talk.fxmq.net`** — vhost, DNS (grey-cloud A record), occ signaling entry, coturn cert path, smoke and docs updated; stale cert dir removed.
