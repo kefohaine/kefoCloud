@@ -20,15 +20,10 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### Robustness
 
-#### GitHub stats/aggregates polluted after the triple history rewrite  **[needs human approval]**
-- **File**: GitHub (Pulse/Insights + profile graph + contributors — outside repo)
-- **Problem**: after three full-history rewrites in 24h (2026-09-02/03), GitHub's aggregate stats are poisoned: Pulse showed 2389 "commits to all branches" (660 real) and ghost authors claude (188) + op (170) that exist in no current history — the op count matched the 172 commits in the pre-rewrite history under a retired identity, proving GitHub aggregates **remote tags** (which also re-exposed the scrubbed old identities). The profile contribution graph also stayed empty because the retired custom email was never verified.
-- **Done 2026-09-03**: both repos rewritten to the account-noreply email (`268671487+kefohaine@users.noreply.github.com`, auto-attributing, no verification step); all backup tags deleted from the remote (kept local-only — see GUIDE lesson).
-- **Fix (remaining)**: GitHub's recompute must converge — check the Pulse page (expect 1 author, ~600-660 commits) and `https://github.com/users/kefohaine/contributions` (non-zero `data-level` cells). If ghosts (claude) or impossible counts persist after ~48h, open a GitHub support ticket citing: noreply-guaranteed attribution, deleted remote tags, and the ghost contributors as evidence the stats DB retained superseded push states.
-- **Progress 2026-09-03 eve**: Pulse converged from kefohaine 2219 / claude 188 / op 170 to kefohaine 607 (real) / claude 47 / op 0 — tag deletion cleared op; claude is the last retained pre-rewrite counter and drops with each recompute pass.
-- **Progress 2026-09-06**: contributors API converged (kefohaine 666) and attribution is confirmed (noreply id matches, `author.login` = kefohaine), but the profile graph is still all `level=0` from 2026-08-01 on. Nudge commits do NOT fix it — the op's 2026-09-03 empty-commit nudge (daf119d, fixed the web index) and a fresh push (c67e927) left the graph unchanged. Root cause located: the **date-range commit index is corrupted** — `GET /repos/kefohaine/server/commits?since=2026-08-01` flaps between HTTP 500 / `[]` / only-the-newest-tip while the unfiltered walk returns all 647 commits for that window (verified repeatedly 2026-09-06); web-app's same-format query works, so it's server-repo-specific. The profile graph is a date-bounded query → hence zero cells since 08-01. **Outcome 2026-09-06**: support filed 4× in different styles with explicit human-escalation requests; the bot auto-closed all with a canned "you can fix it yourself" and no human ever engaged. Endpoint still flaps (observed back-to-back 500×5 at 13:56; 200-with-recent-only minutes earlier). **Open decision (op)**: stay on GitHub vs self-host (Forgejo on the homelab would keep full history — GitHub is only a remote, so migration is non-destructive); either way the Aug-Sep graph cells likely need a platform-side recompute that GitHub won't do.
-
-
+#### Adopt `server-again` as canonical history / delete `server-dupe`  **[needs human approval]**
+- **File**: GitHub repos — `kefohaine/server` (canonical), `server-dupe` (throwaway), `server-again` (clean 2026-09-06 history)
+- **Problem**: the 2026-09-06 fix (GUIDE lesson) produced a clean single-root, claude-free 669-commit history on `server-again`; canonical `server` still holds the two-root DAG with claude co-author credits (broken date queries + "claude" contributor), and `server-dupe` is a throwaway still showing claude.
+- **Fix**: op decides — force-push `server-again`'s main onto `server` (or rename `server-again`→`server`), delete `server-dupe`, then replace this local repo's `main` with the new history and re-verify (`make gh-web-health`).
 
 #### Undocumented host process: `node server/server.js` (dumb-init "extra")
 - **File**: host (not in repo) — `ps` shows `dumb-init -- extra` (PID 51742) → `node server/server.js` (PID 51776, up since Aug 24, ~170 MB RSS, cwd `/`)
@@ -254,6 +249,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Terminal `host-exec` shim** — chroot-to-host wrapper for glibc binaries in the Alpine ttyd container.
 
 ### Sep 2026 — edge renames + docs overhaul
+- **GitHub graph empty + "claude" contributor fixed** — two-root merge DAG made GitHub's date queries 500 (graph empty since 08-01); single-root linearization restored the cells and scrubbing `Co-Authored-By: Claude` trailer credits removed the claude contributor (details in the GUIDE 2026-09-06 debug-hell lesson); clean history on `kefohaine/server-again`.
 - **Duplicate `fxmq.net` edge container cleaned up** — an interrupted `--force-recreate` had left two host-network Caddys on :80/:443 sharing the cert store; both removed, recreate verified non-duplicating.
 - **`optimize.sh` universal VPS optimizer** — OPTIMIZE.md + repo tuning + `make cleanup`'s apt/docker part merged into one idempotent, zero-prompt bash script with an Enter-refresh error loop; applied here (swap RAM/3, noatime, THP, sysctls, tuned/irqbalance/earlyoom auto, SSD/HDD auto-detect → fstrim or SETRA).
 - **`turn.fxmq.net` renamed `talk.fxmq.net`** — vhost, DNS (grey-cloud A record), occ signaling entry, coturn cert path, smoke and docs updated; stale cert dir removed.
