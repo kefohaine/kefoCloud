@@ -92,11 +92,65 @@ DOMAIN='$DOMAIN'
 CF_API_TOKEN='$CF_API_TOKEN'
 TS_AUTHKEY='$TS_AUTHKEY'
 TS_IP='${TS_IP:-}'
+MOD_CLOUD='${MOD_CLOUD:-true}'
+MOD_VAULT='${MOD_VAULT:-true}'
+MOD_MAIL='${MOD_MAIL:-true}'
+MOD_GAMES='${MOD_GAMES:-true}'
+MOD_MONITOR='${MOD_MONITOR:-true}'
 ERR_TAGS=($(printf '%q ' "${ERR_TAGS[@]}"))
 EOF
   chmod 600 "$tmp"
   mv -f "$tmp" "$STATE" 2>/dev/null || sudo mv -f "$tmp" "$STATE" || rm -f "$tmp"
   chown $OP_USER:$OP_USER "$STATE" 2>/dev/null || true
+}
+
+# module names (doors) + their display names + defaults-file aliases
+MOD_ALIASES="cloud:cloud vaultwarden:vault vault:vault mailserver:mail mail:mail pufferpanel:games mc:games games:games uptimekuma:monitor kuma:monitor monitor:monitor"
+
+# read scripts/defaults/install.conf (same dir as this script) for prompt defaults
+defaults_install() {
+  local f dir line
+  dir=$(cd "$(dirname "$0")" && pwd)
+  for f in "$dir/scripts/defaults/install.conf" "scripts/defaults/install.conf"; do
+    [ -f "$f" ] || continue
+    while IFS= read -r line || [ -n "$line" ]; do
+      line=$(printf '%s' "$line" | sed -E 's/#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//; s/[[:space:]]*=[[:space:]]*/=/g')
+      [ -n "$line" ] || continue
+      case "$line" in
+        install\ domain=*) [ -z "${DOMAIN:-}" ] && DOMAIN=$(echo "$line" | cut -d= -f2-);;
+        install\ *module=true|install\ *module=false)
+          local key val
+          key=$(echo "$line" | sed -E 's/^install ([a-z-]+) module=(true|false)$/\1/')
+          val=$(echo "$line" | sed -E 's/^install ([a-z-]+) module=(true|false)$/\2/')
+          local canon=""
+          for pair in $MOD_ALIASES; do
+            [ "${pair%%:*}" = "$key" ] && canon="${pair##*:}"
+          done
+          [ -n "$canon" ] && eval "DEF_${canon}=$val"
+          ;;
+      esac
+    done < "$f"
+  done
+  for k in cloud vault mail games monitor; do
+    eval "[ -z \"\${DEF_$k:-}\" ] && DEF_$k=true"
+  done
+}
+
+ask_modules() {
+  local k answer
+  for k in cloud vault mail games monitor; do
+    local var="MOD_${k^^}" def
+    eval "def=\${DEF_$k:-true}"
+    if [ -z "${!var:-}" ]; then
+      read -rp "Include the $k module? default=$def — Enter accepts, or type true/false: " answer
+      case "${answer,,}" in
+        "") eval "$var=$def";;
+        true|yes|y) eval "$var=true";;
+        false|no|n) eval "$var=false";;
+        *) eval "$var=$def";;
+      esac
+    fi
+  done
 }
 
 ask_inputs() {
@@ -113,6 +167,8 @@ ask_inputs() {
     read -rsp "Tailscale auth key (tskey-...): " TS_AUTHKEY; echo
   fi
   [ -n "$TS_AUTHKEY" ] || { echo "Auth key required."; exit 1; }
+  defaults_install
+  ask_modules
   echo "Installing for $DOMAIN — ~10-15 min. Full log: $LOG"
 }
 
@@ -244,7 +300,10 @@ EOF
   chown $OP_USER:$OP_USER "$STATE" 2>/dev/null || true
   log "Handing off to user '$OP_USER'..."
   exec runuser -u $OP_USER -- env DOMAIN="$DOMAIN" CF_API_TOKEN="$CF_API_TOKEN" \
-    TS_AUTHKEY="$TS_AUTHKEY" TS_IP="${TS_IP:-}" bash /home/$OP_USER/install.sh --op
+    TS_AUTHKEY="$TS_AUTHKEY" TS_IP="${TS_IP:-}" \
+    MOD_CLOUD="${MOD_CLOUD:-true}" MOD_VAULT="${MOD_VAULT:-true}" MOD_MAIL="${MOD_MAIL:-true}" \
+    MOD_GAMES="${MOD_GAMES:-true}" MOD_MONITOR="${MOD_MONITOR:-true}" \
+    bash /home/$OP_USER/install.sh --op
 }
 
 # ────────────────────────────── Phase 2 (op) ──────────────────────────────
@@ -393,13 +452,16 @@ containers_up() {
   # PostgreSQL first — the nextcloud entrypoint's fresh install needs the DB
   # reachable (POSTGRES_HOST from .env, set by talk-gen above). Caddy's
   # DNS-01 issuance runs at startup, so the mail/turn certs the talk stack
-  # and mailserver need are on disk by the time they start.
-  make dok-recreate-nextcloud-db >>"$LOG" 2>&1 || fail nextcloud_db
-  make dok-recreate-nextcloud   >>"$LOG" 2>&1 || fail nextcloud
-  make dok-recreate-vaultwarden >>"$LOG" 2>&1 || fail vaultwarden
-  make dok-recreate-uptimekuma  >>"$LOG" 2>&1 || fail kuma
-  make dok-recreate-pufferpanel >>"$LOG" 2>&1 || fail pufferpanel
-  make dok-recreate-mailserver  >>"$LOG" 2>&1 || fail mailserver
+  # and mailserver need are on disk by the time they start. Modules respect
+  # the install-time choice (default: everything ON).
+  if [ "${MOD_CLOUD:-true}" = "true" ]; then
+    make dok-recreate-nextcloud-db >>"$LOG" 2>&1 || fail nextcloud_db
+    make dok-recreate-nextcloud   >>"$LOG" 2>&1 || fail nextcloud
+  fi
+  [ "${MOD_VAULT:-true}"   = "true" ] && { make dok-recreate-vaultwarden >>"$LOG" 2>&1 || fail vaultwarden; }
+  [ "${MOD_MONITOR:-true}" = "true" ] && { make dok-recreate-uptimekuma  >>"$LOG" 2>&1 || fail kuma; }
+  [ "${MOD_GAMES:-true}"   = "true" ] && { make dok-recreate-pufferpanel >>"$LOG" 2>&1 || fail pufferpanel; }
+  [ "${MOD_MAIL:-true}"    = "true" ] && { make dok-recreate-mailserver  >>"$LOG" 2>&1 || fail mailserver; }
 }
 
 kuma_seed() {
@@ -722,7 +784,7 @@ ssl_mode_full() {
   return 0
 }
 
-cf_dns() {
+  cf_dns() {
   VPS_IP=$(curl -s4 ifconfig.me)
   ZONE_ID=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
     "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" | jq -r '.result[0].id // empty')
@@ -730,32 +792,33 @@ cf_dns() {
     fail zone
     return
   fi
-  for h in cloud vault kuma www; do
+  cf_record() { # $1=host $2=proxied(true/false)
     local rid
     rid=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
-      "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$h.$DOMAIN" | jq -r '.result[0].id // empty')
+      "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$1.$DOMAIN" | jq -r '.result[0].id // empty')
     if [ -z "$rid" ]; then
       curl -s -X POST -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
         "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
-        -d "{\"type\":\"A\",\"name\":\"$h.$DOMAIN\",\"content\":\"$VPS_IP\",\"ttl\":1,\"proxied\":true}" \
-        >>"$LOG" 2>&1 || fail "dns_$h"
+        -d "{\"type\":\"A\",\"name\":\"$1.$DOMAIN\",\"content\":\"$VPS_IP\",\"ttl\":1,\"proxied\":$2}" \
+        >>"$LOG" 2>&1 || fail "dns_$1"
     fi
+  }
+  # proxied (orange cloud): cloud/vault/kuma/www. talk rides on the cloud door.
+  for h in cloud vault kuma www; do
+    case "$h" in
+      cloud) [ "${MOD_CLOUD:-true}" = "true" ] && cf_record "$h" true;;
+      vault) [ "${MOD_VAULT:-true}" = "true" ] && cf_record "$h" true;;
+      kuma)  [ "${MOD_MONITOR:-true}" = "true" ] && cf_record "$h" true;;
+      www)   cf_record "$h" true;;
+    esac
   done
-  # turn/mail/mc MUST be DNS-only (grey cloud): TURN relays media over
+  # talk/mail/mc MUST be DNS-only (grey cloud): TURN relays media over
   # UDP/TCP 3478/5349 + 49160-49200, SMTP/IMAP and the MC game ports also
   # bypass the CF proxy (HTTP(S) only). Caddy still gets their LE certs
   # via DNS-01.
-  for h in talk mail mc; do
-    local rid
-    rid=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
-      "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$h.$DOMAIN" | jq -r '.result[0].id // empty')
-    if [ -z "$rid" ]; then
-      curl -s -X POST -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
-        "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
-        -d "{\"type\":\"A\",\"name\":\"$h.$DOMAIN\",\"content\":\"$VPS_IP\",\"ttl\":1,\"proxied\":false}" \
-        >>"$LOG" 2>&1 || fail "dns_$h"
-    fi
-  done
+  [ "${MOD_CLOUD:-true}" = "true" ] && cf_record talk false
+  [ "${MOD_MAIL:-true}"  = "true" ] && cf_record mail false
+  [ "${MOD_GAMES:-true}" = "true" ] && cf_record mc false
   curl -s -X PATCH -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
     "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/settings/ssl" -d '{"value":"full"}' >>"$LOG" 2>&1 || true
   # DNS-only tokens can't set SSL mode; surface it as an expected manual step.
@@ -765,11 +828,18 @@ cf_dns() {
 }
 
 issue_certs() {
-  for h in cloud vault kuma talk www mail mc; do
+  local hosts="" h
+  hosts="www"
+  [ "${MOD_CLOUD:-true}" = "true" ]   && hosts="$hosts cloud talk"
+  [ "${MOD_VAULT:-true}" = "true" ]   && hosts="$hosts vault"
+  [ "${MOD_MONITOR:-true}" = "true" ] && hosts="$hosts kuma"
+  [ "${MOD_MAIL:-true}" = "true" ]    && hosts="$hosts mail"
+  [ "${MOD_GAMES:-true}" = "true" ]   && hosts="$hosts mc"
+  for h in $hosts; do
     curl -sk --resolve "$h.$DOMAIN:443:127.0.0.1" -o /dev/null "https://$h.$DOMAIN/" >>"$LOG" 2>&1 || true
     sleep 3
   done
-  for h in cloud vault kuma talk www mail mc; do
+  for h in $hosts; do
     local iss
     iss=$(echo | timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$h.$DOMAIN" 2>/dev/null \
       | openssl x509 -noout -issuer 2>/dev/null | cut -d'=' -f2-)
@@ -807,13 +877,18 @@ phase2_op() {
   cf_dns
   host_services
   containers_up
-  nextcloud_setup
-  vaultwarden_setup
-  dkim_setup
+  # per-module setup, in dependency order (default: everything ON)
+  if [ "${MOD_CLOUD:-true}" = "true" ]; then
+    nextcloud_setup
+  fi
+  [ "${MOD_VAULT:-true}" = "true" ] && vaultwarden_setup
+  [ "${MOD_MAIL:-true}" = "true" ] && dkim_setup
   issue_certs
-  kuma_seed
-  panel_servers
-  panel_admin_setup
+  [ "${MOD_MONITOR:-true}" = "true" ] && kuma_seed
+  if [ "${MOD_GAMES:-true}" = "true" ]; then
+    panel_servers
+    panel_admin_setup
+  fi
   sweep
 }
 
