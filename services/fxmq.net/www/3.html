@@ -135,10 +135,10 @@ main section.svc{border-top:none;padding-top:0}
 section.svc.on{border-top:none;padding-top:0;border-bottom:none;padding-bottom:0;margin:0}
 footer{margin-top:0}
 main,#install,footer{scroll-margin-top:56px}
-.foot .abt{margin:38px 0 8px;max-width:88ch}
-.foot .abt h4{font-family:var(--mono);font-size:12px;letter-spacing:.3em;text-transform:uppercase;color:var(--c-www);margin:0 0 14px}
-.foot .abt p{color:#d8d1bd;line-height:1.72;font-size:15px;margin:12px 0}
-.foot .abt b{color:var(--paper)}
+.abt{margin:0 auto;max-width:88ch;padding:34px 18px 12px}
+.abt h4{font-family:var(--mono);font-size:12px;letter-spacing:.3em;text-transform:uppercase;color:var(--dim);margin:0 0 14px;border-top:3px solid var(--ink);padding-top:14px;display:inline-block}
+.abt p{color:var(--dim);line-height:1.72;font-size:15px;margin:12px 0}
+.abt b{color:var(--ink)}
 .topbtn{font-family:var(--mono);border:2px solid var(--paper);color:var(--paper);text-decoration:none;padding:6px 10px;font-size:12px;display:inline-block;margin-left:16px}
 .topbtn:hover{background:var(--paper);color:var(--ink)}
 .strip a.act{transform:translate(4px,4px);box-shadow:0 0 0 var(--ink);outline:3px solid var(--ink)}
@@ -189,10 +189,11 @@ main,#install,footer{scroll-margin-top:56px}
 </style>
 </head>
 <body>
+<div id="top"></div>
 
 <nav class="menu">
   <div class="menu-in">
-    <a class="brand" href="#mstart">fxmq<span>.</span>net</a>
+    <a class="brand" href="#top">fxmq<span>.</span>net</a>
     <a class="mi" href="#top">board</a>
     <a class="mi" href="#board">modules</a>
     <a class="mi" href="#install">install</a>
@@ -200,19 +201,35 @@ main,#install,footer{scroll-margin-top:56px}
   </div>
 </nav>
 
-<div class="marquee" aria-hidden="true" id="mstart">
+<div class="marquee" aria-hidden="true">
   <div class="track" style="--rep:2">
     <span>SELF-HOSTED<b>✦</b>ONE BOX<b>✦</b>EIGHT DOORS<b>✦</b>FXMQ.NET<b>✦</b>NO CLOUD BUT YOURS<b>✦</b>FREE YOUR DATA<b>✦</b>OPEN SOURCE<b>✦</b>MINECRAFT IN THE BROWSER<b>✦</b>MAIL ON YOUR OWN DOMAIN<b>✦</b>BITWARDEN-COMPATIBLE<b>✦</b>TAILNET ONLY<b>✦</b>VIDEO CALLS ON YOUR DOMAIN<b>✦</b>SELF-HOSTED<b>✦</b>ONE BOX<b>✦</b>EIGHT DOORS<b>✦</b>FXMQ.NET<b>✦</b>NO CLOUD BUT YOURS<b>✦</b>FREE YOUR DATA<b>✦</b>OPEN SOURCE<b>✦</b>MINECRAFT IN THE BROWSER<b>✦</b>MAIL ON YOUR OWN DOMAIN<b>✦</b>BITWARDEN-COMPATIBLE<b>✦</b>TAILNET ONLY<b>✦</b>VIDEO CALLS ON YOUR DOMAIN<b>✦</b></span>
   </div>
 </div>
 
-<header class="hero" id="top">
+<header class="hero">
   <p class="kicker">the big board · poster edition · index 03/03</p>
   <h1>YOUR DATA.<br><span class="out">YOUR BOX.</span> <span class="fill">YOUR RULES.</span></h1>
   <p class="lede">Eight doors. One Debian VPS. Zero rented clouds. Every door below runs from one repo —
   <a href="https://github.com/kefohaine/server" target="_blank" rel="noopener">kefohaine/server</a> — behind a Cloudflare edge and a Caddy reverse proxy. Door 08 is
   talk.fxmq.net: the signaling channel that makes your video calls work — explained on its card.</p>
 </header>
+
+<div class="abt">
+  <h4>why run it yourself</h4>
+  <p>fxmq.net is the argument that the services you rent monthly — files, mail, passwords, calls, even a game
+  server — can instead run on one small VPS you control, in software you can read and fork. The goal is simple:
+  your data stops being a product.</p>
+  <p>Every door here is a swap. <b>Cloud</b> (Nextcloud) vs Google or Dropbox — no per-seat pricing, no model
+  trained on your calendar; you trade away their polish for a filesystem you actually own. <b>Mail</b> on your own
+  DKIM-signed domain vs Gmail/Outlook — yours to read, yours to keep, but deliverability is now your job.
+  <b>Vault</b> (Vaultwarden) vs a hosted password manager — the same Bitwarden apps, with the server in the deal
+  and nothing to take on faith. <b>Talk</b> vs Zoom or Meet — calls are peer-to-peer WebRTC: this box introduces
+  you, then steps out of the conversation. <b>Games</b> — Minecraft in the browser, no Realms subscription, no
+  install for your friends. <b>Monitor</b> (Kuma) watches from inside your network, not from a vendor's cloud.</p>
+  <p>The honest trade: you become the admin. Updates, backups and uptime are yours — that is the price of the
+  door being yours. It isn't for everyone. It's for people who'd rather own the room than rent it.</p>
+</div>
 
 <main id="board">
   <div class="strip">
@@ -444,21 +461,6 @@ main,#install,footer{scroll-margin-top:56px}
   <div class="foot">
     <p class="giant">fxmq<b>.</b>net</p>
     <p class="slog">ONE BOX · EIGHT DOORS · NO CLOUD BUT YOURS · INDEX 03/03</p>
-    <div class="abt">
-      <h4>why run it yourself</h4>
-      <p>fxmq.net is the argument that the services you rent monthly — files, mail, passwords, calls, even a game
-      server — can instead run on one small VPS you control, in software you can read and fork. The goal is simple:
-      your data stops being a product.</p>
-      <p>Every door here is a swap. <b>Cloud</b> (Nextcloud) vs Google or Dropbox — no per-seat pricing, no model
-      trained on your calendar; you trade away their polish for a filesystem you actually own. <b>Mail</b> on your own
-      DKIM-signed domain vs Gmail/Outlook — yours to read, yours to keep, but deliverability is now your job.
-      <b>Vault</b> (Vaultwarden) vs a hosted password manager — the same Bitwarden apps, with the server in the deal
-      and nothing to take on faith. <b>Talk</b> vs Zoom or Meet — calls are peer-to-peer WebRTC: this box introduces
-      you, then steps out of the conversation. <b>Games</b> — Minecraft in the browser, no Realms subscription, no
-      install for your friends. <b>Monitor</b> (Kuma) watches from inside your network, not from a vendor's cloud.</p>
-      <p>The honest trade: you become the admin. Updates, backups and uptime are yours — that is the price of the
-      door being yours. It isn't for everyone. It's for people who'd rather own the room than rent it.</p>
-    </div>
     <div class="cols">
       <div>
         <h4>all the doors</h4>
@@ -506,7 +508,7 @@ main,#install,footer{scroll-margin-top:56px}
       <span class="stamp">self-hosted</span>
       <span>© fxmq.net homelab · edition /3 of 3 · <a href="/1">/1 terminal</a> · <a href="/2">← /2 poster</a></span>
       <span style="margin-left:auto;font-family:var(--body)">built from <a href="https://github.com/kefohaine/server" target="_blank" rel="noopener">kefohaine/server</a>, committed like everything else</span>
-      <a class="topbtn" href="#mstart" title="back to top">↑ top</a>
+      <a class="topbtn" href="#top" title="back to top">↑ top</a>
     </div>
   </div>
 </footer>
