@@ -39,7 +39,7 @@ a lean install.
 
 ## Documentation
 
-- `REF.md` — the demo's public terms (domain, hosts, naming); adapt your own setup from here
+- `docs/REF.md` — per-setup source of truth: docs reference its variables (`$DOMAIN`, `$PROJECT_DIR`, `$GITHUB_REPO`); adapt your setup here
 - `docs/GUIDE.md` — the operator manual: layout, recipes, per-service facts, gotchas
 - `docs/AGENTS.md` — agent operating rules (how this repo is worked on)
 - `docs/ISSUES.md` — open problems, planned ideas, and resolved history

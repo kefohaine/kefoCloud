@@ -273,6 +273,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **`make taildrop-file` / `make taildrop-folder`** — `sudo tailscale file cp` wrappers (`FILE=`/`DIR=`, `TAILDROP_HOST` default `server`).
 - **Makefile `TARGET=` dispatchers** — `dok-recreate/restart/stop/logs TARGET=<ctn>` as the primary style; the `-<ctn>` suffixes remain as aliases.
 - **`REF.md`** — demo public-terms reference (domain, IPs, names, proxy modes) so docs stay portable; secrets excluded; scripts still auto-detect live values.
+- **docs neutralised via `docs/REF.md` variables** — GUIDE + MIGRATE now reference `$DOMAIN` / `$PROJECT_DIR` / `$GITHUB_REPO` (defined per-setup in `docs/REF.md`); README points there; ISSUES keeps concrete values as tracker + history.
 - **`scripts/defaults/`** — per-script prompt-defaults files (`install.conf` populated, `optimize.conf`/`storage.conf` skeletons); README + www copy matched to the real module flow.
 - **Debian VPS → Debian system wording** — README and the www welcome lede no longer imply only a rented VPS.
 - **`optimize.sh` universal VPS optimizer** — OPTIMIZE.md + repo tuning + `make cleanup`'s apt/docker part merged into one idempotent, zero-prompt bash script with an Enter-refresh error loop; applied here (swap RAM/3, noatime, THP, sysctls, tuned/irqbalance/earlyoom auto, SSD/HDD auto-detect → fstrim or SETRA).
