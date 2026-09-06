@@ -1,11 +1,8 @@
 # kefohaine/server
 
-One repo that turns any Debian system (VPS, mini-PC, homelab box) into your own
-stack — cloud, mail, game servers and more — with one command and a few prompts.
+One repo that turns any Debian system into your own stack — cloud, mail, game servers and more — with one command and a few prompts.
 
-**[fxmq.net](https://www.fxmq.net/welcome) is the live demo**: eight doors
-running on one box, built entirely from this repo. Fork it, run the installer,
-and the same board is yours — under your own domain, with no server but yours.
+**[www.fxmq.net](https://www.fxmq.net/welcome) is the live demo**: eight doors running on one box, built entirely from this repo. Fork it, run the installer, and the same board is yours — under your own domain, with no server but yours.
 
 ## Install
 
@@ -14,11 +11,7 @@ git clone https://github.com/kefohaine/server && cd server
 bash install.sh
 ```
 
-The installer asks a few questions (domain, Cloudflare API token, Tailscale key,
-and which modules to include — defaults in `scripts/defaults/install.conf`). It
-then hardens the host, creates the DNS records, issues certificates and builds
-the selected stack unattended. Default is everything ON; opt out per module for
-a lean install.
+The installer asks a few questions, then hardens the host, creates the DNS records, issues certificates and builds the selected stack unattended. Default is everything ON; opt out per module for a lean install.
 
 ### Modules (pick at install time)
 
@@ -32,12 +25,12 @@ a lean install.
 
 ### Secondary helpers
 
-- `bash scripts/optimize.sh` — optional tuning after install (kernel/memory/network, swap, cleanup)
-- `bash scripts/storage.sh` — optional second box as live Nextcloud storage over the tailnet
+- `bash scripts/optimize.sh` — automated performance optimization after install
+- `bash scripts/storage.sh` — automated external Nextcloud storage system over tailnet
 
 ## Documentation
 
-- `docs/REF.md` — per-setup source of truth: docs reference its variables (`$DOMAIN`, `$PROJECT_DIR`, `$GITHUB_REPO`); adapt your setup here
+- `docs/REF.md` — per-setup source of truth: adapt variables to yours in it
 - `docs/GUIDE.md` — the operator manual: layout, recipes, per-service facts, gotchas
 - `docs/AGENTS.md` — agent operating rules (how this repo is worked on)
 - `docs/ISSUES.md` — open problems, planned ideas, and resolved history
@@ -45,7 +38,4 @@ a lean install.
 
 ## Why
 
-fxmq.net is only a showcase. The point of the repo is that none of those doors
-needs a rented product: your files instead of Google/Dropbox, your mail instead
-of Gmail, your vault instead of a hosted password manager, your calls instead of
-Zoom. You become the admin — that is the honest price of owning the server.
+fxmq.net is only a showcase. The point of the repo is that none of those doors needs a rented product: your files instead of Google/Dropbox, your mail instead of Gmail, your vault instead of a hosted password manager, your calls instead of Zoom. You become the admin — that is the honest price of owning the server.
