@@ -128,10 +128,14 @@ section.svc .card .feats{margin:4px 0 14px}
 /* one card at a time, switched by the door buttons under the intro */
 section.svc{display:none}
 section.svc.on{display:block}
+/* the dashed rules that used to separate stacked sections now frame the single card */
+section.svc.on{border-top:3px dashed #a9a08a;padding-top:46px}
+section.svc.on{border-bottom:3px dashed #a9a08a;padding-bottom:46px}
 .strip a.act{transform:translate(4px,4px);box-shadow:0 0 0 var(--ink);outline:3px solid var(--ink)}
 .menu a.mi.act{border-color:var(--paper);background:var(--paper);color:var(--ink)}
 </style>
 <noscript><style>section.svc{display:block}</style></noscript>
+<style>
 /* ── /1-style terminal block: the install section ── */
 .install{--t-bg:#070a0e;--t-panel:#0c1118;--t-line:#1d2a38;--t-ink:#cdd9d0;--t-dim:#5f7182;--t-faint:#3d4c5b;
   --t-grn:#3ddc84;--t-cyn:#4ad6f7;--t-yel:#ffd166;
