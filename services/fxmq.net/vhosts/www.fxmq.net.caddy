@@ -1,15 +1,11 @@
-# www.fxmq.net — static pages: an empty homepage, the public download drop
-# folder, and three showcase indexes.
-#   /           serves ./www/index.html — an empty placeholder (0 bytes);
-#               the showcases live at /1 /2 /3, not on the homepage.
-#   /download*  Caddy file_server browse over homelab/download (mounted at
-#               /download:ro in the caddy container — drop files here).
-#   /1 /2 /3    static showcase pages (maximalist vhost indexes) served from
-#               ./www (this dir, mounted at /etc/caddy/www) — three editions of
-#               "everything fxmq.net runs": /1 terminal registry, /2 poster
-#               editorial, /3 hybrid (pitch + registry). Source HTML lives in
-#               the repo at services/fxmq.net/www/{1,2,3}.html.
-#   everything else — plain "ok" stub (unknown paths like /3 answer ok).
+# www.fxmq.net — static pages: one welcome page and the public download drop
+# folder.
+#   /          serves ./www/index.html — a zero-second redirect to /welcome.
+#   /welcome   the welcome page (welcome.html) — everything fxmq.net runs,
+#              presented as the live demo of kefohaine/server.
+#   /download* Caddy file_server browse over homelab/download (mounted at
+#              /download:ro in the caddy container — drop files here).
+#   everything else — plain "ok" stub.
 # TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/cloud.fxmq.net.caddy).
 
 https://www.fxmq.net {
@@ -28,28 +24,16 @@ https://www.fxmq.net {
         root * /download
         file_server browse
     }
-    # Showcase pages — one self-contained HTML file each. Matched with or
+    # The welcome page — one self-contained HTML file. Matched with or
     # without a trailing slash; anything else keeps falling through to the
     # ok stub.
-    @show1 path /1 /1/
-    handle @show1 {
+    @welcome path /welcome /welcome/
+    handle @welcome {
         root * /etc/caddy/www
-        rewrite /1.html
+        rewrite /welcome.html
         file_server
     }
-    @show2 path /2 /2/
-    handle @show2 {
-        root * /etc/caddy/www
-        rewrite /2.html
-        file_server
-    }
-    @show3 path /3 /3/
-    handle @show3 {
-        root * /etc/caddy/www
-        rewrite /3.html
-        file_server
-    }
-    # Homepage: serve the empty index.html placeholder instead of the ok stub.
+    # Homepage: the index.html placeholder (meta-redirects to /welcome).
     @home path /
     handle @home {
         root * /etc/caddy/www
