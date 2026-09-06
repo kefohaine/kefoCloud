@@ -152,6 +152,45 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ---
 
+## Planned ideas
+
+Future roadmap, operator-reviewed later; when one is picked up it moves to Open, when done it lands in Solved.
+
+#### Installer parity: docs advertise per-module prompts the script doesn't have yet
+- **Why**: `www.fxmq.net/welcome` and README say install.sh "prompts for which modules you want" — the script is still all-or-nothing (see the Efficiency entry "install.sh: per-module install selection" for the mechanics). Docs must not outrun the code.
+- **Plan**: implement module selection first (defaults all ON so the fxmq.net demo install is unchanged), then keep the marketing text honest about it. This is the product's headline change.
+
+#### `scripts/defaults/` — per-script prompt defaults
+- **Scope**: `install.sh`, `optimize.sh`, `storage.sh`
+- **Design**: each script reads `scripts/defaults/<script>.<adapted-format>` before asking anything; the file holds default answers (e.g. `install vaultwarden module = true`). When prompting, the script shows the default and Enter accepts it; typing a value overrides; skipping falls back to the default. Modules default true → demo behavior unchanged. Folds into the module-selection work above.
+
+#### `REF.md` — one reference for the demo's public terms (separate from defaults/)
+- **Why**: docs and scripts hardcode fxmq.net, public + tailnet IPs, hostnames and personal naming — anyone reading them can't adapt to their own setup.
+- **Plan**: a single tracked `REF.md` holding only *public demo facts* (domain, IPs, tailnet names, naming scheme). Docs point at it instead of restating values; scripts derive/read from it where not auto-detected. Secrets stay out (never in a tracked file); live values (VPS IP, container names) are still detected, not read from REF.
+- **Note the split**: REF.md documents the demo's public *terms*; `scripts/defaults/` sets *prompt defaults*. Different purposes, both needed.
+
+#### NC user isolation across apps
+- **Goal**: keep Nextcloud users isolated from each other (own groups) across the apps they touch.
+- **Reality check**: mail, Nextcloud, Vaultwarden, Minecraft each have separate user models — full cross-app isolation needs per-app groups + consistent naming + documented matrix; true SSO-style isolation is a bigger architecture question. Spike/design before committing.
+
+#### GitHub workflow (Issues + Projects + PRs), ISSUES.md as backup
+- **Plan**: move day-to-day tracking to GitHub Issues/Projects/PRs; keep ISSUES.md canonical and mirror outward, not the reverse (GitHub-side state proved lossy/poisonable in the 2026-09 graph saga). Keep the Solved-by-month history in ISSUES.md.
+
+#### `make perf` — standalone live status overview
+- **Design**: takes no arguments; prints a one-shot system performance + status overview (CPU/RAM/load, services, disk, tailnet peers) as a console report.
+
+#### `make taildrop file|folder <src> server:`
+- **Design**: wrappers around `sudo tailscale file cp <src> <target-host>:`; target host stays a parameter. Note: this tailscale build has no `file status` subcommand, so delivery verification is limited to the cp exit code.
+
+#### Makefile `TARGET=` refactor
+- **Design**: move targets from the `-<trg>` suffix pattern to a `TARGET=` variable; mechanical pass, then re-verify every recipe and the GUIDE/smoke references to the old names.
+
+#### storage.sh — debug pass before it's trusted
+- **Why**: least-tested script (second VPS + tailnet NFS); run it against a scratch target first, fix issues, then treat its output as canonical guidance.
+
+#### Broaden "Debian VPS" wording → "Debian system"
+- **Plan**: small wording pass across README/docs so the repo reads as "turn any Debian system into your self-hosted stack", not only a rented VPS.
+
 ## Solved
 
 Resolved items grouped by month. One line per item, one sentence per record.
