@@ -128,9 +128,11 @@ section.svc .card .feats{margin:4px 0 14px}
 /* one card at a time, switched by the door buttons under the intro */
 section.svc{display:none}
 section.svc.on{display:block}
-/* the dashed rules that used to separate stacked sections now frame the single card */
-section.svc.on{border-top:3px dashed #a9a08a;padding-top:46px}
-section.svc.on{border-bottom:3px dashed #a9a08a;padding-bottom:46px}
+/* the dashed frame now lives on main: door buttons sit under the top rule, above the card */
+main{margin:14px auto 34px;padding:26px 18px 36px;border-top:3px dashed #a9a08a;border-bottom:3px dashed #a9a08a}
+main .strip{margin:0 0 24px}
+main section.svc{border-top:none;padding-top:0}
+main section.svc.on{border-bottom:none;padding-bottom:0}
 .strip a.act{transform:translate(4px,4px);box-shadow:0 0 0 var(--ink);outline:3px solid var(--ink)}
 .menu a.mi.act{border-color:var(--paper);background:var(--paper);color:var(--ink)}
 </style>
@@ -156,6 +158,13 @@ section.svc.on{border-bottom:3px dashed #a9a08a;padding-bottom:46px}
 .install .note{margin-top:22px;color:var(--t-dim);font-size:13px}
 .install .note a{color:var(--t-cyn)}
 .install .note a:hover{background:var(--t-cyn);color:#071018}
+.termbar{display:flex;align-items:center;gap:7px;background:var(--t-panel);border:1px solid var(--t-line);border-bottom:none;border-radius:8px 8px 0 0;padding:9px 14px}
+.termbar .td{width:11px;height:11px;border-radius:50%;display:inline-block}
+.termbar .td.r{background:#ff5f57}.termbar .td.y{background:#febc2e}.termbar .td.g{background:#28c840}
+.termbar .tt{margin-left:10px;color:var(--t-dim);font-size:12px;letter-spacing:.04em}
+.termbody{background:var(--t-panel);border:1px solid var(--t-line);border-top:none;border-radius:0 0 8px 8px;padding:18px 22px 22px}
+.termbody .banner{color:var(--t-grn);font-size:11px;margin:0 0 4px}
+.termbody .ik{margin-top:16px}
 @media(max-width:640px){.install .cmd span{display:none}}
 </style>
 </head>
@@ -187,13 +196,13 @@ section.svc.on{border-bottom:3px dashed #a9a08a;padding-bottom:46px}
   <h1>YOUR DATA.<br><span class="out">YOUR BOX.</span> <span class="fill">YOUR RULES.</span></h1>
   <p class="lede">Seven services. One Debian VPS. Zero rented clouds. Every door below runs from one repo —
   <a href="https://github.com/kefohaine/server" target="_blank" rel="noopener">kefohaine/server</a> — behind a Cloudflare edge and a Caddy reverse proxy. <em>(talk.fxmq.net is real but stays off this board — signaling only.)</em></p>
+</header>
+
+<main>
   <div class="strip">
     <a href="#cloud">01 cloud.fxmq.net</a><a href="#vault">02 vault.fxmq.net</a><a href="#kuma">03 kuma.fxmq.net</a>
     <a href="#mc">04 mc.fxmq.net</a><a href="#mail">05 mail.fxmq.net</a><a href="#tail">06 tail.fxmq.net</a><a href="#www">07 www.fxmq.net</a>
   </div>
-</header>
-
-<main>
 
   <!-- 01 CLOUD -->
   <section class="svc" id="cloud" style="--sc:var(--c-cloud)">
@@ -374,18 +383,20 @@ section.svc.on{border-bottom:3px dashed #a9a08a;padding-bottom:46px}
 
 <section class="install" id="install">
   <div class="iwrap">
-    <pre class="banner">██╗ ██╗ ██████╗ ███╗ ███╗███████╗██╗ █████╗ ██████╗
-██║ ██║██╔═══██╗████╗ ████║██╔════╝██║ ██╔══██╗██╔══██╗
-███████║██║ ██║██╔████╔██║█████╗ ██║ ███████║██████╔╝
-██╔══██║██║ ██║██║╚██╔╝██║██╔══╝ ██║ ██╔══██║██╔══██╗
-██║ ██║╚██████╔╝██║ ╚═╝ ██║███████╗███████╗██║ ██║██████╔╝
-╚═╝ ╚═╝ ╚═════╝ ╚═╝ ╚═╝╚══════╝╚══════╝╚═╝ ╚═╝╚═════╝</pre>
-    <p class="ik">self-host in three scripts</p>
-    <h2>install — <span class="hl">pick your doors</span>, then run</h2>
-    <div class="cmd"><code>bash install.sh</code><span><b>the installer</b> — asks your domain + which modules you want, then builds the stack unattended</span></div>
-    <div class="cmd opt"><code>bash scripts/optimize.sh</code><span><b>optional</b> — tune the VPS after install (swap, THP, noatime, cleanup)</span></div>
-    <div class="cmd opt"><code>bash scripts/storage.sh</code><span><b>optional</b> — a cheap second VPS as live Nextcloud storage over the tailnet</span></div>
-    <p class="note">further notice → <a href="https://github.com/kefohaine/server/blob/main/docs/GUIDE.md">docs/GUIDE.md</a>, the operator manual · <a href="https://github.com/kefohaine/server" target="_blank" rel="noopener">kefohaine/server</a></p>
+    <div class="termbar"><i class="td r"></i><i class="td y"></i><i class="td g"></i><span class="tt">kefohaine@fxmq — ~/install</span></div>
+    <div class="termbody">
+      <pre class="banner">█  █ ████ ████  ██  █  █  ██   ██  █  █ ████
+█ █  █    █    █  █ █  █ █  █   █  ██ █ █   
+██   ███  ███  █  █ ████ ████   █  █ ██ ███ 
+█ █  █    █    █  █ █  █ █  █   █  █  █ █   
+█  █ ████ █     ██  █  █ █  █  ██  █  █ ████</pre>
+      <p class="ik">self-host in three scripts</p>
+      <h2>install — <span class="hl">pick your doors</span>, then run</h2>
+      <div class="cmd"><code>$ bash install.sh</code><span><b>the installer</b> — asks your domain + which modules you want, then builds the stack unattended</span></div>
+      <div class="cmd opt"><code>$ bash scripts/optimize.sh</code><span><b>optional</b> — tune the VPS after install (swap, THP, noatime, cleanup)</span></div>
+      <div class="cmd opt"><code>$ bash scripts/storage.sh</code><span><b>optional</b> — a cheap second VPS as live Nextcloud storage over the tailnet</span></div>
+      <p class="note">further notice → <a href="https://github.com/kefohaine/server/blob/main/docs/GUIDE.md">docs/GUIDE.md</a>, the operator manual · <a href="https://github.com/kefohaine/server" target="_blank" rel="noopener">kefohaine/server</a></p>
+    </div>
   </div>
 </section>
 <footer>
