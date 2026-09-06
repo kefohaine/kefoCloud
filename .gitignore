@@ -1,7 +1,6 @@
 .DS_Store
 __pycache__/
 *.pyc
-services/cloud/.env
 services/nextcloud/.env
 services/mailserver/.env
 services/vaultwarden/.env
@@ -15,8 +14,6 @@ services/vaultwarden/.env
 /download/
 /backups/
 /puffer/
-/open-webui/
-/mail/
 /mailserver/
 /pgdata/
 /talk/
