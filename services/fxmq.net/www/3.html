@@ -134,16 +134,20 @@ main .strip{margin:0 0 24px}
 main section.svc{border-top:none;padding-top:0}
 section.svc.on{border-top:none;padding-top:0;border-bottom:none;padding-bottom:0;margin:0}
 footer{margin-top:0}
-main,#install,footer{scroll-margin-top:56px}
-.abt{margin:0 auto;max-width:88ch;padding:34px 18px 12px}
-.abt h4{font-family:var(--mono);font-size:12px;letter-spacing:.3em;text-transform:uppercase;color:var(--dim);margin:0 0 14px;border-top:3px solid var(--ink);padding-top:14px;display:inline-block}
-.abt p{color:var(--dim);line-height:1.72;font-size:15px;margin:12px 0}
-.abt b{color:var(--ink)}
+main,#install,#why-us,footer{scroll-margin-top:56px}
+.whys{background:var(--paper);color:var(--ink);border-top:3px dashed #a9a08a;padding:46px 18px 40px}
+.whys .wrap{max-width:86ch;margin:0 auto}
+.whys p{font-family:var(--body);font-size:clamp(15px,1.8vw,19px);font-weight:500;line-height:1.8;margin:0 0 18px;color:#2b2518}
+.whys .kicker{font-family:var(--mono);font-size:12px;letter-spacing:.3em;text-transform:uppercase;color:var(--dim);margin:0 0 24px;border-top:3px solid var(--ink);border-bottom:3px solid var(--ink);display:inline-block;padding:6px 14px}
+.whys b{color:var(--ink)}
 .topbtn{font-family:var(--mono);border:2px solid var(--paper);color:var(--paper);text-decoration:none;padding:6px 10px;font-size:12px;display:inline-block;margin-left:16px}
 .topbtn:hover{background:var(--paper);color:var(--ink)}
-.strip a.act{transform:translate(4px,4px);box-shadow:0 0 0 var(--ink);outline:3px solid var(--ink)}
+.strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:0 0 26px}
 .strip a:nth-child(8){background:var(--c-talk)}
-.menu a.mi.act{border-color:var(--paper);background:var(--paper);color:var(--ink)}
+@media(max-width:860px){.strip{grid-template-columns:repeat(2,1fr)}}
+/* no selected-button state: the active card itself keeps the hover look */
+.svc .card{transition:transform .12s linear,box-shadow .12s linear}
+.svc .card:hover,.svc.on .card{transform:translate(-3px,-3px);box-shadow:12px 12px 0 var(--ink)}
 </style>
 <noscript><style>section.svc{display:block}</style></noscript>
 <style>
@@ -194,10 +198,11 @@ main,#install,footer{scroll-margin-top:56px}
 <nav class="menu">
   <div class="menu-in">
     <a class="brand" href="#top">fxmq<span>.</span>net</a>
-    <a class="mi" href="#top">board</a>
     <a class="mi" href="#board">modules</a>
     <a class="mi" href="#install">install</a>
+    <a class="mi" href="#why-us">why us</a>
     <a class="mi" href="#about">about</a>
+    <span class="right"><a class="github" href="https://github.com/kefohaine/server" target="_blank" rel="noopener">★ kefohaine/server</a></span>
   </div>
 </nav>
 
@@ -215,23 +220,7 @@ main,#install,footer{scroll-margin-top:56px}
   talk.fxmq.net: the signaling channel that makes your video calls work — explained on its card.</p>
 </header>
 
-<div class="abt">
-  <h4>why run it yourself</h4>
-  <p>fxmq.net is the argument that the services you rent monthly — files, mail, passwords, calls, even a game
-  server — can instead run on one small VPS you control, in software you can read and fork. The goal is simple:
-  your data stops being a product.</p>
-  <p>Every door here is a swap. <b>Cloud</b> (Nextcloud) vs Google or Dropbox — no per-seat pricing, no model
-  trained on your calendar; you trade away their polish for a filesystem you actually own. <b>Mail</b> on your own
-  DKIM-signed domain vs Gmail/Outlook — yours to read, yours to keep, but deliverability is now your job.
-  <b>Vault</b> (Vaultwarden) vs a hosted password manager — the same Bitwarden apps, with the server in the deal
-  and nothing to take on faith. <b>Talk</b> vs Zoom or Meet — calls are peer-to-peer WebRTC: this box introduces
-  you, then steps out of the conversation. <b>Games</b> — Minecraft in the browser, no Realms subscription, no
-  install for your friends. <b>Monitor</b> (Kuma) watches from inside your network, not from a vendor's cloud.</p>
-  <p>The honest trade: you become the admin. Updates, backups and uptime are yours — that is the price of the
-  door being yours. It isn't for everyone. It's for people who'd rather own the room than rent it.</p>
-</div>
-
-<main id="board">
+<main>
   <div class="strip">
     <a href="#cloud">01 cloud.fxmq.net</a><a href="#vault">02 vault.fxmq.net</a><a href="#kuma">03 kuma.fxmq.net</a>
     <a href="#mc">04 mc.fxmq.net</a><a href="#mail">05 mail.fxmq.net</a><a href="#tail">06 tail.fxmq.net</a><a href="#www">07 www.fxmq.net</a><a href="#talk">08 talk.fxmq.net</a>
@@ -438,6 +427,7 @@ main,#install,footer{scroll-margin-top:56px}
       </div>
     </div>
   </section>
+  <span id="board"></span>
 </main>
 
 <section class="install" id="install">
@@ -455,6 +445,23 @@ main,#install,footer{scroll-margin-top:56px}
       <p class="cmd"><span class="pr">$</span> <code>bash scripts/storage.sh</code> <span class="cm"># optional — a second VPS as live Nextcloud storage</span></p>
       <p class="tl"># further notice → <a href="https://github.com/kefohaine/server/blob/main/docs/GUIDE.md">docs/GUIDE.md</a> (operator manual) · repo <a href="https://github.com/kefohaine/server" target="_blank" rel="noopener">kefohaine/server</a></p>
     </div>
+  </div>
+</section>
+<section class="whys" id="why-us">
+  <div class="wrap">
+    <p class="kicker">why us</p>
+    <p>fxmq.net is the argument that the services you rent monthly — files, mail, passwords, calls, even a game
+    server — can instead run on one small VPS you control, in software you can read and fork. The goal is simple:
+    your data stops being a product.</p>
+    <p>Every door here is a swap. <b>Cloud</b> (Nextcloud) vs Google or Dropbox — no per-seat pricing, no model
+    trained on your calendar; you trade away their polish for a filesystem you actually own. <b>Mail</b> on your own
+    DKIM-signed domain vs Gmail/Outlook — yours to read, yours to keep, but deliverability is now your job.
+    <b>Vault</b> (Vaultwarden) vs a hosted password manager — the same Bitwarden apps, with the server in the deal
+    and nothing to take on faith. <b>Talk</b> vs Zoom or Meet — calls are peer-to-peer WebRTC: this box introduces
+    you, then steps out of the conversation. <b>Games</b> — Minecraft in the browser, no Realms subscription, no
+    install for your friends. <b>Monitor</b> (Kuma) watches from inside your network, not from a vendor's cloud.</p>
+    <p>The honest trade: you become the admin. Updates, backups and uptime are yours — that is the price of the
+    door being yours. It isn't for everyone. It's for people who'd rather own the room than rent it.</p>
   </div>
 </section>
 <footer id="about">
@@ -522,10 +529,6 @@ main,#install,footer{scroll-margin-top:56px}
     doors.forEach(function (d) {
       var s = document.getElementById(d);
       if (s) s.classList.toggle('on', d === id);
-    });
-    document.querySelectorAll('.strip a, .menu a.mi').forEach(function (a) {
-      var h = (a.getAttribute('href') || '').replace('#', '');
-      a.classList.toggle('act', h === id);
     });
   }
   document.querySelectorAll('.strip a, .menu a.mi').forEach(function (a) {
