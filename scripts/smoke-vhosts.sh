@@ -87,10 +87,11 @@ check_sec_headers cloud  "cloud.fxmq.net"
 check_sec_headers vault  "vault.fxmq.net"
 check_sec_headers kuma   "kuma.fxmq.net"
 check_sec_headers mail   "mail.fxmq.net"
-check_sec_headers mc     "mc.fxmq.net"# www: empty homepage at / + download drop folder + showcase pages /1 /2.
+check_sec_headers mc     "mc.fxmq.net"
+# www: empty homepage (redirects to /welcome) + download drop folder.
 check www          "www.fxmq.net" "/" "200 301 302 307 308"
 check www-download "www.fxmq.net" "/download/" "200 301 302 307 308" html
-check www-3        "www.fxmq.net" "/3" "200 301 302 307 308" html
+check www-welcome "www.fxmq.net" "/welcome" "200 301 302 307 308" html
 # tail is Tailscale-only: a non-tailnet source (this host's 127.0.0.1) must get 403.
 check tail "tail.fxmq.net" "/" "403"
 
