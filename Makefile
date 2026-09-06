@@ -113,18 +113,26 @@ dok-logs-all:
     docker logs $$c --tail 50 -f 2>&1 | stdbuf -oL sed "s/^/[$$c] /" & \
   done; wait'
 
+TARGET ?=
+
+# Container actions, TARGET= style: make dok-recreate TARGET=fxmq.net
+# (the -<ctn> suffixed targets stay as thin aliases).
+.PHONY: dok-action
+dok-action:
+>@if [ -z "$(TARGET)" ]; then \
+    scripts/mklog error "usage: make $(ACTION) TARGET=<ctn>  (one of: $(CONTAINERS))"; \
+  else \
+    $(MAKE) --no-print-directory $(ACTION)-$(TARGET); \
+  fi
+
 dok-recreate:
->@scripts/mklog error "Usage: make dok-recreate-<ctn>  (one of: $(CONTAINERS))"
->@echo "       make dok-recreate-all"
+>@$(MAKE) --no-print-directory ACTION=dok-recreate dok-action
 dok-restart:
->@scripts/mklog error "Usage: make dok-restart-<ctn>  (one of: $(CONTAINERS))"
->@echo "       make dok-restart-all"
+>@$(MAKE) --no-print-directory ACTION=dok-restart dok-action
 dok-stop:
->@scripts/mklog error "Usage: make dok-stop-<ctn>  (one of: $(CONTAINERS))"
->@echo "       make dok-stop-all"
+>@$(MAKE) --no-print-directory ACTION=dok-stop dok-action
 dok-logs:
->@scripts/mklog error "Usage: make dok-logs-<ctn>  (one of: $(CONTAINERS))"
->@echo "       make dok-logs-all"
+>@$(MAKE) --no-print-directory ACTION=dok-logs dok-action
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Host services (systemd): systemd-restart / systemd-log
@@ -1063,3 +1071,23 @@ help:
 >@echo "  └  make nc-logs [N=100]     occ log:tail — tail the Nextcloud log"
 >@echo ""
 >@echo ""
+
+# ─────────────────────────────────────────────────────────────────────────────
+# perf + taildrop helpers
+# ─────────────────────────────────────────────────────────────────────────────
+.PHONY: perf taildrop-file taildrop-folder
+TAILDROP_HOST ?= server
+
+# make perf            — live system performance + status overview (no args)
+perf:
+>@sudo scripts/perf.sh
+
+# make taildrop-file FILE=path [TAILDROP_HOST=server]    (sudo tailscale file cp)
+# make taildrop-folder DIR=path [TAILDROP_HOST=server]
+taildrop-file:
+>@test -n "$(FILE)" || { echo "usage: make taildrop-file FILE=<path> [TAILDROP_HOST=<device>]"; exit 2; }
+>@sudo tailscale file cp "$(FILE)" "$(TAILDROP_HOST):"
+
+taildrop-folder:
+>@test -n "$(DIR)" || { echo "usage: make taildrop-folder DIR=<folder> [TAILDROP_HOST=<device>]"; exit 2; }
+>@sudo tailscale file cp -r "$(DIR)" "$(TAILDROP_HOST):"
