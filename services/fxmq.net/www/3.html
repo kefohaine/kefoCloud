@@ -146,6 +146,9 @@ main,#install,footer{scroll-margin-top:56px}
 /* no selected-button state: the active card itself keeps the hover look */
 .svc .card{transition:transform .12s linear,box-shadow .12s linear}
 .svc .card:hover,.svc.on .card{transform:translate(-3px,-3px);box-shadow:12px 12px 0 var(--ink)}
+/* door buttons: hover does not move them; the pressed look stays on the shown card's button */
+.strip a:hover{transform:none;box-shadow:4px 4px 0 var(--ink)}
+.strip a.active{transform:translate(3px,3px);box-shadow:1px 1px 0 var(--ink)}
 </style>
 <noscript><style>section.svc{display:block}</style></noscript>
 <style>
@@ -507,6 +510,10 @@ main,#install,footer{scroll-margin-top:56px}
     doors.forEach(function (d) {
       var s = document.getElementById(d);
       if (s) s.classList.toggle('on', d === id);
+    });
+    document.querySelectorAll('.strip a').forEach(function (a) {
+      var h = (a.getAttribute('href') || '').replace('#', '');
+      a.classList.toggle('active', h === id);
     });
   }
   document.querySelectorAll('.strip a, .menu a.mi').forEach(function (a) {
