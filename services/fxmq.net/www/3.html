@@ -129,10 +129,14 @@ section.svc .card .feats{margin:4px 0 14px}
 section.svc{display:none}
 section.svc.on{display:block}
 /* the dashed frame now lives on main: door buttons sit under the top rule, above the card */
-main{margin:14px auto 34px;padding:26px 18px 36px;border-top:3px dashed #a9a08a;border-bottom:3px dashed #a9a08a}
+main{margin:14px auto 20px;padding:26px 18px 18px;border-top:3px dashed #a9a08a;border-bottom:3px dashed #a9a08a}
 main .strip{margin:0 0 24px}
 main section.svc{border-top:none;padding-top:0}
-main section.svc.on{border-bottom:none;padding-bottom:0}
+section.svc.on{border-top:none;padding-top:0;border-bottom:none;padding-bottom:0;margin:0}
+footer{margin-top:0}
+main,#install,footer{scroll-margin-top:56px}
+.topbtn{font-family:var(--mono);border:2px solid var(--paper);color:var(--paper);text-decoration:none;padding:6px 10px;font-size:12px;display:inline-block;margin-left:16px}
+.topbtn:hover{background:var(--paper);color:var(--ink)}
 .strip a.act{transform:translate(4px,4px);box-shadow:0 0 0 var(--ink);outline:3px solid var(--ink)}
 .menu a.mi.act{border-color:var(--paper);background:var(--paper);color:var(--ink)}
 </style>
@@ -141,10 +145,9 @@ main section.svc.on{border-bottom:none;padding-bottom:0}
 /* ── /1-style terminal block: the install section ── */
 .install{--t-bg:#070a0e;--t-panel:#0c1118;--t-line:#1d2a38;--t-ink:#cdd9d0;--t-dim:#5f7182;--t-faint:#3d4c5b;
   --t-grn:#3ddc84;--t-cyn:#4ad6f7;--t-yel:#ffd166;
-  background:radial-gradient(1200px 500px at 85% -10%,rgba(61,220,132,.07),transparent 60%),
-             radial-gradient(900px 400px at -10% 10%,rgba(74,214,247,.06),transparent 55%),var(--t-bg);
+  background:#0b0f14;
   color:var(--t-ink);font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;
-  margin-top:60px;padding:40px 18px 36px;border-top:6px solid var(--ink)}
+  margin-top:34px;padding:36px 18px 30px}
 .install .iwrap{max-width:1200px;margin:0 auto}
 .install .banner{color:var(--t-grn);font-size:12px;line-height:1.15;margin:0 0 8px;white-space:pre;overflow:auto}
 .install .ik{color:var(--t-dim);font-size:12px;letter-spacing:.22em;text-transform:uppercase;margin:20px 0 6px}
@@ -164,7 +167,14 @@ main section.svc.on{border-bottom:none;padding-bottom:0}
 .termbar .tt{margin-left:10px;color:var(--t-dim);font-size:12px;letter-spacing:.04em}
 .termbody{background:var(--t-panel);border:1px solid var(--t-line);border-top:none;border-radius:0 0 8px 8px;padding:18px 22px 22px}
 .termbody .banner{color:var(--t-grn);font-size:11px;margin:0 0 4px}
-.termbody .ik{margin-top:16px}
+.tl{color:var(--t-dim);font-size:12.5px;margin:12px 0 4px;line-height:1.7}
+.tl a{color:var(--t-cyn)}
+.tl a:hover{background:var(--t-cyn);color:#071018}
+.ps{margin:20px 0 2px;font-size:13.5px;color:var(--t-ink)}
+.ps .pn{color:var(--t-grn);font-weight:700}
+.ps .pw{color:var(--t-cyn)}
+.ps .cur{color:var(--t-cyn);animation:blink 1.1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
 @media(max-width:640px){.install .cmd span{display:none}}
 </style>
 </head>
@@ -172,20 +182,14 @@ main section.svc.on{border-bottom:none;padding-bottom:0}
 
 <nav class="menu">
   <div class="menu-in">
-    <a class="brand" href="#top">fxmq<span>.</span>net</a>
-    <a class="mi" href="#top"><i>00</i>board</a>
-    <a class="mi" href="#cloud"><i>01</i>cloud</a>
-    <a class="mi" href="#vault"><i>02</i>vault</a>
-    <a class="mi" href="#kuma"><i>03</i>kuma</a>
-    <a class="mi" href="#mc"><i>04</i>mc</a>
-    <a class="mi" href="#mail"><i>05</i>mail</a>
-    <a class="mi" href="#tail"><i>06</i>tail</a>
-    <a class="mi" href="#www"><i>07</i>www</a>
-    <span class="right"><a class="github" href="https://github.com/kefohaine/server" target="_blank" rel="noopener">★ github/kefohaine/server</a></span>
+    <a class="brand" href="#mstart">fxmq<span>.</span>net</a>
+    <a class="mi" href="#board">board</a>
+    <a class="mi" href="#install">install</a>
+    <a class="mi" href="#about">about</a>
   </div>
 </nav>
 
-<div class="marquee" aria-hidden="true">
+<div class="marquee" aria-hidden="true" id="mstart">
   <div class="track" style="--rep:2">
     <span>SELF-HOSTED<b>✦</b>ONE BOX<b>✦</b>SEVEN DOORS<b>✦</b>FXMQ.NET<b>✦</b>NO CLOUD BUT YOURS<b>✦</b>FREE YOUR DATA<b>✦</b>OPEN SOURCE<b>✦</b>MINECRAFT IN THE BROWSER<b>✦</b>MAIL ON YOUR OWN DOMAIN<b>✦</b>BITWARDEN-COMPATIBLE<b>✦</b>TAILNET ONLY<b>✦</b>SELF-HOSTED<b>✦</b>ONE BOX<b>✦</b>SEVEN DOORS<b>✦</b>FXMQ.NET<b>✦</b>NO CLOUD BUT YOURS<b>✦</b>FREE YOUR DATA<b>✦</b>OPEN SOURCE<b>✦</b>MINECRAFT IN THE BROWSER<b>✦</b>MAIL ON YOUR OWN DOMAIN<b>✦</b>BITWARDEN-COMPATIBLE<b>✦</b>TAILNET ONLY<b>✦</b></span>
   </div>
@@ -198,7 +202,7 @@ main section.svc.on{border-bottom:none;padding-bottom:0}
   <a href="https://github.com/kefohaine/server" target="_blank" rel="noopener">kefohaine/server</a> — behind a Cloudflare edge and a Caddy reverse proxy. <em>(talk.fxmq.net is real but stays off this board — signaling only.)</em></p>
 </header>
 
-<main>
+<main id="board">
   <div class="strip">
     <a href="#cloud">01 cloud.fxmq.net</a><a href="#vault">02 vault.fxmq.net</a><a href="#kuma">03 kuma.fxmq.net</a>
     <a href="#mc">04 mc.fxmq.net</a><a href="#mail">05 mail.fxmq.net</a><a href="#tail">06 tail.fxmq.net</a><a href="#www">07 www.fxmq.net</a>
@@ -390,19 +394,19 @@ main section.svc.on{border-bottom:none;padding-bottom:0}
 ██   ███  ███  █  █ ████ ████   █  █ ██ ███ 
 █ █  █    █    █  █ █  █ █  █   █  █  █ █   
 █  █ ████ █     ██  █  █ █  █  ██  █  █ ████</pre>
-      <p class="ik">self-host in three scripts</p>
-      <h2>install — <span class="hl">pick your doors</span>, then run</h2>
+      <p class="tl"># one box · seven doors · self-hosted from a single repo</p>
       <div class="cmd"><code>$ bash install.sh</code><span><b>the installer</b> — asks your domain + which modules you want, then builds the stack unattended</span></div>
       <div class="cmd opt"><code>$ bash scripts/optimize.sh</code><span><b>optional</b> — tune the VPS after install (swap, THP, noatime, cleanup)</span></div>
       <div class="cmd opt"><code>$ bash scripts/storage.sh</code><span><b>optional</b> — a cheap second VPS as live Nextcloud storage over the tailnet</span></div>
-      <p class="note">further notice → <a href="https://github.com/kefohaine/server/blob/main/docs/GUIDE.md">docs/GUIDE.md</a>, the operator manual · <a href="https://github.com/kefohaine/server" target="_blank" rel="noopener">kefohaine/server</a></p>
+      <p class="tl"># further notice → <a href="https://github.com/kefohaine/server/blob/main/docs/GUIDE.md">docs/GUIDE.md</a> (operator manual) · repo <a href="https://github.com/kefohaine/server" target="_blank" rel="noopener">kefohaine/server</a></p>
+      <p class="ps"><span class="pn">kefohaine@fxmq</span>:<span class="pw">~</span>$<span class="cur"> █</span></p>
     </div>
   </div>
 </section>
-<footer>
+<footer id="about">
   <div class="foot">
     <p class="giant">fxmq<b>.</b>net</p>
-    <p class="slog">ONE BOX · SEVEN DOORS · NO CLOUD BUT YOURS · INDEX 02/02</p>
+    <p class="slog">ONE BOX · SEVEN DOORS · NO CLOUD BUT YOURS · INDEX 03/03</p>
     <div class="cols">
       <div>
         <h4>all the doors</h4>
@@ -449,6 +453,7 @@ main section.svc.on{border-bottom:none;padding-bottom:0}
       <span class="stamp">self-hosted</span>
       <span>© fxmq.net homelab · edition /3 of 3 · <a href="/1">/1 terminal</a> · <a href="/2">← /2 poster</a></span>
       <span style="margin-left:auto;font-family:var(--body)">built from <a href="https://github.com/kefohaine/server" target="_blank" rel="noopener">kefohaine/server</a>, committed like everything else</span>
+      <a class="topbtn" href="#mstart" title="back to top">↑ top</a>
     </div>
   </div>
 </footer>
