@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>fxmq.net — the big board // index 03</title>
-<meta name="description" content="fxmq.net — one self-hosted box, eight doors. The hybrid edition: cloud, vault, kuma, mc, mail, tail, www, talk — plus the installer terminal.">
+<title>fxmq.net — eight doors, one repo</title>
+<meta name="description" content="fxmq.net is the live demo of kefohaine/server — a repo that installs eight self-hosted doors (cloud, mail, games, vault, monitor, drop folder, talk) on one VPS with one script.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2314110b'/%3E%3Ctext x='16' y='22' font-family='Arial Black' font-size='14' font-weight='900' fill='%23f3efe3' text-anchor='middle'%3Efxmq%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -134,13 +134,11 @@ main .strip{margin:0 0 24px}
 main section.svc{border-top:none;padding-top:0}
 section.svc.on{border-top:none;padding-top:0;border-bottom:none;padding-bottom:0;margin:0}
 footer{margin-top:0}
-main,#install,#why-us,footer{scroll-margin-top:56px}
-.whys{background:var(--paper);color:var(--ink);border-top:3px dashed #a9a08a;padding:46px 18px 40px}
-.whys .wrap{max-width:86ch;margin:0 auto}
-.whys p{font-family:var(--body);font-size:clamp(15px,1.8vw,19px);font-weight:500;line-height:1.8;margin:0 0 18px;color:#2b2518}
-.whys .kicker{font-family:var(--mono);font-size:12px;letter-spacing:.3em;text-transform:uppercase;color:var(--dim);margin:0 0 24px;border-top:3px solid var(--ink);border-bottom:3px solid var(--ink);display:inline-block;padding:6px 14px}
-.whys b{color:var(--ink)}
-.topbtn{font-family:var(--mono);border:2px solid var(--paper);color:var(--paper);text-decoration:none;padding:6px 10px;font-size:12px;display:inline-block;margin-left:16px}
+main,#install,footer{scroll-margin-top:56px}
+.card .arg{font-family:var(--mono);font-size:12px;color:var(--dim);margin:2px 0 16px;padding-left:10px;border-left:3px solid var(--sc,var(--ink));line-height:1.6}
+.foot .demo{font-family:var(--mono);font-size:12px;color:var(--dim);letter-spacing:.02em;margin:6px 0 26px}
+.foot .demo a{color:var(--paper)}
+.topbtn{font-family:var(--mono);border:2px solid var(--paper);color:var(--paper);text-decoration:none;padding:6px 10px;font-size:12px;display:inline-block;margin-left:auto}
 .topbtn:hover{background:var(--paper);color:var(--ink)}
 .strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:0 0 26px}
 .strip a:nth-child(8){background:var(--c-talk)}
@@ -198,9 +196,8 @@ main,#install,#why-us,footer{scroll-margin-top:56px}
 <nav class="menu">
   <div class="menu-in">
     <a class="brand" href="#top">fxmq<span>.</span>net</a>
-    <a class="mi" href="#board">modules</a>
+    <a class="mi" href="#modules">modules</a>
     <a class="mi" href="#install">install</a>
-    <a class="mi" href="#why-us">why us</a>
     <a class="mi" href="#about">about</a>
     <span class="right"><a class="github" href="https://github.com/kefohaine/server" target="_blank" rel="noopener">★ kefohaine/server</a></span>
   </div>
@@ -213,14 +210,14 @@ main,#install,#why-us,footer{scroll-margin-top:56px}
 </div>
 
 <header class="hero">
-  <p class="kicker">the big board · poster edition · index 03/03</p>
+  <p class="kicker">one repo · eight doors · zero rented clouds</p>
   <h1>YOUR DATA.<br><span class="out">YOUR BOX.</span> <span class="fill">YOUR RULES.</span></h1>
   <p class="lede">Eight doors. One Debian VPS. Zero rented clouds. Every door below runs from one repo —
   <a href="https://github.com/kefohaine/server" target="_blank" rel="noopener">kefohaine/server</a> — behind a Cloudflare edge and a Caddy reverse proxy. Door 08 is
   talk.fxmq.net: the signaling channel that makes your video calls work — explained on its card.</p>
 </header>
 
-<main>
+<main id="modules">
   <div class="strip">
     <a href="#cloud">01 cloud.fxmq.net</a><a href="#vault">02 vault.fxmq.net</a><a href="#kuma">03 kuma.fxmq.net</a>
     <a href="#mc">04 mc.fxmq.net</a><a href="#mail">05 mail.fxmq.net</a><a href="#tail">06 tail.fxmq.net</a><a href="#www">07 www.fxmq.net</a><a href="#talk">08 talk.fxmq.net</a>
@@ -245,6 +242,7 @@ main,#install,#why-us,footer{scroll-margin-top:56px}
       address book and calendars with zero fiddling. Every email this lab sends comes from its own mailserver — no
       Google, no Microsoft in the loop.</p>
       <div class="feats"><span class="feat">files &amp; sync</span><span class="feat">calendar · contacts</span><span class="feat">photos</span><span class="feat">talk chat &amp; calls</span><span class="feat">mail app</span><span class="feat">postgres 17 + redis</span></div>
+      <p class="arg">vs Google Drive / Dropbox — no per-seat pricing and no model trained on your calendar; you trade their polish for a filesystem you actually own.</p>
       <div class="links">
         <a class="btn open" href="https://cloud.fxmq.net" target="_blank" rel="noopener">open the cloud <span class="arr">→</span></a>
         <a class="btn" href="https://github.com/kefohaine/server/tree/main/services/nextcloud" target="_blank" rel="noopener">homelab config</a>
@@ -269,6 +267,7 @@ main,#install,#why-us,footer{scroll-margin-top:56px}
       browser extension</b>, desktop or mobile app at vault.fxmq.net and your passwords, passkeys and TOTP codes live in
       your own vault. Invites &amp; verifications arrive from the lab's own mailserver — proof of life without a SaaS middleman.</p>
       <div class="feats"><span class="feat">passwords</span><span class="feat">passkeys</span><span class="feat">TOTP seeds</span><span class="feat">secure notes</span><span class="feat">any bitwarden client</span></div>
+      <p class="arg">vs a hosted password manager — the same Bitwarden apps, but the server comes in the deal and nothing is taken on faith.</p>
       <div class="links">
         <a class="btn open" href="https://vault.fxmq.net" target="_blank" rel="noopener">open the vault <span class="arr">→</span></a>
         <a class="btn" href="https://github.com/kefohaine/server/tree/main/services/vaultwarden" target="_blank" rel="noopener">homelab config</a>
@@ -293,6 +292,7 @@ main,#install,#why-us,footer{scroll-margin-top:56px}
       live dashboard. When something below dies, it doesn't stay dead silently — the dashboard is public so the status
       of every door here is on display, including the monitor's own opinion of itself.</p>
       <div class="feats"><span class="feat">http(s) checks</span><span class="feat">tcp checks</span><span class="feat">status page</span><span class="feat">notifications</span></div>
+      <p class="arg">vs a hosted uptime service — this one watches from inside your network, so it can also see the doors that aren't public.</p>
       <div class="links">
         <a class="btn open" href="https://kuma.fxmq.net" target="_blank" rel="noopener">see the watchdogs <span class="arr">→</span></a>
         <a class="btn" href="https://github.com/kefohaine/server/tree/main/services/uptimekuma" target="_blank" rel="noopener">homelab config</a>
@@ -318,6 +318,7 @@ main,#install,#why-us,footer{scroll-margin-top:56px}
       drop in over port 25565 through the Via family. Behind it all, <b>PufferPanel</b> at <b>/panel</b> manages the
       servers (registration is closed; accounts are made by the operator on request).</p>
       <div class="feats"><span class="feat">/play in-browser 1.8.8</span><span class="feat">/panel server UI</span><span class="feat">java :25565 (1.7.10→latest)</span><span class="feat">paper servers</span></div>
+      <p class="arg">vs Minecraft Realms — browser play means no subscription and no install for your friends; the panel runs the world.</p>
       <div class="links">
         <a class="btn open" href="https://mc.fxmq.net/play/" target="_blank" rel="noopener">play in the browser <span class="arr">→</span></a>
         <a class="btn" href="https://mc.fxmq.net/panel" target="_blank" rel="noopener">open the panel</a>
@@ -344,6 +345,7 @@ main,#install,#why-us,footer{scroll-margin-top:56px}
       The TLS certificate is the very same Let's Encrypt cert as this website — web and mail share one trust anchor.
       Every service in this lab uses it to send you email: that's the whole point of owning a domain.</p>
       <div class="feats"><span class="feat">webmail</span><span class="feat">smtp 25/465/587</span><span class="feat">imaps 993</span><span class="feat">dkim · spf · dmarc</span><span class="feat">spoof-proof</span><span class="feat">quotas</span></div>
+      <p class="arg">vs Gmail / Outlook — your headers on your own DKIM-signed domain, nothing scanned for ads; deliverability is now your job.</p>
       <div class="links">
         <a class="btn open" href="https://mail.fxmq.net" target="_blank" rel="noopener">open webmail <span class="arr">→</span></a>
         <a class="btn" href="https://github.com/kefohaine/server/tree/main/services/mailserver" target="_blank" rel="noopener">homelab config</a>
@@ -390,13 +392,12 @@ main,#install,#why-us,footer{scroll-margin-top:56px}
         <p class="claim">The front door of the domain — <span class="u">and a drop folder</span> anyone can reach.</p>
       </div>
       <p class="blurb">www.fxmq.net keeps the lights low: <b>/</b> serves an empty index.html placeholder, <b>/download</b> is a read-only
-      public drop folder served by Caddy's file browser (drop a file, share the link), and <b>/1</b>, <b>/2</b> and <b>/3</b> are
-      three maximalist showcases of everything on this board — this one is /3. Talk to the lab: the whole thing ships from
-      one repo, so every page you see is version-controlled.</p>
-      <div class="feats"><span class="feat">/download drop folder</span><span class="feat">/1 terminal registry</span><span class="feat">/2 poster</span><span class="feat">/3 poster + install (this)</span></div>
+      public drop folder served by Caddy's file browser (drop a file, share the link), and this page. The whole lab ships from
+      one repo, so everything you see here is version-controlled.</p>
+      <div class="feats"><span class="feat">/download drop folder</span><span class="feat">caddy edge</span><span class="feat">acme certs per host</span></div>
       <div class="links">
-        <a class="btn open" href="/1">see edition /1 <span class="arr">→</span></a>
-        <a class="btn ghost" href="https://www.fxmq.net/download/" target="_blank" rel="noopener">the drop folder</a>
+        <a class="btn open" href="https://www.fxmq.net/download/" target="_blank" rel="noopener">the drop folder <span class="arr">→</span></a>
+        <a class="btn" href="https://github.com/kefohaine/server/tree/main/services/fxmq.net" target="_blank" rel="noopener">homelab config</a>
         <span class="gh">repo page: <a href="https://github.com/caddyserver/caddy" target="_blank" rel="noopener">caddyserver/caddy ↗</a></span>
       </div>
     </div>
@@ -420,6 +421,7 @@ main,#install,#why-us,footer{scroll-margin-top:56px}
       answers <b>/signaling</b>; everything else replies with a plain ok by design. It's the reason the cloud door's
       Talk app makes calls without Zoom or Meet in the middle.</p>
       <div class="feats"><span class="feat">hpb websocket</span><span class="feat">coturn relay · TURN 5349</span><span class="feat">peer-to-peer media</span><span class="feat">part of the cloud door</span></div>
+      <p class="arg">vs Zoom / Meet — calls are peer-to-peer WebRTC; this box introduces you, then steps out of the media path.</p>
       <div class="links">
         <a class="btn open" href="https://cloud.fxmq.net/apps/spreed/" target="_blank" rel="noopener">talk inside the cloud <span class="arr">→</span></a>
         <a class="btn" href="https://github.com/kefohaine/server/tree/main/services/nextcloud" target="_blank" rel="noopener">homelab config</a>
@@ -427,7 +429,6 @@ main,#install,#why-us,footer{scroll-margin-top:56px}
       </div>
     </div>
   </section>
-  <span id="board"></span>
 </main>
 
 <section class="install" id="install">
@@ -439,7 +440,7 @@ main,#install,#why-us,footer{scroll-margin-top:56px}
 ██   ███  ███  █  █ ████ ████   █  █ ██ ███ 
 █ █  █    █    █  █ █  █ █  █   █  █  █ █   
 █  █ ████ █     ██  █  █ █  █  ██  █  █ ████</pre>
-      <p class="tl"># one box · eight doors · self-hosted from a single repo</p>
+      <p class="tl"># fxmq.net is one deployment of this repo — fork kefohaine/server, run install.sh, and it's yours</p>
       <p class="cmd"><span class="pr">$</span> <code>bash install.sh</code> <span class="cm"># the installer — a few prompts, then the whole stack</span></p>
       <p class="cmd"><span class="pr">$</span> <code>bash scripts/optimize.sh</code> <span class="cm"># optional — tune the VPS afterwards</span></p>
       <p class="cmd"><span class="pr">$</span> <code>bash scripts/storage.sh</code> <span class="cm"># optional — a second VPS as live Nextcloud storage</span></p>
@@ -447,27 +448,11 @@ main,#install,#why-us,footer{scroll-margin-top:56px}
     </div>
   </div>
 </section>
-<section class="whys" id="why-us">
-  <div class="wrap">
-    <p class="kicker">why us</p>
-    <p>fxmq.net is the argument that the services you rent monthly — files, mail, passwords, calls, even a game
-    server — can instead run on one small VPS you control, in software you can read and fork. The goal is simple:
-    your data stops being a product.</p>
-    <p>Every door here is a swap. <b>Cloud</b> (Nextcloud) vs Google or Dropbox — no per-seat pricing, no model
-    trained on your calendar; you trade away their polish for a filesystem you actually own. <b>Mail</b> on your own
-    DKIM-signed domain vs Gmail/Outlook — yours to read, yours to keep, but deliverability is now your job.
-    <b>Vault</b> (Vaultwarden) vs a hosted password manager — the same Bitwarden apps, with the server in the deal
-    and nothing to take on faith. <b>Talk</b> vs Zoom or Meet — calls are peer-to-peer WebRTC: this box introduces
-    you, then steps out of the conversation. <b>Games</b> — Minecraft in the browser, no Realms subscription, no
-    install for your friends. <b>Monitor</b> (Kuma) watches from inside your network, not from a vendor's cloud.</p>
-    <p>The honest trade: you become the admin. Updates, backups and uptime are yours — that is the price of the
-    door being yours. It isn't for everyone. It's for people who'd rather own the room than rent it.</p>
-  </div>
-</section>
 <footer id="about">
   <div class="foot">
     <p class="giant">fxmq<b>.</b>net</p>
-    <p class="slog">ONE BOX · EIGHT DOORS · NO CLOUD BUT YOURS · INDEX 03/03</p>
+    <p class="slog">ONE BOX · EIGHT DOORS · NO CLOUD BUT YOURS</p>
+    <p class="demo">fxmq.net is the live demo — fork <a href="https://github.com/kefohaine/server" target="_blank" rel="noopener">kefohaine/server</a>, run <span style="font-family:var(--mono)">install.sh</span>, and this board is yours.</p>
     <div class="cols">
       <div>
         <h4>all the doors</h4>
@@ -483,12 +468,6 @@ main,#install,#why-us,footer{scroll-margin-top:56px}
         </ul>
       </div>
       <div>
-        <h4>the editions</h4>
-        <ul>
-          <li><a href="/1" style="--sc:var(--c-www)">/1 — terminal registry (dark)</a></li>
-          <li><a href="/2" style="--sc:var(--c-www)">/2 — poster editorial</a></li>
-          <li><a href="/3" style="--sc:var(--c-www)">/3 — poster editorial + install (this one)</a></li>
-        </ul>
         <h4>the source</h4>
         <ul>
           <li><a href="https://github.com/kefohaine/server" target="_blank" rel="noopener" style="--sc:var(--c-mc)">github.com/kefohaine/server</a></li>
@@ -513,8 +492,7 @@ main,#install,#why-us,footer{scroll-margin-top:56px}
     </div>
     <div class="colophon">
       <span class="stamp">self-hosted</span>
-      <span>© fxmq.net homelab · edition /3 of 3 · <a href="/1">/1 terminal</a> · <a href="/2">← /2 poster</a></span>
-      <span style="margin-left:auto;font-family:var(--body)">built from <a href="https://github.com/kefohaine/server" target="_blank" rel="noopener">kefohaine/server</a>, committed like everything else</span>
+      <span>© fxmq.net — a live demo of the <a href="https://github.com/kefohaine/server" target="_blank" rel="noopener">kefohaine/server</a> repo kit</span>
       <a class="topbtn" href="#top" title="back to top">↑ top</a>
     </div>
   </div>
