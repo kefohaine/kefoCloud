@@ -1,11 +1,6 @@
 # Known issues and improvements
 
-Tracked for follow-up. Items marked **[needs human approval]** require a decision or credential from the operator before an agent should act. Behaviours that look like bugs but are deliberate design choices are documented as rationale in `docs/GUIDE.md` — do not "fix" them. Resolved items are recorded under `#### install.sh hardcodes `admin@fxmq.net` for the PufferPanel admin  **[generalization drift]**
-- **File**: `scripts/install.sh` (panel_admin seed + smoke recheck)
-- **Problem**: rule 12 (stay global) — the panel admin email is hardcoded to `fxmq.net` while the rest of install.sh is `$DOMAIN`-driven; a fresh install for another domain still seeds an `@fxmq.net` admin, and `scripts/smoke-vhosts.sh` asserts it.
-- **Fix**: derive the admin email from `$DOMAIN` (or accept fxmq.net as canonical and document it in GUIDE); needs an operator decision on whether the panel admin domain may ever differ.
-
-## Solved`, one sentence each.
+Tracked for follow-up. Items marked **[needs human approval]** require a decision or credential from the operator before an agent should act. Behaviours that look like bugs but are deliberate design choices are documented as rationale in `docs/GUIDE.md` — do not "fix" them. Resolved items are recorded under `## Solved`, one sentence each.
 
 ---
 
@@ -119,6 +114,11 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### Efficiency
 
+#### install.sh hardcodes `admin@fxmq.net` for the PufferPanel admin  **[generalization drift]**
+- **File**: `scripts/install.sh` (panel_admin seed + smoke recheck)
+- **Problem**: rule 12 (stay global) — the panel admin email is hardcoded to `fxmq.net` while the rest of install.sh is `$DOMAIN`-driven; a fresh install for another domain still seeds an `@fxmq.net` admin, and `scripts/smoke-vhosts.sh` asserts it.
+- **Fix**: derive the admin email from `$DOMAIN` (or accept fxmq.net as canonical and document it in REF.md/GUIDE); needs an operator decision on whether the panel admin domain may ever differ.
+
 #### PHP-FPM pool sizing under concurrent sync
 - **File**: `services/nextcloud/php-fpm.d/zz-custom.conf`
 - **Problem**: `pm.max_children = 8` with 200s terminate timeout. Slow syncs can occupy all 8 children. (Already switched to `ondemand` — idle workers now free at rest.)
@@ -155,19 +155,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 ## Planned ideas
 
 Future roadmap, operator-reviewed later; when one is picked up it moves to Open, when done it lands in Solved.
-
-#### Installer parity: docs advertise per-module prompts the script doesn't have yet
-- **Why**: `www.fxmq.net/welcome` and README say install.sh "prompts for which modules you want" — the script is still all-or-nothing (see the Efficiency entry "install.sh: per-module install selection" for the mechanics). Docs must not outrun the code.
-- **Plan**: implement module selection first (defaults all ON so the fxmq.net demo install is unchanged), then keep the marketing text honest about it. This is the product's headline change.
-
-#### `scripts/defaults/` — per-script prompt defaults
-- **Scope**: `install.sh`, `optimize.sh`, `storage.sh`
-- **Design**: each script reads `scripts/defaults/<script>.<adapted-format>` before asking anything; the file holds default answers (e.g. `install vaultwarden module = true`). When prompting, the script shows the default and Enter accepts it; typing a value overrides; skipping falls back to the default. Modules default true → demo behavior unchanged. Folds into the module-selection work above.
-
-#### `REF.md` — one reference for the demo's public terms (separate from defaults/)
-- **Why**: docs and scripts hardcode fxmq.net, public + tailnet IPs, hostnames and personal naming — anyone reading them can't adapt to their own setup.
-- **Plan**: a single tracked `REF.md` holding only *public demo facts* (domain, IPs, tailnet names, naming scheme). Docs point at it instead of restating values; scripts derive/read from it where not auto-detected. Secrets stay out (never in a tracked file); live values (VPS IP, container names) are still detected, not read from REF.
-- **Note the split**: REF.md documents the demo's public *terms*; `scripts/defaults/` sets *prompt defaults*. Different purposes, both needed.
+Implemented 2026-09-06 (→ Solved): installer per-module prompts + `scripts/defaults/install.conf` (default all ON), `REF.md` demo-terms reference, `make perf`, `make taildrop-file|folder`, `TARGET=` dispatchers for the dok actions, Debian-system wording in README/www.
 
 #### NC user isolation across apps
 - **Goal**: keep Nextcloud users isolated from each other (own groups) across the apps they touch.
@@ -176,20 +164,11 @@ Future roadmap, operator-reviewed later; when one is picked up it moves to Open,
 #### GitHub workflow (Issues + Projects + PRs), ISSUES.md as backup
 - **Plan**: move day-to-day tracking to GitHub Issues/Projects/PRs; keep ISSUES.md canonical and mirror outward, not the reverse (GitHub-side state proved lossy/poisonable in the 2026-09 graph saga). Keep the Solved-by-month history in ISSUES.md.
 
-#### `make perf` — standalone live status overview
-- **Design**: takes no arguments; prints a one-shot system performance + status overview (CPU/RAM/load, services, disk, tailnet peers) as a console report.
-
-#### `make taildrop file|folder <src> server:`
-- **Design**: wrappers around `sudo tailscale file cp <src> <target-host>:`; target host stays a parameter. Note: this tailscale build has no `file status` subcommand, so delivery verification is limited to the cp exit code.
-
-#### Makefile `TARGET=` refactor
-- **Design**: move targets from the `-<trg>` suffix pattern to a `TARGET=` variable; mechanical pass, then re-verify every recipe and the GUIDE/smoke references to the old names.
-
 #### storage.sh — debug pass before it's trusted
-- **Why**: least-tested script (second VPS + tailnet NFS); run it against a scratch target first, fix issues, then treat its output as canonical guidance.
+- **Why**: least-tested script (second box + tailnet mount); syntax-verified 2026-09-06, but a live run against a scratch target is still pending before its output is treated as canonical guidance.
 
-#### Broaden "Debian VPS" wording → "Debian system"
-- **Plan**: small wording pass across README/docs so the repo reads as "turn any Debian system into your self-hosted stack", not only a rented VPS.
+#### Deeper REF.md sweep (later)
+- **Note**: REF.md exists and docs point to it, but older GUIDE/ISSUES text still carries raw demo values (historical Solved entries intentionally stay). A future pass can sweep remaining live references in operational docs.
 
 ## Solved
 
@@ -289,7 +268,13 @@ Resolved items grouped by month. One line per item, one sentence per record.
 
 ### Sep 2026 — edge renames + docs overhaul
 - **GitHub graph empty + ghost contributor fixed** — two-root merge DAG made GitHub's date queries 500 (graph empty since 08-01); single-root linearization restored the cells and scrubbing `Co-Authored-By:` AI-assistant trailer credits removed the ghost contributor (details in the GUIDE 2026-09-06 debug-hell lesson); the two-root repo was deleted and the clean history is now canonical on `kefohaine/server` (scratch repos deleted).
-- **Duplicate `fxmq.net` edge container cleaned up** — an interrupted `--force-recreate` had left two host-network Caddys on :80/:443 sharing the cert store; both removed, recreate verified non-duplicating.
+- **installer: per-module install selection** — `ask_inputs` now prompts for cloud/vault/mail/games/monitor (default all ON, env/state-overridable); `phase2_op`, `containers_up`, `cf_dns` and `issue_certs` gate on the choice; defaults come from `scripts/defaults/install.conf`; verified with `bash -n` + parser unit test (fresh-VPS run still pending).
+- **`make perf`** — standalone live performance/status overview script (`scripts/perf.sh`), no arguments.
+- **`make taildrop-file` / `make taildrop-folder`** — `sudo tailscale file cp` wrappers (`FILE=`/`DIR=`, `TAILDROP_HOST` default `server`).
+- **Makefile `TARGET=` dispatchers** — `dok-recreate/restart/stop/logs TARGET=<ctn>` as the primary style; the `-<ctn>` suffixes remain as aliases.
+- **`REF.md`** — demo public-terms reference (domain, IPs, names, proxy modes) so docs stay portable; secrets excluded; scripts still auto-detect live values.
+- **`scripts/defaults/`** — per-script prompt-defaults files (`install.conf` populated, `optimize.conf`/`storage.conf` skeletons); README + www copy matched to the real module flow.
+- **Debian VPS → Debian system wording** — README and the www welcome lede no longer imply only a rented VPS.
 - **`optimize.sh` universal VPS optimizer** — OPTIMIZE.md + repo tuning + `make cleanup`'s apt/docker part merged into one idempotent, zero-prompt bash script with an Enter-refresh error loop; applied here (swap RAM/3, noatime, THP, sysctls, tuned/irqbalance/earlyoom auto, SSD/HDD auto-detect → fstrim or SETRA).
 - **`turn.fxmq.net` renamed `talk.fxmq.net`** — vhost, DNS (grey-cloud A record), occ signaling entry, coturn cert path, smoke and docs updated; stale cert dir removed.
 - **`shell.fxmq.net` renamed `tail.fxmq.net`** — vhost now serves a clickable vhost-links home at `/`, ttyd at `/ttyd`; dnsmasq + smoke + docs updated.
