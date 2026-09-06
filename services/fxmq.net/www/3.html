@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fxmq.net — the whole stack // index 03</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* ───────────────────────────── two zones, one page ─────────────────────────────
+     /3 = hybrid edition: the pitch + board in the poster look (like /2), then the
+     technical registry in the terminal look (like /1). Each zone keeps its own
+     design language; they never blend. Vars are namespaced per zone. */
+
+  /* poster zone (from /2) */
+  .poster{--paper:#f3efe3;--card:#fffdf4;--ink:#14110b;--dim:#6b6352;
+    --c-cloud:#3aa0ff;--c-vault:#7c5cff;--c-kuma:#2fbf71;--c-mc:#ff8c42;
+    --c-mail:#ff4d5e;--c-tail:#d16bff;--c-www:#0fb9a4;
+    --disp:'Archivo Black','Arial Black',Impact,sans-serif;
+    --body:'Space Grotesk',system-ui,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,Menlo,monospace}
+  /* terminal zone (from /1) */
+  .term{--bg:#070a0e;--panel:#0c1118;--panel2:#101823;--line:#1d2a38;--line2:#2a3d50;
+    --ink:#cdd9d0;--dim:#5f7182;--faint:#3d4c5b;
+    --grn:#3ddc84;--cyn:#4ad6f7;--ylw:#ffd166;--red:#ff5d6b;
+    --c-cloud:#3aa0ff;--c-vault:#8a6cff;--c-kuma:#3ddc84;--c-mc:#ff8c42;
+    --c-mail:#ff5d6c;--c-tail:#d16bff;--c-www:#25d2c0;
+    --mono:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace}
+
+  *{box-sizing:border-box} a{color:inherit}
+  html{scroll-behavior:smooth}
+  body{margin:0;font-family:var(--body,'Space Grotesk',sans-serif)}
+
+  /* top bar */
+  .topbar{position:sticky;top:0;z-index:80;background:#14110b;color:#f3efe3;
+    font-family:var(--mono);font-size:12px;display:flex;flex-wrap:wrap;gap:2px;padding:0 14px}
+  .topbar .b{font-family:'Archivo Black',sans-serif;font-size:15px;padding:10px 14px 10px 0;margin-right:8px}
+  .topbar .b span{color:#0fb9a4}
+  .topbar a{color:#f3efe3;text-decoration:none;padding:12px 10px;border-bottom:2px solid transparent}
+  .topbar a:hover{border-color:#f3efe3}
+  .topbar .r{margin-left:auto;display:flex;flex-wrap:wrap}
+  .topbar .r a{font-size:11px;opacity:.85}
+  .topbar .r a:hover{opacity:1}
+
+  /* ═══════════ ZONE A — the poster / the pitch ═══════════ */
+  .poster{background:var(--paper);color:var(--ink)}
+  .poster .wrap{max-width:1200px;margin:0 auto;padding:0 18px}
+  .kicker{font-family:var(--mono);font-size:12px;letter-spacing:.3em;text-transform:uppercase;color:var(--dim);
+    border-top:3px solid var(--ink);border-bottom:3px solid var(--ink);display:inline-block;padding:6px 14px;margin:44px 0 18px}
+  .poster h1{font-family:var(--disp);font-size:clamp(40px,8vw,104px);line-height:.9;letter-spacing:-.01em;
+    text-transform:uppercase;margin:0 0 20px}
+  .poster h1 .out{color:transparent;-webkit-text-stroke:2.5px var(--ink)}
+  .poster h1 .fill{background:var(--ink);color:var(--paper);padding:0 .12em;display:inline-block;box-shadow:8px 8px 0 var(--c-mc)}
+  .lede{font-size:clamp(16px,2vw,21px);font-weight:600;max-width:66ch;margin:6px 0 24px}
+  .lede a{color:var(--ink);box-shadow:inset 0 -0.45em 0 var(--c-www);text-decoration:none;font-weight:700}
+  .cmdline{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:26px 0 8px}
+  .cmdline code{font-family:var(--mono);font-size:clamp(15px,2.2vw,24px);font-weight:700;background:var(--ink);
+    color:var(--paper);padding:14px 20px;box-shadow:8px 8px 0 var(--c-cloud);display:inline-block}
+  .cmdline .one{font-family:var(--mono);font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim)}
+  .mods{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 4px}
+  .mods .m{font-family:var(--mono);font-size:13px;border:3px solid var(--ink);padding:7px 12px;font-weight:500;
+    box-shadow:4px 4px 0 var(--ink)}
+  .mods .m i{font-style:normal;opacity:.5;margin-right:6px}
+  .mods .c1{background:var(--c-cloud)} .mods .c2{background:var(--c-mail)} .mods .c3{background:var(--c-mc)}
+  .mods .c4{background:var(--c-vault)} .mods .c5{background:var(--c-kuma)} .mods .c6{background:#0fb9a4}
+  .pick{font-size:14px;color:var(--dim);margin:10px 0 34px;max-width:70ch}
+  .pick b{color:var(--ink)}
+  .board{margin:10px 0 40px}
+  .door{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin:16px 0;padding:16px 18px;
+    border:3px solid var(--ink);background:var(--card);box-shadow:6px 6px 0 var(--ink)}
+  .door .no{font-family:var(--disp);font-size:44px;line-height:1;color:transparent;-webkit-text-stroke:2px var(--ink);flex:0 0 46px}
+  .door .who{flex:1 1 260px;min-width:0}
+  .door .who h3{margin:0;font-family:var(--disp);text-transform:uppercase;font-size:22px;letter-spacing:.01em}
+  .door .who .host{font-family:var(--mono);font-size:13px;font-weight:700;display:block;margin-top:2px}
+  .door .what{flex:2 1 320px;font-size:14px;color:var(--dim)}
+  .door .what b{color:var(--ink)}
+  .door .go{font-family:var(--mono);font-size:12px;font-weight:700;text-decoration:none;border:2px solid var(--ink);
+    padding:7px 11px;background:#fff}
+  .door .go:hover{background:var(--ink);color:var(--card)}
+  .helpers{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin:6px 0 10px}
+  .helper{border:3px solid var(--ink);background:var(--card);box-shadow:6px 6px 0 var(--ink);padding:16px 18px}
+  .helper h4{margin:0 0 6px;font-family:var(--disp);text-transform:uppercase;font-size:16px}
+  .helper code{font-family:var(--mono);font-size:12px;background:var(--ink);color:var(--paper);padding:2px 7px}
+  .helper p{margin:8px 0 0;font-size:14px;color:var(--dim)}
+  .sec-h{font-family:var(--mono);font-size:11px;letter-spacing:.34em;text-transform:uppercase;color:var(--dim);
+    margin:30px 0 6px;text-align:center}
+  .sec-h b{font-size:26px;letter-spacing:.1em;color:var(--ink);font-family:var(--disp)}
+
+  /* ═══════════ ZONE B — the registry (terminal) ═══════════ */
+  .term{background:var(--bg);color:var(--ink);font-family:var(--mono)}
+  .term .wrap{max-width:1200px;margin:0 auto;padding:40px 18px 30px}
+  .term .prompt{color:var(--dim);font-size:13px;margin-bottom:10px}
+  .term .prompt b{color:var(--grn);font-weight:400}
+  .banner{color:var(--grn);font-size:12px;line-height:1.15;overflow:auto;white-space:pre;margin:0 0 18px}
+  .boot{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px;
+    font-size:12.5px;line-height:1.7;color:var(--dim);overflow:auto;margin:14px 0 26px}
+  .boot .ok{color:var(--grn)} .boot .warn{color:var(--ylw)} .boot .ln{color:var(--faint)}
+  .boot a{color:var(--cyn)}
+  .term h2{font-size:clamp(19px,3vw,26px);margin:30px 0 4px;font-weight:800}
+  .term h2 .hl{color:var(--grn);background:linear-gradient(90deg,var(--grn),var(--cyn));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub2{color:var(--dim);font-size:13px;max-width:80ch;margin:0 0 16px}
+  table.tbl{width:100%;border-collapse:collapse;font-size:13px}
+  .tbl th{color:var(--faint);text-align:left;font-weight:400;border-bottom:1px solid var(--line2);padding:6px 10px;
+    font-size:11px;letter-spacing:.16em;text-transform:uppercase}
+  .tbl td{border-bottom:1px dashed var(--line);padding:9px 10px;vertical-align:top}
+  .tbl tr:hover td{background:#0d141d}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px}
+  .tbl a{color:var(--ink)}
+  .tbl a:hover{background:var(--ink);color:#070a0e}
+  .tbl .soft{color:var(--cyn)}
+  .tbl .path{color:var(--dim);font-size:12px;white-space:nowrap}
+  .term .foot{margin-top:34px;border-top:1px solid var(--line);padding:22px 0 30px;color:var(--dim);font-size:12.5px}
+  .term .foot a{color:var(--cyn)}
+  .term .foot .big{font-size:clamp(34px,8vw,80px);font-weight:800;letter-spacing:-.03em;line-height:.95;margin:18px 0 6px;
+    background:linear-gradient(90deg,#3ddc84,#4ad6f7 45%,#8a6cff);-webkit-background-clip:text;background-clip:text;color:transparent;user-select:none}
+  @media(max-width:640px){.tbl .path{white-space:normal}.door .no{font-size:32px}}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="b">fxmq<span>.</span>net</div>
+  <a href="#board">the board</a>
+  <a href="#registry">the registry</a>
+  <div class="r">
+    <a href="/1">/1 terminal</a>
+    <a href="/2">/2 poster</a>
+    <a href="/3" style="border-bottom:2px solid #0fb9a4">/3 hybrid</a>
+  </div>
+</div>
+
+<!-- ═════════════════════════ ZONE A · poster / pitch ═════════════════════════ -->
+<section class="poster" id="board">
+  <div class="wrap">
+    <p class="kicker">fxmq.net · index 03 — the whole stack in one look</p>
+    <h1><span class="out">YOUR DATA.</span><br><span class="fill">ONE BOX.</span></h1>
+    <p class="lede">Cloud, mail, passwords, monitoring and Minecraft — on one Debian VPS behind
+      <a href="https://github.com/kefohaine/server" target="_blank" rel="noopener">a single repo</a>.
+      Every service is a ready-made module; the installer asks which ones you want, then builds them.</p>
+
+    <div class="cmdline">
+      <code>bash install.sh</code>
+      <span class="one">— the only command you need</span>
+    </div>
+    <div class="mods">
+      <span class="m c1"><i>□</i>cloud</span>
+      <span class="m c2"><i>□</i>mail</span>
+      <span class="m c3"><i>□</i>games</span>
+      <span class="m c4"><i>□</i>vault</span>
+      <span class="m c5"><i>□</i>monitor</span>
+      <span class="m c6"><i>■</i>edge · always</span>
+    </div>
+    <p class="pick">Each box above is a module you tick or skip during install — no other setup.
+      Say the domain, hand over a Cloudflare token and a Tailscale key, and the script does the rest:
+      hardening, DNS records, certificates, admin accounts.</p>
+
+    <div class="board">
+      <div class="door"><div class="no">01</div><div class="who" style="--c:var(--c-cloud)"><h3>Cloud</h3><span class="host">cloud.fxmq.net</span></div>
+        <div class="what">Nextcloud — <b>files, calendar, contacts, Talk</b> with self-hosted TURN; PostgreSQL + Redis behind it.</div>
+        <a class="go" style="background:var(--c-cloud)" href="https://cloud.fxmq.net">open →</a></div>
+      <div class="door"><div class="no">02</div><div class="who"><h3>Mail</h3><span class="host">mail.fxmq.net</span></div>
+        <div class="what">Docker Mailserver + Roundcube — <b>SMTP/IMAP, DKIM/SPF/DMARC</b>, one-command disposable addresses.</div>
+        <a class="go" style="background:var(--c-mail)" href="https://mail.fxmq.net">open →</a></div>
+      <div class="door"><div class="no">03</div><div class="who"><h3>Games</h3><span class="host">mc.fxmq.net</span></div>
+        <div class="what">Minecraft on PufferPanel — <b>browser play included</b>: no install, no sign-up, just join.</div>
+        <a class="go" style="background:var(--c-mc)" href="https://mc.fxmq.net">open →</a></div>
+      <div class="door"><div class="no">04</div><div class="who"><h3>Vault</h3><span class="host">vault.fxmq.net</span></div>
+        <div class="what">Vaultwarden — a <b>Bitwarden-compatible password manager</b> you fully own.</div>
+        <a class="go" style="background:var(--c-vault)" href="https://vault.fxmq.net">open →</a></div>
+      <div class="door"><div class="no">05</div><div class="who"><h3>Monitor</h3><span class="host">kuma.fxmq.net</span></div>
+        <div class="what">Uptime Kuma — <b>uptime dashboard</b> for every service on the box and off it.</div>
+        <a class="go" style="background:var(--c-kuma)" href="https://kuma.fxmq.net">open →</a></div>
+      <div class="door"><div class="no">06</div><div class="who"><h3>Edge</h3><span class="host">www.fxmq.net</span></div>
+        <div class="what">Caddy front door — <b>per-hostname certs</b>, a public drop folder, and these showcase pages.</div>
+        <a class="go" style="background:var(--c-www)" href="https://www.fxmq.net">open →</a></div>
+    </div>
+
+    <p class="sec-h">after the install — two helpers</p>
+    <div class="helpers">
+      <div class="helper"><h4>optimize</h4><code>scripts/optimize.sh</code>
+        <p>Universal VPS performance optimizer: kernel/memory/network tuning, swap, THP, noatime, fstrim and cleanup. Idempotent, safe to re-run.</p></div>
+      <div class="helper"><h4>storage</h4><code>scripts/storage.sh</code>
+        <p>Point a cheap second VPS at the box as live Nextcloud storage over the tailnet — the database stays on the main host.</p></div>
+    </div>
+    <p style="font-size:13px;color:var(--dim);margin:26px 0 44px;font-family:var(--mono)">fork it → <a href="https://github.com/kefohaine/server" target="_blank" rel="noopener" style="color:var(--ink);font-weight:700">github.com/kefohaine/server</a></p>
+  </div>
+</section>
+
+<!-- ═════════════════════════ ZONE B · registry (terminal) ═════════════════════════ -->
+<section class="term" id="registry">
+  <div class="wrap">
+    <p class="prompt">op @ fxmq :~$ <b>cat /etc/homelab/registry</b></p>
+    <div class="banner">██╗ ██╗ ██████╗ ███╗ ███╗███████╗██╗ █████╗ ██████╗
+██║ ██║██╔═══██╗████╗ ████║██╔════╝██║ ██╔══██╗██╔══██╗
+███████║██║ ██║██╔████╔██║█████╗ ██║ ███████║██████╔╝
+██╔══██║██║ ██║██║╚██╔╝██║██╔══╝ ██║ ██╔══██║██╔══██╗
+██║ ██║╚██████╔╝██║ ╚═╝ ██║███████╗███████╗██║ ██║██████╔╝
+╚═╝ ╚═╝ ╚═════╝ ╚═╝ ╚═╝╚══════╝╚══════╝╚═╝ ╚═╝╚═════╝</div>
+    <div class="boot"><span class="ln"># fxmq.net — self-hosted on one Debian VPS.</span><br>
+      <span class="ok">[ok]</span> edge: caddy · <span class="ok">[ok]</span> cloud: nextcloud + postgres + redis + talk · <span class="ok">[ok]</span> mail: docker-mailserver + roundcube<br>
+      <span class="ok">[ok]</span> games: pufferpanel + minecraft · <span class="ok">[ok]</span> vault: vaultwarden · <span class="ok">[ok]</span> kuma: uptime-kuma<br>
+      <span class="ln"># source: <a href="https://github.com/kefohaine/server" target="_blank" rel="noopener">github.com/kefohaine/server</a> — one compose file per service, Makefile on top.</span></div>
+
+    <h2>the <span class="hl">registry</span> — what runs behind each door</h2>
+    <p class="sub2">The technical take: every door, the software behind it, its upstream, and the exact config in the repo that runs it.</p>
+
+    <table class="tbl">
+      <tr><th></th><th>door</th><th>software</th><th>config in repo</th></tr>
+      <tr><td><span class="dot" style="background:var(--c-cloud)"></span></td><td>cloud.fxmq.net</td>
+        <td class="soft"><a href="https://github.com/nextcloud/server" target="_blank" rel="noopener">nextcloud</a> · postgres · redis · talk-hpb</td>
+        <td class="path">services/nextcloud/</td></tr>
+      <tr><td><span class="dot" style="background:var(--c-vault)"></span></td><td>vault.fxmq.net</td>
+        <td class="soft"><a href="https://github.com/dani-garcia/vaultwarden" target="_blank" rel="noopener">vaultwarden</a></td>
+        <td class="path">services/vaultwarden/</td></tr>
+      <tr><td><span class="dot" style="background:var(--c-kuma)"></span></td><td>kuma.fxmq.net</td>
+        <td class="soft"><a href="https://github.com/louislam/uptime-kuma" target="_blank" rel="noopener">uptime-kuma</a></td>
+        <td class="path">services/uptimekuma/</td></tr>
+      <tr><td><span class="dot" style="background:var(--c-mc)"></span></td><td>mc.fxmq.net</td>
+        <td class="soft"><a href="https://github.com/PufferPanel/PufferPanel" target="_blank" rel="noopener">pufferpanel</a> · paper · <a href="https://github.com/eaglercraft/eaglercraft" target="_blank" rel="noopener">eaglercraft</a></td>
+        <td class="path">services/pufferpanel/ · config/pufferpanel/servers/</td></tr>
+      <tr><td><span class="dot" style="background:var(--c-mail)"></span></td><td>mail.fxmq.net</td>
+        <td class="soft"><a href="https://github.com/docker-mailserver/docker-mailserver" target="_blank" rel="noopener">docker-mailserver</a> · <a href="https://github.com/roundcube/roundcubemail" target="_blank" rel="noopener">roundcube</a></td>
+        <td class="path">services/mailserver/</td></tr>
+      <tr><td><span class="dot" style="background:var(--c-tail)"></span></td><td>tail.fxmq.net</td>
+        <td class="soft"><a href="https://github.com/tailscale/tailscale" target="_blank" rel="noopener">tailscale</a> · <a href="https://github.com/tsl0922/ttyd" target="_blank" rel="noopener">ttyd</a> <span style="color:var(--faint)">(tailnet only)</span></td>
+        <td class="path">config/ttyd/</td></tr>
+      <tr><td><span class="dot" style="background:var(--c-www)"></span></td><td>www.fxmq.net</td>
+        <td class="soft"><a href="https://github.com/caddyserver/caddy" target="_blank" rel="noopener">caddy</a> — edge, certs, drop folder, showcases</td>
+        <td class="path">services/fxmq.net/</td></tr>
+    </table>
+
+    <div class="foot">
+      <span>$ cat /etc/homelab/stack</span>
+      <div class="big">one box · seven doors · your rules</div>
+      <p>editions: <a href="/1">/1 — terminal registry</a> · <a href="/2">/2 — poster editorial</a> · <a href="/3" style="color:#3ddc84">/3 — hybrid (this one)</a>
+      &nbsp;·&nbsp; source: <a href="https://github.com/kefohaine/server" target="_blank" rel="noopener">kefohaine/server</a> · © fxmq.net homelab</p>
+    </div>
+  </div>
+</section>
+
+</body>
+</html>

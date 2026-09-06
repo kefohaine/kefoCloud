@@ -1,42 +1,51 @@
-# fxmq.net — your own cloud, mail and game server on one box
+# fxmq.net — one command, your own cloud, mail and game servers
 
-A complete, working self-hosted homelab, shipped as infrastructure: one compose file per
-service, a Makefile that wraps every operation, and an installer that turns a fresh Debian
-VPS into the whole stack. This repo is the exact setup running at fxmq.net today - not a
-template, not a tutorial. The real thing, committed.
+A self-hosting kit that turns a single Debian VPS into a private stack of
+**cloud, mail, passwords, monitoring and Minecraft** — behind one edge, one
+domain, one Tailscale tailnet. Every service is a pre-made, plug-and-use
+container: no setup beyond the answers you type into the installer. This is
+the exact repo that runs [fxmq.net](https://www.fxmq.net) today.
 
-## What you get
+## The whole thing is one command
 
-- **Nextcloud** - files, calendar, contacts, Talk (self-hosted TURN/STUN), Mail - on
-  PostgreSQL + Redis, RAM-capped to a 3 GB ceiling
-- **Mail** - Docker Mailserver + Roundcube: SMTP/IMAP, DKIM/SPF/DMARC, one-command
-  disposable addresses
-- **Vaultwarden** - Bitwarden-compatible password manager
-- **Uptime Kuma** - uptime monitoring dashboard
-- **PufferPanel + Minecraft** - a game panel, plus browser Minecraft that needs no
-  install and no sign-up
-- **Caddy edge** - one vhost file per subdomain, per-hostname Let's Encrypt certs via
-  Cloudflare DNS-01
-- **Tailscale** - private hostnames that exist only on your devices
+```
+bash install.sh
+```
 
-## Why this repo
+That's the only way in. `install.sh` asks for your domain, a Cloudflare API
+token and a Tailscale auth key, then walks you through **which modules you
+want** — include or skip each one — and builds the stack unattended: host
+hardening, Docker, DNS records, Let's Encrypt certs and admin accounts.
 
-Everything is committed and documented. Services live one per directory under `services/`,
-host configs under `config/`, the whole command surface in the `Makefile` (`make help`
-lists it all). Pre-commit hooks refuse a Caddyfile that doesn't validate, and `make smoke`
-tests the live edge before every push - the same checks that keep the production site up.
+## Modules — pick what you run
 
-## Deploy
+| module | what you get | door |
+|---|---|---|
+| **Cloud** | Nextcloud — files, calendar, contacts, Talk (self-hosted TURN), PostgreSQL + Redis | `cloud.` |
+| **Mail** | Docker Mailserver + Roundcube — SMTP/IMAP, DKIM/SPF/DMARC | `mail.` |
+| **Games** | Minecraft via PufferPanel — browser play included, no install, no sign-up | `mc.` |
+| **Vault** | Vaultwarden — Bitwarden-compatible password manager | `vault.` |
+| **Monitor** | Uptime Kuma — uptime dashboard for anything you run | `kuma.` |
+| **Edge** | Caddy — one vhost file per subdomain, per-hostname certs via Cloudflare DNS-01 | `www.` |
 
-On a fresh Debian VPS, run `scripts/install.sh`. It asks for your domain, your Cloudflare
-API token and a Tailscale auth key, then runs unattended: host setup, Docker, Tailscale,
-all containers, DNS records, certificates and admin accounts. Day-to-day operations are
-`make` recipes - no raw `docker compose` needed.
+Each module is a self-contained compose unit under `services/`, wired to its
+own subdomain the moment you pick it. Nothing to configure afterwards.
 
-## Docs
+## Secondary helpers
 
-- `docs/GUIDE.md` - the operator manual: layout, commands, architecture, gotchas
-- `docs/AGENTS.md` - the rules an AI agent follows when working in this repo
-- `docs/ISSUES.md` - open problems, tracked
+- **`scripts/optimize.sh`** — after the install, squeeze the box: kernel and
+  memory tuning, swap, THP, noatime, fstrim, log caps and cleanup. One
+  idempotent script, safe to re-run.
+- **`scripts/storage.sh`** — add a cheap second VPS as live Nextcloud storage
+  (NFS over the tailnet); the database stays on the main box, the files live
+  elsewhere.
 
-Your data, your box, your rules. Fork it, run `install.sh`, and you own the stack.
+## Built the boring way
+
+Everything is committed and documented — one compose file per service, a
+`Makefile` wrapping every operation (`make help`), `make smoke` testing the
+live edge before each push, and pre-commit hooks that refuse an invalid
+Caddyfile. Fork it, run `install.sh`, and the stack is yours.
+
+- `docs/GUIDE.md` — operator manual: layout, commands, architecture, gotchas
+- `docs/ISSUES.md` — open problems, tracked
