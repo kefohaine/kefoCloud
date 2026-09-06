@@ -20,11 +20,6 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### Robustness
 
-#### Adopt `server-again` as canonical history / delete `server-dupe`  **[needs human approval]**
-- **File**: GitHub repos — `kefohaine/server` (canonical), `server-dupe` (throwaway), `server-again` (clean 2026-09-06 history)
-- **Problem**: the 2026-09-06 fix (GUIDE lesson) produced a clean single-root, claude-free 669-commit history on `server-again`; canonical `server` still holds the two-root DAG with claude co-author credits (broken date queries + "claude" contributor), and `server-dupe` is a throwaway still showing claude.
-- **Fix**: op decides — force-push `server-again`'s main onto `server` (or rename `server-again`→`server`), delete `server-dupe`, then replace this local repo's `main` with the new history and re-verify (`make gh-web-health`).
-
 #### Undocumented host process: `node server/server.js` (dumb-init "extra")
 - **File**: host (not in repo) — `ps` shows `dumb-init -- extra` (PID 51742) → `node server/server.js` (PID 51776, up since Aug 24, ~170 MB RSS, cwd `/`)
 - **Problem**: matches no compose file, systemd unit, or script in the repo; purpose unknown. Not touched by any agent task.
@@ -249,7 +244,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Terminal `host-exec` shim** — chroot-to-host wrapper for glibc binaries in the Alpine ttyd container.
 
 ### Sep 2026 — edge renames + docs overhaul
-- **GitHub graph empty + "claude" contributor fixed** — two-root merge DAG made GitHub's date queries 500 (graph empty since 08-01); single-root linearization restored the cells and scrubbing `Co-Authored-By: Claude` trailer credits removed the claude contributor (details in the GUIDE 2026-09-06 debug-hell lesson); clean history on `kefohaine/server-again`.
+- **GitHub graph empty + "claude" contributor fixed** — two-root merge DAG made GitHub's date queries 500 (graph empty since 08-01); single-root linearization restored the cells and scrubbing `Co-Authored-By: Claude` trailer credits removed the claude contributor (details in the GUIDE 2026-09-06 debug-hell lesson); the two-root repo was deleted and the clean history is now canonical on `kefohaine/server` (scratch repos deleted).
 - **Duplicate `fxmq.net` edge container cleaned up** — an interrupted `--force-recreate` had left two host-network Caddys on :80/:443 sharing the cert store; both removed, recreate verified non-duplicating.
 - **`optimize.sh` universal VPS optimizer** — OPTIMIZE.md + repo tuning + `make cleanup`'s apt/docker part merged into one idempotent, zero-prompt bash script with an Enter-refresh error loop; applied here (swap RAM/3, noatime, THP, sysctls, tuned/irqbalance/earlyoom auto, SSD/HDD auto-detect → fstrim or SETRA).
 - **`turn.fxmq.net` renamed `talk.fxmq.net`** — vhost, DNS (grey-cloud A record), occ signaling entry, coturn cert path, smoke and docs updated; stale cert dir removed.
