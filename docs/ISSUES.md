@@ -145,6 +145,11 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Problem**: mobile push notifications are delayed — no push proxy (UnifiedPush / nextcloud-push) is installed. The old entry's "no HPB" premise is stale: the Go signaling server (strukturag/nextcloud-spreed-signaling) has run since the 2026-08-30 rebuild.
 - **Fix**: install a push proxy + Notifications backend when Talk push becomes a real use case.
 
+#### install.sh: per-module install selection (product feature)
+- **File**: `scripts/install.sh` (+ `scripts/smoke-vhosts.sh`; README + www marketing pitch depend on it)
+- **Problem**: the installer is all-or-nothing — `ask_inputs()` prompts only domain/CF-token/TS-key and `phase2_op()` installs every service unconditionally (Nextcloud, Vaultwarden, mail/DKIM, Kuma, PufferPanel + game servers). The planned product pitch ("self-host cloud/mail/game servers as selectable modules behind one AIO command") must match real behavior before it is advertised (README rule: real and verified). Per-module choice also enables lean installs on other domains.
+- **Fix**: (1) `ask_inputs()` gains a per-module prompt block (`cloud`/`mail`/`vault`/`kuma`/`panel`), default all ON, env-overridable, persisted via `save_state`; (2) gate each setup call in `phase2_op()` (`nextcloud_setup`, `vaultwarden_setup`, `dkim_setup`, `kuma_seed`, `panel_servers`, `panel_admin_setup`); (3) scope `containers_up()` + `cf_dns()` to the selected modules (edge + host services stay core); (4) write the chosen module list where `smoke-vhosts.sh` reads it so uninstalled services aren't asserted; (5) verify with `bash -n` + review — only a fresh-VPS install can truly exercise it. Then rewrite README and add the www /3 page on the module pitch.
+
 ---
 
 ## Solved
