@@ -34,8 +34,6 @@ a lean install.
 
 - `bash scripts/optimize.sh` — optional tuning after install (kernel/memory/network, swap, cleanup)
 - `bash scripts/storage.sh` — optional second box as live Nextcloud storage over the tailnet
-- `make perf` — one-shot live system performance + status overview (no arguments)
-- `make taildrop-file FILE=…` / `make taildrop-folder DIR=…` — send a file/folder to a tailnet device
 
 ## Documentation
 
