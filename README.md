@@ -1,12 +1,24 @@
 # kefohaine/server
 
-One repo that turns any Debian system into your own stack — cloud, mail, game servers and more — with one command and a few prompts.
+One repo that turns any Debian system into your own self-hosted server stack — cloud, mail, game servers and more — with one command and a few prompts.
 
-**[www.fxmq.net](https://www.fxmq.net/welcome) is the live demo**: eight doors running on one box, built entirely from this repo. Fork it, run the installer, and the same board is yours — under your own domain, with no server but yours.
+**[www.fxmq.net](https://www.fxmq.net/welcome) is the live demo**: eight modules running on one box, built entirely from this repo. Fork it, run the installer, and the same board is yours — under your own domain, with no server but yours.
 
 ## Why
 
-The point of the repo is that none of those doors needs a rented product: your files instead of Google/Dropbox, your mail instead of Gmail, your vault instead of a hosted password manager, your calls instead of Zoom. You become the admin — that is the honest price of owning the server.
+The point of the repo is that none of those doors needs a rented product: your files instead of Google/Dropbox, your mail instead of Gmail, your vault instead of a hosted password manager, your calls instead of Zoom.
+You become the admin — which is the honest price of owning the server.
+
+The upsides:
+- High efficiency & density
+- Maximum privacy & ownership
+- Streamlined Automation
+- Modular Setup
+
+Perfect either for homelab hobbyists looking for a great learning tool to experiment with, or for critical production stacks overseen by advanced developers.
+I emphasise on the quality of the framework's configuration, which comes close to entreprise-grade stacks while staying surprisingly lightweight and easy to setup.
+This comes from daily use of this project as my personal stack, so put all my heart to deliver the most secure, healthy and functional framework.
+Minimum RAM required: 3GB
 
 ## Install
 
@@ -43,4 +55,4 @@ The installer asks a few questions, then hardens the host, creates the DNS recor
 ## Risks & Considerations
 - Single Point of Failure: Running your cloud, your passwords, your email, and a game server on one operating system means that if the host crashes, goes offline, or gets compromised, your entire digital footprint goes dark simultaneously.
 - The "Mail Server" Headache: Operating a self-hosted mail server is notoriously difficult. Even if the project configures your DKIM and SPF records perfectly, large providers like Gmail, Yahoo, and Outlook frequently block or flag IP addresses originating from residential connections or cheap cloud VPS networks (like DigitalOcean or Linode).
-- Maintenance Burden: As the repository states, "You become the admin — that is the honest price of owning the server." If an automated update breaks Nextcloud or a database becomes corrupted, you are entirely responsible for fixing it.
+- Maintenance: If anything breaks when you install as intended, report it here as an issue; Please don't open an issue if it was caused from manual tweaks on your end.
