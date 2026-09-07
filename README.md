@@ -39,3 +39,8 @@ The installer asks a few questions, then hardens the host, creates the DNS recor
 ## Why
 
 fxmq.net is only a showcase. The point of the repo is that none of those doors needs a rented product: your files instead of Google/Dropbox, your mail instead of Gmail, your vault instead of a hosted password manager, your calls instead of Zoom. You become the admin — that is the honest price of owning the server.
+
+## Risks & Considerations
+- Single Point of Failure: Running your cloud, your passwords, your email, and a game server on one operating system means that if the host crashes, goes offline, or gets compromised, your entire digital footprint goes dark simultaneously.
+- The "Mail Server" Headache: Operating a self-hosted mail server is notoriously difficult. Even if the project configures your DKIM and SPF records perfectly, large providers like Gmail, Yahoo, and Outlook frequently block or flag IP addresses originating from residential connections or cheap cloud VPS networks (like DigitalOcean or Linode).
+- Maintenance Burden: As the repository states, "You become the admin — that is the honest price of owning the server." If an automated update breaks Nextcloud or a database becomes corrupted, you are entirely responsible for fixing it.
