@@ -7,13 +7,14 @@ services/vaultwarden/.env
 # Runtime data dirs — canonical home is /var/www/custom/projects/homelab/
 # (siblings of repo/), never inside the repo. Ignored so a stray copy can't
 # be committed (2026-08-29 cleanup removed strays that were created in repo/).
+/backups/
 /caddy_data/
 /cloud/
-/kuma/
-/vault/
 /download/
-/backups/
-/puffer/
+/eaglercraft/
+/kuma/
 /mailserver/
 /pgdata/
+/puffer/
 /talk/
+/vault/
