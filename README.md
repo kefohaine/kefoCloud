@@ -4,6 +4,10 @@ One repo that turns any Debian system into your own stack — cloud, mail, game 
 
 **[www.fxmq.net](https://www.fxmq.net/welcome) is the live demo**: eight doors running on one box, built entirely from this repo. Fork it, run the installer, and the same board is yours — under your own domain, with no server but yours.
 
+## Why
+
+The point of the repo is that none of those doors needs a rented product: your files instead of Google/Dropbox, your mail instead of Gmail, your vault instead of a hosted password manager, your calls instead of Zoom. You become the admin — that is the honest price of owning the server.
+
 ## Install
 
 ```bash
@@ -35,10 +39,6 @@ The installer asks a few questions, then hardens the host, creates the DNS recor
 - `docs/AGENTS.md` — agent operating rules (how this repo is worked on)
 - `docs/ISSUES.md` — open problems, planned ideas, and resolved history
 - `scripts/defaults/` — per-script prompt defaults
-
-## Why
-
-fxmq.net is only a showcase. The point of the repo is that none of those doors needs a rented product: your files instead of Google/Dropbox, your mail instead of Gmail, your vault instead of a hosted password manager, your calls instead of Zoom. You become the admin — that is the honest price of owning the server.
 
 ## Risks & Considerations
 - Single Point of Failure: Running your cloud, your passwords, your email, and a game server on one operating system means that if the host crashes, goes offline, or gets compromised, your entire digital footprint goes dark simultaneously.
