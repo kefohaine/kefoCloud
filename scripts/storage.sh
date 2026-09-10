@@ -96,7 +96,7 @@ hint() { case "$1" in
   tailscale)    echo "HINT: generate a fresh auth key (admin console → Keys) and re-run; check 'tailscale status' on storage" ;;
   ufw)          echo "HINT: ssh to storage over the tailnet (root@$TS_IP) and inspect: ufw status; swap via 'swapon --show'" ;;
   nfs)          echo "HINT: on storage: systemctl status nfs-server; exportfs -v; showmount -e localhost; the export must allow 100.64.0.0/10" ;;
-  mount)        echo "HINT: on the NC host: sudo mount -t nfs $TS_IP:$NC_MOUNT $LOCAL_MOUNT; check ufw on storage allows 2049/111 from 100.64.0.0/10" ;;
+  mount)        echo "HINT: install the NFS client on the NC host (sudo apt-get install -y nfs-common) — without /sbin/mount.nfs the kernel mount fails with 'NFS: mount program didn't pass remote address'; then sudo mount -t nfs -o vers=4 $TS_IP:$NC_MOUNT $LOCAL_MOUNT; check ufw on storage allows 2049 from 100.64.0.0/10" ;;
   migrate)      echo "HINT: re-run — the rsync resumes; verify with: sudo rsync -a $LOCAL_MOUNT.local-backup/ $LOCAL_MOUNT/" ;;
   verify)       echo "HINT: the container must be up and the mount live: mount | grep $LOCAL_MOUNT; then occ status + a file write through the web UI" ;;
   quota)        echo "HINT: run: make nc-user-setting USER=$QUOTA_USER KEY=quota VALUE='$QUOTA'" ;;
@@ -107,7 +107,7 @@ recheck() { case "$1" in
   tailscale)    [ -n "$TS_IP" ] && T "tailscale status >/dev/null 2>&1" ;;
   ufw)          T "ufw status | grep -q 'Status: active'" ;;
   nfs)          T "exportfs -v 2>/dev/null | grep -q '$NC_MOUNT'" ;;
-  mount)        mount | grep -q "$LOCAL_MOUNT " ;;
+  mount)        ensure_mount >/dev/null 2>&1 ;;
   migrate)      sudo rsync -a --delete --dry-run "$LOCAL_MOUNT.local-backup/" "$LOCAL_MOUNT/" >/dev/null 2>&1 ;;
   verify)       docker exec -u www-data "$NC_CONTAINER" php -r '
                   require_once "/var/www/html/lib/base.php";
@@ -192,22 +192,36 @@ T "sed -i 's/^#\?port=.*/port=20048/' /etc/nfs.conf 2>/dev/null; sed -i 's/^\[mo
 T "exportfs -ra && systemctl enable --now nfs-server >/dev/null 2>&1 && exportfs -v 2>/dev/null | grep -q '$NC_MOUNT'" \
   || fail nfs "export"
 
-# ---------- fxmq: mount + migrate the live datadirectory ----------
-if ! mount | grep -q "$LOCAL_MOUNT "; then
+# ---------- fxmq: mount + migrate the live datadirectory (idempotent, re-checkable) ----------
+ensure_mount() {   # also the 'mount' re-check: makes the export live, so the Enter-loop can finish
+  mount | grep -q "$LOCAL_MOUNT " && return 0
+  # NFS needs its client helper; without /sbin/mount.nfs the kernel refuses the
+  # mount with "NFS: mount program didn't pass remote address" (2026-09-10 live-run bug).
+  if [ ! -x /sbin/mount.nfs ] && [ ! -x /usr/sbin/mount.nfs ]; then
+    sudo apt-get install -y -qq nfs-common >/dev/null 2>&1
+  fi
+  if [ ! -x /sbin/mount.nfs ] && [ ! -x /usr/sbin/mount.nfs ]; then
+    fail mount "NFS client missing (nfs-common install failed on this host)"
+    return 1
+  fi
   log "mounting $TS_IP:$NC_MOUNT at $LOCAL_MOUNT"
   docker stop "$NC_CONTAINER" >/dev/null 2>&1 || true
   sudo mv "$LOCAL_MOUNT" "$LOCAL_MOUNT.local-backup" 2>/dev/null || sudo mkdir -p "$LOCAL_MOUNT.local-backup"
   sudo mkdir -p "$LOCAL_MOUNT"
-  sudo mount -t nfs -o rw,nofail,vers=4 "$TS_IP:$NC_MOUNT" "$LOCAL_MOUNT" || fail mount "nfs mount failed"
+  local rc=0
+  sudo mount -t nfs -o rw,nofail,vers=4 "$TS_IP:$NC_MOUNT" "$LOCAL_MOUNT" || { fail mount "nfs mount failed"; rc=1; }
   log "migrating the datadirectory to storage (rsync over the tailnet)"
-  sudo rsync -a "$LOCAL_MOUNT.local-backup/" "$LOCAL_MOUNT/" || fail migrate "rsync failed"
+  sudo rsync -a "$LOCAL_MOUNT.local-backup/" "$LOCAL_MOUNT/" || { fail migrate "rsync failed"; rc=1; }
   sudo chown -R 33:33 "$LOCAL_MOUNT" || true
-  sudo tee -a /etc/fstab >/dev/null <<EOF
+  sudo grep -qF "$TS_IP:$NC_MOUNT $LOCAL_MOUNT" /etc/fstab \
+    || sudo tee -a /etc/fstab >/dev/null <<EOF
 $TS_IP:$NC_MOUNT $LOCAL_MOUNT nfs rw,nofail,vers=4 0 0
 EOF
   log "fstab entry added (auto-remount on reboot)"
   docker start "$NC_CONTAINER" >/dev/null 2>&1 || fail verify "container start"
-fi
+  return $rc
+}
+ensure_mount
 
 # ---------- verify the live datadirectory ----------
 sleep 5
