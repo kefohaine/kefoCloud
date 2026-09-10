@@ -398,8 +398,8 @@ talk-gen:
 nc-capture:
 >@bash scripts/nc-capture.sh
 
-# Onboard the 1 TB / 2 GB storage VPS as Nextcloud object storage (Setup A:
-# PostgreSQL stays on fxmq, user files move to Garage on storage). Prompts for
+# Onboard the 1 TB / 2 GB storage VPS as Nextcloud's live datadirectory over NFS
+# (Setup A: PostgreSQL stays on fxmq, user files move to the 1 TB box). Prompts for
 # the storage root password + a tailscale auth key; lockout-safe, idempotent.
 storage:
 >@bash scripts/storage.sh
