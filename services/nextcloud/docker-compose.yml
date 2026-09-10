@@ -38,9 +38,10 @@ services:
       - /var/www/custom/projects/homelab/cloud/users:/data:rw
       # Persistent PHP-FPM pool configuration
       - ./php-fpm.d/zz-custom.conf:/usr/local/etc/php-fpm.d/zz-custom.conf:ro
-      # Persistent opcache tuning. Dropped into conf.d so it survives image
-      # upgrades; zz- prefix so it loads last (overrides anything earlier).
+      # Persistent PHP config dropped into conf.d so it survives image upgrades;
+      # zz- prefix so it loads last (overrides anything earlier).
       - ./php-conf.d/zz-opcache.ini:/usr/local/etc/php/conf.d/zz-opcache.ini:ro
+      - ./php-conf.d/zz-redis-session.ini:/usr/local/etc/php/conf.d/zz-redis-session.ini:ro
 
     environment:
       # Database: PostgreSQL. For now the db container runs on this host
