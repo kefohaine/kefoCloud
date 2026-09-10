@@ -33,12 +33,16 @@
 # when the live size differs), noatime/nodiratime on, SSD/HDD auto-detected
 # (nvme name, rotational flag, discard support) -> SSD gets fstrim, HDD gets
 # SETRA. Env overrides: SWAP_GB= (0 = skip swap) NOATIME=0/1 FORCE_FSTRIM=0/1
-# WITH_IRQBALANCE=0/1 WITH_EARLYOOM=0/1 (both auto-install; 0 = opt out)
+# WITH_IRQBALANCE=0/1 WITH_EARLYOOM=0/1 (auto-installed performance helpers; 0 = skip)
 # SETRA=<sectors> (HDD readahead via blockdev --setra; auto 512 on HDD; 0 = skip)
 # WITH_TUNED=0/1 (tuned auto profile via 'tuned-adm recommend'; tuned keeps its
 # unique values, our sysctl values override it on conflicting keys — tuned's
 # sysctl plugin re-applies /etc/sysctl.d and defers to it by design)
 # YES=1 BACKUP_DIR=...
+#
+# The ONLY packages it installs are the performance helpers (tuned, irqbalance,
+# earlyoom). Service/application software (docker, dnsmasq, …) is never installed,
+# and steps for software that is absent are skipped instead of failing.
 #
 # Documented options (real benefit with trade-offs, deliberately NOT default):
 #   - /tmp on tmpfs: systemctl enable tmp.mount — RAM-backed temp I/O, but costs RAM
@@ -118,7 +122,7 @@ append_lines() { # path, lines... — returns 0 when appended/would-append, 1 wh
   [ ${#missing[@]} -eq 0 ] && { log "  ok: $p (unchanged)"; return 1; }
   backup "$p"
   [ "$DRY" = 1 ] && { log "  would append ${#missing[@]} line(s) to $p"; return 0; }
-  { printf '%s' "$cur"; [ -n "$cur" ] && printf '\n'; printf '%s\n' "${missing[@]}"; } >> "$p"
+  printf '%s\n' "${missing[@]}" >> "$p"
   CHANGED=1; log "  appended ${#missing[@]} line(s) to $p"; return 0
 }
 
@@ -157,7 +161,7 @@ ask_inputs() { # no prompts — every choice is auto-detected or env-overridable
   [ -n "${FORCE_FSTRIM:-}" ] || FORCE_FSTRIM=0
   SSD=0; [ "$KIND" = ssd ] && SSD=1; [ "$FORCE_FSTRIM" = 1 ] && SSD=1
   [ -n "${SETRA:-}" ] || { [ "$KIND" = hdd ] && SETRA=512 || SETRA=0; }
-  # irqbalance + earlyoom + tuned: auto-installed when missing (opt out with =0)
+  # irqbalance + earlyoom + tuned: performance helpers, auto-installed when missing (opt out with =0)
   [ -n "${WITH_IRQBALANCE:-}" ] || WITH_IRQBALANCE=1
   [ -n "${WITH_EARLYOOM:-}" ] || WITH_EARLYOOM=1
   [ -n "${WITH_TUNED:-}" ] || WITH_TUNED=1
@@ -247,7 +251,8 @@ $key = $val"
   write_file /etc/sysctl.d/99-optimize.conf "${CTL}
 " || true
   if [ "$DRY" = 0 ] && [ "$VERIFY" = 0 ]; then
-    sysctl --system >/dev/null 2>&1 || { fail sysctl "sysctl --system failed"; return; }
+    sysctl --system >/dev/null 2>&1 || sysctl -p /etc/sysctl.d/99-optimize.conf >/dev/null 2>&1 \
+      || { fail sysctl "sysctl apply failed"; return; }
   fi
   log "  ok: sysctl applied"
 }
@@ -380,22 +385,22 @@ dnsmasq_tune() {
 noatime_tune() {
   [ "$NOATIME" = 1 ] || { log "noatime: skipped (not requested)"; return 0; }
   log "noatime: root mount"
-  local FSTAB ROOTLINE NEWLINE
-  FSTAB="$(read_file /etc/fstab)"
-  ROOTLINE="$(printf '%s\n' "$FSTAB" | awk '$2=="/" && $3 ~ /^(ext4|xfs|btrfs)$/')"
-  if [ -n "$ROOTLINE" ] && ! printf '%s' "$ROOTLINE" | grep -q noatime; then
-    NEWLINE="$(printf '%s' "$ROOTLINE" | awk '{for(i=1;i<=NF;i++){if(i==4)$i=$i",noatime,nodiratime"};print}')"
-    backup /etc/fstab
-    if [ "$DRY" = 1 ] || [ "$VERIFY" = 1 ]; then log "  would add noatime,nodiratime to /"; return 0; fi
-    sed -i "s|^${ROOTLINE}$|${NEWLINE}|" /etc/fstab
-    if mount -o remount / 2>/dev/null && findmnt -no OPTIONS / | grep -q noatime; then
-      log "  ok: noatime,nodiratime on /"
-    else
-      cp -a "$BACKUP_DIR/$(echo /etc/fstab | tr '/' '_')" /etc/fstab 2>/dev/null; mount -o remount / 2>/dev/null
-      fail noatime "remount failed — reverted"
-    fi
-  else
+  local ROOTLINE
+  ROOTLINE="$(awk '$2=="/" && $3 ~ /^(ext4|xfs|btrfs)$/ {print; exit}' /etc/fstab)"
+  if [ -z "$ROOTLINE" ] || printf '%s' "$ROOTLINE" | grep -q noatime; then
     log "  ok: noatime already set (or root fs not ext4/xfs/btrfs)"
+    return 0
+  fi
+  if [ "$DRY" = 1 ] || [ "$VERIFY" = 1 ]; then log "  would add noatime,nodiratime to /"; return 0; fi
+  backup /etc/fstab
+  # rewrite field 4 on the first "/" line only (awk — never a sed pattern built from file content)
+  awk 'done!=1 && $2=="/" && $3 ~ /^(ext4|xfs|btrfs)$/ && $4 !~ /noatime/ { $4=$4",noatime,nodiratime"; done=1 } {print}' \
+    /etc/fstab > /etc/fstab.optimize.new && mv /etc/fstab.optimize.new /etc/fstab
+  if mount -o remount / 2>/dev/null && findmnt -no OPTIONS / | grep -q noatime; then
+    log "  ok: noatime,nodiratime on /"
+  else
+    cp -a "$BACKUP_DIR/$(echo /etc/fstab | tr '/' '_')" /etc/fstab 2>/dev/null; mount -o remount / 2>/dev/null
+    fail noatime "remount failed — reverted"
   fi
 }
 
@@ -448,9 +453,9 @@ w $DF - - - - madvise
   fi
 }
 
-# ------------------------------------------------------------------ 12. packages: irqbalance + earlyoom (auto-install when missing)
+# ------------------------------------------------------------------ 12. packages: irqbalance + earlyoom (performance helpers, auto-install when missing)
 pkg_tune() {
-  # Both install automatically on every host (opt out: WITH_IRQBALANCE=0 / WITH_EARLYOOM=0).
+  # Both are performance helpers and install when missing (opt out: WITH_IRQBALANCE=0 / WITH_EARLYOOM=0).
   if [ "${WITH_IRQBALANCE:-1}" = 1 ] && ! ok command -v irqbalance; then
     if [ "$DRY" = 0 ] && [ "$VERIFY" = 0 ]; then
       apt-get install -y -qq irqbalance >/dev/null 2>&1 && systemctl enable --now irqbalance 2>/dev/null \
@@ -535,14 +540,18 @@ recheck() {
         [ "$got" = "$exp" ] || [ "$(echo "$val" | wc -w)" -gt 1 -a -n "$got" ] || all=0
       done <<< "$SYSCTLS"
       [ "$all" = 1 ];;
-    limits)       [ "$(ulimit -Sn)" -ge 65535 ] && [ -f /etc/security/limits.conf ] && [ -f /etc/systemd/system.conf.d/99-optimize.conf ] ;;
+    # this shell's live ulimit only changes on a new login, so verify the config a
+    # new login/service will read (checking the live value gives a false failure)
+    limits)       grep -qE 'soft[[:space:]]+nofile[[:space:]]+65535' /etc/security/limits.conf \
+                    && grep -qE 'hard[[:space:]]+nofile[[:space:]]+65535' /etc/security/limits.conf \
+                    && grep -q '^DefaultLimitNOFILE=65535' /etc/systemd/system.conf.d/99-optimize.conf ;;
     swap)         [ -n "$(swapon --show --noheadings 2>/dev/null)" ] ;;
     services)     local u st all=1; for u in $SERVICE_PRUNE; do
                     st="$(systemctl is-enabled "$u" 2>/dev/null)"
                     case "$st" in ""|disabled|masked|static|indirect|generated|not-found) :;; *) all=0;; esac
                   done; [ "$all" = 1 ] ;;
     journald)     [ -f /etc/systemd/journald.conf.d/99-optimize.conf ] && systemctl is-active --quiet systemd-journald ;;
-    docker)       ok docker info && [ -f /etc/docker/daemon.json ] ;;
+    docker)       [ "$HAS_DOCKER" = 0 ] || { ok docker info && [ -f /etc/docker/daemon.json ]; } ;;
     dnsmasq)      [ "$HAS_DNSMASQ" = 0 ] || grep -rsq '^cache-size=' /etc/dnsmasq.conf /etc/dnsmasq.d/ 2>/dev/null ;;
     noatime)      [ "$NOATIME" = 0 ] || findmnt -no OPTIONS / | grep -q noatime ;;
     fstrim)       [ "$SSD" = 0 ] || systemctl is-enabled --quiet fstrim.timer ;;
