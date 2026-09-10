@@ -159,6 +159,14 @@ sudo tailscale ping -c 1 "$TS_IP" 2>&1 | grep -q "direct" \
   && log "tailnet link: direct" \
   || log "WARN: link may be DERP-relayed — file transfers will be slow; check 'tailscale status'"
 
+# leave the operator with passwordless ssh to storage (onboarding used a password)
+if [ ! -f "$HOME/.ssh/id_ed25519" ]; then
+  ssh-keygen -t ed25519 -N "" -C "$(id -un)@$(hostname)" -f "$HOME/.ssh/id_ed25519" >/dev/null 2>&1
+fi
+sshpass -e ssh-copy-id -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "root@$TS_IP" >/dev/null 2>&1 \
+  && log "passwordless ssh installed: $(id -un) -> root@$TS_IP" \
+  || log "WARN: could not install your ssh key on storage (ssh still needs the password)"
+
 # ---------- allocation size prompt (validated against available disk) ----------
 AVAIL_BYTES=$(T "df -P '$NC_MOUNT' 2>/dev/null | awk 'NR==2{print \$4}'" 2>/dev/null)
 if [ -z "$AVAIL_BYTES" ]; then
@@ -213,6 +221,14 @@ ensure_mount() {   # also the 'mount' re-check: makes the export live, so the En
   log "migrating the datadirectory to storage (rsync over the tailnet)"
   sudo rsync -a "$LOCAL_MOUNT.local-backup/" "$LOCAL_MOUNT/" || { fail migrate "rsync failed"; rc=1; }
   sudo chown -R 33:33 "$LOCAL_MOUNT" || true
+  # never allow the rollback to be deleted on an incomplete copy (2026-09-10: rsync died
+  # on the large files over a relayed NFS link and the local copy was deleted anyway)
+  if [ "$rc" -eq 0 ]; then
+    local src_n dst_n
+    src_n=$(sudo find "$LOCAL_MOUNT.local-backup" -type f 2>/dev/null | wc -l)
+    dst_n=$(sudo find "$LOCAL_MOUNT" -type f 2>/dev/null | wc -l)
+    [ "$src_n" = "$dst_n" ] || { fail migrate "copy incomplete ($dst_n of $src_n files) — rollback copy kept"; rc=1; }
+  fi
   sudo grep -qF "$TS_IP:$NC_MOUNT $LOCAL_MOUNT" /etc/fstab \
     || sudo tee -a /etc/fstab >/dev/null <<EOF
 $TS_IP:$NC_MOUNT $LOCAL_MOUNT nfs rw,nofail,vers=4 0 0
@@ -236,8 +252,10 @@ docker exec -u www-data "$NC_CONTAINER" php -r '
 ' "$QUOTA_USER" || fail verify "read/write probe failed"
 log "datadirectory verified on the storage VPS ($TS_IP:$NC_MOUNT, ${SIZE_GB} GB allocated)"
 
-# ---------- delete the local copies? (prompt after a successful migration) ----------
-if [ -d "$LOCAL_MOUNT.local-backup" ] && [ "$(sudo ls -A "$LOCAL_MOUNT.local-backup" | wc -l)" -gt 0 ]; then
+# ---------- delete the local copies? (ONLY after a fully verified migration) ----------
+if [ -n "$ERR" ] && [ -d "$LOCAL_MOUNT.local-backup" ]; then
+  log "WARN: migration not verified ($ERR) — keeping the rollback copy at $LOCAL_MOUNT.local-backup"
+elif [ -d "$LOCAL_MOUNT.local-backup" ] && [ "$(sudo ls -A "$LOCAL_MOUNT.local-backup" | wc -l)" -gt 0 ]; then
   read -r -p "delete the local datadirectory copies ($LOCAL_MOUNT.local-backup) now? [y/N] " ans
   case "$ans" in y|Y|yes) sudo rm -rf "$LOCAL_MOUNT.local-backup" && log "local copies deleted — storage is the only copy" ;;
   *) log "keeping $LOCAL_MOUNT.local-backup as rollback (delete later with: sudo rm -rf $LOCAL_MOUNT.local-backup)" ;; esac
