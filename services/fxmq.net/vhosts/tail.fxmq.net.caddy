@@ -21,7 +21,7 @@ https://tail.fxmq.net {
         @not_tailnet not remote_ip 100.64.0.0/10
         respond @not_tailnet 403
         basic_auth {
-            op $2a$14$OjL4xVmC7NdigICGpIFyfOX4/wcJYhGcciOyjuy3rOzaN1QcgiC9S
+            op $2a$14$JN6D7.faeJKo7gDIHUgw8u0fMkWHttCWnJKMzTkGQ9X.vyaXRGhXq
         }
         # ttyd host terminal. Base path is /ttyd (ttyd -b /ttyd), so the full
         # path is proxied as-is — do not strip the prefix.
