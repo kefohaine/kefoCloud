@@ -10,8 +10,8 @@
 # no legacy renames are applied.
 #
 # Fully autonomous: the Kuma and PufferPanel admin accounts are created
-# automatically (passwords written to kuma/admin-pass.txt + puffer/admin-
-# pass.txt), and no manual confirmation steps block success — the only
+# automatically (the admin passwords are printed once in the final summary —
+# nothing is written to disk), and no manual confirmation steps block success — the only
 # follow-ups are printed in the summary (Tailscale split-DNS, mailboxes).
 # Prerequisites checked up front: the Cloudflare zone must exist, and a
 # GitHub SSH key must be added when the script prints the pubkey.
@@ -484,9 +484,6 @@ kuma_seed() {
       docker exec uptimekuma sqlite3 /app/data/kuma.db \
         "INSERT OR IGNORE INTO user (username,password,active,timezone) VALUES ('admin','$HASH',1,'UTC');" \
         >>"$LOG" 2>&1 || fail kuma_admin
-      echo "$KUMA_PASS" | sudo tee /var/www/custom/projects/homelab/kuma/admin-pass.txt >/dev/null
-      sudo chown $OP_USER:$OP_USER /var/www/custom/projects/homelab/kuma/admin-pass.txt
-      sudo chmod 600 /var/www/custom/projects/homelab/kuma/admin-pass.txt
     fi
   fi
   docker exec -i uptimekuma sqlite3 /app/data/kuma.db < services/uptimekuma/seed-monitors.sql \
@@ -495,7 +492,7 @@ kuma_seed() {
 
 # Fully autonomous PufferPanel first-run: bypass the setup wizard by
 # inserting the admin user directly (same pattern as the GUIDE admin-
-# recovery path) and write puffer/admin-pass.txt. Also forces
+# recovery path); the password is printed in the final summary. Also forces
 # panel.registrationenabled=false (the make smoke lockdown assertion).
 panel_admin_setup() {
   local i=0
@@ -519,9 +516,6 @@ INSERT INTO users (username, email, password, otp_active, allow_passwordless_log
 VALUES ('admin','admin@fxmq.net','$HASH','false','true',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
 INSERT INTO permissions (user_id, client_id, server_identifier, scopes)
 SELECT last_insert_rowid(), NULL, NULL, 'admin';" >>"$LOG" 2>&1 || fail panel_admin "user insert failed"
-    echo "$PANEL_PASS" | sudo tee /var/www/custom/projects/homelab/puffer/admin-pass.txt >/dev/null
-    sudo chown $OP_USER:$OP_USER /var/www/custom/projects/homelab/puffer/admin-pass.txt
-    sudo chmod 600 /var/www/custom/projects/homelab/puffer/admin-pass.txt
   fi
   # Registration must stay closed (smoke asserts the toggle): force it false.
   if sudo test -f /var/www/custom/projects/homelab/puffer/data/config.json \
@@ -1068,8 +1062,8 @@ success_block() {
   echo " SUCCESS — the stack is up:"
   echo "   Nextcloud    https://cloud.$DOMAIN      admin / ${NEXTCLOUD_ADMIN_PASSWORD:-<see services/nextcloud/.env>}"
   echo "   Vaultwarden  https://vault.$DOMAIN"
-  echo "   Uptime Kuma  https://kuma.$DOMAIN       admin / ${KUMA_PASS:-<see kuma/admin-pass.txt>}"
-  echo "   PufferPanel  https://mc.$DOMAIN/panel   admin / ${PANEL_PASS:-<see puffer/admin-pass.txt>}"
+  echo "   Uptime Kuma  https://kuma.$DOMAIN       admin / ${KUMA_PASS:-(already set — rotate with: make kuma-passwd USER=admin PASS=…)}"
+  echo "   PufferPanel  https://mc.$DOMAIN/panel   admin / ${PANEL_PASS:-(already set — rotate with: make panel-passwd USER=admin@$DOMAIN)}"
   echo "   Webmail      https://mail.$DOMAIN       (mailboxes via make mail-gen)"
   echo "   Shell        https://tail.$DOMAIN      (tailnet-only)"
   echo "   VPS IP ${VPS_IP:-?}   Tailscale IP ${TS_IP:-?}"
