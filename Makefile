@@ -347,9 +347,13 @@ mail-card:
 # ─────────────────────────────────────────────────────────────────────────────
 # PufferPanel accounts (CLI `pufferpanel user` — binary at /pufferpanel/bin/)
 # Users table in puffer/data/pufferpanel.db; passwords live in the DB and are
-# never printed. panel-passwd is not exposed — the CLI's `user edit` has no
-# working password flag in this version; reset passwords from the panel UI.
+# never printed. panel-passwd writes a bcrypt hash (mkpasswd, password on stdin)
+# straight into the users table — the CLI's `user edit` has no working password
+# flag in this version. The panel caches users at boot, so the recipe restarts it.
 # ─────────────────────────────────────────────────────────────────────────────
+.PHONY: panel-list-users panel-add-user panel-del-user panel-passwd tail-auth
+.PHONY: kuma-list-users kuma-add-user kuma-passwd kuma-del-user
+
 panel-list-users:
 >@bash scripts/panel-user.sh list
 
@@ -362,6 +366,16 @@ panel-add-user:
 panel-del-user:
 >@[ "$(origin USER)" = "command line" ] || { scripts/mklog error "Usage: make panel-del-user USER=<email>"; exit 1; }
 >@bash scripts/panel-user.sh del "$(USER)"
+
+panel-passwd:
+>@[ "$(origin USER)" = "command line" ] || { scripts/mklog error "Usage: make panel-passwd USER=<email> [PASS=…]"; exit 1; }
+>@[ -n "$(PASS)" ] || read -s -p "New password for $(USER): " PASS; echo; \
+  bash scripts/panel-user.sh passwd "$(USER)" "$$PASS"
+>@scripts/mklog warn "panel restart applies it (stops a running game server)"
+>@$(MAKE) --no-print-directory dok-restart-pufferpanel
+
+tail-auth:
+>@bash scripts/tail-auth.sh set "$(if $(USER),$(USER),op)" "$(PASS)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Uptime Kuma accounts (no CLI — scripts/kuma-user.sh: bcryptjs hash in the
@@ -1049,11 +1063,15 @@ help:
 >@echo "  Panel & Uptime Kuma accounts"
 >@echo "  │  make panel-list-users       list PufferPanel users (id/username/email — passwords never shown)"
 >@echo "  │  make panel-add-user USER=… NAME=… [PASS=…] [ADMIN=1]   add a panel user (PASS prompted; ADMIN=1 = --admin)"
->@echo "  │  make panel-del-user USER=…  delete a panel user + their permissions (no panel-passwd: CLI user edit is broken — reset from the UI)"
+>@echo "  │  make panel-del-user USER=…  delete a panel user + their permissions"
+>@echo "  │  make panel-passwd USER=… [PASS=…]   reset a panel user's password (bcrypt → DB; restarts the panel, which stops a running game server)"
 >@echo "  │  make kuma-list-users        list Uptime Kuma users"
 >@echo "  │  make kuma-add-user USER=… PASS=…   add a Kuma user (bcrypt hash generated in the container)"
 >@echo "  │  make kuma-passwd USER=… PASS=…    rotate a Kuma user's password"
 >@echo "  └  make kuma-del-user USER=…  delete a Kuma user + their monitors/notifications"
+>@echo ""
+>@echo "  Tailnet access"
+>@echo "  └  make tail-auth [USER=op] [PASS=…]   set/rotate the tail.\$$DOMAIN basic-auth password (gates the ttyd host shell)"
 >@echo ""
 >@echo "  Nextcloud (occ — every command runs as www-data in the nextcloud container)"
 >@echo "  │  make nc-occ CMD='…'      any occ command verbatim (escape hatch, e.g. CMD='status')"
