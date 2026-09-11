@@ -1,13 +1,15 @@
-# tail.fxmq.net — tailnet-only home for the operator's own tools. ttyd host
-# terminal at /ttyd (ttyd runs with -b /ttyd); / shows a plain list of
-# clickable links to every fxmq.net vhost; all other paths respond "ok".
+# tail.fxmq.net — tailnet-only entry point: a terminal-styled dashboard at /
+# and the ttyd host shell at /ttyd.
 #
-# Access control is TWO ordered layers (the `route` block pins the order):
-#   1. non-tailnet sources get 403 — Tailscale membership is necessary, then
-#   2. HTTP basic auth is required for everything — membership is NOT
-#      authorization: /ttyd is a full `op` shell and `op` has passwordless sudo.
-# User `op`; `make tail-auth` sets/rotates the password and prints it once (only
-# the bcrypt hash is committed — never put the password in the repo).
+# Access model, in order (the `route` block pins it):
+#   1. every path — non-tailnet sources get 403 (Tailscale membership is required)
+#   2. /ttyd only — HTTP basic auth (user `kefohaine`): membership is NOT
+#      authorization for a full root-capable shell.
+# The dashboard is deliberately unauthenticated (it is only a link list), so it
+# can carry the log in / log out buttons; one basic-auth login is then
+# remembered by the browser for the whole tail.fxmq.net origin.
+# `make tail-auth` sets/rotates the credential and prints it once (only the
+# bcrypt hash is committed — never put the password in the repo).
 
 https://tail.fxmq.net {
     tls {
@@ -20,33 +22,28 @@ https://tail.fxmq.net {
     route {
         @not_tailnet not remote_ip 100.64.0.0/10
         respond @not_tailnet 403
-        basic_auth {
-            op $2a$14$SbolWVoI8etI0M368qB.VujAdZg33b0IeUwzrXrAgKyiOpZfBOVoa
-        }
-        # ttyd host terminal. Base path is /ttyd (ttyd -b /ttyd), so the full
-        # path is proxied as-is — do not strip the prefix.
+
+        # ttyd host terminal — the gated path. Base path is /ttyd (ttyd -b
+        # /ttyd), so the full path is proxied as-is — do not strip the prefix.
         handle /ttyd* {
+            basic_auth {
+                kefohaine $2a$14$SbolWVoI8etI0M368qB.VujAdZg33b0IeUwzrXrAgKyiOpZfBOVoa
+            }
             reverse_proxy 172.22.0.1:7681 {
                 transport http {
                     versions 1.1
                 }
             }
         }
-        # Home page: every fxmq.net vhost as a plain list of links.
+
+        # Terminal dashboard (static; services/$DOMAIN/www is mounted read-only
+        # at /etc/caddy/www in the caddy container).
         handle / {
-            header Content-Type "text/html; charset=utf-8"
-            respond `<!doctype html><html><head><meta charset="utf-8"><title>fxmq.net</title></head><body style="font-family:monospace;margin:2em">
-<h1>fxmq.net</h1><ul>
-<li><a href="https://cloud.fxmq.net/">cloud.fxmq.net</a> — Nextcloud</li>
-<li><a href="https://vault.fxmq.net/">vault.fxmq.net</a> — Vaultwarden</li>
-<li><a href="https://kuma.fxmq.net/">kuma.fxmq.net</a> — Uptime Kuma</li>
-<li><a href="https://mail.fxmq.net/">mail.fxmq.net</a> — webmail</li>
-<li><a href="https://mc.fxmq.net/">mc.fxmq.net</a> — <a href="https://mc.fxmq.net/panel">panel</a> · <a href="https://mc.fxmq.net/play/">play</a></li>
-<li><a href="https://talk.fxmq.net/signaling">talk.fxmq.net</a> — Talk signaling</li>
-<li><a href="https://www.fxmq.net/">www.fxmq.net</a> — <a href="https://www.fxmq.net/download/">download</a></li>
-<li><a href="https://tail.fxmq.net/ttyd">tail.fxmq.net/ttyd</a> — terminal</li>
-</ul></body></html>` 200
+            root * /etc/caddy/www
+            rewrite /tail.html
+            file_server
         }
+
         # Everything else is the plain "ok" stub.
         handle {
             respond "ok" 200
