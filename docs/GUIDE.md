@@ -63,7 +63,7 @@ One host, two ingress paths. Cloudflare fronts the seven public hostnames — pr
 | mail.$DOMAIN | DNS-only | anyone | Roundcube webmail + SMTP/IMAP |
 | mc.$DOMAIN | DNS-only | anyone | PufferPanel `/panel`, browser Minecraft `/play`, Java :25565 |
 | talk.$DOMAIN | DNS-only | anyone | Talk signaling `/signaling` + TURN/STUN |
-| tail.$DOMAIN | not in public DNS | tailnet only | vhost index, ttyd at `/ttyd`, else `ok` |
+| tail.$DOMAIN | not in public DNS | tailnet only + HTTP basic auth | vhost index, ttyd at `/ttyd`, else `ok` |
 
 Per-hostname operational detail lives in the service-reference bullets; the cross-cutting rules are that anything whose traffic is not HTTP(S) (mail, mc, talk) must stay grey-cloud at Cloudflare, and the tailnet hostname never enters public DNS.
 
@@ -134,7 +134,7 @@ Manual — no CI/CD, pushes to `main` trigger nothing. Use the `Makefile` recipe
 
 **Never delete or disable any of these without explicit operator approval.** Per `docs/AGENTS.md` safety rule 1, if a task seems to require removing any of them, stop and ask.
 
-- `/etc/systemd/system/goose.service` — goose agent systemd unit (`enabled`, `Restart=always`).
+- `/etc/systemd/system/goose.service` — goose agent systemd unit (`enabled`, `Restart=always`). Its server secret lives in `/etc/goose/goose.env` (root:op 0640, outside the repo — the unit reads it via `EnvironmentFile=`).
 - `/etc/systemd/system/ttyd.service` — ttyd web-terminal unit (`enabled`, `Restart=always`). Binds `172.22.0.1:7681` only (host bridge IP), gated by the Caddy tailnet match and the UFW INPUT allow from `172.22.0.0/16`.
 - `/etc/dnsmasq.d/10-tailnet.conf` and `/etc/systemd/system/dnsmasq.service.d/override.conf` — host DNS resolver + systemd drop-in (`Restart=always`). Binds `100.117.144.0:53` (the Tailscale IP).
 - `$PROJECT_DIR/certs/` — RETIRED. The wildcard Cloudflare Origin cert that used to live here is no longer referenced by any vhost (the per-vhost ACME certs serve every hostname). The directory and the files inside it are kept on disk for audit/history but can be deleted without breaking the running system.
@@ -192,7 +192,7 @@ When you need to know "what does X do / where do I edit Y", read the file at the
 
   **Spoof-proofing**: `SPOOF_PROTECTION=1` on the mailserver (compose) — postfix runs `reject_authenticated_sender_login_mismatch` on submission, so each user may only send as their own address **plus any alias whose target is their mailbox** (the sender-login map is built from accounts + aliases; verified `postmap -q <alias>` returns the alias target — so an alias forwarding TO a mailbox grants that user send-as for the alias from external clients; an alias to an *external* address grants nobody, since no local account can authenticate as it). Roundcube `identities_level = 3` (in `roundcube-tls.inc.php`) locks the identity address to the login mailbox — the webmail From dropdown only ever shows the user's own address; users can't add an `admin@$DOMAIN` identity, and can only edit name/signature. Roundcube's `users` table has no admin flag in this version, so no roundcube admin UI exists for anyone. Roundcube connects with STARTTLS over the bridge (dovecot/postfix reject plaintext auth) — the override file `services/mailserver/roundcube-tls.inc.php` + the compose `extra_hosts` entry map mail.$DOMAIN to 172.22.0.9 so SNI/cert match. Mailboxes are managed with `docker exec mailserver setup email add|list|del <addr>`; credentials for admin@/postmaster@ are in `services/mailserver/.env` (gitignored). DKIM keys + generated DNS records live in `$PROJECT_DIR/mailserver/config/opendkim/keys/$DOMAIN/`. DNS: MX + mail.$DOMAIN A are DNS-only at Cloudflare; SPF/DMARC/DKIM TXT set (selector `mail`).
 - **dnsmasq** — config: `config/dnsmasq/10-tailnet.conf` (live path: `/etc/dnsmasq.d/10-tailnet.conf`). systemd drop-in: `config/dnsmasq/dnsmasq.service.conf` (live path: `/etc/systemd/system/dnsmasq.service.d/override.conf`).
-- **goose** — unit: `config/goose/goose.service` (live path: `/etc/systemd/system/goose.service`).
+- **goose** — unit: `config/goose/goose.service` (live path: `/etc/systemd/system/goose.service`); its server secret is not in the repo — the unit reads `EnvironmentFile=/etc/goose/goose.env` (root:op 0640), created by `scripts/install.sh`.
 
 ### Talk stack (Nextcloud Talk HPB + TURN)
 
@@ -298,4 +298,4 @@ Scripts and manifests stay **global** — they derive everything from the live s
 
 **Doc-like checks when touching scripts**: after editing any script, walk every `.md` and grep the executable source for every concrete fact the docs claim (recipe names, paths, ports, hostnames) — drift/stale/duplicate rules apply to scripts↔docs exactly as to config↔docs (AGENTS.md doc-audit directives). Scripts that render configs from templates (`talk-gen`) keep the committed template as the single source; the rendered output is gitignored.
 
-**Debugging pointers**: `make list` (AIO overview), `make smoke` (live vhost/smtp/registration test — runs in pre-push), `make dok-logs-<ctn>` / `docker logs`, `journalctl -u <unit>`, `scripts/mklog` for uniform messages. When a script fails: reproduce with `--dry-run`/`--verify`, read the exact failing command's output, check the tag's `hint()`, and only then patch — then re-run the script end-to-end plus `make smoke` if the edge was touched.
+**Debugging pointers**: `make list` (AIO overview), `make smoke` (live vhost/smtp/registration test — runs in pre-push), `make dok-logs-<ctn>` / `docker logs`, `journalctl -u <unit>`, `scripts/mklog` for uniform messages. For a full deep scan or incident triage follow `docs/DEBUG.md`. When a script fails: reproduce with `--dry-run`/`--verify`, read the exact failing command's output, check the tag's `hint()`, and only then patch — then re-run the script end-to-end plus `make smoke` if the edge was touched.

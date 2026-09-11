@@ -15,6 +15,27 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### Robustness
 
+#### PHP sessions live in a non-persistent Redis
+- **File**: `services/nextcloud/docker-compose.yml` (redis runs `--save "" --appendonly no`, `allkeys-lru`)
+- **Problem**: the image entrypoint stores PHP sessions in Redis, so a `redis` restart/recreate (or eviction) logs every user out.
+- **Fix**: accept, or give Redis minimal RDB persistence so sessions survive a restart.
+
+#### NFS datadirectory: hard mount + `sync` export + `no_root_squash`
+- **File**: `/etc/fstab` (client), storage `/etc/exports`
+- **Problem**: a `sync` export over the tailnet is the write-latency bottleneck (the 2026-09-10 migration stalled at ~227 KB/s); `hard` means a storage outage blocks Nextcloud I/O (right for integrity, but no timeout escape); `no_root_squash` lets any tailnet host write as root on the export.
+- **Fix**: consider `async` (faster, weaker crash durability) and root-squashing — both change behaviour and need an explicit operator decision.
+
+#### No automated validation of the scripts
+- **File**: `scripts/`, `Makefile`
+- **Problem**: only `make smoke` + the git hooks run; nothing lints the large bash scripts that produced two bugs on 2026-09-10 (storage.sh, optimize.sh).
+- **Fix**: run `bash -n` + `shellcheck` on `scripts/*.sh` in a pre-push/CI job.
+
+#### talk-hpb was OOM-killed
+- **File**: `services/nextcloud/docker-compose.yml` (RAM caps)
+- **Problem**: `journalctl` shows the kernel OOM-killing nextcloud-spreed-signaling on 2026-09-09 under the stack's RAM cap.
+- **Fix**: confirm recurrence; raise the cap or reduce concurrency if it repeats.
+
+
 #### Undocumented host process: `node server/server.js` (dumb-init "extra")
 - **File**: host (not in repo) — `ps` shows `dumb-init -- extra` (PID 51742) → `node server/server.js` (PID 51776, up since Aug 24, ~170 MB RSS, cwd `/`)
 - **Problem**: matches no compose file, systemd unit, or script in the repo; purpose unknown. Not touched by any agent task.
@@ -48,6 +69,24 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### Security
 
+#### docker.sock holders = host root (PufferPanel + Uptime Kuma)
+- **File**: `services/pufferpanel/docker-compose.yml` (rw), `services/uptimekuma/docker-compose.yml` (ro)
+- **Problem**: both containers mount `/var/run/docker.sock`, so a compromise of either is host root — and PufferPanel's UI is publicly reachable at `mc.$DOMAIN/panel`. `no-new-privileges` was added to PufferPanel (2026-09-11) but does not neutralise the socket.
+- **Fix** (pick one): run the panel against a dedicated/rootless Docker daemon; put `/panel` behind Cloudflare Access; or tailnet-gate `/panel` (keeps `/play` public). A socket-proxy adds little — a container manager needs near-full API access.
+- **Why approval**: each option changes the operator's access path.
+
+#### goose server secret is in git history
+- **File**: `config/goose/goose.service` (history)
+- **Problem**: `install.sh` used to `sed` a generated `GOOSE_SERVER__SECRET_KEY` into the tracked unit, so a real key sits in git history. The repo now uses `EnvironmentFile=/etc/goose/goose.env` (root:op 0640), but the old value is still in history and unrotated.
+- **Fix**: rotate the key (new value in `/etc/goose/goose.env`, `systemctl restart goose`, update goose clients), then purge it from history if desired.
+- **Why approval**: rotation restarts the agent service; a history purge needs a force-push.
+
+#### `curl … | sh` in the installers
+- **File**: `scripts/install.sh` (tailscale, goose), `scripts/storage.sh` (tailscale)
+- **Problem**: piping a remote script into a shell is supply-chain exposure.
+- **Fix**: use the official Tailscale apt repo (keyring + sources.list + `apt-get install`); keep the vendor's goose installer (or verify a released binary) and note the exception.
+
+
 #### Mail platform: no PTR record (operator will set at AlphaVPS)  **[needs human approval]**
 - **File**: `services/mailserver/docker-compose.yml` (installed); DNS + UFW configured
 - **Problem**: inbound TCP 25 is now open (verified 2026-08-28: external nodes connect, postfix serves `220 mail.fxmq.net ESMTP` with the LE cert). The remaining blocker: 82.118.230.117 has **no PTR** — outbound mail to Gmail/Outlook will be rejected or spam-foldered until reverse DNS exists. The reverse zone is provider-hosted, not delegated to us, so only the operator can set it.
@@ -58,18 +97,6 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Problem**: `kaliusb` (linux, 18d offline) and `iosphone` (iOS, 6h offline) are still registered in the tailnet. `kaliusb` is a Kali USB stick — likely a forensic / on-demand tool, not a daily driver. Stale devices widen the ACL blast radius.
 - **Fix**: In Tailscale admin console, remove `kaliusb` and `iosphone`. Or rename and tag if they are still in active use.
 - **Why approval**: outside the repo; operator must decide which devices stay.
-
-#### `tail.fxmq.net` has no auth beyond Tailscale membership  **[needs human approval]**
-- **File**: `services/fxmq.net/vhosts/tail.fxmq.net.caddy`
-- **Problem**: Any tailnet device can reach `tail.fxmq.net` with no authentication. DNS-obscurity is the only access control — the host ttyd shell at `/ttyd` (a host systemd unit running as `op` with full host control) sits behind `@not_tailnet` and nothing else.
-- **Fix**: Add Caddy `basic_auth` on the vhost (needs a username + bcrypt hash from the operator), or apply Tailscale ACLs in the admin console to restrict who can reach the VPS at all.
-- **Why approval**: requires a password / ACL policy from the operator.
-
-#### `tail.fxmq.net` gives an `op` shell to any tailnet device  **[needs human approval]**
-- **File**: `services/fxmq.net/vhosts/tail.fxmq.net.caddy`
-- **Problem**: ttyd (a host systemd unit) serves a full `op` shell at `/ttyd` — the process is on the host, not in a container, so `sudo -i` reaches root and every host file is writable (the root itself is a plain `ok` page). The systemd unit has no filesystem sandbox (all `ProtectSystem`, `PrivateTmp`, etc. directives stripped — operator preference: no permission hunts). Tailscale membership alone gates it.
-- **Fix**: Add Caddy `basic_auth` on the vhost (needs a username + bcrypt hash), or apply Tailscale ACLs to restrict which devices can reach the VPS, or restrict the container with `cap_drop` + a read-only root mount + a write whitelist.
-- **Why approval**: requires a password / ACL policy from the operator.
 
 #### Tailscale ACLs not configured  **[needs human approval]**
 - **File**: Tailscale admin console (outside repo)
@@ -279,4 +306,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **NC recovery manifests moved out of the repo** — `users/groups/default-quota/apps.txt` now live at `homelab/cloud/recovery/` (op-owned, outside the repo like pgdata), generated by `make nc-capture`, consumed by install.sh; paths scrubbed from all history (664 commits preserved, personal doc addresses censored via `scripts/replace-string.sh`).
 - **Storage VPS onboarded (Setup A)** — `scripts/storage.sh` migrated Nextcloud's datadirectory to the 1 TB VPS (`/srv/nextcloud-data` NFS export at `cloud/users`); PostgreSQL stays on fxmq and the nightly `pg_dump` → `/backups/nc` runs alongside.
 - **storage.sh live-run fixes (2026-09-10)** — the first live run exposed a missing NFS client (`nfs-common`) and an unverified rollback delete that lost the datadirectory files; the script now installs the client, verifies the copy before the delete prompt, and installs the operator's ssh key — files were restored from `backups/cloud-backup-20260906`.
+- **`tail.$DOMAIN` now requires basic_auth** — Caddy `basic_auth` (user `op`) added behind the existing non-tailnet 403 gate; the password is on the host at `/root/tail-basic-auth.txt` and only the bcrypt hash is committed.
+- **goose secret moved out of the repo** — the unit reads `EnvironmentFile=/etc/goose/goose.env` (root:op 0640); `install.sh` generates it there instead of `sed`ing it into a tracked file.
+- **NFS datadirectory mount tightened** — `/etc/fstab` options are now `rw,nofail,_netdev,noatime,vers=4`.
 - **optimize.sh live-run bugs fixed (2026-09-10)** — `append_lines()` doubled `/etc/fstab` and `/etc/security/limits.conf` (which broke the noatime step) and re-checks false-failed on a box without docker; it now appends only missing lines, skips absent software, and installs only the performance helpers (tuned/irqbalance/earlyoom).

@@ -50,6 +50,7 @@ The installer asks a few questions, then hardens the host, creates the DNS recor
 - `docs/GUIDE.md` — the operator manual: layout, recipes, per-service facts, gotchas
 - `docs/AGENTS.md` — agent operating rules (how this repo is worked on)
 - `docs/ISSUES.md` — open problems, planned ideas, and resolved history
+- `docs/DEBUG.md` — deep-scan / debugging runbook (read-only first, layer ladder, verification probes)
 - `scripts/defaults/` — per-script prompt defaults
 
 ## Risks & Considerations
