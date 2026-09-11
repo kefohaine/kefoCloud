@@ -3,18 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>kefohaine@server</title>
+<title>server</title>
 <style>
   :root { --fg:#3bf07a; --dim:#1f8a4c; --amber:#ffcc66; --red:#ff7b7b; --bg:#07090a; }
   * { box-sizing:border-box; }
   html,body { height:100%; }
   body { margin:0; background:var(--bg); color:var(--fg);
-         font:15px/1.6 "Menlo","DejaVu Sans Mono","DejaVu Sans Mono",monospace;
+         font:15px/1.6 "Menlo","DejaVu Sans Mono",monospace;
          display:flex; flex-direction:column; align-items:center; justify-content:center; padding:2rem; }
   body::after { content:""; position:fixed; inset:0; pointer-events:none; opacity:.045;
          background:repeating-linear-gradient(0deg,#fff 0 1px,transparent 1px 3px); }
-  .brand { position:fixed; top:1.6rem; left:0; right:0; text-align:center; color:var(--dim); font-size:.8em; letter-spacing:.08em; }
-  .brand b { color:var(--fg); }
   .stage { width:min(760px,94vw); }
   .cmdline { position:relative; display:flex; align-items:baseline; white-space:pre; }
   .ps1 { color:var(--fg); flex:none; }
@@ -28,16 +26,12 @@
   .sug li b { color:var(--amber); font-weight:600; }
   .status { margin-top:.7rem; min-height:1.6em; color:var(--dim); }
   .status.err { color:var(--red); }
-  .bar { position:fixed; bottom:1.3rem; left:0; right:0; text-align:center; color:var(--dim); font-size:.8em; }
-  .bar b { color:var(--fg); }
 </style>
 </head>
 <body>
-<div class="brand"><b>FXMQ</b> · kefohaine@server · tailnet</div>
-
 <div class="stage">
   <div class="cmdline" id="line">
-    <span class="ps1" id="ps1">kefohaine@server:~$ </span>
+    <span class="ps1" id="ps1">guest@server:~$ </span>
     <input id="cmd" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" autofocus>
     <span class="ghost" id="ghost"></span>
   </div>
@@ -45,23 +39,10 @@
   <div class="status" id="status"></div>
 </div>
 
-<div class="bar">type <b>go</b> &lt;vhost&gt; [page] · <b>log in</b> · <b>log out</b> &nbsp;—&nbsp; tab completes · up/down picks · enter runs</div>
-
 <script>
 "use strict";
-var MAP = {
-  cloud: { url: "https://cloud.fxmq.net/", pages: {} },
-  vault: { url: "https://vault.fxmq.net/", pages: {} },
-  kuma:  { url: "https://kuma.fxmq.net/",  pages: {} },
-  mail:  { url: "https://mail.fxmq.net/",  pages: {} },
-  mc:    { url: "https://mc.fxmq.net/",    pages: { panel: "/panel", play: "/play/" } },
-  talk:  { url: "https://talk.fxmq.net/",  pages: { signaling: "/signaling" } },
-  www:   { url: "https://www.fxmq.net/",   pages: { welcome: "/welcome", download: "/download/" } },
-  tail:  { url: "/",                        pages: { ttyd: "/ttyd/" } }
-};
-var VERBS = ["go", "log"];
 var LOGSUB = ["log in", "log out"];
-
+var TARGETS = [];
 var cmd = document.getElementById("cmd"),
     line = document.getElementById("line"),
     ps1 = document.getElementById("ps1"),
@@ -73,6 +54,7 @@ var items = [], pick = -1, measure = null;
 function authed() { try { return sessionStorage.getItem("tailAuthed") === "1"; } catch (e) { return false; } }
 function setAuthed(v) { try { v ? sessionStorage.setItem("tailAuthed", "1") : sessionStorage.removeItem("tailAuthed"); } catch (e) {} }
 function say(msg, isErr) { statusEl.textContent = msg || ""; statusEl.className = "status" + (isErr ? " err" : ""); }
+function prompt() { ps1.textContent = (authed() ? "kefohaine@server" : "guest@server") + ":~$ "; }
 
 function textWidth(s) {
   if (!measure) {
@@ -87,28 +69,37 @@ function fit() {
   var off = cmd.getBoundingClientRect().left - line.getBoundingClientRect().left;
   ghost.style.left = (off + textWidth(cmd.value)) + "px";
 }
+function byName(n) { for (var i = 0; i < TARGETS.length; i++) if (TARGETS[i].name === n) return TARGETS[i]; return null; }
+function everything() {
+  var out = [];
+  TARGETS.forEach(function (t) { out.push("go " + t.name); });
+  return out.concat(LOGSUB);
+}
 function candidates() {
-  var low = cmd.value.toLowerCase();
+  var v = cmd.value, low = v.toLowerCase();
+  if (!low) return everything();
   if (low === "go" || low.indexOf("go ") === 0) {
     var rest = (low === "go") ? "" : low.slice(3);
     var parts = rest.split(" "), host = parts[0], page = parts[1];
     if (page) return [];
-    if (!host) return Object.keys(MAP).map(function (k) { return "go " + k; });
-    if (!MAP[host]) return Object.keys(MAP).filter(function (k) { return k.indexOf(host) === 0; })
-                                    .map(function (k) { return "go " + k; });
-    return Object.keys(MAP[host].pages).map(function (p) { return "go " + host + " " + p; });
+    if (!host || !byName(host)) {
+      return TARGETS.filter(function (t) { return t.name.indexOf(host) === 0; })
+                    .map(function (t) { return "go " + t.name; });
+    }
+    var t = byName(host);
+    return Object.keys(t.pages).map(function (p) { return "go " + host + " " + p; });
   }
   if (low === "log" || low.indexOf("log ") === 0) {
     return LOGSUB.filter(function (c) { return c.indexOf(low) === 0; });
   }
-  return VERBS.filter(function (c) { return c.indexOf(low) === 0; });
+  return everything().filter(function (c) { return c.indexOf(low) === 0; });
 }
 function render() {
   var v = cmd.value, low = v.toLowerCase(), list = candidates();
   if (pick >= list.length) pick = list.length - 1;
   items = list;
   sug.innerHTML = "";
-  list.slice(0, 6).forEach(function (c, i) {
+  list.slice(0, 12).forEach(function (c, i) {
     var li = document.createElement("li");
     if (i === pick) li.className = "on";
     var hit = document.createElement("b");
@@ -119,7 +110,7 @@ function render() {
     sug.appendChild(li);
   });
   var top = list[Math.max(0, pick)];
-  ghost.textContent = (top && top.indexOf(low) === 0 && top !== low) ? top.slice(v.length) : "";
+  ghost.textContent = (v && top && top.indexOf(low) === 0 && top !== low) ? top.slice(v.length) : "";
   fit();
 }
 function accept(c) {
@@ -128,47 +119,34 @@ function accept(c) {
   pick = -1; render(); cmd.focus();
 }
 function go(host, page) {
-  if (!MAP[host]) { say("no such vhost: " + host + " (have: " + Object.keys(MAP).join(" ") + ")", true); return false; }
-  var to = MAP[host].url;
+  var t = byName(host);
+  if (!t) { say("no such vhost: " + host, true); return; }
+  var to = t.url;
   if (page) {
-    if (!MAP[host].pages[page]) {
-      var have = Object.keys(MAP[host].pages).join(" ");
+    if (!t.pages[page]) {
+      var have = Object.keys(t.pages).join(" ");
       say("no page '" + page + "' on " + host + (have ? " (have: " + have + ")" : " (no pages)"), true);
-      return false;
+      return;
     }
-    to = MAP[host].url.replace(/\/$/, "") + MAP[host].pages[page];
+    to = t.url.replace(/\/$/, "") + t.pages[page];
   }
   say("going to " + to + " …");
   setTimeout(function () { location.href = to; }, 180);
-  return true;
 }
 function run(raw) {
   var v = String(raw || "").trim().replace(/\s+/g, " ");
   if (!v) return;
   var parts = v.toLowerCase().split(" "), verb = parts[0], a = parts[1] || "", b = parts[2] || "";
   if (verb === "log") {
-    if (a === "in") return login();
-    if (a === "out") return logout();
+    if (a === "in") { say("authenticating …"); setTimeout(function () { location.href = "/__tail/login"; }, 180); return; }
+    if (a === "out") { setAuthed(false); prompt(); say("logged out"); setTimeout(function () { location.href = "https://logout:logout@" + location.host + "/"; }, 220); return; }
     say("usage: log in | log out", true); return;
   }
   if (verb === "go") {
     if (!authed()) { say("not logged in — run 'log in' first", true); return; }
-    if (!a) { say("usage: go <vhost> [page] — " + Object.keys(MAP).join(" "), true); return; }
     go(a, b); return;
   }
-  say("unknown command: " + v + " — try 'go <vhost>' or 'log in'", true);
-}
-function login() {
-  say("authenticating …");
-  fetch("/__tail/login", { credentials: "same-origin" }).then(function (r) {
-    if (r.ok) { setAuthed(true); say("logged in — held until you run 'log out'"); }
-    else { setAuthed(false); say("login cancelled or failed (" + r.status + ")", true); }
-    cmd.focus();
-  }).catch(function () { say("login failed", true); });
-}
-function logout() {
-  setAuthed(false); say("logged out");
-  setTimeout(function () { location.href = "https://logout:logout@" + location.host + "/"; }, 180);
+  say("unknown command: " + v, true);
 }
 cmd.addEventListener("input", function () { pick = -1; say(""); render(); });
 cmd.addEventListener("keydown", function (ev) {
@@ -186,8 +164,17 @@ cmd.addEventListener("keydown", function (ev) {
 });
 line.addEventListener("mousedown", function (ev) { if (ev.target !== cmd) { ev.preventDefault(); cmd.focus(); } });
 window.addEventListener("resize", fit);
-cmd.focus(); render();
-say(authed() ? "session active" : "read-only — run 'log in' to unlock 'go'");
+
+if (location.pathname === "/__tail/login" || /[?&]authed=1/.test(location.search)) {
+  setAuthed(true);
+  try { history.replaceState(null, "", "/"); } catch (e) {}
+}
+prompt();
+render();
+fetch("/targets.json", { cache: "no-store" }).then(function (r) { return r.json(); })
+  .then(function (j) { TARGETS = (j && j.targets) || []; render(); })
+  .catch(function () { say("could not load the target list", true); });
+cmd.focus();
 </script>
 </body>
 </html>

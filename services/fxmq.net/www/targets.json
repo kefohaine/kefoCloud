@@ -1,0 +1,63 @@
+{
+  "_generated": "scripts/tail-targets.sh \u2014 do not hand-edit",
+  "targets": [
+    {
+      "name": "cloud",
+      "host": "cloud.fxmq.net",
+      "url": "https://cloud.fxmq.net/",
+      "pages": {}
+    },
+    {
+      "name": "kuma",
+      "host": "kuma.fxmq.net",
+      "url": "https://kuma.fxmq.net/",
+      "pages": {}
+    },
+    {
+      "name": "mail",
+      "host": "mail.fxmq.net",
+      "url": "https://mail.fxmq.net/",
+      "pages": {}
+    },
+    {
+      "name": "mc",
+      "host": "mc.fxmq.net",
+      "url": "https://mc.fxmq.net/",
+      "pages": {
+        "panel": "/panel",
+        "play": "/play"
+      }
+    },
+    {
+      "name": "tail",
+      "host": "tail.fxmq.net",
+      "url": "/",
+      "pages": {
+        "ttyd": "/ttyd"
+      }
+    },
+    {
+      "name": "talk",
+      "host": "talk.fxmq.net",
+      "url": "https://talk.fxmq.net/",
+      "pages": {
+        "signaling": "/signaling"
+      }
+    },
+    {
+      "name": "vault",
+      "host": "vault.fxmq.net",
+      "url": "https://vault.fxmq.net/",
+      "pages": {}
+    },
+    {
+      "name": "www",
+      "host": "www.fxmq.net",
+      "url": "https://www.fxmq.net/",
+      "pages": {
+        "download": "/download",
+        "welcome": "/welcome"
+      }
+    }
+  ]
+}

@@ -3,16 +3,19 @@
 #
 # Access model:
 #   * every path — non-tailnet sources get 403 (Tailscale membership required)
-#   * /           — the terminal dashboard (unauthenticated: any tailnet device
-#                   can open it; its commands refuse to run until 'log in')
-#   * /__tail/login — the only endpoint behind HTTP basic auth (user
-#                   `kefohaine`). The dashboard's 'log in' command fetches it,
-#                   which raises the browser's basic-auth dialog; the browser
-#                   then reuses that credential for every tail.fxmq.net path —
-#                   that cached credential IS the session ('log out' replaces
-#                   it with a bogus one).
-#   * /ttyd*      — the shell: still gated by basic auth at the edge, so the
-#                   credential is enforced even if the dashboard is bypassed.
+#   * /            — the terminal (unauthenticated: any tailnet device can open
+#                    it; its `go` command refuses until `log in`)
+#   * /targets.json — GENERATED navigation catalogue (scripts/tail-targets.sh):
+#                    the vhosts and their pages, so nothing is hardcoded
+#   * /__tail/login — the only login endpoint, behind HTTP basic auth (user
+#                    `kefohaine`). The terminal's `log in` navigates here, so
+#                    the browser raises its normal basic-auth dialog; on
+#                    success it returns to the terminal. The browser then
+#                    reuses that credential for every tail.fxmq.net path —
+#                    that cached credential is the session (`log out` replaces
+#                    it with a bogus one).
+#   * /ttyd*      — the shell: gated by basic auth at the edge too, so the
+#                   credential is enforced even if the terminal is bypassed.
 # `make tail-auth` sets/rotates the credential and prints it once (only the
 # bcrypt hash is committed — never put the password in the repo).
 
@@ -28,12 +31,21 @@ https://tail.fxmq.net {
         @not_tailnet not remote_ip 100.64.0.0/10
         respond @not_tailnet 403
 
-        # Session endpoint: the challenge the dashboard's 'log in' triggers.
+        # Login endpoint. `route` pins the order: the challenge runs before the
+        # redirect (Caddy's default order would redirect first).
         handle /__tail/login {
             basic_auth {
                 kefohaine $2a$14$SbolWVoI8etI0M368qB.VujAdZg33b0IeUwzrXrAgKyiOpZfBOVoa
             }
-            respond 204
+            root * /etc/caddy/www
+            rewrite /tail.html
+            file_server
+        }
+
+        # Generated navigation catalogue for the terminal.
+        handle /targets.json {
+            root * /etc/caddy/www
+            file_server
         }
 
         # ttyd host terminal — gated. Base path is /ttyd (ttyd -b /ttyd), so
