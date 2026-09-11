@@ -375,7 +375,7 @@ panel-passwd:
 >@$(MAKE) --no-print-directory dok-restart-pufferpanel
 
 tail-auth:
->@bash scripts/tail-auth.sh set "$(if $(USER),$(USER),op)" "$(PASS)"
+>@bash scripts/tail-auth.sh set "$(if $(USER),$(USER),kefohaine)" "$(PASS)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Uptime Kuma accounts (no CLI — scripts/kuma-user.sh: bcryptjs hash in the
@@ -453,6 +453,9 @@ sudo sysctl --system >/dev/null
     scripts/mklog info "docker daemon config already up to date"; \
   fi
 sudo cp $(REPO)/repo/config/ttyd/ttyd.service /etc/systemd/system/ttyd.service
+sudo cp $(REPO)/repo/config/bash/kefohaine-banner.sh /etc/kefohaine-banner.sh
+sudo chmod 0644 /etc/kefohaine-banner.sh
+@grep -qxF '. /etc/kefohaine-banner.sh' "$$HOME/.bashrc" || printf '%s\n' '. /etc/kefohaine-banner.sh' >> "$$HOME/.bashrc"
 sudo cp $(REPO)/repo/config/fail2ban/jail.d/sshd.conf /etc/fail2ban/jail.d/sshd.conf
 sudo cp $(REPO)/repo/config/cron/nextcloud /etc/cron.d/nextcloud
 sudo chmod 0644 /etc/cron.d/nextcloud
@@ -1071,7 +1074,7 @@ help:
 >@echo "  └  make kuma-del-user USER=…  delete a Kuma user + their monitors/notifications"
 >@echo ""
 >@echo "  Tailnet access"
->@echo "  └  make tail-auth [USER=op] [PASS=…]   set/rotate the tail.\$$DOMAIN basic-auth password — prints it once, stores nothing (gates the ttyd host shell)"
+>@echo "  └  make tail-auth [USER=kefohaine] [PASS=…]   set/rotate the tail.\$$DOMAIN basic-auth password — prints it once, stores nothing (gates the ttyd host shell)"
 >@echo ""
 >@echo "  Nextcloud (occ — every command runs as www-data in the nextcloud container)"
 >@echo "  │  make nc-occ CMD='…'      any occ command verbatim (escape hatch, e.g. CMD='status')"
