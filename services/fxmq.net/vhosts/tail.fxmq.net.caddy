@@ -26,6 +26,10 @@ https://tail.fxmq.net {
     import compress
     header {
         import security_headers
+        # Nothing here may be cached: a browser that keeps the 200 it got from
+        # /__tail/login would keep serving the "logged in" page with no request
+        # and no challenge.
+        Cache-Control "no-store"
     }
     route {
         @not_tailnet not remote_ip 100.64.0.0/10

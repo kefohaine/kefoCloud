@@ -41,21 +41,26 @@
 
 <script>
 "use strict";
-var LOGSUB = ["log in", "log out"];
-var TARGETS = [];
+var VERBS = ["go", "log"];          // the command surface
+var LOGC  = ["in", "out"];          // `log`'s second column
+var TARGETS = [];                   // filled from targets.json (generated)
 var cmd = document.getElementById("cmd"),
     line = document.getElementById("line"),
     ps1 = document.getElementById("ps1"),
     ghost = document.getElementById("ghost"),
     sug = document.getElementById("sug"),
     statusEl = document.getElementById("status");
-var items = [], pick = -1, measure = null;
+var items = [], pick = 0, measure = null, sayTimer = null;
 
 function authed() { try { return sessionStorage.getItem("tailAuthed") === "1"; } catch (e) { return false; } }
 function setAuthed(v) { try { v ? sessionStorage.setItem("tailAuthed", "1") : sessionStorage.removeItem("tailAuthed"); } catch (e) {} }
-function say(msg, isErr) { statusEl.textContent = msg || ""; statusEl.className = "status" + (isErr ? " err" : ""); }
 function prompt() { ps1.textContent = (authed() ? "kefohaine@server" : "guest@server") + ":~$ "; }
-
+function say(msg, isErr) {
+  if (sayTimer) { clearTimeout(sayTimer); sayTimer = null; }
+  statusEl.textContent = msg || "";
+  statusEl.className = "status" + (isErr ? " err" : "");
+  if (msg) sayTimer = setTimeout(function () { statusEl.textContent = ""; statusEl.className = "status"; }, 3000);
+}
 function textWidth(s) {
   if (!measure) {
     measure = document.createElement("span");
@@ -70,34 +75,43 @@ function fit() {
   ghost.style.left = (off + textWidth(cmd.value)) + "px";
 }
 function byName(n) { for (var i = 0; i < TARGETS.length; i++) if (TARGETS[i].name === n) return TARGETS[i]; return null; }
-function everything() {
-  var out = [];
-  TARGETS.forEach(function (t) { out.push("go " + t.name); });
-  return out.concat(LOGSUB);
+function columns(src) {
+  var trail = /[ ]$/.test(src);
+  var toks = src.trim() ? src.trim().split(/\s+/) : [];
+  return { heads: trail ? toks : toks.slice(0, -1), partial: trail ? "" : (toks[toks.length - 1] || "") };
 }
+// Predict the ONE column currently being typed — never a whole-line guess.
 function candidates() {
-  var v = cmd.value, low = v.toLowerCase();
-  if (!low) return everything();
-  if (low === "go" || low.indexOf("go ") === 0) {
-    var rest = (low === "go") ? "" : low.slice(3);
-    var parts = rest.split(" "), host = parts[0], page = parts[1];
-    if (page) return [];
-    if (!host || !byName(host)) {
-      return TARGETS.filter(function (t) { return t.name.indexOf(host) === 0; })
-                    .map(function (t) { return "go " + t.name; });
+  var src = cmd.value;
+  if (!src) return [];                                  // no text, no prediction
+  var c = columns(src), out = [];
+  if (c.heads.length === 0) {
+    out = VERBS.filter(function (v) { return v.indexOf(c.partial) === 0; });
+  } else if (c.heads[0] === "go") {
+    if (c.heads.length === 1) {
+      out = TARGETS.map(function (t) { return t.name; })
+                   .filter(function (n) { return n.indexOf(c.partial) === 0; })
+                   .map(function (n) { return "go " + n; });
+    } else if (c.heads.length === 2) {
+      var t = byName(c.heads[1]);
+      if (t) out = Object.keys(t.pages).filter(function (p) { return p.indexOf(c.partial) === 0; })
+                                        .map(function (p) { return "go " + c.heads[1] + " " + p; });
     }
-    var t = byName(host);
-    return Object.keys(t.pages).map(function (p) { return "go " + host + " " + p; });
+  } else if (c.heads[0] === "log" && c.heads.length === 1) {
+    out = LOGC.filter(function (s) { return s.indexOf(c.partial) === 0; })
+              .map(function (s) { return "log " + s; });
   }
-  if (low === "log" || low.indexOf("log ") === 0) {
-    return LOGSUB.filter(function (c) { return c.indexOf(low) === 0; });
-  }
-  return everything().filter(function (c) { return c.indexOf(low) === 0; });
+  return out;
+}
+function hasDeeper(c) {
+  var save = cmd.value; cmd.value = c + " ";
+  var more = candidates().length > 0;
+  cmd.value = save; return more;
 }
 function render() {
-  var v = cmd.value, low = v.toLowerCase(), list = candidates();
-  if (pick >= list.length) pick = list.length - 1;
+  var v = cmd.value, list = candidates();
   items = list;
+  if (pick >= list.length || pick < 0) pick = 0;
   sug.innerHTML = "";
   list.slice(0, 12).forEach(function (c, i) {
     var li = document.createElement("li");
@@ -109,14 +123,13 @@ function render() {
     li.addEventListener("mousedown", function (ev) { ev.preventDefault(); accept(c); });
     sug.appendChild(li);
   });
-  var top = list[Math.max(0, pick)];
-  ghost.textContent = (v && top && top.indexOf(low) === 0 && top !== low) ? top.slice(v.length) : "";
+  var top = list[pick];
+  ghost.textContent = (v && top && top.length > v.length) ? top.slice(v.length) : "";
   fit();
 }
 function accept(c) {
-  cmd.value = c;
-  if (c === "go" || c === "log" || /\s$/.test(c)) cmd.value = c + " ";
-  pick = -1; render(); cmd.focus();
+  cmd.value = hasDeeper(c) ? c + " " : c;
+  pick = 0; render(); cmd.focus();
 }
 function go(host, page) {
   var t = byName(host);
@@ -131,36 +144,36 @@ function go(host, page) {
     to = t.url.replace(/\/$/, "") + t.pages[page];
   }
   say("going to " + to + " …");
-  setTimeout(function () { location.href = to; }, 180);
+  setTimeout(function () { location.href = to; }, 300);
 }
 function run(raw) {
   var v = String(raw || "").trim().replace(/\s+/g, " ");
   if (!v) return;
   var parts = v.toLowerCase().split(" "), verb = parts[0], a = parts[1] || "", b = parts[2] || "";
   if (verb === "log") {
-    if (a === "in") { say("authenticating …"); setTimeout(function () { location.href = "/__tail/login"; }, 180); return; }
-    if (a === "out") { setAuthed(false); prompt(); say("logged out"); setTimeout(function () { location.href = "https://logout:logout@" + location.host + "/"; }, 220); return; }
+    if (a === "in") { say("authenticating …"); setTimeout(function () { location.href = "/__tail/login"; }, 300); return; }
+    if (a === "out") { setAuthed(false); prompt(); say("logged out"); setTimeout(function () { location.href = "https://logout:logout@" + location.host + "/"; }, 400); return; }
     say("usage: log in | log out", true); return;
   }
   if (verb === "go") {
     if (!authed()) { say("not logged in — run 'log in' first", true); return; }
+    if (!a) { say("usage: go <vhost> [page]", true); return; }
     go(a, b); return;
   }
   say("unknown command: " + v, true);
 }
-cmd.addEventListener("input", function () { pick = -1; say(""); render(); });
+cmd.addEventListener("input", function () { pick = 0; render(); });
 cmd.addEventListener("keydown", function (ev) {
   var k = ev.key || "";
   if (k === "Enter" || ev.keyCode === 13) {
     ev.preventDefault();
-    var v = cmd.value; cmd.value = ""; pick = -1; render(); say("");
-    run(v);
+    var v = cmd.value; cmd.value = ""; pick = 0; render(); run(v);
   } else if (k === "Tab" || k === "ArrowRight") {
-    var t = items[Math.max(0, pick)];
-    if (t) { ev.preventDefault(); accept(t); }
+    if (items[pick]) { ev.preventDefault(); accept(items[pick]); }
   } else if (k === "ArrowDown") { if (items.length) { ev.preventDefault(); pick = (pick + 1) % items.length; render(); } }
   else if (k === "ArrowUp") { if (items.length) { ev.preventDefault(); pick = (pick <= 0 ? items.length : pick) - 1; render(); } }
-  else if (k === "Escape") { cmd.value = ""; pick = -1; say(""); render(); }
+  else if (k === "Escape") { cmd.value = ""; pick = 0; render(); }
+  else { setTimeout(render, 0); }
 });
 line.addEventListener("mousedown", function (ev) { if (ev.target !== cmd) { ev.preventDefault(); cmd.focus(); } });
 window.addEventListener("resize", fit);
