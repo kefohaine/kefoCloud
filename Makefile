@@ -1071,7 +1071,7 @@ help:
 >@echo "  └  make kuma-del-user USER=…  delete a Kuma user + their monitors/notifications"
 >@echo ""
 >@echo "  Tailnet access"
->@echo "  └  make tail-auth [USER=op] [PASS=…]   set/rotate the tail.\$$DOMAIN basic-auth password (gates the ttyd host shell)"
+>@echo "  └  make tail-auth [USER=op] [PASS=…]   set/rotate the tail.\$$DOMAIN basic-auth password — prints it once, stores nothing (gates the ttyd host shell)"
 >@echo ""
 >@echo "  Nextcloud (occ — every command runs as www-data in the nextcloud container)"
 >@echo "  │  make nc-occ CMD='…'      any occ command verbatim (escape hatch, e.g. CMD='status')"
