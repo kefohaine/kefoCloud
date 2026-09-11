@@ -6,8 +6,8 @@
 #   1. non-tailnet sources get 403 — Tailscale membership is necessary, then
 #   2. HTTP basic auth is required for everything — membership is NOT
 #      authorization: /ttyd is a full `op` shell and `op` has passwordless sudo.
-# User `op`; the password is on the host at /root/tail-basic-auth.txt (only the
-# bcrypt hash is committed — never put the password in the repo).
+# User `op`; `make tail-auth` sets/rotates the password and prints it once (only
+# the bcrypt hash is committed — never put the password in the repo).
 
 https://tail.fxmq.net {
     tls {
@@ -21,7 +21,7 @@ https://tail.fxmq.net {
         @not_tailnet not remote_ip 100.64.0.0/10
         respond @not_tailnet 403
         basic_auth {
-            op $2a$14$JN6D7.faeJKo7gDIHUgw8u0fMkWHttCWnJKMzTkGQ9X.vyaXRGhXq
+            op $2a$14$SbolWVoI8etI0M368qB.VujAdZg33b0IeUwzrXrAgKyiOpZfBOVoa
         }
         # ttyd host terminal. Base path is /ttyd (ttyd -b /ttyd), so the full
         # path is proxied as-is — do not strip the prefix.
