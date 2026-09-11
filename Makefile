@@ -351,7 +351,7 @@ mail-card:
 # straight into the users table — the CLI's `user edit` has no working password
 # flag in this version. The panel caches users at boot, so the recipe restarts it.
 # ─────────────────────────────────────────────────────────────────────────────
-.PHONY: panel-list-users panel-add-user panel-del-user panel-passwd tail-auth
+.PHONY: panel-list-users panel-add-user panel-del-user panel-passwd tail-auth tail-targets
 .PHONY: kuma-list-users kuma-add-user kuma-passwd kuma-del-user
 
 panel-list-users:
@@ -376,6 +376,12 @@ panel-passwd:
 
 tail-auth:
 >@bash scripts/tail-auth.sh set "$(if $(USER),$(USER),kefohaine)" "$(PASS)"
+
+# Regenerate the tail terminal's navigation catalogue from the Caddy vhost
+# files (services/*/www/targets.json — GENERATED, do not hand-edit). Run after
+# adding a vhost or a public path; `make install-config` runs it too.
+tail-targets:
+>@bash scripts/tail-targets.sh
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Uptime Kuma accounts (no CLI — scripts/kuma-user.sh: bcryptjs hash in the
@@ -456,6 +462,7 @@ sudo cp $(REPO)/repo/config/ttyd/ttyd.service /etc/systemd/system/ttyd.service
 sudo cp $(REPO)/repo/config/bash/kefohaine-banner.sh /etc/kefohaine-banner.sh
 sudo chmod 0644 /etc/kefohaine-banner.sh
 @grep -qxF '. /etc/kefohaine-banner.sh' "$$HOME/.bashrc" || printf '%s\n' '. /etc/kefohaine-banner.sh' >> "$$HOME/.bashrc"
+bash $(REPO)/repo/scripts/tail-targets.sh
 sudo cp $(REPO)/repo/config/fail2ban/jail.d/sshd.conf /etc/fail2ban/jail.d/sshd.conf
 sudo cp $(REPO)/repo/config/cron/nextcloud /etc/cron.d/nextcloud
 sudo chmod 0644 /etc/cron.d/nextcloud
