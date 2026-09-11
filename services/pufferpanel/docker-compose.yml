@@ -8,6 +8,11 @@ services:
     mem_limit: 256m
     memswap_limit: 256m
 
+    # Blocks setuid/setgid privilege escalation inside the container. It does NOT
+    # neutralise the docker-socket mount above (see the note there).
+    security_opt:
+      - no-new-privileges:true
+
     # Web UI on 8080, built-in SFTP on 5657 (file manager for servers).
     # Exposed on the `net` bridge only — no host port publish. Served at
     # https://mc.fxmq.net/panel (Caddy strips the /panel prefix; the SPA's
@@ -28,9 +33,11 @@ services:
     volumes:
       - /var/www/custom/projects/homelab/puffer/data:/var/lib/pufferpanel
       - /var/www/custom/projects/homelab/puffer/config:/etc/pufferpanel
-      # PufferPanel's daemon needs the Docker socket to run game servers.
-      # Risk: compromised panel = host root. Same trade-off as uptimekuma's
-      # socket mount; required for the panel to start at all.
+      # PufferPanel's daemon needs the Docker socket to run game servers, so a
+      # compromised panel is host root — the same accepted trade-off as
+      # uptimekuma's read-only socket mount. It cannot be dropped without
+      # replacing the panel's container driver; options are tracked in
+      # docs/ISSUES.md ("docker.sock holders").
       - /var/run/docker.sock:/var/run/docker.sock
 
     logging:
