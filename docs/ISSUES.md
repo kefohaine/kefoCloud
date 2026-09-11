@@ -36,11 +36,6 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Fix**: confirm recurrence; raise the cap or reduce concurrency if it repeats.
 
 
-#### Undocumented host process: `node server/server.js` (dumb-init "extra")
-- **File**: host (not in repo) — `ps` shows `dumb-init -- extra` (PID 51742) → `node server/server.js` (PID 51776, up since Aug 24, ~170 MB RSS, cwd `/`)
-- **Problem**: matches no compose file, systemd unit, or script in the repo; purpose unknown. Not touched by any agent task.
-- **Fix**: ask the operator what it is; document it in `docs/GUIDE.md` or remove it if stale.
-
 #### Browser 1.12.2 server: effective view-distance is 6, not the tuned 4  **[needs human approval]**
 - **File**: `puffer/data/servers/07fd7727/spigot.yml` (`world-settings.default.view-distance: 6`) + `server.properties` (`view-distance=4`)
 - **Problem**: the 2026-08-31 tuning set `view-distance=4` in server.properties, but Spigot's per-world `world-settings.default.view-distance: 6` overrides it — the server boots with "View Distance: 6" for all three worlds, so the intended 4-chunk render/tick distance never took effect (1.12.2 has no separate sim-distance, so this also widens entity ticking).
@@ -58,14 +53,10 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Fix**: add `scripts/backup.sh` (or extend the cron): `occ maintenance:mode --on` → `pg_dump` (already nightly) + rsync the storage VPS's `/srv/nextcloud-data` to a second target (plus a copy of the DB dumps) → `--off`.
 - **Why approval**: operator picks the file-backup target (second disk / another provider / off-site).
 
-#### Nextcloud password policy re-enabled + hardened  (resolved 2026-09-01)
-- **File**: NC app `password_policy`
-- **Done**: the app was briefly disabled so the operator could log in with the temporary password `silence`; re-enabled and hardened the same day — `minLength=16` (the app reads `minLength`, not `minimumLength`), upper+lower+special+numeric required, the 1M common-password list + compromised-list checks on. The operator has since set a proper admin password.
-
-#### GUIDE "Nextcloud DB" migration steps contradict ISSUES Setup A
-- **File**: `docs/GUIDE.md` (Nextcloud DB section) vs `docs/ISSUES.md` "Storage VPS onboarded (Setup A)"
-- **Problem**: Setup A (2026-09-01) keeps PostgreSQL on fxmq and moves only Nextcloud's user files to the 1 TB VPS, but the GUIDE section still documents moving the whole DB there "when it joins the tailnet" — and it has already joined (nightly `pg_dump` lands on it). One of the two is the plan.
-- **Fix**: operator decision — delete the DB-migration steps from GUIDE (Setup A won) or re-document them as the option if the DB ever outgrows fxmq.
+#### GUIDE "Nextcloud DB" section still documents moving PostgreSQL to the 1 TB VPS
+- **File**: `docs/GUIDE.md` ("Nextcloud DB" section) + `services/nextcloud/docker-compose.db.yml` comments
+- **Problem**: Setup A keeps PostgreSQL on fxmq and puts only Nextcloud's user files on the 1 TB VPS (which has already joined the tailnet — the nightly `pg_dump` lands on it), but GUIDE still gives step-by-step instructions to move the whole DB there and the db compose comments are tuned for "the 2 GB future DB host". One of the two is the plan.
+- **Fix**: operator decision — delete the DB-migration steps from GUIDE (Setup A won) or re-document them as an option if the DB ever outgrows fxmq.
 
 ### Security
 
@@ -85,6 +76,16 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **File**: `scripts/install.sh` (tailscale, goose), `scripts/storage.sh` (tailscale)
 - **Problem**: piping a remote script into a shell is supply-chain exposure.
 - **Fix**: use the official Tailscale apt repo (keyring + sources.list + `apt-get install`); keep the vendor's goose installer (or verify a released binary) and note the exception.
+
+#### `make backup` copies live config into the repo
+- **File**: `Makefile` (`backup` recipe — the live-config pull)
+- **Problem**: `make backup` copies live host configs into `$(REPO)/repo/config/`; if one of those files ever carries a secret, the next `git add` commits it (the goose unit did exactly this until 2026-09-11).
+- **Fix**: keep secrets in dedicated files outside the copied set (as goose now does); optionally add a secret-scan guard to the pre-commit hook.
+
+#### `install.sh` `eval`s values from `scripts/defaults/install.conf`
+- **File**: `scripts/install.sh` (`defaults_install` / `ask_modules`)
+- **Problem**: module defaults are applied with `eval "DEF_${canon}=$val"` and `eval "$var=$def"` — arbitrary content in that file executes. It is repo-tracked (low risk today), but it is an injection surface if the file is ever untrusted.
+- **Fix**: parse `key=value` with `read`/`case` instead of `eval`.
 
 
 #### Mail platform: no PTR record (operator will set at AlphaVPS)  **[needs human approval]**
@@ -161,15 +162,15 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Problem**: opening Templates triggers an on-demand git checkout of the community repo (`Checking out repo community: cache/template-repos/1`) — the only >100ms request in the panel log (`GET /api/templates/1` = 936ms; every other request is sub-ms). Also the community `minecraft` template dir contains only `data.json` + `minecraft.json` (no `README.md`, upstream), so every view logs `Error reading readme cache/template-repos/1/minecraft/README.md: no such file or directory`.
 - **Fix**: cosmetic/stall only — the checkout is cached after first run (subsequent opens are ~1ms). For the README error, delete the repo dir and let PufferPanel re-checkout, or accept it as an upstream data gap. Not worth action unless template browsing is a daily use case.
 
+#### `storage.sh` re-prompts for the storage root password on every run
+- **File**: `scripts/storage.sh`
+- **Problem**: even when the operator's SSH key is already on the storage VPS (the script installs it) and the tailnet path works, a re-run still demands `STORAGE_PASS` + `TS_AUTHKEY`.
+- **Fix**: after the tailnet check, if `ssh -o BatchMode=yes root@$TS_IP true` succeeds, skip the password/key prompts and go straight to the re-check.
+
 #### Nextcloud Talk: no Client Push proxy
 - **File**: `services/nextcloud/docker-compose.yml` (Talk stack: `talk-hpb` HPB + `talk-relay` already deployed)
 - **Problem**: mobile push notifications are delayed — no push proxy (UnifiedPush / nextcloud-push) is installed. The old entry's "no HPB" premise is stale: the Go signaling server (strukturag/nextcloud-spreed-signaling) has run since the 2026-08-30 rebuild.
 - **Fix**: install a push proxy + Notifications backend when Talk push becomes a real use case.
-
-#### install.sh: per-module install selection (product feature)
-- **File**: `scripts/install.sh` (+ `scripts/smoke-vhosts.sh`; README + www marketing pitch depend on it)
-- **Problem**: the installer is all-or-nothing — `ask_inputs()` prompts only domain/CF-token/TS-key and `phase2_op()` installs every service unconditionally (Nextcloud, Vaultwarden, mail/DKIM, Kuma, PufferPanel + game servers). The planned product pitch ("self-host cloud/mail/game servers as selectable modules behind one AIO command") must match real behavior before it is advertised (README rule: real and verified). Per-module choice also enables lean installs on other domains.
-- **Fix**: (1) `ask_inputs()` gains a per-module prompt block (`cloud`/`mail`/`vault`/`kuma`/`panel`), default all ON, env-overridable, persisted via `save_state`; (2) gate each setup call in `phase2_op()` (`nextcloud_setup`, `vaultwarden_setup`, `dkim_setup`, `kuma_seed`, `panel_servers`, `panel_admin_setup`); (3) scope `containers_up()` + `cf_dns()` to the selected modules (edge + host services stay core); (4) write the chosen module list where `smoke-vhosts.sh` reads it so uninstalled services aren't asserted; (5) verify with `bash -n` + review — only a fresh-VPS install can truly exercise it. Then rewrite README and add the www /3 page on the module pitch.
 
 ---
 
@@ -309,4 +310,6 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **`tail.$DOMAIN` now requires basic_auth** — Caddy `basic_auth` (user `op`) added behind the existing non-tailnet 403 gate; the password is on the host at `/root/tail-basic-auth.txt` and only the bcrypt hash is committed.
 - **goose secret moved out of the repo** — the unit reads `EnvironmentFile=/etc/goose/goose.env` (root:op 0640); `install.sh` generates it there instead of `sed`ing it into a tracked file.
 - **NFS datadirectory mount tightened** — `/etc/fstab` options are now `rw,nofail,_netdev,noatime,vers=4`.
+- **Nextcloud password policy hardened** — the app is re-enabled with `minLength=16`, upper/lower/special/numeric requirements and the common/compromised-password lists on.
+- **False alarm: the "undocumented host process" was the uptimekuma container** — host `ps` lists container processes (`node server/server.js` → `docker-<id>.scope` = uptimekuma; `supervisord` = mailserver), not stray host daemons.
 - **optimize.sh live-run bugs fixed (2026-09-10)** — `append_lines()` doubled `/etc/fstab` and `/etc/security/limits.conf` (which broke the noatime step) and re-checks false-failed on a box without docker; it now appends only missing lines, skips absent software, and installs only the performance helpers (tuned/irqbalance/earlyoom).

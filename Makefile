@@ -422,6 +422,7 @@ define install_config_cmds
   else \
     scripts/mklog info "ttyd already installed at $$(command -v ttyd)"; \
   fi
+sudo test -s /etc/goose/goose.env || { sudo install -d -m 0755 /etc/goose; echo "GOOSE_SERVER__SECRET_KEY=$$(openssl rand -hex 32)" | sudo tee /etc/goose/goose.env >/dev/null; sudo chown root:op /etc/goose/goose.env; sudo chmod 0640 /etc/goose/goose.env; }
 sudo cp $(REPO)/repo/config/goose/goose.service /etc/systemd/system/goose.service
 sudo cp $(REPO)/repo/config/ssh/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf
 sudo cp $(REPO)/repo/config/dnsmasq/10-tailnet.conf /etc/dnsmasq.d/10-tailnet.conf
@@ -474,6 +475,7 @@ deploy:
 
 install-goose:
 >@echo "install-goose: goose.service"
+>@sudo test -s /etc/goose/goose.env || { sudo install -d -m 0755 /etc/goose; echo "GOOSE_SERVER__SECRET_KEY=$$(openssl rand -hex 32)" | sudo tee /etc/goose/goose.env >/dev/null; sudo chown root:op /etc/goose/goose.env; sudo chmod 0640 /etc/goose/goose.env; }
 >@sudo cp $(REPO)/repo/config/goose/goose.service /etc/systemd/system/goose.service
 >@sudo systemctl daemon-reload
 >@sudo systemctl restart goose
@@ -559,6 +561,7 @@ define bundle_secrets_cmds
     /home/op/.ssh/config \
     /home/op/.ssh/authorized_keys \
     /etc/systemd/system/goose.service \
+    /etc/goose/goose.env \
     /etc/systemd/system/ttyd.service \
     /etc/ssh/sshd_config.d/50-cloud-init.conf \
     /etc/dnsmasq.d/10-tailnet.conf \
@@ -669,7 +672,9 @@ bkp-vault:
 # every container database + live secrets land compressed in $(REPO)/backups/,
 # and the live server config is pulled into $(REPO)/repo/config/ subdirectories
 # (the one non-compressed exception). The config-pull mirrors the file list
-# install-config pushes, reversed; git add/commit the config/ changes.
+# install-config pushes, reversed; git add/commit the config/ changes. These files
+# must never carry secrets — the goose unit reads its key from /etc/goose/goose.env
+# (outside the repo) for exactly that reason.
 backup:
 >$(bkp_cloud_cmds)
 >$(bkp_vault_cmds)
