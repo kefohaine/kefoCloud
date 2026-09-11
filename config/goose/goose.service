@@ -9,7 +9,9 @@ User=op
 Group=op
 WorkingDirectory=/var/www/custom/projects/homelab/repo
 ExecStart=/usr/local/bin/goose serve
-Environment=GOOSE_SERVER__SECRET_KEY=fb1c7f9e9a1d360a68821018bc56d86239960929665efae85c90a2049ed5d2e1
+# Server secret lives OUTSIDE the repo (root:op 0640) — never in a tracked file.
+# Created by scripts/install.sh; live path /etc/goose/goose.env.
+EnvironmentFile=-/etc/goose/goose.env
 Restart=always
 RestartSec=3
 
