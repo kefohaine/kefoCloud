@@ -10,9 +10,9 @@
 # Usage: tail-auth.sh set [user] [password]
 #   user defaults to `op`; the password is generated when omitted. The script
 #   rewrites the basic_auth block, validates it in the running Caddy container
-#   (reverting on failure), writes the password to /root/tail-basic-auth.txt
-#   (0600), restarts Caddy and verifies an authenticated request. The vhost is a
-#   repo file — review and commit the change afterwards.
+#   (reverting on failure), restarts Caddy, verifies an authenticated request and
+#   PRINTS the credential once on the terminal — no password file is left behind.
+#   The vhost is a repo file — review and commit the change afterwards.
 
 set -uo pipefail
 
@@ -50,9 +50,17 @@ if ! docker exec "$DOMAIN" caddy validate --config /etc/caddy/Caddyfile --adapte
 fi
 rm -f "$BAK"
 
-printf '%s\n' "$PASS" | sudo tee /root/tail-basic-auth.txt >/dev/null
-sudo chmod 600 /root/tail-basic-auth.txt
-echo "info:  password stored at /root/tail-basic-auth.txt (0600)"
+# The credential is printed here, once, at creation time — nothing is written to
+# disk (no password files left lying around on the server).
+sudo rm -f /root/tail-basic-auth.txt   # retire the old file-based pattern if present
+echo ""
+echo "=============================================================="
+echo " tail.$DOMAIN — HTTP basic auth"
+echo "   user:     $UNAME"
+echo "   password: $PASS"
+echo " (shown once — copy it now; rotate any time with: make tail-auth)"
+echo "=============================================================="
+echo ""
 
 docker restart "$DOMAIN" >/dev/null
 sleep 3
