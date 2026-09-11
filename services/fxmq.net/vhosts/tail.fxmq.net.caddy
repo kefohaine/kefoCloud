@@ -1,13 +1,18 @@
-# tail.fxmq.net — tailnet-only entry point: a terminal-styled dashboard at /
-# and the ttyd host shell at /ttyd.
+# tail.fxmq.net — tailnet entry point: a mini command terminal at / and the
+# ttyd host shell at /ttyd.
 #
-# Access model, in order (the `route` block pins it):
-#   1. every path — non-tailnet sources get 403 (Tailscale membership is required)
-#   2. /ttyd only — HTTP basic auth (user `kefohaine`): membership is NOT
-#      authorization for a full root-capable shell.
-# The dashboard is deliberately unauthenticated (it is only a link list), so it
-# can carry the log in / log out buttons; one basic-auth login is then
-# remembered by the browser for the whole tail.fxmq.net origin.
+# Access model:
+#   * every path — non-tailnet sources get 403 (Tailscale membership required)
+#   * /           — the terminal dashboard (unauthenticated: any tailnet device
+#                   can open it; its commands refuse to run until 'log in')
+#   * /__tail/login — the only endpoint behind HTTP basic auth (user
+#                   `kefohaine`). The dashboard's 'log in' command fetches it,
+#                   which raises the browser's basic-auth dialog; the browser
+#                   then reuses that credential for every tail.fxmq.net path —
+#                   that cached credential IS the session ('log out' replaces
+#                   it with a bogus one).
+#   * /ttyd*      — the shell: still gated by basic auth at the edge, so the
+#                   credential is enforced even if the dashboard is bypassed.
 # `make tail-auth` sets/rotates the credential and prints it once (only the
 # bcrypt hash is committed — never put the password in the repo).
 
@@ -23,8 +28,16 @@ https://tail.fxmq.net {
         @not_tailnet not remote_ip 100.64.0.0/10
         respond @not_tailnet 403
 
-        # ttyd host terminal — the gated path. Base path is /ttyd (ttyd -b
-        # /ttyd), so the full path is proxied as-is — do not strip the prefix.
+        # Session endpoint: the challenge the dashboard's 'log in' triggers.
+        handle /__tail/login {
+            basic_auth {
+                kefohaine $2a$14$SbolWVoI8etI0M368qB.VujAdZg33b0IeUwzrXrAgKyiOpZfBOVoa
+            }
+            respond 204
+        }
+
+        # ttyd host terminal — gated. Base path is /ttyd (ttyd -b /ttyd), so
+        # the full path is proxied as-is — do not strip the prefix.
         handle /ttyd* {
             basic_auth {
                 kefohaine $2a$14$SbolWVoI8etI0M368qB.VujAdZg33b0IeUwzrXrAgKyiOpZfBOVoa
@@ -36,7 +49,7 @@ https://tail.fxmq.net {
             }
         }
 
-        # Terminal dashboard (static; services/$DOMAIN/www is mounted read-only
+        # The mini terminal (static; services/$DOMAIN/www is mounted read-only
         # at /etc/caddy/www in the caddy container).
         handle / {
             root * /etc/caddy/www

@@ -3,83 +3,181 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>kefohaine@server — tailnet</title>
+<title>kefohaine@server</title>
 <style>
-  :root { --fg:#3bf07a; --dim:#1f8a4c; --amber:#ffcc66; --bg:#07090a; }
+  :root { --fg:#3bf07a; --dim:#1f8a4c; --amber:#ffcc66; --red:#ff7b7b; --bg:#07090a; }
   * { box-sizing:border-box; }
-  body { margin:0; min-height:100vh; background:var(--bg); color:var(--fg);
-         font:14px/1.55 "Menlo","DejaVu Sans Mono",monospace; padding:2.2rem 1.4rem; }
-  body::after { content:""; position:fixed; inset:0; pointer-events:none; opacity:.05;
+  html,body { height:100%; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:15px/1.6 "Menlo","DejaVu Sans Mono",monospace;
+         display:flex; flex-direction:column; align-items:center; justify-content:center; padding:2rem; }
+  body::after { content:""; position:fixed; inset:0; pointer-events:none; opacity:.045;
          background:repeating-linear-gradient(0deg,#fff 0 1px,transparent 1px 3px); }
-  .wrap { max-width:860px; margin:0 auto; }
-  pre.banner { color:var(--fg); margin:0 0 .6rem; font-size:clamp(6px,1.5vw,13px); line-height:1.15; }
-  .meta { color:var(--dim); margin:0 0 1.6rem; }
-  .prompt { color:var(--amber); margin:1.6rem 0 .5rem; }
-  .prompt b { color:var(--fg); font-weight:600; }
-  table { border-collapse:collapse; width:100%; }
-  td { padding:.16rem 0; vertical-align:top; }
-  td.h { width:26ch; white-space:nowrap; }
-  td.h a { color:var(--fg); text-decoration:none; border-bottom:1px dotted var(--dim); }
-  td.h a:hover { color:#fff; border-bottom-color:var(--fg); }
-  td.d { color:var(--dim); }
-  .btns { margin-top:1.9rem; display:flex; gap:1.2rem; flex-wrap:wrap; }
-  .btn { border:1px solid var(--dim); padding:.35rem .9rem; text-decoration:none; color:var(--fg); }
-  .btn:hover { border-color:var(--fg); background:#0d1512; color:#fff; }
-  .btn.out { border-color:#7a3b3b; color:#ff9b9b; }
-  .btn.out:hover { border-color:#ff9b9b; color:#fff; }
-  .cursor { display:inline-block; width:.6em; background:var(--fg); animation:blink 1.1s steps(1) infinite; }
+  .brand { position:fixed; top:1.6rem; left:0; right:0; text-align:center; color:var(--dim); font-size:.8em; letter-spacing:.08em; }
+  .brand b { color:var(--fg); }
+  .stage { width:min(760px,94vw); }
+  .cmdline { position:relative; display:flex; align-items:baseline; white-space:pre; }
+  .ps1 { color:var(--fg); }
+  #cmd { flex:1; min-width:0; border:0; outline:0; padding:0; background:transparent;
+         color:transparent; caret-color:var(--fg); font:inherit; }
+  .typed { position:absolute; left:0; top:0; pointer-events:none; color:var(--fg); }
+  .ghost { position:absolute; top:0; color:var(--dim); pointer-events:none; }
+  .sug { list-style:none; margin:.55rem 0 0; padding:0; color:var(--dim); }
+  .sug li { padding:0; }
+  .sug li.on { color:#fff; background:#0f1a14; }
+  .sug li span { color:var(--amber); }
+  .status { margin-top:.7rem; min-height:1.6em; color:var(--dim); }
+  .status.err { color:var(--red); }
+  .cursor { display:inline-block; width:.62em; height:1.05em; vertical-align:-.18em;
+            background:var(--fg); animation:blink 1.1s steps(1) infinite; }
   @keyframes blink { 50% { opacity:0; } }
-  footer { margin-top:1.8rem; color:var(--dim); font-size:.85em; }
-  .ok { color:var(--dim); }
+  .bar { position:fixed; bottom:1.3rem; left:0; right:0; text-align:center; color:var(--dim); font-size:.8em; }
+  .bar b { color:var(--fg); }
 </style>
 </head>
 <body>
-<div class="wrap">
-<pre class="banner">
- ███████╗██╗  ██╗███╗   ███╗ ██████╗
- ██╔════╝╚██╗██╔╝████╗ ████║██╔═══██╗
- █████╗   ╚███╔╝ ██╔████╔██║██║   ██║
- ██╔══╝   ██╔██╗ ██║╚██╔╝██║██║▄▄ ██║
- ██║     ██╔╝ ██╗██║ ╚═╝ ██║╚██████╔╝
- ╚═╝     ╚═╝  ╚═╝╚═╝     ╚═╝ ╚══▀▀═╝</pre>
-<p class="meta">kefohaine@server &middot; tailnet-only &middot; <span id="clock">--:--:--</span></p>
+<div class="brand"><b>FXMQ</b> · kefohaine@server · tailnet</div>
 
-<div class="prompt"><b>kefohaine@server</b>:~$ cat vhosts.txt</div>
-<table>
-  <tr><td class="h"><a href="https://cloud.fxmq.net/">cloud.fxmq.net</a></td><td class="d">Nextcloud — files, calendar, Talk</td></tr>
-  <tr><td class="h"><a href="https://vault.fxmq.net/">vault.fxmq.net</a></td><td class="d">Vaultwarden — passwords</td></tr>
-  <tr><td class="h"><a href="https://kuma.fxmq.net/">kuma.fxmq.net</a></td><td class="d">Uptime Kuma — monitors</td></tr>
-  <tr><td class="h"><a href="https://mail.fxmq.net/">mail.fxmq.net</a></td><td class="d">Roundcube — webmail</td></tr>
-  <tr><td class="h"><a href="https://mc.fxmq.net/">mc.fxmq.net</a></td><td class="d">PufferPanel <a href="https://mc.fxmq.net/panel">/panel</a> &middot; browser MC <a href="https://mc.fxmq.net/play/">/play</a></td></tr>
-  <tr><td class="h"><a href="https://talk.fxmq.net/signaling">talk.fxmq.net</a></td><td class="d">Talk signaling + TURN</td></tr>
-  <tr><td class="h"><a href="https://www.fxmq.net/">www.fxmq.net</a></td><td class="d">welcome &middot; <a href="https://www.fxmq.net/download/">/download</a></td></tr>
-  <tr><td class="h"><a href="/ttyd/">tail.fxmq.net/ttyd</a></td><td class="d">host shell (basic auth)</td></tr>
-</table>
-
-<div class="btns">
-  <a class="btn" href="/ttyd/">[ log in ]</a>
-  <a class="btn out" id="logout" href="/">[ log out ]</a>
+<div class="stage">
+  <div class="cmdline" id="line">
+    <span class="ps1" id="ps1">kefohaine@server:~$ </span>
+    <span class="typed" id="typed"></span>
+    <span class="ghost" id="ghost"></span>
+    <span class="cursor" id="cursor"></span>
+    <input id="cmd" autocomplete="off" autocapitalize="off" spellcheck="false" autofocus>
+  </div>
+  <ul class="sug" id="sug"></ul>
+  <div class="status" id="status"></div>
 </div>
 
-<div class="prompt"><b>kefohaine@server</b>:~$ <span class="cursor">&nbsp;</span></div>
-<footer id="hint" class="ok">one login covers every path on tail.fxmq.net for this browser session.</footer>
-</div>
+<div class="bar">type <b>go</b> &lt;vhost&gt; [page] · <b>log in</b> · <b>log out</b> &nbsp;—&nbsp; tab completes, up/down picks</div>
+
 <script>
-(function () {
-  function tick() {
-    var d = new Date();
-    function p(n) { return (n < 10 ? "0" : "") + n; }
-    document.getElementById("clock").textContent =
-      p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+"use strict";
+var MAP = {
+  cloud: { url: "https://cloud.fxmq.net/", pages: {} },
+  vault: { url: "https://vault.fxmq.net/", pages: {} },
+  kuma:  { url: "https://kuma.fxmq.net/",  pages: {} },
+  mail:  { url: "https://mail.fxmq.net/",  pages: {} },
+  mc:    { url: "https://mc.fxmq.net/",    pages: { panel: "/panel", play: "/play/" } },
+  talk:  { url: "https://talk.fxmq.net/",  pages: { signaling: "/signaling" } },
+  www:   { url: "https://www.fxmq.net/",   pages: { welcome: "/welcome", download: "/download/" } },
+  tail:  { url: "/",                        pages: { ttyd: "/ttyd/" } }
+};
+var ROOT = ["go", "log in", "log out"];
+var cmd = document.getElementById("cmd"),
+    line = document.getElementById("line"),
+    ps1 = document.getElementById("ps1"),
+    typed = document.getElementById("typed"),
+    ghost = document.getElementById("ghost"),
+    cursor = document.getElementById("cursor"),
+    sug = document.getElementById("sug"),
+    status = document.getElementById("status");
+var items = [], pick = -1;
+
+function authed() { try { return sessionStorage.getItem("tailAuthed") === "1"; } catch (e) { return false; } }
+function setAuthed(v) { try { v ? sessionStorage.setItem("tailAuthed", "1") : sessionStorage.removeItem("tailAuthed"); } catch (e) {} }
+
+function say(msg, isErr) {
+  status.textContent = msg || "";
+  status.className = "status" + (isErr ? " err" : "");
+}
+function fit() {
+  var w = ps1.getBoundingClientRect().width;
+  var m = document.createElement("span");
+  m.style.cssText = "position:absolute;visibility:hidden;white-space:pre;font:inherit";
+  m.textContent = cmd.value;
+  document.body.appendChild(m);
+  var t = m.getBoundingClientRect().width;
+  document.body.removeChild(m);
+  typed.style.left = w + "px";
+  ghost.style.left = (w + t) + "px";
+  cursor.style.marginLeft = "-0.62em";
+}
+function candidates() {
+  var v = cmd.value, low = v.toLowerCase();
+  if (low.indexOf("go ") === 0) {
+    var parts = low.slice(3).split(/\s+/), host = parts[0] || "", page = parts[1] || "";
+    var out = [];
+    if (!host) {
+      for (var k in MAP) out.push("go " + k);
+      return out;
+    }
+    if (!MAP[host]) return [];
+    if (!page) { for (var p in MAP[host].pages) out.push("go " + host + " " + p); return out; }
+    return [];
   }
-  tick(); setInterval(tick, 1000);
-  // Log out of HTTP basic auth: navigating with a bogus credential makes the
-  // browser replace its cached one, so the next protected request prompts again.
-  document.getElementById("logout").addEventListener("click", function (ev) {
-    ev.preventDefault();
-    location.href = "https://logout:logout@" + location.host + "/ttyd/";
+  return ROOT.filter(function (c) { return c.indexOf(low) === 0; });
+}
+function render() {
+  var v = cmd.value;
+  typed.textContent = v;
+  var list = candidates();
+  if (pick >= list.length) pick = list.length - 1;
+  items = list;
+  sug.innerHTML = "";
+  list.slice(0, 6).forEach(function (c, i) {
+    var li = document.createElement("li");
+    if (i === pick) li.className = "on";
+    var rest = c.slice(v.length);
+    var head = document.createElement("span");
+    head.textContent = v;
+    li.appendChild(head);
+    li.appendChild(document.createTextNode(rest));
+    li.addEventListener("mousedown", function (ev) { ev.preventDefault(); accept(c); });
+    sug.appendChild(li);
   });
-})();
+  var top = list[Math.max(0, pick)];
+  ghost.textContent = (top && top.indexOf(v) === 0) ? top.slice(v.length) : "";
+  fit();
+}
+function accept(c) {
+  cmd.value = c;
+  if (c === "go" || /\s$/.test(c)) cmd.value = c + " ";
+  pick = -1; say(""); render(); cmd.focus();
+}
+function run(raw) {
+  var v = (raw || "").trim().replace(/\s+/g, " ");
+  var low = v.toLowerCase();
+  if (!low) return;
+  if (low === "log in" || low === "login") return login();
+  if (low === "log out" || low === "logout") return logout();
+  if (low.indexOf("go ") !== 0) { say("unknown command: " + v + " — try 'go <vhost>' or 'log in'", true); return; }
+  if (!authed()) { say("not logged in — run 'log in' first", true); return; }
+  var parts = low.slice(3).split(" "), host = parts[0], page = parts[1] || "";
+  if (!MAP[host]) { say("no such vhost: " + host + " (try: " + Object.keys(MAP).join(" ") + ")", true); return; }
+  var to = MAP[host].url;
+  if (page) {
+    if (!MAP[host].pages[page]) { say("no page '" + page + "' on " + host + " (have: " + (Object.keys(MAP[host].pages).join(" ") || "none") + ")", true); return; }
+    to = MAP[host].url.replace(/\/$/, "") + MAP[host].pages[page];
+  }
+  say("going to " + to + " …");
+  location.href = to;
+}
+function login() {
+  say("authenticating …");
+  fetch("/__tail/login", { credentials: "same-origin" }).then(function (r) {
+    if (r.ok) { setAuthed(true); say("logged in — session holds until 'log out'"); }
+    else { setAuthed(false); say("login failed (" + r.status + ")", true); }
+  }).catch(function () { say("login failed", true); });
+}
+function logout() {
+  setAuthed(false);
+  say("logged out");
+  location.href = "https://logout:logout@" + location.host + "/";
+}
+cmd.addEventListener("input", function () { pick = -1; say(""); render(); });
+cmd.addEventListener("keydown", function (ev) {
+  if (ev.key === "Enter") { ev.preventDefault(); var v = cmd.value; cmd.value = ""; pick = -1; render(); run(v); }
+  else if (ev.key === "Tab" || ev.key === "ArrowRight") { var t = items[Math.max(0, pick)]; if (t) { ev.preventDefault(); accept(t); } }
+  else if (ev.key === "ArrowDown") { if (items.length) { ev.preventDefault(); pick = (pick + 1) % items.length; render(); } }
+  else if (ev.key === "ArrowUp") { if (items.length) { ev.preventDefault(); pick = (pick <= 0 ? items.length : pick) - 1; render(); } }
+  else if (ev.key === "Escape") { cmd.value = ""; pick = -1; say(""); render(); }
+});
+line.addEventListener("click", function () { cmd.focus(); });
+window.addEventListener("resize", fit);
+render();
+say(authed() ? "session active" : "read-only — run 'log in' to unlock commands");
 </script>
 </body>
 </html>
