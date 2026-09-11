@@ -398,10 +398,14 @@ EOF
   # Talk service configs — idempotent, appends only missing keys.
   log "  nextcloud stack secrets via talk-gen"
   make talk-gen >>"$LOG" 2>&1 || fail talk_gen
-  log "  goose service secret"
-  if ! grep -q GOOSE_SERVER__SECRET_KEY config/goose/goose.service; then
-    # insert into [Service] (after ExecStart) — a plain append lands after [Install] and is ignored
-    sed -i "/^ExecStart=/a Environment=GOOSE_SERVER__SECRET_KEY=$(openssl rand -hex 32)" config/goose/goose.service
+  # The goose server secret lives OUTSIDE the repo (root:op 0640) and is read by
+  # the unit through EnvironmentFile= — never written into a tracked file.
+  log "  goose service secret -> /etc/goose/goose.env"
+  if [ ! -s /etc/goose/goose.env ]; then
+    sudo install -d -m 0755 /etc/goose
+    printf 'GOOSE_SERVER__SECRET_KEY=%s\n' "$(openssl rand -hex 32)" | sudo tee /etc/goose/goose.env >/dev/null
+    sudo chown root:"$OP_USER" /etc/goose/goose.env
+    sudo chmod 0640 /etc/goose/goose.env
   fi
   # Vaultwarden SMTP sender (vaultwarden@$DOMAIN) — SMTP vars for the
   # compose interpolation; the mailbox itself is created after the
