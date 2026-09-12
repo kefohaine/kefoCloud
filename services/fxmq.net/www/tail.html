@@ -5,35 +5,42 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>server</title>
 <style>
-  :root { --fg:#3bf07a; --dim:#1f8a4c; --amber:#ffcc66; --red:#ff7b7b; --bg:#07090a; }
+  :root { --w:#eaeaea; --gray:#8b949e; --green:#3bf07a; --purple:#b48cff;
+          --amber:#ffcc66; --red:#ff7b7b; --bg:#07090a; --sel:#12331f; }
   * { box-sizing:border-box; }
   html,body { height:100%; }
-  body { margin:0; background:var(--bg); color:var(--fg);
+  body { margin:0; background:var(--bg); color:var(--gray);
          font:15px/1.6 "Menlo","DejaVu Sans Mono",monospace;
          display:flex; flex-direction:column; align-items:center; justify-content:center; padding:2rem; }
   body::after { content:""; position:fixed; inset:0; pointer-events:none; opacity:.045;
          background:repeating-linear-gradient(0deg,#fff 0 1px,transparent 1px 3px); }
   .stage { width:min(760px,94vw); }
   .cmdline { position:relative; display:flex; align-items:baseline; white-space:pre; }
-  .ps1 { color:var(--fg); flex:none; }
+  .ps1 { flex:none; }
+  .acc   { color:var(--green); }
+  .wh    { color:var(--w); }
+  .pth   { color:var(--purple); }
   #cmd { flex:1; min-width:0; margin:0; border:0; outline:0; padding:0; background:transparent;
-         color:var(--fg); caret-color:var(--fg); font:inherit; }
-  #cmd::selection { background:var(--dim); }
-  .ghost { position:absolute; top:0; color:var(--dim); pointer-events:none; white-space:pre; }
-  .sug { list-style:none; margin:.5rem 0 0; padding:0; color:var(--dim); }
+         color:var(--w); caret-color:transparent; font:inherit; }
+  #cmd::selection { background:var(--sel); }
+  .ghost { position:absolute; top:0; color:var(--gray); pointer-events:none; white-space:pre; }
+  .cursor { position:absolute; top:-0.08em; height:1.5em; line-height:1.5em;
+            background:#fff; color:#000; pointer-events:none; white-space:pre; overflow:hidden; }
+  .sug { list-style:none; margin:.5rem 0 0; padding:0; color:var(--gray); }
   .sug li { padding:0; cursor:pointer; }
-  .sug li.on { color:#fff; background:#0f1a14; }
-  .sug li b { color:var(--amber); font-weight:600; }
-  .status { margin-top:.7rem; min-height:1.6em; color:var(--dim); }
+  .sug li.on { color:var(--w); background:var(--sel); }
+  .sug li b { color:var(--w); font-weight:600; }
+  .status { margin-top:.7rem; min-height:1.6em; color:var(--gray); }
   .status.err { color:var(--red); }
 </style>
 </head>
 <body>
 <div class="stage">
   <div class="cmdline" id="line">
-    <span class="ps1" id="ps1">guest@server:~$ </span>
+    <span class="ps1" id="ps1"><span class="acc" id="acc">guest@server</span><span class="wh">:</span><span class="pth">~</span><span class="wh">$ </span></span>
     <input id="cmd" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" autofocus>
     <span class="ghost" id="ghost"></span>
+    <span class="cursor" id="cursor"></span>
   </div>
   <ul class="sug" id="sug"></ul>
   <div class="status" id="status"></div>
@@ -46,15 +53,16 @@ var LOGC  = ["in", "out"];          // `log`'s second column
 var TARGETS = [];                   // filled from targets.json (generated)
 var cmd = document.getElementById("cmd"),
     line = document.getElementById("line"),
-    ps1 = document.getElementById("ps1"),
+    acc = document.getElementById("acc"),
     ghost = document.getElementById("ghost"),
+    cursor = document.getElementById("cursor"),
     sug = document.getElementById("sug"),
     statusEl = document.getElementById("status");
 var items = [], pick = 0, measure = null, sayTimer = null;
 
 function authed() { try { return sessionStorage.getItem("tailAuthed") === "1"; } catch (e) { return false; } }
 function setAuthed(v) { try { v ? sessionStorage.setItem("tailAuthed", "1") : sessionStorage.removeItem("tailAuthed"); } catch (e) {} }
-function prompt() { ps1.textContent = (authed() ? "kefohaine@server" : "guest@server") + ":~$ "; }
+function prompt() { acc.textContent = (authed() ? "kefohaine@server" : "guest@server"); }
 function say(msg, isErr) {
   if (sayTimer) { clearTimeout(sayTimer); sayTimer = null; }
   statusEl.textContent = msg || "";
@@ -73,6 +81,18 @@ function textWidth(s) {
 function fit() {
   var off = cmd.getBoundingClientRect().left - line.getBoundingClientRect().left;
   ghost.style.left = (off + textWidth(cmd.value)) + "px";
+}
+// Debian-style block cursor: a solid white cell over the character at the
+// caret; the cell's own text renders inverted (black on white). A space at
+// the caret shows as a full-width white block.
+function caret() {
+  var i = cmd.selectionStart == null ? cmd.value.length : cmd.selectionStart;
+  var off = cmd.getBoundingClientRect().left - line.getBoundingClientRect().left;
+  var before = cmd.value.slice(0, i);
+  var ch = cmd.value.charAt(i) || " ";
+  cursor.style.left = (off + textWidth(before)) + "px";
+  cursor.style.width = Math.max(textWidth(ch), textWidth(" ")) + "px";
+  cursor.textContent = ch;
 }
 function byName(n) { for (var i = 0; i < TARGETS.length; i++) if (TARGETS[i].name === n) return TARGETS[i]; return null; }
 function columns(src) {
@@ -126,6 +146,7 @@ function render() {
   var top = list[pick];
   ghost.textContent = (v && top && top.length > v.length) ? top.slice(v.length) : "";
   fit();
+  caret();
 }
 function accept(c) {
   cmd.value = hasDeeper(c) ? c + " " : c;
@@ -151,8 +172,23 @@ function run(raw) {
   if (!v) return;
   var parts = v.toLowerCase().split(" "), verb = parts[0], a = parts[1] || "", b = parts[2] || "";
   if (verb === "log") {
-    if (a === "in") { say("authenticating …"); setTimeout(function () { location.href = "/__tail/login"; }, 300); return; }
-    if (a === "out") { setAuthed(false); prompt(); say("logged out"); setTimeout(function () { location.href = "https://logout:logout@" + location.host + "/"; }, 400); return; }
+    if (a === "in") {
+      setAuthed(true);                       // optimistic — corrected by the probe on return
+      say("authenticating …");
+      setTimeout(function () { location.href = "/ttyd"; }, 300);
+      return;
+    }
+    if (a === "out") {
+      say("logging out …");
+      // Prime the browser's basic-auth cache with a bogus credential: the
+      // 401 to a non-navigational fetch raises no dialog, and the cached
+      // value replaces the real one — the next `log in` re-prompts.
+      fetch("/ttyd", { credentials: "same-origin", cache: "no-store",
+                       headers: { "Authorization": "Basic " + btoa("logout:logout") } })
+        .catch(function () {})
+        .then(function () { setAuthed(false); prompt(); say("logged out"); });
+      return;
+    }
     say("usage: log in | log out", true); return;
   }
   if (verb === "go") {
@@ -161,6 +197,14 @@ function run(raw) {
     go(a, b); return;
   }
   say("unknown command: " + v, true);
+}
+// Probe the real session: /ttyd answers 401 without credentials (a 401 to a
+// fetch never pops the browser dialog), 200 once the cached credential is
+// valid. This keeps the prompt honest across visits and tabs.
+function probeAuthed() {
+  fetch("/ttyd", { credentials: "same-origin", cache: "no-store" })
+    .then(function (r) { setAuthed(r.status !== 401); prompt(); })
+    .catch(function () {});
 }
 cmd.addEventListener("input", function () { pick = 0; render(); });
 cmd.addEventListener("keydown", function (ev) {
@@ -175,15 +219,25 @@ cmd.addEventListener("keydown", function (ev) {
   else if (k === "Escape") { cmd.value = ""; pick = 0; render(); }
   else { setTimeout(render, 0); }
 });
-line.addEventListener("mousedown", function (ev) { if (ev.target !== cmd) { ev.preventDefault(); cmd.focus(); } });
-window.addEventListener("resize", fit);
+cmd.addEventListener("keyup", caret);
+cmd.addEventListener("click", caret);
+document.addEventListener("selectionchange", function () { if (document.activeElement === cmd) caret(); });
+// The type bar is forced-focused: any click that is not on the input itself
+// or on a suggestion entry lands back on the input (the dropdown's own
+// mousedown handler accepts the entry first, so it keeps working).
+document.addEventListener("mousedown", function (ev) {
+  if (ev.target === cmd || sug.contains(ev.target)) return;
+  ev.preventDefault();
+  cmd.focus();
+});
+cmd.addEventListener("blur", function () {
+  setTimeout(function () { if (document.hasFocus()) cmd.focus(); caret(); }, 0);
+});
+window.addEventListener("resize", function () { fit(); caret(); });
 
-if (location.pathname === "/__tail/login" || /[?&]authed=1/.test(location.search)) {
-  setAuthed(true);
-  try { history.replaceState(null, "", "/"); } catch (e) {}
-}
 prompt();
 render();
+probeAuthed();
 fetch("/targets.json", { cache: "no-store" }).then(function (r) { return r.json(); })
   .then(function (j) { TARGETS = (j && j.targets) || []; render(); })
   .catch(function () { say("could not load the target list", true); });

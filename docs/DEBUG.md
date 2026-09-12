@@ -20,8 +20,7 @@ How to run an occasional deep scan or triage an incident on this system. **The r
 
 ## 2. Standard scan (read-only)
 ```
-make list                     # AIO overview: git, systemd, docker, tmux, backups, mails
-make perf                     # live performance + status overview
+make status                   # AIO overview: git, systemd, docker, tmux, backups, mails + live perf
 make smoke                    # every public vhost must serve its real app
 docker ps --format '{{.Names}}	{{.Status}}'
 ss -tlnp                      # listeners — compare with GUIDE "Domains and access model"

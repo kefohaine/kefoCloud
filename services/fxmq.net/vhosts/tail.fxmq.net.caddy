@@ -7,15 +7,15 @@
 #                    it; its `go` command refuses until `log in`)
 #   * /targets.json — GENERATED navigation catalogue (scripts/tail-targets.sh):
 #                    the vhosts and their pages, so nothing is hardcoded
-#   * /__tail/login — the only login endpoint, behind HTTP basic auth (user
-#                    `kefohaine`). The terminal's `log in` navigates here, so
-#                    the browser raises its normal basic-auth dialog; on
-#                    success it returns to the terminal. The browser then
-#                    reuses that credential for every tail.fxmq.net path —
-#                    that cached credential is the session (`log out` replaces
-#                    it with a bogus one).
-#   * /ttyd*      — the shell: gated by basic auth at the edge too, so the
-#                   credential is enforced even if the terminal is bypassed.
+#   * /ttyd*      — the shell: HTTP basic auth (user `kefohaine`). The
+#                    terminal's `log in` navigates straight here, so the
+#                    browser's basic-auth dialog is the login form; the
+#                    credential the browser caches at this path scope is the
+#                    session (later /ttyd visits need no re-prompt). `log out`
+#                    overwrites the browser's cached credential with a bogus
+#                    one via a primed fetch, so the next `log in` re-prompts.
+#                    A 401 to a non-navigational fetch raises no dialog, so
+#                    the page probes /ttyd to show the real session state.
 # `make tail-auth` sets/rotates the credential and prints it once (only the
 # bcrypt hash is committed — never put the password in the repo).
 
@@ -26,25 +26,13 @@ https://tail.fxmq.net {
     import compress
     header {
         import security_headers
-        # Nothing here may be cached: a browser that keeps the 200 it got from
-        # /__tail/login would keep serving the "logged in" page with no request
-        # and no challenge.
+        # Nothing here may be cached: a stale cached response would keep
+        # serving a state the next request would not confirm.
         Cache-Control "no-store"
     }
     route {
         @not_tailnet not remote_ip 100.64.0.0/10
         respond @not_tailnet 403
-
-        # Login endpoint. `route` pins the order: the challenge runs before the
-        # redirect (Caddy's default order would redirect first).
-        handle /__tail/login {
-            basic_auth {
-                kefohaine $2a$14$SbolWVoI8etI0M368qB.VujAdZg33b0IeUwzrXrAgKyiOpZfBOVoa
-            }
-            root * /etc/caddy/www
-            rewrite /tail.html
-            file_server
-        }
 
         # Generated navigation catalogue for the terminal.
         handle /targets.json {
