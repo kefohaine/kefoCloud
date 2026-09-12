@@ -88,6 +88,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **File**: `Makefile` (`backup` recipe — the live-config pull)
 - **Problem**: `make backup` copies live host configs into `$(REPO)/repo/config/`; if one of those files ever carries a secret, the next `git add` commits it (the goose unit did exactly this until 2026-09-11).
 - **Fix**: keep secrets in dedicated files outside the copied set (as goose now does); optionally add a secret-scan guard to the pre-commit hook.
+- **Note (2026-09-12)**: the pull also resurrects *scrubbed* content — a stale live `/etc/sysctl.d/99-homelab.conf` re-imported a banned-assistant name the repo had deliberately removed (commit 070d35f), landing uncommitted in the working tree. After `make backup`, `git diff config/` before any `git add`; re-apply `make install-config` when the live copies are behind the repo.
 
 #### `install.sh` `eval`s values from `scripts/defaults/install.conf`
 - **File**: `scripts/install.sh` (`defaults_install` / `ask_modules`)
@@ -184,7 +185,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 ## Planned ideas
 
 Future roadmap, operator-reviewed later; when one is picked up it moves to Open, when done it lands in Solved.
-Implemented 2026-09-06 (→ Solved): installer per-module prompts + `scripts/defaults/install.conf` (default all ON), `REF.md` demo-terms reference, `make status` (merged the 2026-09-06 `make list` + `make perf`), `make taildrop-file|folder`, `TARGET=` dispatchers for the dok actions, Debian-system wording in README/www.
+Implemented 2026-09-06 (→ Solved): installer per-module prompts + `scripts/defaults/install.conf` (default all ON), `REF.md` demo-terms reference, the original `make status` merge (later rebuilt 2026-09-11 as `scripts/status.sh`), `make taildrop-file|folder`, `TARGET=` dispatchers for the dok actions, Debian-system wording in README/www.
 
 #### NC user isolation across apps
 - **Goal**: keep Nextcloud users isolated from each other (own groups) across the apps they touch.
@@ -293,10 +294,11 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Terminal `host-exec` shim** — chroot-to-host wrapper for glibc binaries in the Alpine ttyd container.
 
 ### Sep 2026 — edge renames + docs overhaul
-- **Basic-auth session fixed on `tail.$DOMAIN` (2026-09-11)** — login/logout reworked: `log in` navigates straight to `/ttyd` (the browser's dialog is the login; the cached credential is the session at that path scope), `log out` primes the cache with a bogus credential via a header-injected fetch so the next `log in` re-prompts, and the page probes `/ttyd` with a non-navigational fetch (401 raises no dialog) to show the real session state; the `/__tail/login` endpoint was removed.
+- **Basic-auth session reworked on `tail.$DOMAIN` (2026-09-11, superseded the same-day navigate-to-/ttyd design)** — `log in` now prompts for the password inline (masked) and validates it in the background against `/ttyd`'s basic auth with an explicit Authorization header, so the browser's cached credential is never the login and nothing is auto-logged-in; the session is a per-tab sessionStorage flag, `log out` forgets it plus evicts any cached `/ttyd` credential (primed bogus fetch) — no remembered session after logout.
 - **GitHub graph empty + ghost contributor fixed** — two-root merge DAG made GitHub's date queries 500 (graph empty since 08-01); single-root linearization restored the cells and scrubbing `Co-Authored-By:` AI-assistant trailer credits removed the ghost contributor (details in the GUIDE 2026-09-06 debug-hell lesson); the two-root repo was deleted and the clean history is now canonical on `kefohaine/server` (scratch repos deleted).
 - **installer: per-module install selection** — `ask_inputs` now prompts for cloud/vault/mail/games/monitor (default all ON, env/state-overridable); `phase2_op`, `containers_up`, `cf_dns` and `issue_certs` gate on the choice; defaults come from `scripts/defaults/install.conf`; verified with `bash -n` + parser unit test (fresh-VPS run still pending).
-- **`make status`** — merged `make list` + `make perf` (2026-09-11): the AIO overview now ends with the live performance read (`scripts/perf.sh`), which keeps its own file.
+- **`make status`** — rebuilt as the AIO dashboard (`scripts/status.sh`): one aligned colored read of perf/modules/git/units/docker/tmux/backups/mail/tailnet with no duplicate rows (the 2026-09-11 list+perf merge listed containers/units twice).
+- **Module-aware smoke + status via `installed-modules.conf`** — `install.sh` writes the installed-module list to `$PROJECT_DIR/installed-modules.conf` at install end; `make smoke` structures its sections per module, still checks everything factually, but marks a failed section whose module was not installed as "intended behaviour" (per-section) and keeps it out of the exit code; a missing conf = all modules expected.
 - **`make smoke` expanded** — beyond the vhost checks: tailnet-edge (`/` serves tailnet sources, `/ttyd` challenges without credentials), containers/units/ufw/NFS/disk/nc-status/coturn assertions; `ok` lines carry short plain-words descriptions.
 - **`make taildrop-file` / `make taildrop-folder`** — `sudo tailscale file cp` wrappers (`FILE=`/`DIR=`, `TAILDROP_HOST` default `server`).
 - **Makefile `TARGET=` dispatchers** — `dok-recreate/restart/stop/logs TARGET=<ctn>` as the primary style; the `-<ctn>` suffixes remain as aliases.
@@ -318,7 +320,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **NC recovery manifests moved out of the repo** — `users/groups/default-quota/apps.txt` now live at `homelab/cloud/recovery/` (op-owned, outside the repo like pgdata), generated by `make nc-capture`, consumed by install.sh; paths scrubbed from all history (664 commits preserved, personal doc addresses censored via `scripts/replace-string.sh`).
 - **Storage VPS onboarded (Setup A)** — `scripts/storage.sh` migrated Nextcloud's datadirectory to the 1 TB VPS (`/srv/nextcloud-data` NFS export at `cloud/users`); PostgreSQL stays on fxmq and the nightly `pg_dump` → `/backups/nc` runs alongside.
 - **storage.sh live-run fixes (2026-09-10)** — the first live run exposed a missing NFS client (`nfs-common`) and an unverified rollback delete that lost the datadirectory files; the script now installs the client, verifies the copy before the delete prompt, and installs the operator's ssh key — files were restored from `backups/cloud-backup-20260906`.
-- **`tail.$DOMAIN` mini terminal + gated shell** — unauthenticated command terminal at `/` (`go <vhost> [page]` / `log in` / `log out`, live prediction over a catalogue generated from the vhost files by `make tail-targets`) and `basic_auth` (user `kefohaine`) on `/ttyd`; the browser's cached credential is the session; `make tail-auth` sets/rotates it and prints the password once.
+- **`tail.$DOMAIN` mini terminal + gated shell** — unauthenticated command terminal at `/` (`go <vhost> [page]` / `log in` / `log out`, live prediction over a catalogue generated from the vhost files by `make tail-targets`) and `basic_auth` (user `kefohaine`) on `/ttyd`; `log in` prompts inline and validates in the background (explicit Authorization header); `make tail-auth` sets/rotates it and prints the password once.
 - **goose secret moved out of the repo** — the unit reads `EnvironmentFile=/etc/goose/goose.env` (root:op 0640); `install.sh` generates it there instead of `sed`ing it into a tracked file.
 - **NFS datadirectory mount tightened** — `/etc/fstab` options are now `rw,nofail,_netdev,noatime,vers=4`.
 - **Nextcloud password policy hardened** — the app is re-enabled with `minLength=16`, upper/lower/special/numeric requirements and the common/compromised-password lists on.

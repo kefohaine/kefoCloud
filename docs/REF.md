@@ -26,6 +26,8 @@ STORAGE_HOST='root@<storage-box>'                   # second Debian system (sshp
 - `docs/` prose and commands use these names as placeholders; substitute per setup.
 - Live values (public IP, container names, tailnet peers) are still **auto-detected**
   by scripts — never read from this file.
+- `$PROJECT_DIR/installed-modules.conf` (written by `scripts/install.sh`) records
+  which modules this deployment installed; `make smoke` + `make status` read it.
 - Secrets never belong here nor in `scripts/defaults/` (AGENTS rule 9).
 - `scripts/defaults/*.conf` hold *prompt defaults* — a different purpose than this
   file (see ISSUES Planned ideas for the split rationale).

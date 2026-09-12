@@ -8,14 +8,13 @@
 #   * /targets.json — GENERATED navigation catalogue (scripts/tail-targets.sh):
 #                    the vhosts and their pages, so nothing is hardcoded
 #   * /ttyd*      — the shell: HTTP basic auth (user `kefohaine`). The
-#                    terminal's `log in` navigates straight here, so the
-#                    browser's basic-auth dialog is the login form; the
-#                    credential the browser caches at this path scope is the
-#                    session (later /ttyd visits need no re-prompt). `log out`
-#                    overwrites the browser's cached credential with a bogus
-#                    one via a primed fetch, so the next `log in` re-prompts.
-#                    A 401 to a non-navigational fetch raises no dialog, so
-#                    the page probes /ttyd to show the real session state.
+#                    terminal's `log in` prompts for the password inline and
+#                    validates it in the background against this auth (an
+#                    explicit Authorization header on a fetch — the browser's
+#                    basic-auth cache is never the login); the session is a
+#                    per-tab sessionStorage flag only, and `log out` forgets
+#                    it plus evicts any cached /ttyd credential (primed bogus
+#                    fetch), so nothing is remembered after a logout.
 # `make tail-auth` sets/rotates the credential and prints it once (only the
 # bcrypt hash is committed — never put the password in the repo).
 
@@ -41,7 +40,9 @@ https://tail.fxmq.net {
         }
 
         # ttyd host terminal — gated. Base path is /ttyd (ttyd -b /ttyd), so
-        # the full path is proxied as-is — do not strip the prefix.
+        # the full path is proxied as-is — do not strip the prefix. The
+        # terminal page authenticates against this with an explicit header,
+        # never relying on the browser's cached credential.
         handle /ttyd* {
             basic_auth {
                 kefohaine $2a$14$SbolWVoI8etI0M368qB.VujAdZg33b0IeUwzrXrAgKyiOpZfBOVoa

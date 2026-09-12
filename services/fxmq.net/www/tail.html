@@ -32,6 +32,12 @@
   .sug li b { color:var(--w); font-weight:600; }
   .status { margin-top:.7rem; min-height:1.6em; color:var(--gray); }
   .status.err { color:var(--red); }
+  .psw { position:relative; display:none; align-items:baseline; margin-top:.6rem; white-space:pre; }
+  .psw .lab { color:var(--amber); }
+  .psw input { flex:0 1 22ch; margin:0 .5ch 0 1ch; border:0; outline:0; padding:0;
+               background:transparent; color:var(--w); font:inherit;
+               -webkit-text-security:disc; }
+  .psw input::placeholder { color:var(--gray); opacity:1; }
 </style>
 </head>
 <body>
@@ -43,6 +49,10 @@
     <span class="cursor" id="cursor"></span>
   </div>
   <ul class="sug" id="sug"></ul>
+  <div class="psw" id="pswline">
+    <span class="lab">password:</span>
+    <input id="psw" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="·">
+  </div>
   <div class="status" id="status"></div>
 </div>
 
@@ -57,9 +67,18 @@ var cmd = document.getElementById("cmd"),
     ghost = document.getElementById("ghost"),
     cursor = document.getElementById("cursor"),
     sug = document.getElementById("sug"),
+    pswline = document.getElementById("pswline"),
+    psw = document.getElementById("psw"),
     statusEl = document.getElementById("status");
 var items = [], pick = 0, measure = null, sayTimer = null;
 
+// Session: per-tab sessionStorage flag ONLY. The browser's basic-auth cache is
+// never the login — `log in` prompts for the password inline (masked), then
+// validates it in the background against /ttyd with an explicit Authorization
+// header (a 401 to a fetch raises no dialog), so a cached credential on /ttyd
+// never silently logs this page in. `log out` drops the session flag AND
+// evicts any cached /ttyd credential (primed fetch with a bogus one), so
+// nothing is remembered after logout — /ttyd then prompts again on next visit.
 function authed() { try { return sessionStorage.getItem("tailAuthed") === "1"; } catch (e) { return false; } }
 function setAuthed(v) { try { v ? sessionStorage.setItem("tailAuthed", "1") : sessionStorage.removeItem("tailAuthed"); } catch (e) {} }
 function prompt() { acc.textContent = (authed() ? "kefohaine@server" : "guest@server"); }
@@ -173,16 +192,21 @@ function run(raw) {
   var parts = v.toLowerCase().split(" "), verb = parts[0], a = parts[1] || "", b = parts[2] || "";
   if (verb === "log") {
     if (a === "in") {
-      setAuthed(true);                       // optimistic — corrected by the probe on return
-      say("authenticating …");
-      setTimeout(function () { location.href = "/ttyd"; }, 300);
+      if (authed()) { say("already logged in"); return; }
+      if (pswline.style.display === "flex") return;
+      pswline.style.display = "flex";
+      psw.value = ""; psw.placeholder = "·";
+      say("type the /ttyd password, then Enter (Esc cancels)");
+      psw.focus();
       return;
     }
     if (a === "out") {
+      if (!authed()) { say("not logged in"); return; }
       say("logging out …");
-      // Prime the browser's basic-auth cache with a bogus credential: the
-      // 401 to a non-navigational fetch raises no dialog, and the cached
-      // value replaces the real one — the next `log in` re-prompts.
+      // Evict the browser's basic-auth cache for /ttyd: prime it with a
+      // bogus credential (the 401 to a non-navigational fetch raises no
+      // dialog), so /ttyd prompts again on the next visit — nothing is
+      // remembered. Then forget the session itself.
       fetch("/ttyd", { credentials: "same-origin", cache: "no-store",
                        headers: { "Authorization": "Basic " + btoa("logout:logout") } })
         .catch(function () {})
@@ -198,14 +222,36 @@ function run(raw) {
   }
   say("unknown command: " + v, true);
 }
-// Probe the real session: /ttyd answers 401 without credentials (a 401 to a
-// fetch never pops the browser dialog), 200 once the cached credential is
-// valid. This keeps the prompt honest across visits and tabs.
-function probeAuthed() {
-  fetch("/ttyd", { credentials: "same-origin", cache: "no-store" })
-    .then(function (r) { setAuthed(r.status !== 401); prompt(); })
-    .catch(function () {});
+// Validate the typed password against /ttyd's basic auth with an explicit
+// Authorization header — never the browser's cached credential (the 401 to
+// this fetch raises no dialog). On success: session flag + a status line;
+// the password lives only in this JS scope, never stored anywhere.
+function tryLogin() {
+  var pass = psw.value;
+  pswline.style.display = "none"; psw.value = ""; psw.placeholder = "·";
+  cmd.focus();
+  if (!pass) { say("cancelled", true); return; }
+  say("checking …");
+  fetch("/ttyd", { credentials: "same-origin", cache: "no-store",
+                   headers: { "Authorization": "Basic " + btoa("kefohaine:" + pass) } })
+    .then(function (r) {
+      if (r.status === 200) { setAuthed(true); prompt(); say("logged in — go <vhost> [page]"); }
+      else { say("wrong password", true); }
+    })
+    .catch(function () { say("could not reach /ttyd", true); });
 }
+psw.addEventListener("keydown", function (ev) {
+  var k = ev.key || "";
+  if (k === "Enter" || ev.keyCode === 13) { ev.preventDefault(); tryLogin(); }
+  else if (k === "Escape") { ev.preventDefault(); pswline.style.display = "none"; psw.value = ""; say("cancelled"); }
+});
+// While the password line is open, clicks land on the password box, not the
+// command bar.
+document.addEventListener("mousedown", function (ev) {
+  if (pswline.style.display !== "flex" || ev.target === psw || pswline.contains(ev.target)) return;
+  ev.preventDefault();
+  psw.focus();
+});
 cmd.addEventListener("input", function () { pick = 0; render(); });
 cmd.addEventListener("keydown", function (ev) {
   var k = ev.key || "";
@@ -226,18 +272,18 @@ document.addEventListener("selectionchange", function () { if (document.activeEl
 // or on a suggestion entry lands back on the input (the dropdown's own
 // mousedown handler accepts the entry first, so it keeps working).
 document.addEventListener("mousedown", function (ev) {
-  if (ev.target === cmd || sug.contains(ev.target)) return;
+  if (ev.target === cmd || sug.contains(ev.target) || pswline.contains(ev.target)) return;
   ev.preventDefault();
   cmd.focus();
 });
 cmd.addEventListener("blur", function () {
+  if (pswline.style.display === "flex") return;   // the password prompt owns focus
   setTimeout(function () { if (document.hasFocus()) cmd.focus(); caret(); }, 0);
 });
 window.addEventListener("resize", function () { fit(); caret(); });
 
 prompt();
 render();
-probeAuthed();
 fetch("/targets.json", { cache: "no-store" }).then(function (r) { return r.json(); })
   .then(function (j) { TARGETS = (j && j.targets) || []; render(); })
   .catch(function () { say("could not load the target list", true); });

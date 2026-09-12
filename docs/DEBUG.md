@@ -20,8 +20,8 @@ How to run an occasional deep scan or triage an incident on this system. **The r
 
 ## 2. Standard scan (read-only)
 ```
-make status                   # AIO overview: git, systemd, docker, tmux, backups, mails + live perf
-make smoke                    # every public vhost must serve its real app
+make status                   # AIO dashboard: perf, modules, git, units, docker, tmux, backups, mail, tailnet
+make smoke                    # every vhost must serve its real app; module-aware (installed-modules.conf — absent modules' failed sections don't fail the run)
 docker ps --format '{{.Names}}	{{.Status}}'
 ss -tlnp                      # listeners — compare with GUIDE "Domains and access model"
 sudo ufw status verbose
