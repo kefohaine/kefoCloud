@@ -4,19 +4,19 @@
 # Access model:
 #   * every path — non-tailnet sources get 403 (Tailscale membership required)
 #   * /            — the terminal (unauthenticated: any tailnet device can open
-#                    it; its `go` command refuses until `log in`)
+#                    it; it only navigates — `go <vhost> [page]`, guest@server
+#                    — no login, no session, no credentials)
 #   * /targets.json — GENERATED navigation catalogue (scripts/tail-targets.sh):
 #                    the vhosts and their pages, so nothing is hardcoded
-#   * /ttyd*      — the shell: HTTP basic auth (user `kefohaine`). The
-#                    terminal's `log in` prompts for the password inline and
-#                    validates it in the background against this auth (an
-#                    explicit Authorization header on a fetch — the browser's
-#                    basic-auth cache is never the login); the session is a
-#                    per-tab sessionStorage flag only, and `log out` forgets
-#                    it plus evicts any cached /ttyd credential (primed bogus
-#                    fetch), so nothing is remembered after a logout.
+#   * /ttyd*      — the shell: HTTP basic auth (user `kefohaine`). Each visit
+#                    prompts unless the browser holds a valid cached credential.
 # `make tail-auth` sets/rotates the credential and prints it once (only the
 # bcrypt hash is committed — never put the password in the repo).
+#
+# Caching: NOTHING on this vhost may be cached — not the terminal, not the
+# catalogue, not ttyd responses. `no-store` (forbids storing), the ETag /
+# Last-Modified deletes (no validators left to revalidate against) and the
+# legacy Pragma/Expires headers make every request hit the edge fresh.
 
 https://tail.fxmq.net {
     tls {
@@ -27,7 +27,11 @@ https://tail.fxmq.net {
         import security_headers
         # Nothing here may be cached: a stale cached response would keep
         # serving a state the next request would not confirm.
-        Cache-Control "no-store"
+        Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
+        Pragma "no-cache"
+        Expires "0"
+        -ETag
+        -Last-Modified
     }
     route {
         @not_tailnet not remote_ip 100.64.0.0/10
