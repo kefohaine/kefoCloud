@@ -172,6 +172,23 @@ ask_inputs() {
   echo "Installing for $DOMAIN — ~10-15 min. Full log: $LOG"
 }
 
+# installed-modules.conf — GENERATED record of the modules this deployment
+# chose at install time (only the INSTALLED ones, one per line). Consumed by
+# scripts/smoke-vhosts.sh + scripts/status.sh so they never expect what was
+# deliberately not installed. Written at the END of a successful install
+# (success_block) and refreshed on every re-run; regenerating it = re-run the
+# installer (or hand-edit while evaluating a module).
+write_modules_conf() {
+  local conf="${REPO%/repo}/installed-modules.conf"
+  : > "$conf"
+  [ "${MOD_CLOUD:-true}"   = "true" ] && echo "cloud"   >> "$conf"
+  [ "${MOD_VAULT:-true}"   = "true" ] && echo "vault"   >> "$conf"
+  [ "${MOD_MAIL:-true}"    = "true" ] && echo "mail"    >> "$conf"
+  [ "${MOD_GAMES:-true}"   = "true" ] && echo "games"   >> "$conf"
+  [ "${MOD_MONITOR:-true}" = "true" ] && echo "monitor" >> "$conf"
+  log "  wrote $conf ($(paste -sd' ' "$conf"))"
+}
+
 # ───────────────────────────── Phase 1 (root) ─────────────────────────────
 
 phase1_root() {
@@ -1042,6 +1059,7 @@ resolve_errors() {
     remaining=("${still[@]}")
   done
   ERR_TAGS=()
+  write_modules_conf
   finalize_hardening
   success_block
 }
