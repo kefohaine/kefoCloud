@@ -9,6 +9,14 @@
 # the 'op' user, and the tailscale membership (always LAST, so the session
 # and re-joining stay possible).
 #
+# MODE: the first prompt picks the scope —
+#   1) specific modules    — per-module prompts (default keep), the phase
+#                            prompts below all default no
+#   2) the whole framework — every module + edge + host services + packages
+#                            + user + tailnet preselected (the data prompts
+#                            still default keep; one explicit confirm)
+#   3) cancel
+#
 # Installs nothing, creates nothing. It removes what install.sh put on the
 # box — auto-detected from the live system (compose files, systemctl, dpkg
 # — no hardcoded rosters) — and NEVER deletes operator data without an
@@ -103,6 +111,15 @@ defaults_uninstall() {
       line=$(printf '%s' "$line" | sed -E 's/#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//')
       [ -n "$line" ] || continue
       case "$line" in
+        uninstall\ mode\ =*|uninstall\ mode=*)
+          key="mode"
+          val=$(echo "$line" | sed -E 's/.*=(modules|all|cancel|1|2|3)$/\1/')
+          case "$val" in
+            1|modules) UNINSTALL_MODE=modules;;
+            2|all)    UNINSTALL_MODE=all;;
+            3|cancel) UNINSTALL_MODE=cancel;;
+          esac
+          ;;
         uninstall\ *=true|uninstall\ *=false)
           # 'uninstall = true' = remove the module set listed below + edge
           val="${line##*=}"
@@ -149,16 +166,57 @@ ask_modules() {
   done
 }
 
+ask_mode() {
+  # the scope selector: specific modules, the whole framework, or cancel.
+  # UNINSTALL_MODE=modules|all|cancel skips the prompt (defaults file or
+  # env); an invalid value re-prompts.
+  if [ -z "${UNINSTALL_MODE:-}" ]; then
+    while :; do
+      read -rp "Teardown scope: [1] specific modules  [2] the whole framework  [3] cancel: " m
+      case "${m:-}" in
+        1|modules)  UNINSTALL_MODE=modules;;
+        2|all)      UNINSTALL_MODE=all;;
+        3|cancel|"") UNINSTALL_MODE=cancel;;
+        *) echo "enter 1, 2 or 3";;
+      esac
+      [ -n "${UNINSTALL_MODE:-}" ] && break
+    done
+  fi
+  case "$UNINSTALL_MODE" in
+    cancel)
+      echo "Cancelled — nothing was removed."
+      exit 0
+      ;;
+    all)
+      # the whole framework: every phase preselected, data still defaults
+      # to keep — the operator confirms the scope once, then per-category
+      # data confirms below decide what user data dies
+      local k
+      for k in cloud vault mail games monitor; do
+        eval "RM_MOD_${k^^}=true"
+      done
+      RM_EDGE=true; RM_HOST=true; RM_PKGS=true; RM_USER=true; RM_TAILNET=true
+      echo "Whole-framework teardown preselected: every module, the edge, the host"
+      echo "services, the packages, the '$OP_USER' user and the tailnet membership."
+      ;;
+    modules|*)
+      :   # the per-module prompts below decide the scope
+      ;;
+  esac
+}
+
 ask_inputs() {
   defaults_uninstall
+  ask_mode
   ask_modules
-  ask RM_EDGE    "Remove the edge (Caddy container)?"              "${DEF_RM_EDGE:-n}"
+  # phase prompts only when NOT preselected by the whole-framework mode
+  [ "${RM_EDGE:-false}" = true ] || ask RM_EDGE "Remove the edge (Caddy container)?" "${DEF_RM_EDGE:-n}"
   ask RM_CADDY_DATA "  …and delete caddy_data/ (LE certs + CF token)?" n
-  ask RM_HOST    "Remove the host services (goose, ttyd, dnsmasq, cron, fail2ban) + the stack's ufw rules?" "${DEF_RM_HOST:-n}"
-  ask RM_PKGS    "Purge the installed packages (docker, dnsmasq, fail2ban, …)?" "${DEF_RM_PKGS:-n}"
-  ask RM_USER    "Delete the '$OP_USER' user?"                    "${DEF_RM_USER:-n}"
+  [ "${RM_HOST:-false}" = true ] || ask RM_HOST "Remove the host services (goose, ttyd, dnsmasq, cron, fail2ban) + the stack's ufw rules?" "${DEF_RM_HOST:-n}"
+  [ "${RM_PKGS:-false}" = true ] || ask RM_PKGS "Purge the installed packages (docker, dnsmasq, fail2ban, …)?" "${DEF_RM_PKGS:-n}"
+  [ "${RM_USER:-false}" = true ] || ask RM_USER "Delete the '$OP_USER' user?" "${DEF_RM_USER:-n}"
   [ "${RM_USER:-false}" = true ] && ask RM_USER_DATA "  …and its home dir /home/$OP_USER?" n
-  ask RM_TAILNET "Remove this host from the tailnet (last step)?"  "${DEF_RM_TAILNET:-n}"
+  [ "${RM_TAILNET:-false}" = true ] || ask RM_TAILNET "Remove this host from the tailnet (last step)?" "${DEF_RM_TAILNET:-n}"
   # data (all default KEEP; the storage VPS export is never touched)
   ask RM_MOD_DATA "Delete the data dirs of the modules being removed (vault/, kuma/, mailserver/, puffer/, cloud/ local files)?" "${DEF_RM_DATA:-n}"
   ask RM_NCLOCAL  "Delete the Nextcloud local rollback copy (cloud/users.local-backup)?" n
