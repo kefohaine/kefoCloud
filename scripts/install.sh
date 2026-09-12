@@ -174,7 +174,7 @@ ask_inputs() {
 
 # installed-modules.conf — GENERATED record of the modules this deployment
 # chose at install time (only the INSTALLED ones, one per line). Consumed by
-# scripts/smoke-vhosts.sh + scripts/status.sh so they never expect what was
+# scripts/smoke-vhosts.sh + scripts/fetch.sh so they never expect what was
 # deliberately not installed. Written at the END of a successful install
 # (success_block) and refreshed on every re-run; regenerating it = re-run the
 # installer (or hand-edit while evaluating a module).
