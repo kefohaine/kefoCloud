@@ -18,7 +18,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 #### Destructive make recipes run with no confirmation guard
 - **File**: `Makefile`
 - **Problem**: several recipes destroy data or overwrite live state with no prompt and no automatic backup. Data-destroying: `clean-docker` / `cleanup` (docker prune -af + apt autoremove), `clean-backups` (deletes older backups), `nc-user-del` / `mail-del` / `panel-del-user` / `kuma-del-user` (user + data), `storage` (moves the datadirectory and can delete the local copy). Live-state overwriting: `install-config` (overwrites host config, restarts sshd/dnsmasq), `deploy` / `install-secrets` (extract a bundle over `/etc`, `~/.ssh`, `/var/lib/tailscale`), `update` (apt upgrade + pull/recreate), `dok-recreate-all` / `dok-stop-all` / `dok-recreate-nextcloud-db`. Interrupting: `panel-passwd` (restarts the panel → stops a running game server) and `tail-auth` (restarts Caddy). `backup` also pulls live config into the repo (a secret-leak path — tracked separately).
-- **Fix**: pick a policy — a `CONFIRM=1` gate on the destructive recipes, or keep them unguarded and list them explicitly in `make help`. Today they are not in one obvious list.
+- **Fix**: pick a policy — a `CONFIRM=1` gate on the destructive recipes, or keep them unguarded and list them explicitly in `make help-more`. Today they are not in one obvious list.
 - **Why approval**: changing recipe UX affects every documented workflow (GUIDE/README).
 
 

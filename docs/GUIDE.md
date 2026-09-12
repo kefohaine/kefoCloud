@@ -124,7 +124,7 @@ Manual — no CI/CD, pushes to `main` trigger nothing. Use the `Makefile` recipe
 
 ### CMD Sheet
 
-`make help` lists every recipe with its usage — it is the single source of truth for the command surface (this section used to duplicate it; a duplicate drifts). `make status` renders the AIO dashboard (`scripts/status.sh`: host perf, installed modules, git, units, docker, tmux, backups, mail, tailnet — one aligned colored read). Raw `git`, `docker compose`, `docker exec`, `systemctl restart`, and `tar` are reserved for cases no recipe covers (one-off diagnostics the operator asked for, log/file inspection, ad-hoc reads).
+`make help` prints the common daily recipes and `make help-more` the granular/technical ones — together they are the single source of truth for the command surface (rendered by `scripts/help.sh` in the same aligned colored style as the dashboard; this section used to duplicate them, a duplicate drifts). `make status` renders the AIO dashboard (`scripts/status.sh`: host perf, installed modules, git, units, docker, tmux, backups, mail, tailnet — one aligned colored read). Raw `git`, `docker compose`, `docker exec`, `systemctl restart`, and `tar` are reserved for cases no recipe covers (one-off diagnostics the operator asked for, log/file inspection, ad-hoc reads).
 
 **Recipe output is uniform** — every recipe speaks three lines: `info:  <what it did>` (completion), `warn:  <non-fatal issue>` and `error: <failure>` (recipe exits 1). All messages go through `scripts/mklog`; usage mistakes print `error: usage: …` and exit 1. The raw tool output (occ, docker, DMS setup) stays unmodified where it is the result itself.
 
