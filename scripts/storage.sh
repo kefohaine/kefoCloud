@@ -229,11 +229,19 @@ ensure_mount() {   # also the 'mount' re-check: makes the export live, so the En
     dst_n=$(sudo find "$LOCAL_MOUNT" -type f 2>/dev/null | wc -l)
     [ "$src_n" = "$dst_n" ] || { fail migrate "copy incomplete ($dst_n of $src_n files) — rollback copy kept"; rc=1; }
   fi
-  sudo grep -qF "$TS_IP:$NC_MOUNT $LOCAL_MOUNT" /etc/fstab \
-    || sudo tee -a /etc/fstab >/dev/null <<EOF
-$TS_IP:$NC_MOUNT $LOCAL_MOUNT nfs rw,nofail,vers=4 0 0
-EOF
-  log "fstab entry added (auto-remount on reboot)"
+  # Boot-race hardening (2026-09-12): a reboot raced the mount against tailscaled
+  # (unit started 1s after tailscaled, before the tailnet had peers; the first
+  # TCP connect hung and systemd's default 90s mount timeout killed the unit —
+  # nofail let the boot proceed and docker bind-mounted the EMPTY local dir as
+  # the datadirectory). Options: ordered after tailscaled; 300s mount budget
+  # (covers the ~127s TCP SYN backoff); mounts before docker so containers
+  # never bind the placeholder dir while the mount is pending. No `requires=` —
+  # it would propagate tailscaled restarts into unmounting the live datadir.
+  MOUNT_OPTS="rw,nofail,_netdev,noatime,vers=4,x-systemd.after=tailscaled.service,x-systemd.mount-timeout=300s,x-systemd.before=docker.service"
+  sudo sed -i "\#^[^#]*[[:space:]]$LOCAL_MOUNT[[:space:]]#d" /etc/fstab
+  printf '%s\n' "$TS_IP:$NC_MOUNT $LOCAL_MOUNT nfs $MOUNT_OPTS 0 0" | sudo tee -a /etc/fstab >/dev/null
+  sudo systemctl daemon-reload
+  log "fstab entry written (ordered after tailscaled, 300s mount budget, before docker)"
   docker start "$NC_CONTAINER" >/dev/null 2>&1 || fail verify "container start"
   return $rc
 }
