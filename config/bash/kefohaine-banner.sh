@@ -15,6 +15,6 @@ cat <<'BANNER'
   │  kefohaine@server · fxmq.net homelab · Debian 13             │
   ╰──────────────────────────────────────────────────────────────╯
    cloud  vault  kuma  mail  mc  talk  www        dashboard: https://tail.fxmq.net
-   make help · make list · make smoke · make dok-logs-<ctn>
+   make help · make help-more · make smoke · make dok-logs-<ctn>
 
 BANNER
