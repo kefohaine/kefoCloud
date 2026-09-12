@@ -176,33 +176,11 @@ systemd-log:
 .PHONY: status smoke gh-web-health install-hooks clean-docker clean-apt clean-backups update install-config kuma-import help talk-gen
 .PHONY: deploy backup cleanup
 
-# One-shot overview + live performance read: git; systemd; docker; tmux;
-# backups; mails; load/memory/disk/swap; failed units; tailnet (perf.sh).
+# AIO dashboard (scripts/status.sh): host perf (uptime, load, cpu, memory,
+# swap, disk), installed modules, git, units, docker, tmux, backups, mail,
+# tailnet — one aligned colored read; module-aware (installed-modules.conf).
 status:
->@echo "--- git ---"
->@cd $(REPO)/repo && git status -sb
->@echo ""
->@echo "--- systemd services ---"
->@for u in $(HOST); do printf "  %-30s %s\n" "$$u" "$$(systemctl is-active $$u)"; done
->@echo ""
->@echo "--- containers ---"
->@docker ps --format 'table {{.Names}}\t{{.Status}}'
->@echo ""
->@echo "--- tmux sessions ---"
->@tmux ls 2>/dev/null || echo "  (none)"
->@echo ""
->@echo "--- backups ---"
->@if [ -d "$(REPO)/backups" ]; then ls -1t "$(REPO)/backups"; else echo "  (none yet — run make backup)"; fi
->@echo ""
->@echo "--- mailboxes ---"
->@docker exec mailserver setup email list 2>/dev/null || echo "  (mailserver not running)"
->@echo ""
->@echo "--- mail aliases ---"
->@docker exec mailserver setup alias list 2>/dev/null || echo "  (mailserver not running)"
->@echo ""
->@echo "--- stored mail data (mailserver/data/fxmq.net/) ---"
->@sudo ls -1 "$(REPO)/mailserver/data/fxmq.net/" 2>/dev/null || echo "  (no mail data yet)"
->@sudo scripts/perf.sh
+>@bash scripts/status.sh
 
 # Shared bodies for the granular clean-* recipes. cleanup is the umbrella
 # recipe and inlines all three bodies — no chained make targets.
@@ -1014,7 +992,7 @@ help:
 >@echo "  │  make update           │[apt -> update/upgrade; docker -> pull/recreate]"
 >@echo "  │  make backup           │[all container databases & secrets to homelab/backups/; live server config to repo/config/]"
 >@echo "  │  make cleanup          │[apt -> autoremove/clean; docker -> prune builder/images/containers; backups -> keep latest 3 of each]"
->@echo "  └  make status           │aio status [git; systemd; docker; tmux; backups; mails; perf]"
+>@echo "  └  make status           │aio dashboard [perf; modules; git; units; docker; tmux; backups; mail; tailnet]"
 >@echo ""
 >@echo "  Granular actions — per-file / primitive commands behind the Global recipes"
 >@echo "  │  make smoke                 │live edge test: vhosts, tailnet edge, tls, mail, panel lockdown (pre-push hook runs it)"
