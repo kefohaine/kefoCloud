@@ -173,14 +173,15 @@ systemd-log:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: status smoke gh-web-health install-hooks clean-docker clean-apt clean-backups update install-config kuma-import help talk-gen
+.PHONY: fetch smoke gh-web-health install-hooks clean-docker clean-apt clean-backups update install-config kuma-import help talk-gen
 .PHONY: deploy backup cleanup
 
-# AIO dashboard (scripts/status.sh): host perf (uptime, load, cpu, memory,
-# swap, disk), installed modules, git, units, docker, tmux, backups, mail,
+# AIO dashboard (scripts/fetch.sh): host perf (uptime, load, cpu, memory,
+# swap, disk), all available modules (installed green / uninstalled red),
+# git, units, failed units (+ their targets), docker, tmux, backups, mail,
 # tailnet — one aligned colored read; module-aware (installed-modules.conf).
-status:
->@bash scripts/status.sh
+fetch:
+>@bash scripts/fetch.sh
 
 # Shared bodies for the granular clean-* recipes. cleanup is the umbrella
 # recipe and inlines all three bodies — no chained make targets.
@@ -976,7 +977,7 @@ git-push:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Help (default goal) — scripts/help.sh renders both lists in the
-# scripts/status.sh house style (aligned colored rows, colors off when
+# scripts/fetch.sh house style (aligned colored rows, colors off when
 # piped). help = the common daily surface; help-more = the granular /
 # technical recipes; each points at the other.
 # ─────────────────────────────────────────────────────────────────────────────

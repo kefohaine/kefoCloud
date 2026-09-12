@@ -29,6 +29,8 @@ bash install.sh
 
 The installer asks a few questions, then hardens the host, creates the DNS records, issues certificates and builds the selected stack unattended. Default is everything ON; opt out per module for a lean install.
 
+`scripts/uninstall.sh` reverses it in the same style — every prompt defaults to keep, operator data and the tailscale-only SSH path are never touched without an explicit confirm, and the tailnet membership goes last.
+
 ### Modules (pick at install time)
 
 | module | runs | notes |
