@@ -2,7 +2,7 @@
 #
 # scripts/help.sh — the `make help` / `make help-more` renderer.
 #
-# Two aligned, colored lists in the same house style as scripts/status.sh
+# Two aligned, colored lists in the same house style as scripts/fetch.sh
 # (colors auto-disable when stdout is not a tty or NO_COLOR is set):
 #   core (make help)      the common daily surface — dashboard, maintain,
 #                         git, container/unit/tmux basics
@@ -38,7 +38,7 @@ core() {
 
   sec "dashboard & health"
   rows <<'EOF'
-make status|AIO dashboard — host perf, modules, git, units, docker, tmux, backups, mail, tailnet
+make fetch|AIO dashboard — host perf, modules, git, units, docker, tmux, backups, mail, tailnet
 make smoke|live edge test — every vhost, tailnet edge, tls, mail, panel lockdown (pre-push hook runs it)
 EOF
 
