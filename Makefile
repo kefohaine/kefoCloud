@@ -173,11 +173,12 @@ systemd-log:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: list smoke gh-web-health install-hooks clean-docker clean-apt clean-backups update install-config kuma-import help talk-gen
+.PHONY: status smoke gh-web-health install-hooks clean-docker clean-apt clean-backups update install-config kuma-import help talk-gen
 .PHONY: deploy backup cleanup
 
-# One-shot overview per the help line: git; systemd; docker; tmux; backups; mails.
-list:
+# One-shot overview + live performance read: git; systemd; docker; tmux;
+# backups; mails; load/memory/disk/swap; failed units; tailnet (perf.sh).
+status:
 >@echo "--- git ---"
 >@cd $(REPO)/repo && git status -sb
 >@echo ""
@@ -201,6 +202,7 @@ list:
 >@echo ""
 >@echo "--- stored mail data (mailserver/data/fxmq.net/) ---"
 >@sudo ls -1 "$(REPO)/mailserver/data/fxmq.net/" 2>/dev/null || echo "  (no mail data yet)"
+>@sudo scripts/perf.sh
 
 # Shared bodies for the granular clean-* recipes. cleanup is the umbrella
 # recipe and inlines all three bodies — no chained make targets.
@@ -506,6 +508,10 @@ install-goose:
 
 install-ttyd:
 >@echo "install-ttyd: ttyd.service"
+>@if grep -qs 'ttyd.service' /proc/self/cgroup; then \
+    scripts/mklog error "This shell runs inside ttyd (web terminal) — restarting ttyd now would kill this shell and anything under it (agent sessions, tmux). Run install-ttyd from SSH or a local terminal instead."; \
+    exit 1; \
+  fi
 >@sudo cp $(REPO)/repo/config/ttyd/ttyd.service /etc/systemd/system/ttyd.service
 >@sudo systemctl daemon-reload
 >@sudo systemctl restart ttyd
@@ -1008,12 +1014,11 @@ help:
 >@echo "  │  make update           │[apt -> update/upgrade; docker -> pull/recreate]"
 >@echo "  │  make backup           │[all container databases & secrets to homelab/backups/; live server config to repo/config/]"
 >@echo "  │  make cleanup          │[apt -> autoremove/clean; docker -> prune builder/images/containers; backups -> keep latest 3 of each]"
->@echo "  └  make list             │aio list [git; systemd; docker; tmux; backups; mails]"
+>@echo "  └  make status           │aio status [git; systemd; docker; tmux; backups; mails; perf]"
 >@echo ""
 >@echo "  Granular actions — per-file / primitive commands behind the Global recipes"
->@echo "  │  make smoke                 │live edge test: every vhost must serve its real app (pre-push hook runs it)"
+>@echo "  │  make smoke                 │live edge test: vhosts, tailnet edge, tls, mail, panel lockdown (pre-push hook runs it)"
 >@echo "  │  make install-hooks         │install git hooks (pre-commit edge guard + pre-push smoke)"
->@echo "  │  make perf                  │live system performance + status overview (no args)"
 >@echo "  │  make gh-web-health         │check GitHub web git-data endpoints (run after a history rewrite)"
 >@echo "  │  make kuma-import           │import an adapted Uptime Kuma db (KUMA_DB=/path)"
 >@echo "  │  make talk-gen              │generate Nextcloud-stack secrets + Talk/TURN configs (idempotent)"
@@ -1113,14 +1118,10 @@ help:
 >@echo ""
 
 # ─────────────────────────────────────────────────────────────────────────────
-# perf + taildrop helpers
+# taildrop helpers
 # ─────────────────────────────────────────────────────────────────────────────
-.PHONY: perf taildrop-file taildrop-folder
+.PHONY: taildrop-file taildrop-folder
 TAILDROP_HOST ?= server
-
-# make perf            — live system performance + status overview (no args)
-perf:
->@sudo scripts/perf.sh
 
 # make taildrop-file FILE=path [TAILDROP_HOST=server]    (sudo tailscale file cp)
 # make taildrop-folder DIR=path [TAILDROP_HOST=server]
