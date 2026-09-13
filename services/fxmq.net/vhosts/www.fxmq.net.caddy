@@ -3,8 +3,9 @@
 #   /          serves ./www/index.html — a zero-second redirect to /welcome.
 #   /welcome   the welcome page (welcome.html) — everything fxmq.net runs,
 #              presented as the live demo of kefohaine/server.
-#   /welcome-1 /welcome-2 /welcome-3 — alternate tellings of the same pitch,
-#              each a different angle (proof / terminal / numbers).
+#   /welcome-1..9 — alternate tellings of the same pitch, each a
+#              distinct design (proof / terminal / numbers / Swiss /
+#              neon / journal / field manual / quiet / poster).
 #   /download* Caddy file_server browse over homelab/download (mounted at
 #              /download:ro in the caddy container — drop files here).
 #   everything else — plain "ok" stub.
@@ -36,9 +37,11 @@ https://www.fxmq.net {
         file_server
     }
     # Alternate tellings: /welcome-1 (proof) /welcome-2 (terminal) /
-    # /welcome-3 (numbers). Same self-contained-file pattern; the @wN
-    # matchers + handle pairs below are also what the targets catalogue
-    # generator reads, so the pages auto-appear in the tail door list.
+    # /welcome-3 (numbers) — and /welcome-4..9 (Swiss, neon, journal,
+    # field manual, quiet, poster). Same self-contained-file pattern;
+    # the @wN matchers + handle pairs below are also what the targets
+    # catalogue generator reads, so the pages auto-appear in the tail
+    # door list.
     @w1 path /welcome-1 /welcome-1/
     handle @w1 {
         root * /etc/caddy/www
@@ -55,6 +58,42 @@ https://www.fxmq.net {
     handle @w3 {
         root * /etc/caddy/www
         rewrite /welcome-3.html
+        file_server
+    }
+    @w4 path /welcome-4 /welcome-4/
+    handle @w4 {
+        root * /etc/caddy/www
+        rewrite /welcome-4.html
+        file_server
+    }
+    @w5 path /welcome-5 /welcome-5/
+    handle @w5 {
+        root * /etc/caddy/www
+        rewrite /welcome-5.html
+        file_server
+    }
+    @w6 path /welcome-6 /welcome-6/
+    handle @w6 {
+        root * /etc/caddy/www
+        rewrite /welcome-6.html
+        file_server
+    }
+    @w7 path /welcome-7 /welcome-7/
+    handle @w7 {
+        root * /etc/caddy/www
+        rewrite /welcome-7.html
+        file_server
+    }
+    @w8 path /welcome-8 /welcome-8/
+    handle @w8 {
+        root * /etc/caddy/www
+        rewrite /welcome-8.html
+        file_server
+    }
+    @w9 path /welcome-9 /welcome-9/
+    handle @w9 {
+        root * /etc/caddy/www
+        rewrite /welcome-9.html
         file_server
     }
     # Homepage: the index.html placeholder (meta-redirects to /welcome).

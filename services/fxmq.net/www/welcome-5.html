@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HOST EVERYTHING ★ ON ONE BOX ★ FOR REAL</title>
+<meta name="description" content="kefohaine/server — the loud edition. Five modules, one VPS, zero manual steps, all live right now.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23ff2fb9'/%3E%3Ctext x='16' y='23' font-family='Arial Black' font-size='15' font-weight='900' fill='%2300f0ff' text-anchor='middle'%3E★%3C/text%3E%3C/svg%3E">
+<style>
+  :root{--pink:#ff2fb9;--cyan:#00f0ff;--purple:#7b2fff;--ink:#0a0014;--paper:#fdf7ff}
+  *{box-sizing:border-box}
+  body{margin:0;background:linear-gradient(135deg,#1a0033 0%,#33006e 35%,#00586e 70%,#0a0014 100%);
+       color:var(--paper);font:16px/1.6 Futura,'Century Gothic','Segoe UI',sans-serif;
+       min-height:100vh;overflow-x:hidden}
+  .sun{position:fixed;left:50%;top:-22vh;transform:translateX(-50%);width:70vh;height:70vh;border-radius:50%;
+       background:linear-gradient(#ff2fb9,#ff8a00);filter:blur(2px);opacity:.5;z-index:0;pointer-events:none}
+  .grid{position:fixed;inset:auto 0 0 0;height:42vh;z-index:0;pointer-events:none;opacity:.55;
+       background:
+        linear-gradient(transparent 62%,var(--cyan) 62.5%,transparent 63%),
+        repeating-linear-gradient(90deg,transparent 0 47.9%,var(--cyan) 48%,transparent 48.2%);
+       transform:perspective(420px) rotateX(58deg) scale(2.4);transform-origin:top}
+  .wrap{position:relative;z-index:1;max-width:900px;margin:0 auto;padding:3.2rem 1.3rem 5rem}
+  .marquee{overflow:hidden;white-space:nowrap;border-block:3px solid var(--cyan);margin-bottom:2.6rem}
+  .marquee .track{display:inline-block;animation:mv 16s linear infinite;font-weight:800;letter-spacing:.2em;
+    font-size:14px;padding:.45rem 0;color:var(--cyan)}
+  .marquee b{color:var(--pink);padding:0 1.4rem}
+  @keyframes mv{to{transform:translateX(-50%)}}
+  h1{font-size:clamp(38px,8.6vw,92px);line-height:.94;margin:0 0 1.2rem;font-weight:900;letter-spacing:.01em;
+     text-transform:uppercase;text-align:center}
+  h1 .l1{display:block;color:var(--paper);text-shadow:0 0 18px var(--pink),4px 4px 0 var(--purple)}
+  h1 .l2{display:block;color:transparent;-webkit-text-stroke:3px var(--cyan);text-shadow:0 0 26px rgba(0,240,255,.55)}
+  h1 .l3{display:block;color:var(--pink);text-shadow:5px 5px 0 var(--ink),0 0 30px var(--pink)}
+  .sub{text-align:center;color:#cfe9ff;max-width:56ch;margin:0 auto 2.8rem;font-size:18px}
+  .sub b{color:var(--cyan)}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:14px}
+  .card{border:3px solid var(--paper);background:rgba(10,0,20,.62);padding:1rem .95rem;position:relative;
+        transition:.12s}
+  .card:hover{transform:translate(-3px,-3px);box-shadow:6px 6px 0 var(--cyan)}
+  .card:nth-child(odd):hover{box-shadow:6px 6px 0 var(--pink)}
+  .card .ico{font-size:26px;line-height:1}
+  .card h2{margin:.45rem 0 .2rem;font-size:17px;text-transform:uppercase;letter-spacing:.06em;color:var(--paper)}
+  .card p{margin:0;font-size:13.5px;color:#d9c7ff}
+  .card p b{color:var(--cyan)}
+  .strip{margin-top:2.8rem;display:flex;justify-content:center;gap:10px;flex-wrap:wrap}
+  .pill{border:2px solid var(--cyan);color:var(--cyan);padding:.45rem 1rem;font-size:13px;font-weight:700;
+        letter-spacing:.1em;text-transform:uppercase;background:rgba(0,240,255,.07)}
+  .pill:nth-child(2){border-color:var(--pink);color:var(--pink);background:rgba(255,47,185,.07)}
+  .pill:nth-child(3){border-color:var(--purple);color:#c9a8ff;background:rgba(123,47,255,.12)}
+  .cta{margin:3rem auto 0;max-width:640px;text-align:center;border:3px solid var(--paper);
+       background:rgba(10,0,20,.72);padding:1.6rem 1.4rem}
+  .cta .cmd{font-family:ui-monospace,Menlo,monospace;font-size:15.5px;color:var(--cyan)}
+  .cta .cmd b{color:var(--pink)}
+  .cta p{margin:.8rem 0 0;font-size:14px;color:#e6d9ff}
+  .cta a{color:var(--cyan)}
+  footer{margin-top:3rem;text-align:center;font-size:12.5px;color:#b9a6e0}
+  footer a{color:#b9a6e0;text-decoration:none}
+  footer a:hover{color:var(--cyan)}
+</style>
+</head>
+<body>
+<div class="sun"></div><div class="grid"></div>
+<div class="wrap">
+  <div class="marquee"><span class="track">LIVE DEMO<b>★</b>ONE REPO<b>★</b>UNATTENDED INSTALL<b>★</b>RAM-CAPPED<b>★</b>SMOKE-TESTED<b>★</b>SELF-HOSTED<b>★</b>LIVE DEMO<b>★</b>ONE REPO<b>★</b>UNATTENDED INSTALL<b>★</b>RAM-CAPPED<b>★</b>SMOKE-TESTED<b>★</b>SELF-HOSTED<b>★</b></span></div>
+  <h1><span class="l1">host everything</span><span class="l2">on one box</span><span class="l3">for real</span></h1>
+  <p class="sub">This domain is the proof. Every service below runs <b>right now</b> from
+    <b>kefohaine/server</b> — a public repo whose installer builds the whole thing on a fresh VPS after three prompts.</p>
+
+  <div class="cards">
+    <div class="card"><span class="ico">☁️</span><h2>cloud</h2><p>Nextcloud + Talk video — <b>your files, your calls</b></p></div>
+    <div class="card"><span class="ico">🔐</span><h2>vault</h2><p>Vaultwarden — <b>Bitwarden-compatible</b> vault</p></div>
+    <div class="card"><span class="ico">📡</span><h2>monitor</h2><p>Uptime Kuma — <b>watches every door</b></p></div>
+    <div class="card"><span class="ico">✉️</span><h2>mail</h2><p>Real SMTP/IMAP — <b>DKIM, DMARC, webmail</b></p></div>
+    <div class="card"><span class="ico">🎮</span><h2>games</h2><p>PufferPanel + <b>Minecraft in the browser</b></p></div>
+  </div>
+
+  <div class="strip">
+    <span class="pill">3 prompts → done</span>
+    <span class="pill">idle &lt; 2 GB</span>
+    <span class="pill">bad pushes blocked</span>
+    <span class="pill">nightly off-site dumps</span>
+  </div>
+
+  <div class="cta">
+    <div class="cmd">git clone https://github.com/kefohaine/server <b>&amp;&amp; bash install.sh</b></div>
+    <p>The loud lights dim; the stack doesn't. <a href="https://github.com/kefohaine/server" rel="noopener">grab the repo</a> — or <a href="/welcome-3">see the numbers edition</a>.</p>
+  </div>
+
+  <footer>tellings: <a href="/welcome">tour</a> · <a href="/welcome-1">1</a> · <a href="/welcome-2">2</a> · <a href="/welcome-3">3</a> · <a href="/welcome-4">4</a> · <a href="/welcome-5">5</a> · <a href="/welcome-6">6</a> · <a href="/welcome-7">7</a> · <a href="/welcome-8">8</a> · <a href="/welcome-9">9</a></footer>
+</div>
+</body>
+</html>
