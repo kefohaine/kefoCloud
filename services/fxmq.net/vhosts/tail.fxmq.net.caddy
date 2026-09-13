@@ -1,11 +1,12 @@
-# tail.fxmq.net — tailnet entry point: a mini command terminal at / and the
-# ttyd host shell at /ttyd.
+# tail.fxmq.net — tailnet entry point: the door list at / and the ttyd
+# host shell at /ttyd.
 #
 # Access model:
 #   * every path — non-tailnet sources get 403 (Tailscale membership required)
-#   * /            — the terminal (unauthenticated: any tailnet device can open
-#                    it; it only navigates — `go <vhost> [page]`, guest@server
-#                    — no login, no session, no credentials)
+#   * /            — the door list (unauthenticated: any tailnet device can
+#                    open it; it renders every webpage of the domain — public
+#                    and tailnet-only — fetched live from /targets.json on
+#                    every visit, no login, no session, no commands)
 #   * /targets.json — GENERATED navigation catalogue (scripts/tail-targets.sh):
 #                    the vhosts and their pages, so nothing is hardcoded
 #   * /ttyd*      — the shell: HTTP basic auth (user `kefohaine`). Each visit
@@ -13,7 +14,7 @@
 # `make tail-auth` sets/rotates the credential and prints it once (only the
 # bcrypt hash is committed — never put the password in the repo).
 #
-# Caching: NOTHING on this vhost may be cached — not the terminal, not the
+# Caching: NOTHING on this vhost may be cached — not the door list, not the
 # catalogue, not ttyd responses. `no-store` (forbids storing), the ETag /
 # Last-Modified deletes (no validators left to revalidate against) and the
 # legacy Pragma/Expires headers make every request hit the edge fresh.
@@ -58,7 +59,7 @@ https://tail.fxmq.net {
             }
         }
 
-        # The mini terminal (static; services/$DOMAIN/www is mounted read-only
+        # The door list (static; services/$DOMAIN/www is mounted read-only
         # at /etc/caddy/www in the caddy container).
         handle / {
             root * /etc/caddy/www

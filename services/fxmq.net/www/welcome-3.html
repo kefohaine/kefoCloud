@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>the numbers — kefohaine/server</title>
+<meta name="description" content="kefohaine/server measured: one VPS, idle under 2 GB, every container RAM-capped, every door live. The stats behind the self-hosted stack.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230d0f1a'/%3E%3Ctext x='16' y='22' font-family='Arial Black' font-size='14' font-weight='900' fill='%23ffcc66' text-anchor='middle'%3Efxmq%3C/text%3E%3C/svg%3E">
+<style>
+  :root{--bg:#0d0f1a;--card:#131627;--ink:#eaeaea;--dim:#8b8b9e;--amber:#ffcc66;
+        --green:#3bf07a;--purple:#b48cff;--mono:'Menlo','DejaVu Sans Mono',monospace;
+        --disp:'Archivo Black','Arial Black',Impact,sans-serif}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.65 var(--mono);padding:4rem 1.2rem 4.5rem;
+       display:flex;flex-direction:column;align-items:center}
+  .stage{width:min(860px,96vw)}
+  .kicker{color:var(--amber);text-transform:uppercase;letter-spacing:.3em;font-size:12px}
+  h1{font-family:var(--disp);font-size:clamp(30px,6vw,54px);margin:.5rem 0 .5rem;line-height:1.04;text-transform:uppercase}
+  h1 .o{color:transparent;-webkit-text-stroke:2px var(--amber)}
+  .lede{color:var(--dim);max-width:60ch;margin:0 0 2.6rem}
+  .lede b{color:var(--ink)}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:1rem;margin-bottom:2.6rem}
+  .stat{background:var(--card);border:1px solid #232742;padding:1.15rem 1.2rem;position:relative;overflow:hidden}
+  .stat::before{content:attr(data-mark);position:absolute;right:.6rem;top:.45rem;color:var(--purple);opacity:.28;font-size:22px}
+  .stat .n{font-family:var(--disp);font-size:clamp(30px,4.4vw,44px);line-height:1;color:var(--green)}
+  .stat .n small{font-size:.45em;color:var(--amber)}
+  .stat .l{color:var(--dim);font-size:12.5px;margin-top:.45rem;line-height:1.45}
+  .stat .l b{color:var(--ink)}
+  .bars{margin:0 0 2.6rem;background:var(--card);border:1px solid #232742;padding:1.3rem 1.4rem}
+  .bars h3{margin:0 0 1rem;font-size:13px;text-transform:uppercase;letter-spacing:.14em;color:var(--dim)}
+  .bars .row{display:grid;grid-template-columns:12ch 1fr 7ch;gap:.8rem;align-items:baseline;padding:.34rem 0;font-size:13.5px}
+  .bars .row:nth-child(n+3){border-top:1px dashed #1e2138}
+  .bars .name{color:var(--ink)}
+  .bars .track{background:#1a1d33;height:13px;position:relative}
+  .bars .fill{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,var(--green),#1f8f4c)}
+  .bars .val{color:var(--amber);text-align:right}
+  .note{color:var(--dim);font-size:12.5px;margin:-1.8rem 0 2.4rem;max-width:70ch}
+  .note b{color:var(--ink)}
+  .truth{border:1px solid #2a4a30;background:#0c1410;padding:1.35rem 1.5rem;margin-bottom:2.4rem}
+  .truth p{margin:0;color:var(--ink)}
+  .truth p b{color:var(--green)}
+  .truth .sub{color:var(--dim);font-size:13.5px;margin-top:.55rem;max-width:66ch}
+  .cta{display:flex;gap:.9rem;flex-wrap:wrap;align-items:stretch}
+  .cta a{display:inline-block;text-decoration:none;padding:.85rem 1.25rem;border:2px solid var(--amber);color:var(--amber);
+    font-weight:600;letter-spacing:.02em}
+  .cta a.primary{background:var(--amber);color:var(--bg)}
+  .cta a:hover{transform:translate(-2px,-2px);box-shadow:3px 3px 0 rgba(255,204,102,.35)}
+  footer{margin-top:2.4rem;color:var(--dim);font-size:12.5px}
+  footer a{color:var(--dim)}
+</style>
+</head>
+<body>
+<div class="stage">
+  <p class="kicker">the server, measured</p>
+  <h1>Self-hosting, <span class="o">minus the fear</span></h1>
+  <p class="lede">Most "self-hosted" writeups show screenshots. This one shows constraints —
+    the numbers that make a one-person stack <b>stay up</b> instead of becoming a weekend job.</p>
+
+  <div class="stats">
+    <div class="stat" data-mark="∞"><div class="n">1<small>&nbsp;VPS</small></div><div class="l">runs the whole lab — <b>one box, one bill</b>, one reboot to fear</div></div>
+    <div class="stat"><div class="n">&lt;2<small>&nbsp;GB idle</small></div><div class="l">whole stack, real workloads — <b>hard caps per container</b>, no silent creep</div></div>
+    <div class="stat"><div class="n">0<small>&nbsp;manual steps</small></div><div class="l">install: <b>3 prompts</b> then unattended — DNS, certs, admins, all of it</div></div>
+    <div class="stat"><div class="n">1<small>&nbsp;smoke test</small></div><div class="l">every push is verified against the <b>live edge</b> — broken deploys are blocked</div></div>
+  </div>
+
+  <div class="bars">
+    <h3>per-door RAM ceilings — the spike can't spill</h3>
+    <div class="row"><span class="name">mailserver</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="val">1 GB</span></div>
+    <div class="row"><span class="name">nextcloud</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="val">1 GB</span></div>
+    <div class="row"><span class="name">roundcube</span><div class="track"><div class="fill" style="width:38%"></div></div><span class="val">384 MB</span></div>
+    <div class="row"><span class="name">uptimekuma</span><div class="track"><div class="fill" style="width:50%"></div></div><span class="val">512 MB</span></div>
+    <div class="row"><span class="name">postgresql</span><div class="track"><div class="fill" style="width:50%"></div></div><span class="val">512 MB</span></div>
+    <div class="row"><span class="name">vaultwarden</span><div class="track"><div class="fill" style="width:38%"></div></div><span class="val">384 MB</span></div>
+    <div class="row"><span class="name">pufferpanel</span><div class="track"><div class="fill" style="width:25%"></div></div><span class="val">256 MB</span></div>
+    <div class="row"><span class="name">caddy edge</span><div class="track"><div class="fill" style="width:13%"></div></div><span class="val">128 MB</span></div>
+  </div>
+  <p class="note">Caps are <b>ceilings, not allocations</b> — idle memory stays low; a runaway process hits its own wall
+    long before the host feels it. The game server? It only runs when you start it, and the heap grows on demand.</p>
+
+  <div class="truth">
+    <p><b>Zero-trust posture, boring to maintain.</b> SSH is tailnet-only. Every vhost is its own LE cert.
+      Panel registration is closed at the edge. Backups leave the box nightly, over the tailnet, to a second VPS.</p>
+    <p class="sub">None of that is paid-tier magic — it's the default output of the installer plus a Makefile that
+      makes the safe action the easy one.</p>
+  </div>
+
+  <div class="cta">
+    <a class="primary" href="https://github.com/kefohaine/server" rel="noopener">Read the source</a>
+    <a href="/welcome">Take the tour</a>
+  </div>
+
+  <footer>other tellings: <a href="/welcome">the grand tour</a> · <a href="/welcome-1">one repo, one server</a> · <a href="/welcome-2">the terminal cut</a></footer>
+</div>
+</body>
+</html>

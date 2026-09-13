@@ -3,211 +3,97 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>server</title>
+<title>server — doors</title>
 <style>
   :root { --w:#eaeaea; --gray:#8b949e; --green:#3bf07a; --purple:#b48cff;
-          --amber:#ffcc66; --red:#ff7b7b; --bg:#07090a; --sel:#12331f; }
+          --amber:#ffcc66; --bg:#07090a; --sel:#12331f; }
   * { box-sizing:border-box; }
-  html,body { height:100%; }
+  html,body { min-height:100%; }
   body { margin:0; background:var(--bg); color:var(--gray);
          font:15px/1.6 "Menlo","DejaVu Sans Mono",monospace;
-         display:flex; flex-direction:column; align-items:center; justify-content:center; padding:2rem; }
+         display:flex; flex-direction:column; align-items:center; justify-content:center;
+         padding:2.5rem; }
   body::after { content:""; position:fixed; inset:0; pointer-events:none; opacity:.045;
          background:repeating-linear-gradient(0deg,#fff 0 1px,transparent 1px 3px); }
-  .stage { width:min(760px,94vw); }
-  .cmdline { position:relative; display:flex; align-items:baseline; white-space:pre; }
-  .ps1 { flex:none; }
-  .acc   { color:var(--green); }
-  .wh    { color:var(--w); }
-  .pth   { color:var(--purple); }
-  #cmd { flex:1; min-width:0; margin:0; border:0; outline:0; padding:0; background:transparent;
-         color:var(--w); caret-color:transparent; font:inherit; }
-  #cmd::selection { background:var(--sel); }
-  .ghost { position:absolute; top:0; color:var(--gray); pointer-events:none; white-space:pre; }
-  .cursor { position:absolute; top:-0.08em; height:1.5em; line-height:1.5em;
-            background:#fff; color:#000; pointer-events:none; white-space:pre; overflow:hidden; }
-  .sug { list-style:none; margin:.5rem 0 0; padding:0; color:var(--gray); }
-  .sug li { padding:0; cursor:pointer; }
-  .sug li.on { color:var(--w); background:var(--sel); }
-  .sug li b { color:var(--w); font-weight:600; }
-  .status { margin-top:.7rem; min-height:1.6em; color:var(--gray); }
-  .status.err { color:var(--red); }
+  .stage { width:min(720px,94vw); }
+  h1 { margin:0 0 .2rem; font-size:1.05rem; font-weight:600; color:var(--w); letter-spacing:.02em; }
+  .sub { color:var(--gray); margin:0 0 1.6rem; }
+  .sub b { color:var(--amber); font-weight:600; }
+  ul.doors { list-style:none; margin:0; padding:0; }
+  ul.doors li { display:flex; align-items:baseline; gap:.6ch; padding:.18rem 0; }
+  .host { color:var(--green); text-decoration:none; }
+  .host:hover, .host:focus { text-decoration:underline; }
+  .note { color:var(--gray); }
+  .pages { margin-left:auto; display:flex; gap:.7ch; flex-wrap:wrap; }
+  .pg { color:var(--purple); text-decoration:none; }
+  .pg:hover, .pg:focus { text-decoration:underline; }
+  .fresh { margin-top:1.6rem; color:var(--gray); font-size:.85rem; }
+  .fresh .dot { color:var(--green); }
+  .err { color:var(--red,#ff7b7b); }
+  @media (max-width:640px) {
+    ul.doors li { flex-direction:column; gap:0; }
+    .pages { margin-left:calc(4ch + .6ch); flex-direction:row; }
+  }
 </style>
 </head>
 <body>
 <div class="stage">
-  <div class="cmdline" id="line">
-    <span class="ps1" id="ps1"><span class="acc">guest@server</span><span class="wh">:</span><span class="pth">~</span><span class="wh">$ </span></span>
-    <input id="cmd" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" autofocus>
-    <span class="ghost" id="ghost"></span>
-    <span class="cursor" id="cursor"></span>
-  </div>
-  <ul class="sug" id="sug"></ul>
-  <div class="status" id="status"></div>
+  <h1>fxmq.net — every door</h1>
+  <p class="sub">the complete list of this domain's webpages — public and tailnet-only — fetched live from <b>/targets.json</b> on every visit. nothing is stored in the browser.</p>
+  <ul class="doors" id="doors"></ul>
+  <p class="fresh" id="fresh"><span class="dot">&#9679;</span> live</p>
 </div>
-
 <script>
 "use strict";
-// tail.$DOMAIN terminal — navigation only. It runs unauthenticated as
-// guest@server on every tailnet device: `go <vhost> [page]` navigates via
-// the generated targets.json catalogue; the shell itself lives at /ttyd,
-// which is gated by HTTP basic auth at the edge (Caddy) — this page holds
-// no credentials, no session, and nothing but navigation.
-var VERBS = ["go"];            // the command surface
-var TARGETS = [];              // filled from targets.json (generated)
-var cmd = document.getElementById("cmd"),
-    line = document.getElementById("line"),
-    ghost = document.getElementById("ghost"),
-    cursor = document.getElementById("cursor"),
-    sug = document.getElementById("sug"),
-    statusEl = document.getElementById("status");
-var items = [], pick = 0, measure = null, sayTimer = null;
-
-function say(msg, isErr) {
-  if (sayTimer) { clearTimeout(sayTimer); sayTimer = null; }
-  statusEl.textContent = msg || "";
-  statusEl.className = "status" + (isErr ? " err" : "");
-  if (msg) sayTimer = setTimeout(function () { statusEl.textContent = ""; statusEl.className = "status"; }, 3000);
-}
-function textWidth(s) {
-  if (!measure) {
-    measure = document.createElement("span");
-    measure.style.cssText = "position:absolute;visibility:hidden;white-space:pre;left:-9999px;top:0;font:inherit";
-    document.body.appendChild(measure);
-  }
-  measure.textContent = s;
-  return measure.getBoundingClientRect().width;
-}
-function fit() {
-  var off = cmd.getBoundingClientRect().left - line.getBoundingClientRect().left;
-  ghost.style.left = (off + textWidth(cmd.value)) + "px";
-}
-// Debian-style block cursor: a solid white cell over the character at the
-// caret; the cell's own text renders inverted (black on white). A space at
-// the caret shows as a full-width white block.
-function caret() {
-  var i = cmd.selectionStart == null ? cmd.value.length : cmd.selectionStart;
-  var off = cmd.getBoundingClientRect().left - line.getBoundingClientRect().left;
-  var before = cmd.value.slice(0, i);
-  var ch = cmd.value.charAt(i) || " ";
-  cursor.style.left = (off + textWidth(before)) + "px";
-  cursor.style.width = Math.max(textWidth(ch), textWidth(" ")) + "px";
-  cursor.textContent = ch;
-}
-function byName(n) { for (var i = 0; i < TARGETS.length; i++) if (TARGETS[i].name === n) return TARGETS[i]; return null; }
-function columns(src) {
-  var trail = /[ ]$/.test(src);
-  var toks = src.trim() ? src.trim().split(/\s+/) : [];
-  return { heads: trail ? toks : toks.slice(0, -1), partial: trail ? "" : (toks[toks.length - 1] || "") };
-}
-// Predict the ONE column currently being typed — never a whole-line guess.
-function candidates() {
-  var src = cmd.value;
-  if (!src) return [];                                  // no text, no prediction
-  var c = columns(src), out = [];
-  if (c.heads.length === 0) {
-    out = VERBS.filter(function (v) { return v.indexOf(c.partial) === 0; });
-  } else if (c.heads[0] === "go") {
-    if (c.heads.length === 1) {
-      out = TARGETS.map(function (t) { return t.name; })
-                   .filter(function (n) { return n.indexOf(c.partial) === 0; })
-                   .map(function (n) { return "go " + n; });
-    } else if (c.heads.length === 2) {
-      var t = byName(c.heads[1]);
-      if (t) out = Object.keys(t.pages).filter(function (p) { return p.indexOf(c.partial) === 0; })
-                                        .map(function (p) { return "go " + c.heads[1] + " " + p; });
-    }
-  }
-  return out;
-}
-function hasDeeper(c) {
-  var save = cmd.value; cmd.value = c + " ";
-  var more = candidates().length > 0;
-  cmd.value = save; return more;
-}
-function render() {
-  var v = cmd.value, list = candidates();
-  items = list;
-  if (pick >= list.length || pick < 0) pick = 0;
-  sug.innerHTML = "";
-  list.slice(0, 12).forEach(function (c, i) {
-    var li = document.createElement("li");
-    if (i === pick) li.className = "on";
-    var hit = document.createElement("b");
-    hit.textContent = c.slice(0, v.length);
-    li.appendChild(hit);
-    li.appendChild(document.createTextNode(c.slice(v.length)));
-    li.addEventListener("mousedown", function (ev) { ev.preventDefault(); accept(c); });
-    sug.appendChild(li);
+// The tailnet homepage: no terminal, no session, no commands — just the
+// complete door list, re-fetched from the generated catalogue on EVERY
+// load (cache: "no-store" + the vhost's no-cache headers guarantee a
+// fresh response). tail targets (url === "/") link within this vhost;
+// every other target links to its own host.
+var doorsEl = document.getElementById("doors"),
+    freshEl = document.getElementById("fresh");
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
   });
-  var top = list[pick];
-  ghost.textContent = (v && top && top.length > v.length) ? top.slice(v.length) : "";
-  fit();
-  caret();
 }
-function accept(c) {
-  cmd.value = hasDeeper(c) ? c + " " : c;
-  pick = 0; render(); cmd.focus();
-}
-function go(host, page) {
-  var t = byName(host);
-  if (!t) { say("no such vhost: " + host, true); return; }
-  var to = t.url;
-  if (page) {
-    if (!t.pages[page]) {
-      var have = Object.keys(t.pages).join(" ");
-      say("no page '" + page + "' on " + host + (have ? " (have: " + have + ")" : " (no pages)"), true);
-      return;
+function render(targets, stamp) {
+  doorsEl.textContent = "";
+  targets.forEach(function (t) {
+    var li = document.createElement("li");
+    var a = document.createElement("a");
+    a.className = "host";
+    a.href = t.url;
+    a.textContent = t.host;
+    li.appendChild(a);
+    var pages = Object.keys(t.pages || {}).sort();
+    if (pages.length) {
+      var wrap = document.createElement("span");
+      wrap.className = "pages";
+      pages.forEach(function (p) {
+        var pa = document.createElement("a");
+        pa.className = "pg";
+        pa.href = t.url.replace(/\/$/, "") + t.pages[p];
+        pa.textContent = "/" + p;
+        wrap.appendChild(pa);
+      });
+      li.appendChild(wrap);
     }
-    to = t.url.replace(/\/$/, "") + t.pages[page];
-  }
-  say("going to " + to + " …");
-  setTimeout(function () { location.href = to; }, 300);
+    doorsEl.appendChild(li);
+  });
+  freshEl.innerHTML = '<span class="dot">&#9679;</span> fetched ' + esc(stamp) + " — " + targets.length + " doors";
 }
-function run(raw) {
-  var v = String(raw || "").trim().replace(/\s+/g, " ");
-  if (!v) return;
-  var parts = v.toLowerCase().split(" "), verb = parts[0], a = parts[1] || "", b = parts[2] || "";
-  if (verb === "go") {
-    if (!a) { say("usage: go <vhost> [page]", true); return; }
-    go(a, b); return;
-  }
-  say("unknown command: " + v + " — this terminal only navigates (go <vhost>); the shell is at /ttyd", true);
-}
-cmd.addEventListener("input", function () { pick = 0; render(); });
-cmd.addEventListener("keydown", function (ev) {
-  var k = ev.key || "";
-  if (k === "Enter" || ev.keyCode === 13) {
-    ev.preventDefault();
-    var v = cmd.value; cmd.value = ""; pick = 0; render(); run(v);
-  } else if (k === "Tab" || k === "ArrowRight") {
-    if (items[pick]) { ev.preventDefault(); accept(items[pick]); }
-  } else if (k === "ArrowDown") { if (items.length) { ev.preventDefault(); pick = (pick + 1) % items.length; render(); } }
-  else if (k === "ArrowUp") { if (items.length) { ev.preventDefault(); pick = (pick <= 0 ? items.length : pick) - 1; render(); } }
-  else if (k === "Escape") { cmd.value = ""; pick = 0; render(); }
-  else { setTimeout(render, 0); }
-});
-cmd.addEventListener("keyup", caret);
-cmd.addEventListener("click", caret);
-document.addEventListener("selectionchange", function () { if (document.activeElement === cmd) caret(); });
-// The type bar is forced-focused: any click that is not on the input itself
-// or on a suggestion entry lands back on the input (the dropdown's own
-// mousedown handler accepts the entry first, so it keeps working).
-document.addEventListener("mousedown", function (ev) {
-  if (ev.target === cmd || sug.contains(ev.target)) return;
-  ev.preventDefault();
-  cmd.focus();
-});
-cmd.addEventListener("blur", function () {
-  setTimeout(function () { if (document.hasFocus()) cmd.focus(); caret(); }, 0);
-});
-window.addEventListener("resize", function () { fit(); caret(); });
-
-render();
-fetch("/targets.json", { cache: "no-store" }).then(function (r) { return r.json(); })
-  .then(function (j) { TARGETS = (j && j.targets) || []; render(); })
-  .catch(function () { say("could not load the target list", true); });
-cmd.focus();
+fetch("/targets.json", { cache: "no-store" })
+  .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+  .then(function (j) {
+    var targets = (j && j.targets) || [];
+    targets.sort(function (x, y) { return x.host < y.host ? -1 : x.host > y.host ? 1 : 0; });
+    render(targets, new Date().toTimeString().slice(0, 8));
+  })
+  .catch(function (e) {
+    doorsEl.textContent = "";
+    freshEl.innerHTML = '<span class="err">could not load the door list: ' + esc(e.message) + " — refresh to retry</span>";
+  });
 </script>
 </body>
 </html>

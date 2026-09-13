@@ -2,7 +2,7 @@
 
 One repo that turns any Debian system into your own self-hosted server stack — cloud, mail, game servers and more — with one command and a few prompts.
 
-**[www.fxmq.net](https://www.fxmq.net/welcome) is the live demo**: eight modules running on one box, built entirely from this repo. Fork it, run the installer, and the same board is yours — under your own domain, with no server but yours.
+**[www.fxmq.net](https://www.fxmq.net/welcome) is the live demo**: the installed modules running on one box, built entirely from this repo. Fork it, run the installer, and the same board is yours — under your own domain, with no server but yours.
 
 ## Why
 
@@ -37,7 +37,7 @@ The installer asks a few questions, then hardens the host, creates the DNS recor
 |---|---|---|
 | **Cloud** | Nextcloud | files, calendar, contacts, photos, Talk chat & video calls |
 | **Mail** | Docker Mailserver + Roundcube | SMTP/IMAPS, DKIM/SPF/DMARC on your own domain |
-| **Games** | PufferPanel + Paper/Minecraft | in-browser play (`/play`), Java server on `:25565` |
+| **Games** | PufferPanel + Spigot/Minecraft | in-browser play (`/play`), Java server on `:25565` — servers never autostart |
 | **Vault** | Vaultwarden | any Bitwarden client, server included |
 | **Monitor** | Uptime Kuma | watches public *and* tailnet-only doors |
 

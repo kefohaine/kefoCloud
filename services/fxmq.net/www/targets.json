@@ -56,7 +56,10 @@
       "url": "https://www.fxmq.net/",
       "pages": {
         "download": "/download",
-        "welcome": "/welcome"
+        "welcome": "/welcome",
+        "welcome-1": "/welcome-1",
+        "welcome-2": "/welcome-2",
+        "welcome-3": "/welcome-3"
       }
     }
   ]

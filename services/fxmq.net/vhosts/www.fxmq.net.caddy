@@ -1,8 +1,10 @@
-# www.fxmq.net — static pages: one welcome page and the public download drop
+# www.fxmq.net — static pages: the welcome pages and the public download drop
 # folder.
 #   /          serves ./www/index.html — a zero-second redirect to /welcome.
 #   /welcome   the welcome page (welcome.html) — everything fxmq.net runs,
 #              presented as the live demo of kefohaine/server.
+#   /welcome-1 /welcome-2 /welcome-3 — alternate tellings of the same pitch,
+#              each a different angle (proof / terminal / numbers).
 #   /download* Caddy file_server browse over homelab/download (mounted at
 #              /download:ro in the caddy container — drop files here).
 #   everything else — plain "ok" stub.
@@ -31,6 +33,28 @@ https://www.fxmq.net {
     handle @welcome {
         root * /etc/caddy/www
         rewrite /welcome.html
+        file_server
+    }
+    # Alternate tellings: /welcome-1 (proof) /welcome-2 (terminal) /
+    # /welcome-3 (numbers). Same self-contained-file pattern; the @wN
+    # matchers + handle pairs below are also what the targets catalogue
+    # generator reads, so the pages auto-appear in the tail door list.
+    @w1 path /welcome-1 /welcome-1/
+    handle @w1 {
+        root * /etc/caddy/www
+        rewrite /welcome-1.html
+        file_server
+    }
+    @w2 path /welcome-2 /welcome-2/
+    handle @w2 {
+        root * /etc/caddy/www
+        rewrite /welcome-2.html
+        file_server
+    }
+    @w3 path /welcome-3 /welcome-3/
+    handle @w3 {
+        root * /etc/caddy/www
+        rewrite /welcome-3.html
         file_server
     }
     # Homepage: the index.html placeholder (meta-redirects to /welcome).

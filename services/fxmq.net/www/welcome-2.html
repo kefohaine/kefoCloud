@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>the server behind fxmq.net</title>
+<meta name="description" content="kefohaine/server — read the exact files that run this stack, then run them yourself. A terminal-native look at a self-hosted homelab.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2307090a'/%3E%3Ctext x='16' y='22' font-family='Arial Black' font-size='14' font-weight='900' fill='%23b48cff' text-anchor='middle'%3Efxmq%3C/text%3E%3C/svg%3E">
+<style>
+  :root{--bg:#07090a;--ink:#eaeaea;--gray:#8b949e;--green:#3bf07a;--purple:#b48cff;
+        --amber:#ffcc66;--sel:#12331f;--mono:'Menlo','DejaVu Sans Mono',monospace}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--gray);font:15px/1.65 var(--mono);
+       padding:3.2rem 1.2rem 4rem;display:flex;flex-direction:column;align-items:center}
+  body::after{content:"";position:fixed;inset:0;pointer-events:none;opacity:.045;
+       background:repeating-linear-gradient(0deg,#fff 0 1px,transparent 1px 3px)}
+  .stage{width:min(780px,96vw)}
+  .ps1{color:var(--green);font-weight:600;letter-spacing:.02em}
+  .ps1 .w{color:var(--ink)} .ps1 .p{color:var(--purple)} .ps1 .d{color:var(--gray)}
+  h1{font-size:clamp(20px,3.6vw,30px);color:var(--ink);margin:.9rem 0 .4rem;line-height:1.3}
+  h1 b{color:var(--amber);font-weight:600}
+  .lede{color:var(--gray);margin:0 0 2.2rem;max-width:64ch}
+  .lede a{color:var(--purple)}
+  pre.tour{margin:0 0 1.9rem;padding:1.1rem 1.2rem;background:#0a0e10;border-left:3px solid var(--purple);
+       overflow-x:auto;font-size:13.5px;line-height:1.75}
+  pre.tour .c{color:#4d5a52}   /* comment */
+  pre.tour .k{color:var(--amber)}   /* key */
+  pre.tour .v{color:var(--green)}   /* value */
+  pre.tour .u{color:var(--purple)}  /* url */
+  pre.tour a{color:var(--purple);text-decoration:none}
+  pre.tour a:hover{text-decoration:underline}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:.85rem;margin:0 0 2.2rem}
+  .cell{border:1px solid #1c2a22;padding:.95rem 1.05rem;background:#0a0e10}
+  .cell h3{margin:0 0 .35rem;font-size:13px;color:var(--ink);letter-spacing:.03em}
+  .cell h3 span{color:var(--green)}
+  .cell p{margin:0;font-size:13px;color:var(--gray);line-height:1.55}
+  .cell p b{color:var(--amber);font-weight:600}
+  .final{border:1px solid #2a4a30;padding:1.25rem 1.4rem;background:#0a0e10}
+  .final .cmd{color:var(--green);font-size:14.5px}
+  .final .cmd .d{color:var(--gray)}
+  .final p{margin:.75rem 0 0;font-size:13.5px}
+  .final a{color:var(--amber)}
+  footer{margin-top:2.1rem;font-size:12.5px}
+  footer a{color:var(--gray)}
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="ps1"><span class="w">guest@server</span><span class="d">:</span><span class="p">~</span><span class="d">$ </span><span class="w">cat README.md &nbsp;# no wait — the whole server is the README</span></div>
+  <h1>This page is a server. <b>So is its source.</b></h1>
+  <p class="lede">What you're reading is one output of <a href="https://github.com/kefohaine/server" rel="noopener">kefohaine/server</a> —
+    a public repository whose installer builds this exact stack on a fresh Debian VPS, unattended.
+    The most honest tour is a look at the files.</p>
+
+  <pre class="tour"><span class="c"># what the repo gives you, in the order it gives it</span>
+<span class="k">$ bash install.sh</span>          <span class="c"># prompts once: domain, CF token, tailscale key</span>
+<span class="v">✓</span> host hardened        <span class="c"># sshd, ufw, fail2ban, sysctl — tailnet-only SSH</span>
+<span class="v">✓</span> stack up             <span class="c"># caddy edge + nextcloud + vault + kuma + mail + mc</span>
+<span class="v">✓</span> dns + certs          <span class="c"># CF records + per-vhost Let's Encrypt, automatic</span>
+<span class="v">✓</span> admin accounts       <span class="c"># printed once, stored nowhere</span>
+
+<span class="c"># then the interesting files — all public</span>
+<span class="k">services/</span>     <span class="v">docker-compose per module</span>   <span class="c"># RAM-capped, healthchecked</span>
+<span class="k">vhosts/</span>        <span class="v">one caddy file per hostname</span> <span class="c"># TLS per host, access rules visible</span>
+<span class="k">scripts/</span>       <span class="v">install · storage · uninstall</span> <span class="c"># the ops surface</span>
+<span class="k">docs/</span>          <span class="v">GUIDE.md</span>                    <span class="c"># every gotcha, written down after it bit</span></pre>
+
+  <div class="grid">
+    <div class="cell"><h3><span>&gt;</span> why it's trustworthy</h3>
+      <p><b>Nothing here is a mockup.</b> The links below are the running deployment. The docs describe the running deployment. Break something and <b>the smoke test blocks the push</b> — the repo cannot drift from reality.</p></div>
+    <div class="cell"><h3><span>&gt;</span> why it's cheap to run</h3>
+      <p>One VPS, <b>idle under 2 GB</b>. Every container has a hard RAM ceiling; the Nextcloud datadirectory lives on a second box over tailnet NFS, and the DB backs up to it nightly.</p></div>
+    <div class="cell"><h3><span>&gt;</span> why it's yours</h3>
+      <p>No hardcoded domain, no hardcoded hostnames. <b>Your domain goes in at install time</b> and every path, cert and DNS record follows it. Modules you don't want: one prompt, off.</p></div>
+  </div>
+
+  <div class="final">
+    <div class="cmd">git clone https://github.com/kefohaine/server <span class="d">&amp;&amp; cd server &amp;&amp; bash install.sh</span></div>
+    <p>The same 15 minutes that built this page builds yours: <a href="https://github.com/kefohaine/server" rel="noopener">github.com/kefohaine/server</a></p>
+  </div>
+
+  <footer>the other tellings: <a href="/welcome">the grand tour</a> · <a href="/welcome-1">one repo, one server</a> · <a href="/welcome-3">the numbers</a></footer>
+</div>
+</body>
+</html>

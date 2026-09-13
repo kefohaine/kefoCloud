@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>one repo, one server, everything</title>
+<meta name="description" content="kefohaine/server — every service below is running right now from this exact repository. No staging, no demo data.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23071005'/%3E%3Ctext x='16' y='22' font-family='Arial Black' font-size='14' font-weight='900' fill='%233bf07a' text-anchor='middle'%3Efxmq%3C/text%3E%3C/svg%3E">
+<style>
+  :root{--bg:#071005;--panel:#0c1a0d;--ink:#eaeaea;--dim:#8b949e;--green:#3bf07a;
+        --purple:#b48cff;--amber:#ffcc66;--mono:'Menlo','DejaVu Sans Mono',monospace}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.65 var(--mono);
+       padding:4.5rem 1.2rem 5rem;display:flex;flex-direction:column;align-items:center}
+  .stage{width:min(760px,96vw)}
+  .eyebrow{color:var(--amber);letter-spacing:.32em;text-transform:uppercase;font-size:12px}
+  h1{font-size:clamp(26px,5vw,40px);line-height:1.12;margin:.55rem 0 .4rem;font-weight:700}
+  h1 .g{color:var(--green)}
+  .lede{color:var(--dim);margin:0 0 2.6rem;max-width:62ch}
+  .lede b{color:var(--ink)}
+  table.proof{width:100%;border-collapse:collapse;font-size:14px}
+  table.proof th{text-align:left;color:var(--dim);font-weight:400;text-transform:uppercase;
+    font-size:11px;letter-spacing:.14em;padding:0 0 .55rem;border-bottom:1px solid #1e3322}
+  table.proof td{padding:.62rem .4rem .62rem 0;border-bottom:1px solid #142a18;vertical-align:top}
+  table.proof td:first-child a{color:var(--green);text-decoration:none;font-weight:600}
+  table.proof td:first-child a:hover{text-decoration:underline}
+  table.proof td:last-child{text-align:right;color:var(--purple);white-space:nowrap}
+  .why{margin-top:2.6rem;display:grid;gap:.9rem}
+  .why .row{display:flex;gap:.9rem;align-items:baseline}
+  .why .n{color:var(--amber);flex:0 0 2ch}
+  .why p{margin:0;color:var(--ink)}
+  .why p b{color:var(--green)}
+  .why p span{color:var(--dim)}
+  .cta{margin-top:3rem;border:1px solid #2a4a30;background:var(--panel);padding:1.4rem 1.6rem}
+  .cta .cmd{color:var(--green);font-size:14px}
+  .cta .cmd .p{color:var(--dim)}
+  .cta p{margin:.8rem 0 0;color:var(--dim);font-size:13.5px}
+  .cta a{color:var(--amber)}
+  footer{margin-top:2.4rem;color:var(--dim);font-size:12.5px}
+  footer a{color:var(--dim)}
+  @media(max-width:560px){table.proof td:last-child{display:none}}
+</style>
+</head>
+<body>
+<div class="stage">
+  <p class="eyebrow">the repo is the server</p>
+  <h1>Everything on this page is <span class="g">running from one repository</span>.</h1>
+  <p class="lede">No staging environment, no demo data, no screenshot. Every door below is served live by
+    the deployment that <b>kefohaine/server</b> builds and operates. If you can open it, the repo already did it.</p>
+
+  <table class="proof">
+    <tr><th>what you're looking at</th><th>the repo built it</th></tr>
+    <tr><td><a href="https://cloud.fxmq.net/" rel="noopener">cloud.fxmq.net</a></td><td>install.sh</td></tr>
+    <tr><td><a href="https://vault.fxmq.net/" rel="noopener">vault.fxmq.net</a></td><td>compose file</td></tr>
+    <tr><td><a href="https://kuma.fxmq.net/" rel="noopener">kuma.fxmq.net</a></td><td>kuma seed</td></tr>
+    <tr><td><a href="https://mail.fxmq.net/" rel="noopener">mail.fxmq.net</a></td><td>DMS + DKIM</td></tr>
+    <tr><td><a href="https://mc.fxmq.net/play/" rel="noopener">mc.fxmq.net/play</a></td><td>panel template</td></tr>
+    <tr><td><a href="https://talk.fxmq.net/" rel="noopener">talk.fxmq.net</a></td><td>TURN + HPB</td></tr>
+  </table>
+
+  <div class="why">
+    <div class="row"><span class="n">1.</span><p><b>One command builds all of it.</b>
+      <span>A fresh VPS, three prompts (domain, Cloudflare token, Tailscale key), and the installer
+      hardens the host, issues the certificates, writes the DNS records and brings the stack up unattended.</span></p></div>
+    <div class="row"><span class="n">2.</span><p><b>It survives real life.</b>
+      <span>Per-container RAM ceilings, healthchecks, a smoke test that blocks any push with a broken edge,
+      and a boot-order fix for an NFS race that once took Nextcloud down — the incidents are in the git history, and so are the fixes.</span></p></div>
+    <div class="row"><span class="n">3.</span><p><b>It's yours in an afternoon.</b>
+      <span>Every value is derived from your domain at install time; the modules you don't want are one prompt away from off.</span></p></div>
+  </div>
+
+  <div class="cta">
+    <div class="cmd">git clone https://github.com/kefohaine/server <span class="p">&& cd server</span></div>
+    <div class="cmd">bash install.sh <span class="p"># under your own domain, from the same code</span></div>
+    <p>Or read the source first — every file this server runs is public:
+      <a href="https://github.com/kefohaine/server" rel="noopener">github.com/kefohaine/server</a></p>
+  </div>
+
+  <footer>other angles on the same story: <a href="/welcome">the tour</a> · <a href="/welcome-3">the numbers</a></footer>
+</div>
+</body>
+</html>

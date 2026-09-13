@@ -8,8 +8,8 @@ services:
     restart: unless-stopped
 
     # Hard RAM cap (no container swap) — survives recreates, unlike `docker update`.
-    mem_limit: 256m
-    memswap_limit: 256m
+    mem_limit: 128m
+    memswap_limit: 128m
 
     # Host network so Caddy sees the real client source IP — without it,
     # Docker DNAT rewrites every packet to 172.22.0.1 (the bridge gateway)
@@ -31,7 +31,8 @@ services:
       # (drop files here; Caddy serves them read-only).
       - /var/www/custom/projects/homelab/download:/download:ro
       # homelab/eaglercraft — the mc.fxmq.net/play in-browser Minecraft
-      # client (1.12.2 eaglercraft build; patched launcher + assets).
+      # client (official EaglercraftX 1.8.8 multi-file build: index.html,
+      # classes.js, assets.epk, lang/ — our server pre-seeded in its list).
       - /var/www/custom/projects/homelab/eaglercraft:/eaglercraft:ro
       # Top-level Caddyfile + per-vhost snippets. The dir is mounted so
       # the `import` directives in the top-level file resolve relative
