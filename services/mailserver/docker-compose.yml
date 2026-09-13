@@ -85,8 +85,8 @@ services:
       start_period: 15s
 
     # Hard RAM cap (no container swap) — survives recreates, unlike docker update.
-    mem_limit: 512m
-    memswap_limit: 512m
+    mem_limit: 384m
+    memswap_limit: 384m
 
     environment:
       ROUNDCUBEMAIL_DB_TYPE: sqlite
