@@ -3,9 +3,8 @@
 #   /          serves ./www/index.html — a zero-second redirect to /welcome.
 #   /welcome   the welcome page (welcome.html) — everything fxmq.net runs,
 #              presented as the live demo of kefohaine/server.
-#   /welcome-1..9 — alternate tellings of the same pitch, each a
-#              distinct design (proof / terminal / numbers / Swiss /
-#              neon / journal / field manual / quiet / poster).
+#   /welcome-5 /welcome-6 /welcome-7 /welcome-9 — the kept alternate
+#              tellings (neon / journal / field manual / poster).
 #   /download* Caddy file_server browse over homelab/download (mounted at
 #              /download:ro in the caddy container — drop files here).
 #   everything else — plain "ok" stub.
@@ -36,36 +35,12 @@ https://www.fxmq.net {
         rewrite /welcome.html
         file_server
     }
-    # Alternate tellings: /welcome-1 (proof) /welcome-2 (terminal) /
-    # /welcome-3 (numbers) — and /welcome-4..9 (Swiss, neon, journal,
-    # field manual, quiet, poster). Same self-contained-file pattern;
-    # the @wN matchers + handle pairs below are also what the targets
-    # catalogue generator reads, so the pages auto-appear in the tail
-    # door list.
-    @w1 path /welcome-1 /welcome-1/
-    handle @w1 {
-        root * /etc/caddy/www
-        rewrite /welcome-1.html
-        file_server
-    }
-    @w2 path /welcome-2 /welcome-2/
-    handle @w2 {
-        root * /etc/caddy/www
-        rewrite /welcome-2.html
-        file_server
-    }
-    @w3 path /welcome-3 /welcome-3/
-    handle @w3 {
-        root * /etc/caddy/www
-        rewrite /welcome-3.html
-        file_server
-    }
-    @w4 path /welcome-4 /welcome-4/
-    handle @w4 {
-        root * /etc/caddy/www
-        rewrite /welcome-4.html
-        file_server
-    }
+    # The welcome family: the original `/welcome` plus the kept alternate
+    # tellings — /welcome-5 (neon), /welcome-6 (journal), /welcome-7 (field
+    # manual), /welcome-9 (poster). Removed designs were dropped 2026-09-13
+    # by operator choice; numbers are intentionally non-contiguous.
+    # The @wN matcher + handle pairs are also what the targets catalogue
+    # generator reads, so the pages auto-appear in the tail door list.
     @w5 path /welcome-5 /welcome-5/
     handle @w5 {
         root * /etc/caddy/www
@@ -82,12 +57,6 @@ https://www.fxmq.net {
     handle @w7 {
         root * /etc/caddy/www
         rewrite /welcome-7.html
-        file_server
-    }
-    @w8 path /welcome-8 /welcome-8/
-    handle @w8 {
-        root * /etc/caddy/www
-        rewrite /welcome-8.html
         file_server
     }
     @w9 path /welcome-9 /welcome-9/
