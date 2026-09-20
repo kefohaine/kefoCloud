@@ -425,6 +425,7 @@ define install_config_cmds
   fi
 sudo test -s /etc/goose/goose.env || { sudo install -d -m 0755 /etc/goose; echo "GOOSE_SERVER__SECRET_KEY=$$(openssl rand -hex 32)" | sudo tee /etc/goose/goose.env >/dev/null; sudo chown root:op /etc/goose/goose.env; sudo chmod 0640 /etc/goose/goose.env; }
 sudo cp $(REPO)/repo/config/goose/goose.service /etc/systemd/system/goose.service
+bash $(REPO)/repo/scripts/goose-tokens.sh
 sudo cp $(REPO)/repo/config/ssh/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf
 sudo cp $(REPO)/repo/config/dnsmasq/10-tailnet.conf /etc/dnsmasq.d/10-tailnet.conf
 sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
@@ -981,6 +982,14 @@ git-push:
 # piped). help = the common daily surface; help-more = the granular /
 # technical recipes; each points at the other.
 # ─────────────────────────────────────────────────────────────────────────────
+
+.PHONY: goose-tokens
+
+# Token policy → the live goose settings store (config/goose/token-policy.yaml
+# → ~/.config/goose/config.yaml). Idempotent, no restart needed: goose reads
+# the store when a session starts, so running sessions are untouched.
+goose-tokens:
+>@bash $(REPO)/repo/scripts/goose-tokens.sh
 
 .DEFAULT_GOAL := help
 .PHONY: help help-more
