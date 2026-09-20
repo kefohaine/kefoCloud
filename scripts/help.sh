@@ -96,6 +96,7 @@ more() {
   rows <<'EOF'
 make install-config|one-shot host bootstrap — copy every config/ file to its live path
 make install-goose|goose.service → /etc/systemd/system (+ generate goose.env if missing)
+make goose-tokens|goose token policy → live settings store + goose.env + login-shell caps (idempotent)
 make install-ttyd|ttyd.service → /etc/systemd/system (refuses to run from inside ttyd)
 make install-ssh|50-cloud-init.conf → sshd_config.d (validates with sshd -t, then restarts)
 make install-dnsmasq-conf|10-tailnet.conf → /etc/dnsmasq.d
