@@ -1,0 +1,41 @@
+version: 1.0.0
+title: "Audit documentation for drift"
+description: "Read-only documentation audit: find drift, stale content, and duplicates across the .md files and the executable source."
+instructions: |
+  Read-only. Do not edit any .md file. Produce a report of the exact drift,
+  stale, and duplicate items with the precise in-place fix for each, so the
+  operator can approve. Follow docs/AGENTS.md doc-audit directives.
+author:
+  contact: "kefohaine"
+extensions:
+  - type: builtin
+    name: developer
+activities:
+  - "Walk every .md file (README.md, docs/*.md)"
+  - "Diff each concrete fact against the executable source (Makefile, compose, scripts, config)"
+  - "Check path/port/container/unit existence"
+  - "Detect duplicate facts across files"
+  - "Report drift/stale/duplicate with exact fixes"
+parameters:
+  - key: scope
+    input_type: string
+    requirement: optional
+    description: "Optional scope: all, or a single doc (GUIDE, ISSUES, DEBUG, MIGRATE, REF, README)"
+    default: "all"
+prompt: |
+  Audit documentation for drift/stale/duplicate, scope: {{ scope }}.
+
+  The repo (compose files, Makefile, scripts, config, the running system) is the
+  ground truth; docs are derived. Read docs/AGENTS.md doc-audit directives and
+  docs/GUIDE.md first.
+
+  For every concrete fact in the docs (port, path, command, recipe name,
+  container name, unit name, image tag, route matcher), grep the executable
+  source and confirm they agree. Check every referenced path/port/container/
+  unit still exists. Flag any fact stated in two files.
+
+  Return:
+  - drift items (doc fact vs source fact, with the correct value)
+  - stale items (dead paths/ports/names)
+  - duplicate items (where each fact should live per the boundaries list)
+  - the exact in-place fix for each — but do not apply them
