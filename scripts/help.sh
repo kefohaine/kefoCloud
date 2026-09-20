@@ -150,6 +150,19 @@ make taildrop-file|FILE=<path> [TAILDROP_HOST=<device>] — send one file
 make taildrop-folder|DIR=<folder> [TAILDROP_HOST=<device>] — send a folder (-r)
 EOF
 
+  sec "goose recipes (read-only agent tasks — recipes/*.yaml)"
+  rows <<'EOF'
+make goose-recipes|list the reusable agent recipes
+make goose-audit [FOCUS=<area>]|read-only audit — security, backups, mail, docker, networking, docs
+make goose-review MODULE=<m>|read-only module review (cloud|vault|mail|games|monitor|edge)
+make goose-troubleshoot SERVICE=<s>|triage a failure via docs/DEBUG.md
+make goose-check-backups [FOCUS=<area>]|audit the backup/restore posture
+make goose-check-network [FOCUS=<area>]|review DNS/TLS/mail/reverse-proxy
+make goose-validate-installer [TARGET=<script>]|lint and review script changes (bash -n, no apply)
+make goose-audit-docs [SCOPE=<doc>]|find doc drift/stale/duplicate
+make goose-deploy-plan CHANGE=<what>|produce a deployment/upgrade plan
+EOF
+
   sec "mail registry (webmail login = local part only)"
   rows <<'EOF'
 make mail-gen|create a mailbox — empty MAIL / PWD / QUOTA = auto-generated (PWD printed once)
