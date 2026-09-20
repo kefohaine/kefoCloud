@@ -1,0 +1,46 @@
+# goose token policy — source of truth for the token knobs on this host.
+#
+# The live settings store is ~/.config/goose/config.yaml (goose reads it for
+# the systemd service, the CLI and the ttyd web terminal alike). Apply or
+# re-apply this file to it with `make goose-tokens` (scripts/goose-tokens.sh);
+# the script only touches the keys listed here, so goose-written settings and
+# provider config survive.
+#
+# Every request bills input tokens + cached input + output tokens, so the three
+# levers are: keep the context short (a), keep replies short (b), and never pay
+# the reasoning tier for routine work (c).
+#
+# Key names are goose setting names — the same spelling as the GOOSE_*
+# environment variables. Values are operator policy, not instance facts.
+
+# (a) Context — auto-compact (summarize the transcript, continue in a fresh
+# context) once a session fills this fraction of the model's context window,
+# instead of re-sending a transcript that grows every turn.
+# 0.6 of 128k ≈ 77k tokens. Raise for long code work, lower to save more.
+GOOSE_AUTO_COMPACT_THRESHOLD: 0.6
+# Summarize tool call/result pairs as they age out, so one large log or file
+# dump cannot dominate the rest of the session.
+GOOSE_TOOL_PAIR_SUMMARIZATION: true
+# Bound runaway sessions (turn count is the multiplier on everything above).
+GOOSE_MAX_TURNS: 10
+
+# (b) Output — hard ceiling per reply. Output tokens cost roughly 3x input
+# tokens, and hidden reasoning is billed as output.
+GOOSE_MAX_TOKENS: 4096
+
+# (c) Model + thinking — routine work runs on the cheap flash tier with
+# thinking off. Escalate per run instead of globally:
+#   GOOSE_THINKING_EFFORT=medium goose run -t "..."   (off|low|medium|max)
+# Model choice lives in the provider block of the live config, not here.
+# Quoted: YAML 1.1 reads a bare off/on as a boolean, goose wants the string.
+GOOSE_THINKING_EFFORT: "off"
+# Print the session cost so the actual driver stays visible.
+GOOSE_CLI_SHOW_COST: true
+
+# Per-turn briefing carrying the hard output constraints (short-answer,
+# raw-code-only, no preamble). GOOSE_MOIM_MESSAGE_FILE is filled in by
+# scripts/goose-tokens.sh with this repo's absolute path — the file is
+# config/goose/briefing.md. The tom extension must be on for it to apply.
+extensions:
+  tom:
+    enabled: true
