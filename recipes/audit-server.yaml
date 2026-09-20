@@ -1,0 +1,53 @@
+version: 1.0.0
+title: "Audit self-hosted server"
+description: "Read-only review of the repository and running system for security, reliability, and operational issues."
+instructions: |
+  Work only within this repository and the host it describes.
+  Follow docs/AGENTS.md safety rules: read-only first; never modify files;
+  never run destructive or irreversible commands; never read or print secrets
+  (services/*/.env, /etc/goose/goose.env, mailserver config, private keys,
+  certs, password hashes). Report findings with severity, file path and line
+  reference where possible, explanation, and a recommended remediation. Do not
+  fix anything yourself — the operator applies changes after review.
+author:
+  contact: "kefohaine"
+extensions:
+  - type: builtin
+    name: developer
+activities:
+  - "Inspect shell scripts, docker-compose files, config/, and docs/"
+  - "Check for unsafe defaults, exposed credentials, excessive permissions, and missing validation"
+  - "Check backup, restore, logging, update, and failure-recovery procedures"
+  - "Cross-check documentation against the executable source for drift"
+  - "Produce a prioritized report"
+parameters:
+  - key: focus_area
+    input_type: string
+    requirement: optional
+    description: "Optional focus: security, backups, mail, docker, networking, docs, or general"
+    default: "general"
+prompt: |
+  Audit this self-hosted server repository, focus: {{ focus_area }}.
+
+  Read docs/AGENTS.md (agent rules) and docs/GUIDE.md (project facts) first,
+  then docs/ISSUES.md for already-known problems.
+
+  Inspect the relevant files:
+  - scripts/ (install.sh, uninstall.sh, optimize.sh, storage.sh, and the per-subsystem helpers)
+  - services/*/docker-compose.yml and the Caddy edge under services/fxmq.net/ ($DOMAIN in general)
+  - config/ (reference host configs), Makefile, docs/
+
+  Pay particular attention to:
+  - commands run as root; shell quoting, error handling, and set -u/-e behavior
+  - secrets and credentials (never print their values)
+  - firewall (UFW) and exposed ports; Cloudflare proxied vs DNS-only records
+  - Docker privileges, docker.sock mounts, and host path bind-mounts
+  - backup and restore behavior (make backup, the nightly pg_dump cron in scripts/storage.sh)
+  - destructive make recipes and whether they have a confirmation guard
+  - consistency between documentation and implementation
+
+  Return:
+  1. Executive summary
+  2. Critical findings
+  3. High, medium, and low findings (file path + line where possible, explanation, fix)
+  4. Concrete fixes, each with its verification command
