@@ -1014,3 +1014,47 @@ taildrop-file:
 taildrop-folder:
 >@test -n "$(DIR)" || { echo "usage: make taildrop-folder DIR=<folder> [TAILDROP_HOST=<device>]"; exit 2; }
 >@sudo tailscale file cp -r "$(DIR)" "$(TAILDROP_HOST):"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Goose recipes — reusable read-only agent tasks (recipes/*.yaml).
+# Every recipe inspects and reports; it never mutates the host. The operator
+# applies changes after review. `make goose-recipes` lists them. The recipe
+# path is the repo-local recipes/ dir so the recipes stay versioned with the
+# scripts and docs they operate on.
+# ─────────────────────────────────────────────────────────────────────────────
+
+GOOSE_RECIPE_PATH ?= $(REPO)/repo/recipes
+
+.PHONY: goose-recipes goose-audit goose-review goose-troubleshoot \
+	goose-check-backups goose-check-network goose-validate-installer \
+	goose-audit-docs goose-deploy-plan
+
+goose-recipes:
+>@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose recipe list
+
+goose-audit:
+>@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe audit-server $(if $(FOCUS),--params focus_area=$(FOCUS),)
+
+goose-review:
+>@test -n "$(MODULE)" || { echo "usage: make goose-review MODULE=<cloud|vault|mail|games|monitor|edge>"; exit 1; }
+>@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe review-module --params module=$(MODULE)
+
+goose-troubleshoot:
+>@test -n "$(SERVICE)" || { echo "usage: make goose-troubleshoot SERVICE=<hostname|container|recipe>"; exit 1; }
+>@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe troubleshoot-service --params service=$(SERVICE)
+
+goose-check-backups:
+>@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe check-backups $(if $(FOCUS),--params focus=$(FOCUS),)
+
+goose-check-network:
+>@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe check-networking $(if $(FOCUS),--params focus=$(FOCUS),)
+
+goose-validate-installer:
+>@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe validate-installer $(if $(TARGET),--params target=$(TARGET),)
+
+goose-audit-docs:
+>@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe audit-docs $(if $(SCOPE),--params scope=$(SCOPE),)
+
+goose-deploy-plan:
+>@test -n "$(CHANGE)" || { echo "usage: make goose-deploy-plan CHANGE='<what to change>'" ; exit 1; }
+>@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe deployment-plan --params change=$(CHANGE)

@@ -112,6 +112,7 @@ Top-level dirs: `services/` (one compose file per running container), `config/` 
 - `services/<ctn>/docker-compose.yml` — one per running container. Compose files are the source of truth for images, env vars, ports, volumes, healthchecks, and logging.
 - `config/` — reference copies of host-level configs (goose systemd unit, SSH hardening, dnsmasq, ttyd, docker daemon, sysctl, PufferPanel server template). Restored to live paths by `make install-config`. For an offline copy of the whole `config/` tree, use `make bundle-config`.
 - `docs/` — `AGENTS.md` (agent rules), `GUIDE.md` (this file), `ISSUES.md` (tracker), `DEBUG.md` (deep-scan / debug runbook), `MIGRATE.md` (runbook for moving to a new VPS; printed by `make migrate`), `REF.md` (per-setup variable values).
+- `recipes/` — reusable Goose agent tasks (read-only inspection + reports), versioned with the scripts and docs they operate on. Run via the `make goose-*` recipes below.
 - `scripts/optimize.sh` — universal Debian-family VPS performance optimizer in install.sh/storage.sh style (banner, zero prompts, unattended run, Enter-refresh error loop → SUCCESS only when green). Merges OPTIMIZE.md + the repo's tuned values + `make cleanup`'s apt/docker part; idempotent, `--dry-run`/`--verify`/`--yes`, backs up edits to `/root/optimize-backup-<ts>`; applied on this host — re-running is a no-op. **It installs only the performance helpers** (`tuned`, `irqbalance`, `earlyoom`) when missing; service software (`docker`, `dnsmasq`, …) is never installed, and steps for absent software are skipped instead of failing (see Operational gotchas).
 
 ## Deployment
@@ -131,6 +132,23 @@ Manual — no CI/CD, pushes to `main` trigger nothing. Use the `Makefile` recipe
 **Recipe output is uniform** — every recipe speaks three lines: `info:  <what it did>` (completion), `warn:  <non-fatal issue>` and `error: <failure>` (recipe exits 1). All messages go through `scripts/mklog`; usage mistakes print `error: usage: …` and exit 1. The raw tool output (occ, docker, DMS setup) stays unmodified where it is the result itself.
 
 `make git-com MSG="…"` takes a single-sentence `MSG` only — embedded newlines break the `git commit -m` quoting (`unexpected EOF` before the commit lands) and embedded double quotes break the recipe's `$(MSG)` substitution (`[: too many arguments]`). If the message needs a quote mark, wrap the whole `MSG=` in single quotes — the shell does not interpolate inside single quotes, so the embedded `"` survives intact.
+
+## Goose recipes
+
+`recipes/` holds reusable Goose agent tasks — each one a `version/title/description/instructions/extensions/parameters/prompt` YAML file that tells the agent what to inspect, which tools it may use, what inputs it accepts, and what report to produce. Every recipe is **read-only**: it inspects and reports, never mutates the host, and the operator applies changes after review (the same "read-only first" discipline as `docs/DEBUG.md`). The agent's own rules stay in `docs/AGENTS.md`; these recipes point at it and at this guide rather than restating them.
+
+The `make goose-*` front doors wrap `goose run --recipe <name>` with the repo-local `GOOSE_RECIPE_PATH` (`recipes/`), so the recipes stay versioned with the scripts and docs they operate on:
+
+- `make goose-recipes` — list them (`goose recipe list`).
+- `make goose-audit [FOCUS=…]` — full read-only audit (security/reliability/ops/docs drift).
+- `make goose-review MODULE=…` — review one module (`cloud|vault|mail|games|monitor|edge`).
+- `make goose-troubleshoot SERVICE=…` — triage a failure via `docs/DEBUG.md`.
+- `make goose-check-backups [FOCUS=…]`, `make goose-check-network [FOCUS=…]` — backup and ingress/mail reviews.
+- `make goose-validate-installer [TARGET=…]` — lint/review script changes (`bash -n`, no apply).
+- `make goose-audit-docs [SCOPE=…]` — find doc drift/stale/duplicate.
+- `make goose-deploy-plan CHANGE=…` — produce a deployment/upgrade plan.
+
+The command list is rendered by `scripts/help.sh` (the same source as `make help-more`); the recipe files themselves are the source of truth for what each task does. Multi-word parameter values (e.g. `CHANGE`) hit the same make limitation as `make git-com MSG=` — pass a single token through `make`, or invoke the recipe directly: `goose run --recipe deployment-plan --params "change=upgrade the Nextcloud image"`.
 
 ## Protected host resources
 
