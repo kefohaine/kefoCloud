@@ -1,0 +1,42 @@
+version: 1.0.0
+title: "Verify backups and restore"
+description: "Read-only audit of the backup and restore posture: artifacts, schedules, off-site copies, and restore procedure."
+instructions: |
+  Read-only. Do not create, delete, restore, or rotate anything. Never read or
+  print secrets or operator data. Follow docs/AGENTS.md. Report gaps and a
+  prioritized remediation list; do not apply fixes.
+author:
+  contact: "kefohaine"
+extensions:
+  - type: builtin
+    name: developer
+activities:
+  - "Enumerate backup artifacts and schedules"
+  - "Check the nightly Nextcloud pg_dump and the NFS datadirectory copies"
+  - "Check make backup / make bkp-* recipes and retention"
+  - "Assess restore procedures and off-site/DR coverage"
+  - "Report gaps and a prioritized remediation list"
+parameters:
+  - key: focus
+    input_type: string
+    requirement: optional
+    description: "Optional scope: cloud, vault, kuma, mail, or all"
+    default: "all"
+prompt: |
+  Audit the backup and restore posture, scope: {{ focus }}.
+
+  Read docs/GUIDE.md (backup gotchas, storage row, protected resources) and
+  docs/ISSUES.md (the open "No automated backup script" item).
+
+  Inspect:
+  - the Makefile backup / bkp-* / clean-backups recipes and scripts/storage.sh
+  - the nightly pg_dump cron (/etc/cron.d/nc-storage) and its 7-day retention
+  - what is and is not covered: Nextcloud /data, PostgreSQL, vaultwarden data,
+    kuma db, mailserver Maildirs/config, secrets
+  - whether there is an off-site/DR copy beyond the storage VPS
+
+  Return:
+  - an inventory of what is backed up, where, and how often
+  - what is NOT covered
+  - restore-procedure gaps
+  - prioritized fixes (flag operator-approval items, e.g. choosing the file-backup target)
