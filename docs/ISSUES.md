@@ -186,7 +186,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Fix**: prune with python3 against `sessions.db` (delete `messages` + `usage_ledger` by `session_id`, then the `sessions` row; keep the live session) — the procedure is in the goose token bullet of `docs/GUIDE.md`. Re-test after a goose upgrade; if ACP removal starts working, drop the workaround.
 
 #### Auto-compaction has never been observed firing
-- **File**: `config/goose/token-policy.yaml` (`GOOSE_AUTO_COMPACT_THRESHOLD: 0.6` = ≈77k of the 128k `deepseek-flash` window)
+- **File**: `config/goose/token-policy.yaml` (`GOOSE_AUTO_COMPACT_THRESHOLD: 0.6` — ≈77k of the `deepseek-flash` context window)
 - **Problem**: the unit is settled (goose validates the value as `>0 … ≤1`, i.e. a fraction), but no session has been driven past the threshold, so what the built-in compaction actually sends (`Conversation summary` + `compaction_summary.md` visible in the binary) and whether the session is continued or forked is untested.
 - **Fix**: drive one session past ~77k prompt tokens (or set the threshold to `0.02` once) and confirm in `~/.local/state/goose/logs/llm_request.*.jsonl` that the transcript is replaced by a summary inside the same session id.
 

@@ -136,9 +136,13 @@ esac
 if [ "$mode" = apply ]; then
   env_file=/etc/goose/goose.env
   env_line="GOOSE_MOIM_MESSAGE_FILE=$briefing"
-  if sudo test -s "$env_file" && ! sudo grep -qxF "$env_line" "$env_file"; then
-    printf '%s\n' "$env_line" | sudo tee -a "$env_file" >/dev/null &&
-      scripts/mklog info "added GOOSE_MOIM_MESSAGE_FILE to $env_file (restart goose to apply)"
+  if sudo test -s "$env_file"; then
+    if ! sudo grep -qxF "$env_line" "$env_file"; then
+      printf '%s\n' "$env_line" | sudo tee -a "$env_file" >/dev/null &&
+        scripts/mklog info "added GOOSE_MOIM_MESSAGE_FILE to $env_file (restart goose to apply)"
+    fi
+  else
+    scripts/mklog warn "$env_file is missing (run make install-config first) — the serve unit has no briefing"
   fi
 
   profile=/etc/profile.d/goose-token-caps.sh
