@@ -1,0 +1,43 @@
+version: 1.0.0
+title: "Diagnose failed service"
+description: "Triage a failing container or host service using the docs/DEBUG.md layer ladder, read-only."
+instructions: |
+  Read-only first. Follow docs/DEBUG.md. One logical change at a time; do not
+  apply any fix without first reporting the root cause and the proposed change
+  for operator approval. Do not restart or recreate containers or services.
+  Never print secrets. No fabrication — cite the exact probe output you observed.
+author:
+  contact: "kefohaine"
+extensions:
+  - type: builtin
+    name: developer
+activities:
+  - "Reproduce and scope the failure"
+  - "Walk the DNS → TCP → TLS → edge → upstream → access-control ladder"
+  - "Collect read-only diagnostics (make fetch, make smoke, docker ps/logs, journalctl)"
+  - "Report root cause, evidence, and a proposed fix with rollback"
+parameters:
+  - key: service
+    input_type: string
+    requirement: required
+    description: "Service or symptom to diagnose (a hostname, a container name, or a failing make recipe)"
+prompt: |
+  Diagnose this failure: {{ service }}.
+
+  Follow docs/DEBUG.md step by step (layer ladder, standard scan, repo-consistency probes).
+
+  Gather read-only evidence:
+  - make fetch (status dashboard) and make smoke (vhost/edge/host tests)
+  - docker ps, docker logs --since 1h <ctn>, journalctl -u <unit> -p err
+  - ss -tlnp, sudo ufw status verbose
+  - curl and openssl s_client probes from the host for TLS/route issues
+
+  Consult docs/GUIDE.md "Operational gotchas" and docs/ISSUES.md for known causes
+  before assuming anything novel.
+
+  Return:
+  - the layer where it fails and why
+  - the evidence (exact command output)
+  - the root cause
+  - the smallest safe fix with a one-line rollback
+  - the verification probe that proves it is fixed
