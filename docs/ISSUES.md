@@ -185,10 +185,10 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Problem**: `goose session remove --regex <re>` lists the matching sessions and then fails with `Error: not connected` — the CLI drives removal through the running `goose serve` ACP endpoint (127.0.0.1:23467/3284) and the handshake never succeeds, so `sessions.db` (90 MB and growing, no retention) can only be trimmed out-of-band.
 - **Fix**: prune with python3 against `sessions.db` (delete `messages` + `usage_ledger` by `session_id`, then the `sessions` row; keep the live session) — the procedure is in the goose token bullet of `docs/GUIDE.md`. Re-test after a goose upgrade; if ACP removal starts working, drop the workaround.
 
-#### `GOOSE_AUTO_COMPACT_THRESHOLD` semantics are unverified
-- **File**: `config/goose/token-policy.yaml`
-- **Problem**: the knob is set to `0.6` on the assumption that a float means "fraction of the model's context window" (≈77k of 128k for `deepseek-flash`); no session has been driven long enough to observe the summarize-and-continue behaviour, so the unit (fraction vs. absolute tokens) is inference, not measurement.
-- **Fix**: run one session past ~77k prompt tokens (or set the knob to a deliberately tiny value such as `0.02` once) and confirm in `~/.local/state/goose/logs/llm_request.*.jsonl` that the transcript is replaced by a summary and the reply continues in the same session. Then record the confirmed semantics in `docs/GUIDE.md`.
+#### Auto-compaction has never been observed firing
+- **File**: `config/goose/token-policy.yaml` (`GOOSE_AUTO_COMPACT_THRESHOLD: 0.6` = ≈77k of the 128k `deepseek-flash` window)
+- **Problem**: the unit is settled (goose validates the value as `>0 … ≤1`, i.e. a fraction), but no session has been driven past the threshold, so what the built-in compaction actually sends (`Conversation summary` + `compaction_summary.md` visible in the binary) and whether the session is continued or forked is untested.
+- **Fix**: drive one session past ~77k prompt tokens (or set the threshold to `0.02` once) and confirm in `~/.local/state/goose/logs/llm_request.*.jsonl` that the transcript is replaced by a summary inside the same session id.
 
 ---
 
