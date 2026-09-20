@@ -180,6 +180,16 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Problem**: mobile push notifications are delayed — no push proxy (UnifiedPush / nextcloud-push) is installed. The old entry's "no HPB" premise is stale: the Go signaling server (strukturag/nextcloud-spreed-signaling) has run since the 2026-08-30 rebuild.
 - **Fix**: install a push proxy + Notifications backend when Talk push becomes a real use case.
 
+#### `goose session remove` cannot prune sessions  **[goose 1.47.0 bug]**
+- **File**: `~/.local/share/goose/sessions/sessions.db` (host state; no `sqlite3` binary on the host)
+- **Problem**: `goose session remove --regex <re>` lists the matching sessions and then fails with `Error: not connected` — the CLI drives removal through the running `goose serve` ACP endpoint (127.0.0.1:23467/3284) and the handshake never succeeds, so `sessions.db` (90 MB and growing, no retention) can only be trimmed out-of-band.
+- **Fix**: prune with python3 against `sessions.db` (delete `messages` + `usage_ledger` by `session_id`, then the `sessions` row; keep the live session) — the procedure is in the goose token bullet of `docs/GUIDE.md`. Re-test after a goose upgrade; if ACP removal starts working, drop the workaround.
+
+#### `GOOSE_AUTO_COMPACT_THRESHOLD` semantics are unverified
+- **File**: `config/goose/token-policy.yaml`
+- **Problem**: the knob is set to `0.6` on the assumption that a float means "fraction of the model's context window" (≈77k of 128k for `deepseek-flash`); no session has been driven long enough to observe the summarize-and-continue behaviour, so the unit (fraction vs. absolute tokens) is inference, not measurement.
+- **Fix**: run one session past ~77k prompt tokens (or set the knob to a deliberately tiny value such as `0.02` once) and confirm in `~/.local/state/goose/logs/llm_request.*.jsonl` that the transcript is replaced by a summary and the reply continues in the same session. Then record the confirmed semantics in `docs/GUIDE.md`.
+
 ---
 
 ## Planned ideas
