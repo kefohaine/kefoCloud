@@ -1,0 +1,42 @@
+version: 1.0.0
+title: "Validate installer and script changes"
+description: "Read-only lint and review of shell scripts and installer changes before they are applied or committed."
+instructions: |
+  Do not run the installer or apply any change to the host. Lint and review
+  only (bash -n and read-only analysis). Never read or print secrets. Follow
+  docs/AGENTS.md. Return a go/no-go with findings; do not edit the scripts.
+author:
+  contact: "kefohaine"
+extensions:
+  - type: builtin
+    name: developer
+activities:
+  - "Syntax-check scripts with bash -n"
+  - "Review for quoting, error handling, eval injection, hardcoded values"
+  - "Check defaults files and prompt/env override paths"
+  - "Check documentation consistency (drift)"
+  - "Report a go/no-go with findings"
+parameters:
+  - key: target
+    input_type: string
+    requirement: optional
+    description: "Script or area to validate (install.sh, uninstall.sh, optimize.sh, storage.sh, or 'all')"
+    default: "all"
+prompt: |
+  Validate installer/script changes, target: {{ target }}.
+
+  Read docs/GUIDE.md "Everything about scripts" (house style, error framework,
+  module awareness) and docs/AGENTS.md rule 12 (stay global).
+
+  For each script in scope:
+  - bash -n <script> (syntax)
+  - review quoting, set -u/-e safety, eval usage, and hardcoded instance values
+    (flag any hardcoded domain/user/port that should derive from the live system)
+  - check scripts/defaults/*.conf for injection surfaces (e.g. eval of values)
+  - confirm idempotency and --dry-run/--verify/--yes coverage where it mutates the host
+  - confirm every fact the docs claim about the script matches the code (drift)
+
+  Return:
+  - syntax status per script
+  - findings with file + line, severity, and fix
+  - a go/no-go recommendation and the verification steps before applying
