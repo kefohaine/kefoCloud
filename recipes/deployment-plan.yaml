@@ -1,0 +1,41 @@
+version: 1.0.0
+title: "Produce deployment or upgrade plan"
+description: "Read-only planning: produce a step-by-step deployment, migration, or upgrade plan for a change, with risks and rollback."
+instructions: |
+  Do not deploy or change anything. Produce a plan only. Follow docs/AGENTS.md
+  (change procedure, rollback-first, network-listener rules). Never print
+  secrets. Name likely failure modes and a rollback for each step.
+author:
+  contact: "kefohaine"
+extensions:
+  - type: builtin
+    name: developer
+activities:
+  - "Understand the requested change and its dependencies"
+  - "Trace the affected services, configs, and recipes"
+  - "Name likely failure modes and the rollback for each"
+  - "Produce an ordered plan with verification gates"
+parameters:
+  - key: change
+    input_type: string
+    requirement: required
+    description: "The change to plan (e.g. 'upgrade the Nextcloud image tag', 'migrate to a new VPS', 'add a vhost', 'rotate the goose secret')"
+prompt: |
+  Produce a deployment/upgrade/migration plan for this change: {{ change }}.
+
+  Read docs/GUIDE.md (deployment, protected resources, service-reference table,
+  operational gotchas), docs/MIGRATE.md where relevant, and docs/AGENTS.md
+  rules 10/16/17.
+
+  Determine:
+  - what files/services/configs are affected (compose files, Makefile recipes,
+    host configs, DNS/firewall)
+  - dependencies and ordering (e.g. DNS record before cert, cert before coturn)
+  - likely failure modes and how to detect each
+  - the rollback for every step
+
+  Return:
+  - an ordered step-by-step plan, each step with its verification probe
+  - the risky steps and their one-line rollback recipes (for the commit message)
+  - what needs explicit operator approval
+  - what is not covered / open questions
