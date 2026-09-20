@@ -17,7 +17,7 @@
 # context) once a session fills this fraction of the model's context window,
 # instead of re-sending a transcript that grows every turn.
 # 0.6 of 128k ≈ 77k tokens. Raise for long code work, lower to save more.
-GOOSE_AUTO_COMPACT_THRESHOLD: 0.5
+GOOSE_AUTO_COMPACT_THRESHOLD: 0.2
 # Summarize tool call/result pairs as they age out, so one large log or file
 # dump cannot dominate the rest of the session.
 GOOSE_TOOL_PAIR_SUMMARIZATION: true
