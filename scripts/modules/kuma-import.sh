@@ -4,8 +4,8 @@
 #
 # The old host is not reachable from this VPS (SSH keys denied, Tailscale
 # SSH off, no taildrop inbox), so the operator must deliver the DB:
-#   on $GITHUB_USER:  tailscale file cp kuma.db fxmq:    (or scp once a key exists)
-#   on fxmq:    tailscale file get $ROOT/data/kuma/import
+#   on the sending box:  tailscale file cp kuma.db $NODE_NAME:
+#   here:                tailscale file get $ROOT/data/kuma/import
 # then run:  make kuma-import        (defaults to kuma/import/kuma.db)
 #        or:  make kuma-import KUMA_DB=/path/to/kuma.db
 #
