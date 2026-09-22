@@ -6,7 +6,14 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -c
 
-REPO     := /root/github/kefoserver
+# The repo path is DERIVED from this Makefile's own location — never hardcoded.
+# That is what lets the checkout be renamed or moved without editing the
+# Makefile, and it is why every other path below hangs off $(REPO).
+REPO       := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
+# The single untracked source of instance values (see config/instance.defaults).
+CONF       := $(REPO)/data/instance.conf
+DOMAIN     := $(shell sed -n 's/^DOMAIN=//p' $(CONF) 2>/dev/null | head -1)
+RENDER_DIR := $(REPO)/data/rendered
 COMPOSE  := docker compose -f
 CONTAINERS := caddy uptimekuma nextcloud vaultwarden mailserver roundcube
 HOST     := ttyd dnsmasq goose
@@ -26,8 +33,8 @@ HOST     := ttyd dnsmasq goose
 .PHONY: $(addprefix dok-stop-,$(CONTAINERS)) dok-stop-all dok-stop
 .PHONY: $(addprefix dok-logs-,$(CONTAINERS)) dok-logs-all dok-logs
 
-# fxmq.net (Caddy) rebuilds its image locally; the rest just pull.
-# fxmq.net = custom Dockerfile adds caddy-dns/cloudflare for ACME DNS-01
+# $(DOMAIN) (Caddy) rebuilds its image locally; the rest just pull.
+# $(DOMAIN) = custom Dockerfile adds caddy-dns/cloudflare for ACME DNS-01
 #   on every vhost; DNS-01 keeps cert issuance independent of the proxy.
 
 # Per-container compose file paths: services/<ctn>/docker-compose.yml.
@@ -40,7 +47,7 @@ COMPOSE_FILE_roundcube := services/mailserver/docker-compose.yml
 # so the expansion happens at recipe-expansion time, not recipe-execution time.
 compose-file-of = $(REPO)/$(COMPOSE_FILE_$1)
 
-# fxmq.net needs a local image build; compose v5.5.0 on Debian trixie ships
+# $(DOMAIN) needs a local image build; compose v5.5.0 on Debian trixie ships
 # buildx 0.13.1, which is too old for `compose ... --build` (needs >= 0.17).
 # Try the compose build first and fall back to plain `docker build` + compose
 # up (the install.sh pattern) so `make dok-recreate-caddy` works everywhere.
@@ -78,7 +85,7 @@ dok-logs-$1:
 endef
 $(foreach s,$(CONTAINERS),$(eval $(call dok_logs_rule,$s)))
 
-# Shared loop: force-recreate every compose unit under services/ (fxmq.net
+# Shared loop: force-recreate every compose unit under services/ ($(DOMAIN)
 # builds locally, with the buildx fallback). Used by dok-recreate-all and
 # update — each keeps a self-contained recipe (no chained make targets).
 define dok_recreate_all_cmds
@@ -173,13 +180,19 @@ systemd-log:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: fetch fetch-more smoke gh-web-health install-hooks clean-docker clean-apt clean-backups update apt-upgrade install-config kuma-import help talk-gen
+.PHONY: fetch fetch-more render smoke gh-web-health install-hooks clean-docker clean-apt clean-backups update apt-upgrade install-config kuma-import help talk-gen
 .PHONY: deploy backup cleanup
 
 # AIO dashboard (scripts/fetch.sh): host perf (uptime, load, cpu, memory,
 # swap, disk), all available modules (installed green / uninstalled red),
 # git, units, failed units (+ their targets), docker, tmux, backups, mail,
 # tailnet — one aligned colored read; module-aware (installed-modules.conf).
+# Render the skeleton into data/rendered/ (Caddy tree + config/) and refresh the
+# instance block in every service .env. Everything that lands on the host or in
+# a container comes from here, never from the tracked files directly.
+render:
+>@bash scripts/render-all.sh
+
 fetch:
 >@bash scripts/fetch.sh
 
@@ -275,8 +288,8 @@ install-hooks:
 # ─────────────────────────────────────────────────────────────────────────────
 # Mailserver Registry (Docker Mailserver CLI — see `make help` > Mailserver
 # Registry). Passwords never land in shell history or the process list.
-# Friends log in at https://mail.fxmq.net with just the local part
-# (ROUNDCUBEMAIL_USERNAME_DOMAIN=fxmq.net).
+# Friends log in at https://mail.$(DOMAIN) with just the local part
+# (ROUNDCUBEMAIL_USERNAME_DOMAIN=$(DOMAIN)).
 # ─────────────────────────────────────────────────────────────────────────────
 
 .PHONY: mail-gen mail-gen-alias mail-del mail-del-alias mail-quota mail-password mail-card
@@ -297,26 +310,26 @@ mail-gen-alias:
 
 # Delete an address AND all its stored mailbox data (DMS never deletes
 # Maildirs on its own — this removes the folder under
-# mailserver/data/fxmq.net/<local>/ too). One merged info line.
+# mailserver/data/$(DOMAIN)/<local>/ too). One merged info line.
 mail-del:
->@[ -n "$(MAIL)" ] || { scripts/mklog error "usage: make mail-del MAIL=name@fxmq.net"; exit 1; }
+>@[ -n "$(MAIL)" ] || { scripts/mklog error "usage: make mail-del MAIL=name@$(DOMAIN)"; exit 1; }
 >@if docker exec mailserver setup email del "$(MAIL)" >/dev/null 2>&1; then \
     local=$${MAIL%@*}; \
-    if [ -d "$(REPO)/data/mailserver/data/fxmq.net/$$local" ]; then \
-      sudo rm -rf "$(REPO)/data/mailserver/data/fxmq.net/$$local" && scripts/mklog info "$(MAIL) deleted — account, aliases, quota and stored mail"; \
+    if [ -d "$(REPO)/data/mailserver/data/$(DOMAIN)/$$local" ]; then \
+      sudo rm -rf "$(REPO)/data/mailserver/data/$(DOMAIN)/$$local" && scripts/mklog info "$(MAIL) deleted — account, aliases, quota and stored mail"; \
     else scripts/mklog info "$(MAIL) deleted — account, aliases, quota (no stored mail)"; fi \
   else scripts/mklog error "$(MAIL) not found — nothing deleted"; exit 1; fi
 
 # Remove one target from an alias (DMS needs both).
 mail-del-alias:
->@[ -n "$(FROM)" ] && [ -n "$(TO)" ] || { scripts/mklog error "usage: make mail-del-alias FROM=x@fxmq.net TO=target@example.com"; exit 1; }
+>@[ -n "$(FROM)" ] && [ -n "$(TO)" ] || { scripts/mklog error "usage: make mail-del-alias FROM=x@$(DOMAIN) TO=target@example.com"; exit 1; }
 >@docker exec mailserver setup alias del "$(FROM)" "$(TO)" >/dev/null && scripts/mklog info "alias $(FROM) -> $(TO) removed"
 
 # Quota setter: with MAIL = per-mailbox quota; without MAIL = the default
 # quota that mail-gen applies (persisted in services/mailserver/default-quota).
 # B/k/M/G/T suffix or 0 (no limit).
 mail-quota:
->@[ -n "$(QUOTA)" ] || { scripts/mklog error "usage: make mail-quota [MAIL=name@fxmq.net] QUOTA=2G (MAIL empty = set the default for mail-gen)"; exit 1; }
+>@[ -n "$(QUOTA)" ] || { scripts/mklog error "usage: make mail-quota [MAIL=name@$(DOMAIN)] QUOTA=2G (MAIL empty = set the default for mail-gen)"; exit 1; }
 >@echo "$(QUOTA)" | grep -qE '^([0-9]+(B|k|M|G|T)|0)$$' || { scripts/mklog error "invalid QUOTA '$(QUOTA)' — B/k/M/G/T suffix, or 0 (no limit)"; exit 1; }
 >@if [ -n "$(MAIL)" ]; then docker exec mailserver setup quota set "$(MAIL)" "$(QUOTA)" >/dev/null && scripts/mklog info "quota for $(MAIL) set to $(QUOTA)"; \
   else printf '%s\n' "$(QUOTA)" > services/mailserver/default-quota && scripts/mklog info "default quota for mail-gen set to $(QUOTA) (services/mailserver/default-quota) — git add/commit to keep it"; fi
@@ -324,7 +337,7 @@ mail-quota:
 # Rotate a mailbox password. PWD empty = auto-generate a 16-char password and
 # print it once. (PWD is make's cwd builtin — only a command-line PWD= is used.)
 mail-password:
->@[ -n "$(MAIL)" ] || { scripts/mklog error "usage: make mail-password MAIL=name@fxmq.net [PWD=…]"; exit 1; }
+>@[ -n "$(MAIL)" ] || { scripts/mklog error "usage: make mail-password MAIL=name@$(DOMAIN) [PWD=…]"; exit 1; }
 >@if [ "$(origin PWD)" = "command line" ] && [ -n "$(PWD)" ]; then \
     docker exec mailserver setup email update "$(MAIL)" "$(PWD)" >/dev/null && scripts/mklog info "password updated for $(MAIL)"; \
   else p=$$(openssl rand -base64 12 | tr -d '\n'); \
@@ -333,17 +346,17 @@ mail-password:
 # Card for one address: existence, quota (dovecot-quotas.cf), webmail URL.
 # The password is a hash and cannot be shown — rotate with mail-password.
 mail-card:
->@[ -n "$(MAIL)" ] || { scripts/mklog error "usage: make mail-card MAIL=name@fxmq.net"; exit 1; }
+>@[ -n "$(MAIL)" ] || { scripts/mklog error "usage: make mail-card MAIL=name@$(DOMAIN)"; exit 1; }
 >@local=$${MAIL%@*}; \
   if docker exec mailserver setup email list | grep -q "^[* ]*$$local@"; then \
     q=$$(grep "^$(MAIL):" "$(REPO)/data/mailserver/config/dovecot-quotas.cf" 2>/dev/null | cut -d: -f2); \
-    scripts/mklog info "address $(MAIL) — exists, quota $${q:-unlimited}, webmail https://mail.fxmq.net (login with '$$local')"; \
+    scripts/mklog info "address $(MAIL) — exists, quota $${q:-unlimited}, webmail https://mail.$(DOMAIN) (login with '$$local')"; \
     scripts/mklog warn "password is hashed — rotate with make mail-password MAIL=$(MAIL)"; \
   else scripts/mklog error "$(MAIL) not found — create with make mail-gen [MAIL=…]"; exit 1; fi
 
 
 tail-auth:
->@bash scripts/tail-auth.sh set "$(if $(USER),$(USER),kefohaine)" "$(PASS)"
+>@bash scripts/tail-auth.sh set "$(if $(USER),$(USER),{{GITHUB_USER}})" "$(PASS)"
 
 # Regenerate the tail terminal's navigation catalogue from the Caddy vhost
 # files (services/*/www/targets.json — GENERATED, do not hand-edit). Run after
@@ -376,7 +389,7 @@ kuma-import:
 
 # Generate the Nextcloud-stack secrets + Talk service configs (idempotent).
 # Creates services/nextcloud/.env entries (DB, Redis, signaling, TURN, SMTP)
-# if missing and renders /root/github/kefoserver/data/talk/{server,turnserver}.conf.
+# if missing and renders $(REPO)/data/talk/{server,turnserver}.conf.
 talk-gen:
 >@bash scripts/talk-gen.sh
 
@@ -401,6 +414,10 @@ storage:
 # Shared body: push config/ → live (install-config). deploy inlines this
 # body plus the secrets extraction so it never chains another make target.
 define install_config_cmds
+# Templates carry {{TOKENS}}; scripts carry no instance values at all. Render
+# the tracked skeleton into data/rendered/ first, then install from THERE — the
+# repo checkout is never a source of live config.
+@bash $(REPO)/scripts/render-all.sh
 @if ! command -v ttyd >/dev/null 2>&1; then \
     scripts/mklog info "installing ttyd..."; \
     curl -fsSL -o /tmp/ttyd https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64; \
@@ -411,20 +428,21 @@ define install_config_cmds
     scripts/mklog info "ttyd already installed at $$(command -v ttyd)"; \
   fi
 sudo test -s /etc/goose/goose.env || { sudo install -d -m 0755 /etc/goose; echo "GOOSE_SERVER__SECRET_KEY=$$(openssl rand -hex 32)" | sudo tee /etc/goose/goose.env >/dev/null; sudo chown root:root /etc/goose/goose.env; sudo chmod 0640 /etc/goose/goose.env; }
-sudo cp $(REPO)/config/goose/goose.service /etc/systemd/system/goose.service
+sudo cp $(RENDER_DIR)/config/goose/goose.service /etc/systemd/system/goose.service
 bash $(REPO)/scripts/goose-tokens.sh
-sudo cp $(REPO)/config/ssh/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf
+sudo cp $(RENDER_DIR)/config/ssh/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf
 # The tracked copy keeps a PLACEHOLDER tailnet address; the live IP is rendered
 # in at deploy time so an instance-specific address never lands in a tracked
 # file (AGENTS rule 12). The old plain `cp` here silently overwrote the live
 # 10-tailnet.conf with the placeholder — dnsmasq then fail-looped on
 # "Cannot assign requested address" and tailnet DNS died with it.
-TS_IP=$$(tailscale ip -4 2>/dev/null | head -n1)
-[ -n "$$TS_IP" ] || { echo "error: no tailscale IP — cannot render 10-tailnet.conf"; exit 1; }
-sed "s/100\.117\.144\.0/$$TS_IP/g" $(REPO)/config/dnsmasq/10-tailnet.conf | sudo tee /etc/dnsmasq.d/10-tailnet.conf >/dev/null
+@TS_IP=$$(tailscale ip -4 2>/dev/null | head -n1); \
+    TS_ADDR=$$(sed -n 's/^TAILNET_SUBNET=//p' $(CONF) 2>/dev/null | head -1 | cut -d/ -f1); \
+    [ -n "$$TS_IP" ] || { scripts/mklog error "no tailscale IP — cannot render 10-tailnet.conf"; exit 1; }; \
+    sed "s/$$TS_ADDR/$$TS_IP/g" $(RENDER_DIR)/config/dnsmasq/10-tailnet.conf | sudo tee /etc/dnsmasq.d/10-tailnet.conf >/dev/null
 sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
-sudo cp $(REPO)/config/dnsmasq/dnsmasq.service.conf /etc/systemd/system/dnsmasq.service.d/override.conf
-sudo cp $(REPO)/config/sysctl/99-kefoserver.conf /etc/sysctl.d/99-kefoserver.conf
+sudo cp $(RENDER_DIR)/config/dnsmasq/dnsmasq.service.conf /etc/systemd/system/dnsmasq.service.d/override.conf
+sudo cp $(RENDER_DIR)/config/sysctl/99-kefo.conf /etc/sysctl.d/99-kefo.conf
 sudo sysctl --system >/dev/null
 @if ! diff -q /etc/docker/daemon.json $(REPO)/config/docker/daemon.json >/dev/null 2>&1; then \
     scripts/mklog info "installing /etc/docker/daemon.json (Docker daemon restart required to take effect)"; \
@@ -434,31 +452,35 @@ sudo sysctl --system >/dev/null
   else \
     scripts/mklog info "docker daemon config already up to date"; \
   fi
-sudo cp $(REPO)/config/ttyd/ttyd.service /etc/systemd/system/ttyd.service
-sudo cp $(REPO)/config/bash/kefoserver-banner.sh /etc/kefoserver-banner.sh
-sudo chmod 0644 /etc/kefoserver-banner.sh
-@grep -qxF '. /etc/kefoserver-banner.sh' "$$HOME/.bashrc" || printf '%s\n' '. /etc/kefoserver-banner.sh' >> "$$HOME/.bashrc"
+sudo cp $(RENDER_DIR)/config/ttyd/ttyd.service /etc/systemd/system/ttyd.service
+sudo cp $(RENDER_DIR)/config/bash/banner.sh /etc/kefo-banner.sh
+sudo chmod 0644 /etc/kefo-banner.sh
+@grep -qxF '. /etc/kefo-banner.sh' "$$HOME/.bashrc" || printf '%s\n' '. /etc/kefo-banner.sh' >> "$$HOME/.bashrc"
 bash $(REPO)/scripts/tail-targets.sh
-sudo cp $(REPO)/config/fail2ban/jail.d/sshd.conf /etc/fail2ban/jail.d/sshd.conf
-sudo cp $(REPO)/config/cron/nextcloud /etc/cron.d/nextcloud
+sudo cp $(RENDER_DIR)/config/fail2ban/jail.d/sshd.conf /etc/fail2ban/jail.d/sshd.conf
+sudo cp $(RENDER_DIR)/config/cron/nextcloud /etc/cron.d/nextcloud
 sudo chmod 0644 /etc/cron.d/nextcloud
-# Logging: ONE namespace (/var/log/kefohaine) for every log this project writes,
+# Logging: ONE namespace ({{LOG_DIR}}) for every log this project writes,
 # bounded by ONE logrotate rule. Docker output is capped globally in
 # config/docker/daemon.json (10m x3) and journald in config/systemd/journald
 # caps — nothing here logs unboundedly, and nothing uses chronicle-style
 # per-event logging.
-sudo install -d -m 0755 /var/log/kefohaine
-sudo install -d -m 0700 /var/lib/kefohaine
-sudo cp $(REPO)/config/logrotate/kefohaine /etc/logrotate.d/kefohaine
-sudo chmod 0644 /etc/logrotate.d/kefohaine
+sudo install -d -m 0755 {{LOG_DIR}}
+sudo install -d -m 0700 {{STATE_DIR}}
+sudo cp $(RENDER_DIR)/config/logrotate/instance /etc/logrotate.d/instance
+sudo chmod 0644 /etc/logrotate.d/instance
 sudo systemctl enable --now fail2ban
 sudo ufw allow from 172.22.0.0/16 to any port 7681 proto tcp
-sudo cp $(REPO)/config/systemd/kefoserver-stack.service /etc/systemd/system/kefoserver-stack.service
-sudo cp $(REPO)/config/systemd/tmux-main.service /etc/systemd/system/tmux-main.service
+sudo cp $(RENDER_DIR)/config/systemd/kefo-stack.service /etc/systemd/system/kefo-stack.service
+sudo cp $(RENDER_DIR)/config/systemd/tmux-main.service /etc/systemd/system/tmux-main.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now goose ttyd
-sudo systemctl enable kefoserver-stack.service
-@scripts/mklog info "boot unit installed + enabled: kefoserver-stack.service (every deployed compose unit comes up on boot)"
+# The boot unit was renamed (kefoserver-stack -> kefo-stack) so no machine
+# name is baked into a unit name: retire the old one if it is still around.
+sudo systemctl disable --now kefoserver-stack.service >/dev/null 2>&1 || true
+sudo rm -f /etc/systemd/system/kefoserver-stack.service
+sudo systemctl enable kefo-stack.service
+@scripts/mklog info "boot unit installed + enabled: kefo-stack.service (every deployed compose unit comes up on boot)"
 sudo systemctl enable --now tmux-main.service
 @scripts/mklog info "tmux 'main' session ensured + enabled (make tmux-open TAG=main to attach)"
 sudo systemctl restart sshd dnsmasq
@@ -491,7 +513,7 @@ deploy:
 install-goose:
 >@echo "install-goose: goose.service"
 >@sudo test -s /etc/goose/goose.env || { sudo install -d -m 0755 /etc/goose; echo "GOOSE_SERVER__SECRET_KEY=$$(openssl rand -hex 32)" | sudo tee /etc/goose/goose.env >/dev/null; sudo chown root:root /etc/goose/goose.env; sudo chmod 0640 /etc/goose/goose.env; }
->@sudo cp $(REPO)/config/goose/goose.service /etc/systemd/system/goose.service
+>@sudo cp $(RENDER_DIR)/config/goose/goose.service /etc/systemd/system/goose.service
 >@sudo systemctl daemon-reload
 >@sudo systemctl restart goose
 
@@ -501,27 +523,28 @@ install-ttyd:
     scripts/mklog error "This shell runs inside ttyd (web terminal) — restarting ttyd now would kill this shell and anything under it (agent sessions, tmux). Run install-ttyd from SSH or a local terminal instead."; \
     exit 1; \
   fi
->@sudo cp $(REPO)/config/ttyd/ttyd.service /etc/systemd/system/ttyd.service
+>@sudo cp $(RENDER_DIR)/config/ttyd/ttyd.service /etc/systemd/system/ttyd.service
 >@sudo systemctl daemon-reload
 >@sudo systemctl restart ttyd
 
 install-ssh:
 >@echo "install-ssh: 50-cloud-init.conf"
->@sudo cp $(REPO)/config/ssh/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf
+>@sudo cp $(RENDER_DIR)/config/ssh/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf
 >@sudo sshd -t && sudo systemctl restart sshd
 
 install-dnsmasq-conf:
 >@echo "install-dnsmasq-conf: 10-tailnet.conf"
 >@TS_IP=$$(tailscale ip -4 2>/dev/null | head -n1); \
+    TS_ADDR=$$(sed -n 's/^TAILNET_SUBNET=//p' $(CONF) 2>/dev/null | head -1 | cut -d/ -f1); \
     [ -n "$$TS_IP" ] || { scripts/mklog error "no tailscale IP — cannot render 10-tailnet.conf"; exit 1; }; \
-    sed "s/100\.117\.144\.0/$$TS_IP/g" $(REPO)/config/dnsmasq/10-tailnet.conf | sudo tee /etc/dnsmasq.d/10-tailnet.conf >/dev/null; \
+    sed "s/$$TS_ADDR/$$TS_IP/g" $(RENDER_DIR)/config/dnsmasq/10-tailnet.conf | sudo tee /etc/dnsmasq.d/10-tailnet.conf >/dev/null; \
     scripts/mklog info "dnsmasq split-DNS rendered for $$TS_IP"
 >@sudo systemctl restart dnsmasq
 
 install-dnsmasq-override:
 >@echo "install-dnsmasq-override: dnsmasq.service.d/override.conf"
 >@sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
->@sudo cp $(REPO)/config/dnsmasq/dnsmasq.service.conf /etc/systemd/system/dnsmasq.service.d/override.conf
+>@sudo cp $(RENDER_DIR)/config/dnsmasq/dnsmasq.service.conf /etc/systemd/system/dnsmasq.service.d/override.conf
 >@sudo systemctl daemon-reload
 >@sudo systemctl restart dnsmasq
 
@@ -532,13 +555,13 @@ install-docker:
 >@echo "Run: sudo systemctl restart docker  (containers stay up via live-restore)."
 
 install-sysctl:
->@echo "install-sysctl: 99-kefoserver.conf"
->@sudo cp $(REPO)/config/sysctl/99-kefoserver.conf /etc/sysctl.d/99-kefoserver.conf
+>@echo "install-sysctl: 99-kefo.conf"
+>@sudo cp $(RENDER_DIR)/config/sysctl/99-kefo.conf /etc/sysctl.d/99-kefo.conf
 >@sudo sysctl --system >/dev/null
 
 install-cron:
 >@echo "install-cron: /etc/cron.d/nextcloud (Nextcloud occ cron, every 5 min)"
->@sudo cp $(REPO)/config/cron/nextcloud /etc/cron.d/nextcloud
+>@sudo cp $(RENDER_DIR)/config/cron/nextcloud /etc/cron.d/nextcloud
 >@sudo chmod 0644 /etc/cron.d/nextcloud
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -707,10 +730,10 @@ backup:
 >@sudo cp /etc/systemd/system/ttyd.service $(REPO)/config/ttyd/ttyd.service
 >@sudo cp /etc/ssh/sshd_config.d/50-cloud-init.conf $(REPO)/config/ssh/50-cloud-init.conf
 >@TS_IP=$$(tailscale ip -4 2>/dev/null | head -n1); \
-    sed "s/$${TS_IP:-__none__}/100.117.144.0/g" /etc/dnsmasq.d/10-tailnet.conf | sudo tee $(REPO)/config/dnsmasq/10-tailnet.conf >/dev/null; \
+TS_ADDR=$$(sed -n 's/^TAILNET_SUBNET=//p' $(CONF) 2>/dev/null | head -1 | cut -d/ -f1);     sed "s/$${TS_IP:-__none__}/$$TS_ADDR/g" /etc/dnsmasq.d/10-tailnet.conf | sudo tee $(REPO)/config/dnsmasq/10-tailnet.conf >/dev/null; \
     scripts/mklog info "10-tailnet.conf pulled back with the placeholder restored (never the live IP)"
 >@sudo cp /etc/systemd/system/dnsmasq.service.d/override.conf $(REPO)/config/dnsmasq/dnsmasq.service.conf
->@sudo cp /etc/sysctl.d/99-kefoserver.conf $(REPO)/config/sysctl/99-kefoserver.conf
+>@sudo cp /etc/sysctl.d/99-kefo.conf $(REPO)/config/sysctl/99-kefo.conf
 >@sudo cp /etc/docker/daemon.json $(REPO)/config/docker/daemon.json
 >@sudo cp /etc/fail2ban/jail.d/sshd.conf $(REPO)/config/fail2ban/jail.d/sshd.conf
 >@sudo cp /etc/cron.d/nextcloud $(REPO)/config/cron/nextcloud
