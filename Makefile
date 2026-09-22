@@ -700,7 +700,7 @@ install-config-bundle:
 
 # All bkp-* recipes write under $(REPO)/data/backups/. bkp-list enumerates that
 # dir so the operator has one place to see what's been snapshotted.
-BKP_DIR := $(REPO)/backups
+BKP_DIR := $(REPO)/data/backups
 
 # Shared bodies: `make backup` inlines them so it stays one self-contained
 # recipe (no chained make targets).
@@ -720,7 +720,7 @@ endef
 define bkp_vault_cmds
 @dest=$(BKP_DIR)/vault-backup-$$(date +%Y%m%d).tar.gz; \
   sudo mkdir -p "$(BKP_DIR)"; \
-  sudo tar czf "$$dest" -C $(REPO)/vault data; \
+  sudo tar czf "$$dest" -C $(REPO)/data/vault data; \
   scripts/mklog info "backup at $$dest"
 endef
 
@@ -741,19 +741,19 @@ backup:
 >$(bkp_cloud_cmds)
 >$(bkp_vault_cmds)
 >$(bundle_secrets_cmds)
->@scripts/mklog info "pulling live config into repo/config/"
+>@scripts/mklog info "pulling live config into repo/config/ — reverse-rendered, so it lands as {{TOKENS}} not as this instance's values"
 >@sudo mkdir -p $(REPO)/config
->@sudo cp /etc/systemd/system/goose.service $(REPO)/config/goose/goose.service
->@sudo cp /etc/systemd/system/ttyd.service $(REPO)/config/ttyd/ttyd.service
->@sudo cp /etc/ssh/sshd_config.d/50-cloud-init.conf $(REPO)/config/ssh/50-cloud-init.conf
+>@bash $(REPO)/scripts/render.sh --reverse /etc/systemd/system/goose.service $(REPO)/config/goose/goose.service
+>@bash $(REPO)/scripts/render.sh --reverse /etc/systemd/system/ttyd.service $(REPO)/config/ttyd/ttyd.service
+>@bash $(REPO)/scripts/render.sh --reverse /etc/ssh/sshd_config.d/50-cloud-init.conf $(REPO)/config/ssh/50-cloud-init.conf
 >@TS_IP=$$(tailscale ip -4 2>/dev/null | head -n1); \
 TS_ADDR=$$(sed -n 's/^TAILNET_SUBNET=//p' $(CONF) 2>/dev/null | head -1 | cut -d/ -f1);     sed "s/$${TS_IP:-__none__}/$$TS_ADDR/g" /etc/dnsmasq.d/10-tailnet.conf | sudo tee $(REPO)/config/dnsmasq/10-tailnet.conf >/dev/null; \
     scripts/mklog info "10-tailnet.conf pulled back with the placeholder restored (never the live IP)"
->@sudo cp /etc/systemd/system/dnsmasq.service.d/override.conf $(REPO)/config/dnsmasq/dnsmasq.service.conf
->@sudo cp /etc/sysctl.d/99-kefo.conf $(REPO)/config/sysctl/99-kefo.conf
+>@bash $(REPO)/scripts/render.sh --reverse /etc/systemd/system/dnsmasq.service.d/override.conf $(REPO)/config/dnsmasq/dnsmasq.service.conf
+>@bash $(REPO)/scripts/render.sh --reverse /etc/sysctl.d/99-kefo.conf $(REPO)/config/sysctl/99-kefo.conf
 >@sudo cp /etc/docker/daemon.json $(REPO)/config/docker/daemon.json
->@sudo cp /etc/fail2ban/jail.d/sshd.conf $(REPO)/config/fail2ban/jail.d/sshd.conf
->@sudo cp /etc/cron.d/nextcloud $(REPO)/config/cron/nextcloud
+>@bash $(REPO)/scripts/render.sh --reverse /etc/fail2ban/jail.d/sshd.conf $(REPO)/config/fail2ban/jail.d/sshd.conf
+>@bash $(REPO)/scripts/render.sh --reverse /etc/cron.d/nextcloud $(REPO)/config/cron/nextcloud
 >@sudo chown -R root:root $(REPO)/config
 >@scripts/mklog info "live config pulled into $(REPO)/config/ — git add/commit to sync the repo"
 
