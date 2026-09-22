@@ -49,11 +49,10 @@ http:// {
 # back all vhosts is no longer referenced — per-vhost ACME certs are scoped
 # to their own SNI (see ./vhosts/cloud.fxmq.net.caddy for the rationale).
 
-import vhosts/tail.fxmq.net.caddy
-import vhosts/talk.fxmq.net.caddy
-import vhosts/mc.fxmq.net.caddy
-import vhosts/vault.fxmq.net.caddy
-import vhosts/cloud.fxmq.net.caddy
-import vhosts/kuma.fxmq.net.caddy
-import vhosts/mail.fxmq.net.caddy
-import vhosts/www.fxmq.net.caddy
+# A glob, deliberately: a glob that matches nothing is NOT an error in
+# Caddy, so vhosts/ can be empty and the edge still starts. That is what
+# makes the edge extensible — another project (kefoMC) drops in
+# vhosts/mc.caddy and the site exists, no edit to this repo required.
+# Adding a file needs a CONTAINER RESTART (the edge runs `admin off`, so
+# `caddy reload` has no admin API to talk to).
+import vhosts/*.caddy
