@@ -4,7 +4,7 @@ __pycache__/
 # Every service .env: `make render` writes the instance block into each one for
 # compose substitution, and some carry secrets. Regenerated on every render, so
 # never tracked — a blanket rule, not a per-service list that rots.
-services/*/.env
+modules/*/.env
 # Runtime data dirs — canonical home is {{DATA_DIR}}/: the
 # single external tree (containers, databases, uploads, installed-module
 # reports). Everything untracked lives there; the repo tree stays clean.
