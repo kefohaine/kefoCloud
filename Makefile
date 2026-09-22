@@ -6,7 +6,7 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -c
 
-REPO     := /var/www/custom/projects/homelab
+REPO     := /root/github/kefoserver
 COMPOSE  := docker compose -f
 CONTAINERS := fxmq.net uptimekuma nextcloud vaultwarden pufferpanel mailserver roundcube
 HOST     := ttyd dnsmasq goose
@@ -38,7 +38,7 @@ COMPOSE_FILE_roundcube := services/mailserver/docker-compose.yml
 # Helper: $(compose-file-of $1) returns the absolute compose file path for
 # the named service. Recipes use this directly instead of $(COMPOSE_FILE_$1)
 # so the expansion happens at recipe-expansion time, not recipe-execution time.
-compose-file-of = $(REPO)/repo/$(COMPOSE_FILE_$1)
+compose-file-of = $(REPO)/$(COMPOSE_FILE_$1)
 
 # fxmq.net needs a local image build; compose v5.5.0 on Debian trixie ships
 # buildx 0.13.1, which is too old for `compose ... --build` (needs >= 0.17).
@@ -49,7 +49,7 @@ dok-recreate-$1:
 >@if [ "$1" = "fxmq.net" ]; then \
     if ! $(COMPOSE) $(call compose-file-of,$1) up -d --force-recreate --build; then \
       scripts/mklog warn "compose build unavailable (buildx < 0.17 on trixie) — falling back to docker build + compose up"; \
-      docker build -t fxmq.net:local $(REPO)/repo/services/fxmq.net \
+      docker build -t fxmq.net:local $(REPO)/services/fxmq.net \
         && $(COMPOSE) $(call compose-file-of,$1) up -d --force-recreate; \
     fi; \
   else \
@@ -82,11 +82,11 @@ $(foreach s,$(CONTAINERS),$(eval $(call dok_logs_rule,$s)))
 # builds locally, with the buildx fallback). Used by dok-recreate-all and
 # update — each keeps a self-contained recipe (no chained make targets).
 define dok_recreate_all_cmds
-@for f in $(REPO)/repo/services/*/docker-compose.yml; do \
-    if [ "$$f" = "$(REPO)/repo/services/fxmq.net/docker-compose.yml" ]; then \
+@for f in $(REPO)/services/*/docker-compose.yml; do \
+    if [ "$$f" = "$(REPO)/services/fxmq.net/docker-compose.yml" ]; then \
       if ! $(COMPOSE) "$$f" up -d --force-recreate --build; then \
         scripts/mklog warn "compose build unavailable (buildx < 0.17 on trixie) — falling back to docker build + compose up"; \
-        docker build -t fxmq.net:local $(REPO)/repo/services/fxmq.net \
+        docker build -t fxmq.net:local $(REPO)/services/fxmq.net \
           && $(COMPOSE) "$$f" up -d --force-recreate; \
       fi; \
     else \
@@ -99,12 +99,12 @@ dok-recreate-all:
 >$(dok_recreate_all_cmds)
 
 dok-restart-all:
->@for f in $(REPO)/repo/services/*/docker-compose.yml; do \
+>@for f in $(REPO)/services/*/docker-compose.yml; do \
     $(COMPOSE) "$$f" restart; \
   done
 
 dok-stop-all:
->@for f in $(REPO)/repo/services/*/docker-compose.yml; do \
+>@for f in $(REPO)/services/*/docker-compose.yml; do \
     $(COMPOSE) "$$f" stop; \
   done
 
@@ -198,7 +198,7 @@ endef
 
 define clean_backups_cmds
 @for pattern in cloud-backup-* share-backup-*.db vault-backup-*.tar.gz secrets-bundle-*.tar.gz 'mc-backup-*.tar.gz minecraft-backup-*.tar.gz'; do \
-    sudo ls -1dt $(REPO)/backups/$$pattern 2>/dev/null | tail -n +4 | sudo xargs -r rm -rf; \
+    sudo ls -1dt $(REPO)/data/backups/$$pattern 2>/dev/null | tail -n +4 | sudo xargs -r rm -rf; \
   done
 @scripts/mklog info "pruned backups older than the 3 most recent per pattern"
 endef
@@ -224,7 +224,7 @@ cleanup:
 update:
 >sudo apt-get update
 >sudo apt-get upgrade -y
->@for f in $(REPO)/repo/services/*/docker-compose.yml; do \
+>@for f in $(REPO)/services/*/docker-compose.yml; do \
     if grep -qE '^[[:space:]]*build:' "$$f"; then \
       scripts/mklog info "skip pull (built locally): $$f"; \
     else \
@@ -286,8 +286,8 @@ mail-del:
 >@[ -n "$(MAIL)" ] || { scripts/mklog error "usage: make mail-del MAIL=name@fxmq.net"; exit 1; }
 >@if docker exec mailserver setup email del "$(MAIL)" >/dev/null 2>&1; then \
     local=$${MAIL%@*}; \
-    if [ -d "$(REPO)/mailserver/data/fxmq.net/$$local" ]; then \
-      sudo rm -rf "$(REPO)/mailserver/data/fxmq.net/$$local" && scripts/mklog info "$(MAIL) deleted — account, aliases, quota and stored mail"; \
+    if [ -d "$(REPO)/data/mailserver/data/fxmq.net/$$local" ]; then \
+      sudo rm -rf "$(REPO)/data/mailserver/data/fxmq.net/$$local" && scripts/mklog info "$(MAIL) deleted — account, aliases, quota and stored mail"; \
     else scripts/mklog info "$(MAIL) deleted — account, aliases, quota (no stored mail)"; fi \
   else scripts/mklog error "$(MAIL) not found — nothing deleted"; exit 1; fi
 
@@ -320,7 +320,7 @@ mail-card:
 >@[ -n "$(MAIL)" ] || { scripts/mklog error "usage: make mail-card MAIL=name@fxmq.net"; exit 1; }
 >@local=$${MAIL%@*}; \
   if docker exec mailserver setup email list | grep -q "^[* ]*$$local@"; then \
-    q=$$(grep "^$(MAIL):" "$(REPO)/mailserver/config/dovecot-quotas.cf" 2>/dev/null | cut -d: -f2); \
+    q=$$(grep "^$(MAIL):" "$(REPO)/data/mailserver/config/dovecot-quotas.cf" 2>/dev/null | cut -d: -f2); \
     scripts/mklog info "address $(MAIL) — exists, quota $${q:-unlimited}, webmail https://mail.fxmq.net (login with '$$local')"; \
     scripts/mklog warn "password is hashed — rotate with make mail-password MAIL=$(MAIL)"; \
   else scripts/mklog error "$(MAIL) not found — create with make mail-gen [MAIL=…]"; exit 1; fi
@@ -389,7 +389,7 @@ kuma-import:
 
 # Generate the Nextcloud-stack secrets + Talk service configs (idempotent).
 # Creates services/nextcloud/.env entries (DB, Redis, signaling, TURN, SMTP)
-# if missing and renders /var/www/custom/projects/homelab/talk/{server,turnserver}.conf.
+# if missing and renders /root/github/kefoserver/data/talk/{server,turnserver}.conf.
 talk-gen:
 >@bash scripts/talk-gen.sh
 
@@ -423,30 +423,30 @@ define install_config_cmds
   else \
     scripts/mklog info "ttyd already installed at $$(command -v ttyd)"; \
   fi
-sudo test -s /etc/goose/goose.env || { sudo install -d -m 0755 /etc/goose; echo "GOOSE_SERVER__SECRET_KEY=$$(openssl rand -hex 32)" | sudo tee /etc/goose/goose.env >/dev/null; sudo chown root:op /etc/goose/goose.env; sudo chmod 0640 /etc/goose/goose.env; }
-sudo cp $(REPO)/repo/config/goose/goose.service /etc/systemd/system/goose.service
-bash $(REPO)/repo/scripts/goose-tokens.sh
-sudo cp $(REPO)/repo/config/ssh/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf
-sudo cp $(REPO)/repo/config/dnsmasq/10-tailnet.conf /etc/dnsmasq.d/10-tailnet.conf
+sudo test -s /etc/goose/goose.env || { sudo install -d -m 0755 /etc/goose; echo "GOOSE_SERVER__SECRET_KEY=$$(openssl rand -hex 32)" | sudo tee /etc/goose/goose.env >/dev/null; sudo chown root:root /etc/goose/goose.env; sudo chmod 0640 /etc/goose/goose.env; }
+sudo cp $(REPO)/config/goose/goose.service /etc/systemd/system/goose.service
+bash $(REPO)/scripts/goose-tokens.sh
+sudo cp $(REPO)/config/ssh/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf
+sudo cp $(REPO)/config/dnsmasq/10-tailnet.conf /etc/dnsmasq.d/10-tailnet.conf
 sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
-sudo cp $(REPO)/repo/config/dnsmasq/dnsmasq.service.conf /etc/systemd/system/dnsmasq.service.d/override.conf
-sudo cp $(REPO)/repo/config/sysctl/99-homelab.conf /etc/sysctl.d/99-homelab.conf
+sudo cp $(REPO)/config/dnsmasq/dnsmasq.service.conf /etc/systemd/system/dnsmasq.service.d/override.conf
+sudo cp $(REPO)/config/sysctl/99-kefoserver.conf /etc/sysctl.d/99-kefoserver.conf
 sudo sysctl --system >/dev/null
-@if ! diff -q /etc/docker/daemon.json $(REPO)/repo/config/docker/daemon.json >/dev/null 2>&1; then \
+@if ! diff -q /etc/docker/daemon.json $(REPO)/config/docker/daemon.json >/dev/null 2>&1; then \
     scripts/mklog info "installing /etc/docker/daemon.json (Docker daemon restart required to take effect)"; \
     sudo mkdir -p /etc/docker; \
-    sudo cp $(REPO)/repo/config/docker/daemon.json /etc/docker/daemon.json; \
+    sudo cp $(REPO)/config/docker/daemon.json /etc/docker/daemon.json; \
     scripts/mklog info "run: sudo systemctl restart docker (containers stay up via live-restore)"; \
   else \
     scripts/mklog info "docker daemon config already up to date"; \
   fi
-sudo cp $(REPO)/repo/config/ttyd/ttyd.service /etc/systemd/system/ttyd.service
-sudo cp $(REPO)/repo/config/bash/kefohaine-banner.sh /etc/kefohaine-banner.sh
-sudo chmod 0644 /etc/kefohaine-banner.sh
-@grep -qxF '. /etc/kefohaine-banner.sh' "$$HOME/.bashrc" || printf '%s\n' '. /etc/kefohaine-banner.sh' >> "$$HOME/.bashrc"
-bash $(REPO)/repo/scripts/tail-targets.sh
-sudo cp $(REPO)/repo/config/fail2ban/jail.d/sshd.conf /etc/fail2ban/jail.d/sshd.conf
-sudo cp $(REPO)/repo/config/cron/nextcloud /etc/cron.d/nextcloud
+sudo cp $(REPO)/config/ttyd/ttyd.service /etc/systemd/system/ttyd.service
+sudo cp $(REPO)/config/bash/kefoserver-banner.sh /etc/kefoserver-banner.sh
+sudo chmod 0644 /etc/kefoserver-banner.sh
+@grep -qxF '. /etc/kefoserver-banner.sh' "$$HOME/.bashrc" || printf '%s\n' '. /etc/kefoserver-banner.sh' >> "$$HOME/.bashrc"
+bash $(REPO)/scripts/tail-targets.sh
+sudo cp $(REPO)/config/fail2ban/jail.d/sshd.conf /etc/fail2ban/jail.d/sshd.conf
+sudo cp $(REPO)/config/cron/nextcloud /etc/cron.d/nextcloud
 sudo chmod 0644 /etc/cron.d/nextcloud
 sudo systemctl enable --now fail2ban
 sudo ufw allow from 172.22.0.0/16 to any port 7681 proto tcp
@@ -481,8 +481,8 @@ deploy:
 
 install-goose:
 >@echo "install-goose: goose.service"
->@sudo test -s /etc/goose/goose.env || { sudo install -d -m 0755 /etc/goose; echo "GOOSE_SERVER__SECRET_KEY=$$(openssl rand -hex 32)" | sudo tee /etc/goose/goose.env >/dev/null; sudo chown root:op /etc/goose/goose.env; sudo chmod 0640 /etc/goose/goose.env; }
->@sudo cp $(REPO)/repo/config/goose/goose.service /etc/systemd/system/goose.service
+>@sudo test -s /etc/goose/goose.env || { sudo install -d -m 0755 /etc/goose; echo "GOOSE_SERVER__SECRET_KEY=$$(openssl rand -hex 32)" | sudo tee /etc/goose/goose.env >/dev/null; sudo chown root:root /etc/goose/goose.env; sudo chmod 0640 /etc/goose/goose.env; }
+>@sudo cp $(REPO)/config/goose/goose.service /etc/systemd/system/goose.service
 >@sudo systemctl daemon-reload
 >@sudo systemctl restart goose
 
@@ -492,41 +492,41 @@ install-ttyd:
     scripts/mklog error "This shell runs inside ttyd (web terminal) — restarting ttyd now would kill this shell and anything under it (agent sessions, tmux). Run install-ttyd from SSH or a local terminal instead."; \
     exit 1; \
   fi
->@sudo cp $(REPO)/repo/config/ttyd/ttyd.service /etc/systemd/system/ttyd.service
+>@sudo cp $(REPO)/config/ttyd/ttyd.service /etc/systemd/system/ttyd.service
 >@sudo systemctl daemon-reload
 >@sudo systemctl restart ttyd
 
 install-ssh:
 >@echo "install-ssh: 50-cloud-init.conf"
->@sudo cp $(REPO)/repo/config/ssh/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf
+>@sudo cp $(REPO)/config/ssh/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf
 >@sudo sshd -t && sudo systemctl restart sshd
 
 install-dnsmasq-conf:
 >@echo "install-dnsmasq-conf: 10-tailnet.conf"
->@sudo cp $(REPO)/repo/config/dnsmasq/10-tailnet.conf /etc/dnsmasq.d/10-tailnet.conf
+>@sudo cp $(REPO)/config/dnsmasq/10-tailnet.conf /etc/dnsmasq.d/10-tailnet.conf
 >@sudo systemctl restart dnsmasq
 
 install-dnsmasq-override:
 >@echo "install-dnsmasq-override: dnsmasq.service.d/override.conf"
 >@sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
->@sudo cp $(REPO)/repo/config/dnsmasq/dnsmasq.service.conf /etc/systemd/system/dnsmasq.service.d/override.conf
+>@sudo cp $(REPO)/config/dnsmasq/dnsmasq.service.conf /etc/systemd/system/dnsmasq.service.d/override.conf
 >@sudo systemctl daemon-reload
 >@sudo systemctl restart dnsmasq
 
 install-docker:
 >@echo "install-docker: /etc/docker/daemon.json (Docker daemon restart required)"
 >@sudo mkdir -p /etc/docker
->@sudo cp $(REPO)/repo/config/docker/daemon.json /etc/docker/daemon.json
+>@sudo cp $(REPO)/config/docker/daemon.json /etc/docker/daemon.json
 >@echo "Run: sudo systemctl restart docker  (containers stay up via live-restore)."
 
 install-sysctl:
->@echo "install-sysctl: 99-homelab.conf"
->@sudo cp $(REPO)/repo/config/sysctl/99-homelab.conf /etc/sysctl.d/99-homelab.conf
+>@echo "install-sysctl: 99-kefoserver.conf"
+>@sudo cp $(REPO)/config/sysctl/99-kefoserver.conf /etc/sysctl.d/99-kefoserver.conf
 >@sudo sysctl --system >/dev/null
 
 install-cron:
 >@echo "install-cron: /etc/cron.d/nextcloud (Nextcloud occ cron, every 5 min)"
->@sudo cp $(REPO)/repo/config/cron/nextcloud /etc/cron.d/nextcloud
+>@sudo cp $(REPO)/config/cron/nextcloud /etc/cron.d/nextcloud
 >@sudo chmod 0644 /etc/cron.d/nextcloud
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -538,13 +538,13 @@ install-cron:
 # ─────────────────────────────────────────────────────────────────────────────
 
 dok-recreate-nextcloud-db:
->$(COMPOSE) $(REPO)/repo/services/nextcloud/docker-compose.db.yml up -d --force-recreate
+>$(COMPOSE) $(REPO)/services/nextcloud/docker-compose.db.yml up -d --force-recreate
 
 dok-restart-nextcloud-db:
->$(COMPOSE) $(REPO)/repo/services/nextcloud/docker-compose.db.yml restart
+>$(COMPOSE) $(REPO)/services/nextcloud/docker-compose.db.yml restart
 
 dok-stop-nextcloud-db:
->$(COMPOSE) $(REPO)/repo/services/nextcloud/docker-compose.db.yml stop
+>$(COMPOSE) $(REPO)/services/nextcloud/docker-compose.db.yml stop
 
 dok-logs-nextcloud-db:
 >docker logs postgresql --tail 50 -f
@@ -566,10 +566,10 @@ define bundle_secrets_cmds
 @dest=$(BKP_DIR)/secrets-bundle-$$(date +%Y%m%d).tar.gz; \
   sudo mkdir -p "$(BKP_DIR)"; \
   sudo tar czf "$$dest" \
-    /home/op/.ssh/github_key \
-    /home/op/.ssh/github_key.pub \
-    /home/op/.ssh/config \
-    /home/op/.ssh/authorized_keys \
+    /root/.ssh/github_key \
+    /root/.ssh/github_key.pub \
+    /root/.ssh/config \
+    /root/.ssh/authorized_keys \
     /etc/systemd/system/goose.service \
     /etc/goose/goose.env \
     /etc/systemd/system/ttyd.service \
@@ -610,18 +610,18 @@ install-secrets:
 bundle-config:
 >@dest=$(BKP_DIR)/config-bundle-$$(date +%Y%m%d).tar.gz; \
   sudo mkdir -p "$(BKP_DIR)"; \
-  sudo tar czf "$$dest" -C $(REPO)/repo config; \
-  sudo chown op:op "$$dest"; \
+  sudo tar czf "$$dest" -C $(REPO) config; \
+  sudo chown root:root "$$dest"; \
   scripts/mklog info "config bundle at $$dest"
 
-# Extract a config bundle tarball over $(REPO)/repo/config/. Defaults
+# Extract a config bundle tarball over $(REPO)/config/. Defaults
 # to the newest config-bundle-*.tar.gz under $(BKP_DIR); override with
 # BUNDLE=<path>. Use when bootstrapping a fresh host: clone the repo
 # (or just create the dir), then `make install-config-bundle` to
 # populate config/ before running `make install-config`.
 install-config-bundle:
->@if [ ! -d "$(REPO)/repo" ]; then \
-    scripts/mklog error "$(REPO)/repo does not exist — clone the repo first"; \
+>@if [ ! -d "$(REPO)" ]; then \
+    scripts/mklog error "$(REPO) does not exist — clone the repo first"; \
     exit 1; \
   fi; \
   if [ -z "$(BUNDLE)" ]; then \
@@ -634,8 +634,8 @@ install-config-bundle:
   else \
     BUNDLE="$(BUNDLE)"; \
   fi; \
-  tar xzf "$$BUNDLE" -C $(REPO)/repo; \
-  scripts/mklog info "installed $$BUNDLE into $(REPO)/repo/config/"
+  tar xzf "$$BUNDLE" -C $(REPO); \
+  scripts/mklog info "installed $$BUNDLE into $(REPO)/config/"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Backups (rename: backup-* → bkp-*)
@@ -646,7 +646,7 @@ install-config-bundle:
 
 .PHONY: bkp-cloud bkp-vault bkp-list backup
 
-# All bkp-* recipes write under $(REPO)/backups/. bkp-list enumerates that
+# All bkp-* recipes write under $(REPO)/data/backups/. bkp-list enumerates that
 # dir so the operator has one place to see what's been snapshotted.
 BKP_DIR := $(REPO)/backups
 
@@ -655,7 +655,7 @@ BKP_DIR := $(REPO)/backups
 define bkp_cloud_cmds
 @dest=$(BKP_DIR)/cloud-backup-$$(date +%Y%m%d); \
   sudo mkdir -p "$(BKP_DIR)" "$$dest"; \
-  sudo chown op:op "$$dest"; \
+  sudo chown root:root "$$dest"; \
   docker exec -w /var/www/html nextcloud php occ maintenance:mode --on; \
   trap 'docker exec -w /var/www/html nextcloud php occ maintenance:mode --off' EXIT; \
   docker exec -i nextcloud tar cf - -C /data . | sudo tar xf - -C "$$dest"; \
@@ -679,8 +679,8 @@ bkp-vault:
 >$(bkp_vault_cmds)
 
 # Help-line name for the full snapshot — one self-contained recipe:
-# every container database + live secrets land compressed in $(REPO)/backups/,
-# and the live server config is pulled into $(REPO)/repo/config/ subdirectories
+# every container database + live secrets land compressed in $(REPO)/data/backups/,
+# and the live server config is pulled into $(REPO)/config/ subdirectories
 # (the one non-compressed exception). The config-pull mirrors the file list
 # install-config pushes, reversed; git add/commit the config/ changes. These files
 # must never carry secrets — the goose unit reads its key from /etc/goose/goose.env
@@ -690,18 +690,18 @@ backup:
 >$(bkp_vault_cmds)
 >$(bundle_secrets_cmds)
 >@scripts/mklog info "pulling live config into repo/config/"
->@sudo mkdir -p $(REPO)/repo/config
->@sudo cp /etc/systemd/system/goose.service $(REPO)/repo/config/goose/goose.service
->@sudo cp /etc/systemd/system/ttyd.service $(REPO)/repo/config/ttyd/ttyd.service
->@sudo cp /etc/ssh/sshd_config.d/50-cloud-init.conf $(REPO)/repo/config/ssh/50-cloud-init.conf
->@sudo cp /etc/dnsmasq.d/10-tailnet.conf $(REPO)/repo/config/dnsmasq/10-tailnet.conf
->@sudo cp /etc/systemd/system/dnsmasq.service.d/override.conf $(REPO)/repo/config/dnsmasq/dnsmasq.service.conf
->@sudo cp /etc/sysctl.d/99-homelab.conf $(REPO)/repo/config/sysctl/99-homelab.conf
->@sudo cp /etc/docker/daemon.json $(REPO)/repo/config/docker/daemon.json
->@sudo cp /etc/fail2ban/jail.d/sshd.conf $(REPO)/repo/config/fail2ban/jail.d/sshd.conf
->@sudo cp /etc/cron.d/nextcloud $(REPO)/repo/config/cron/nextcloud
->@sudo chown -R op:op $(REPO)/repo/config
->@scripts/mklog info "live config pulled into $(REPO)/repo/config/ — git add/commit to sync the repo"
+>@sudo mkdir -p $(REPO)/config
+>@sudo cp /etc/systemd/system/goose.service $(REPO)/config/goose/goose.service
+>@sudo cp /etc/systemd/system/ttyd.service $(REPO)/config/ttyd/ttyd.service
+>@sudo cp /etc/ssh/sshd_config.d/50-cloud-init.conf $(REPO)/config/ssh/50-cloud-init.conf
+>@sudo cp /etc/dnsmasq.d/10-tailnet.conf $(REPO)/config/dnsmasq/10-tailnet.conf
+>@sudo cp /etc/systemd/system/dnsmasq.service.d/override.conf $(REPO)/config/dnsmasq/dnsmasq.service.conf
+>@sudo cp /etc/sysctl.d/99-kefoserver.conf $(REPO)/config/sysctl/99-kefoserver.conf
+>@sudo cp /etc/docker/daemon.json $(REPO)/config/docker/daemon.json
+>@sudo cp /etc/fail2ban/jail.d/sshd.conf $(REPO)/config/fail2ban/jail.d/sshd.conf
+>@sudo cp /etc/cron.d/nextcloud $(REPO)/config/cron/nextcloud
+>@sudo chown -R root:root $(REPO)/config
+>@scripts/mklog info "live config pulled into $(REPO)/config/ — git add/commit to sync the repo"
 
 # Show every backup artifact currently on disk, newest first. Includes
 # secrets bundles — the names/contents are not enumerated, just listed.
@@ -865,7 +865,7 @@ nc-default-user-quota:
     exit 1; \
   fi
 >$(NC_OCC) config:app:set files default_quota --value "$(VALUE)"
->@printf '# GENERATED by make nc-default-user-quota (%s) — do not edit; re-run to refresh.\n# Default storage quota for NEW users (files app '\''default_quota'\'').\n%s\n' "$$(date -Is)" "$(VALUE)" > $(REPO)/cloud/recovery/default-quota
+>@printf '# GENERATED by make nc-default-user-quota (%s) — do not edit; re-run to refresh.\n# Default storage quota for NEW users (files app '\''default_quota'\'').\n%s\n' "$$(date -Is)" "$(VALUE)" > $(REPO)/data/cloud/recovery/default-quota
 
 nc-users:
 >$(NC_OCC) user:list
@@ -952,7 +952,7 @@ nc-logs:
 .PHONY: migrate
 
 migrate:
->@cat $(REPO)/repo/docs/MIGRATE.md
+>@cat $(REPO)/docs/MIGRATE.md
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Git
@@ -961,20 +961,20 @@ migrate:
 .PHONY: git-pull git-add git-com git-push
 
 git-pull:
->cd $(REPO)/repo && git pull homelab main
+>cd $(REPO) && git pull homelab main
 
 git-add:
->cd $(REPO)/repo && git add -A
+>cd $(REPO) && git add -A
 
 git-com:
 >@if [ -z "$(MSG)" ]; then \
     scripts/mklog error "Usage: make git-com MSG=\"...\"  (MSG is required)"; \
     exit 1; \
   fi
->cd $(REPO)/repo && git commit -m "$(MSG)"
+>cd $(REPO) && git commit -m "$(MSG)"
 
 git-push:
->cd $(REPO)/repo && git push homelab main
+>cd $(REPO) && git push homelab main
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Help (default goal) — scripts/help.sh renders both lists in the
@@ -989,7 +989,7 @@ git-push:
 # → ~/.config/goose/config.yaml). Idempotent, no restart needed: goose reads
 # the store when a session starts, so running sessions are untouched.
 goose-tokens:
->@bash $(REPO)/repo/scripts/goose-tokens.sh
+>@bash $(REPO)/scripts/goose-tokens.sh
 
 .DEFAULT_GOAL := help
 .PHONY: help help-more
@@ -1023,7 +1023,7 @@ taildrop-folder:
 # scripts and docs they operate on.
 # ─────────────────────────────────────────────────────────────────────────────
 
-GOOSE_RECIPE_PATH ?= $(REPO)/repo/recipes
+GOOSE_RECIPE_PATH ?= $(REPO)/recipes
 
 .PHONY: goose-recipes goose-audit goose-review goose-troubleshoot \
 	goose-check-backups goose-check-network goose-validate-installer \
