@@ -72,12 +72,11 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### Security
 
-#### docker.sock holders = host root (PufferPanel + Uptime Kuma)
-- **File**: `services/pufferpanel/docker-compose.yml` (rw), `services/uptimekuma/docker-compose.yml` (ro)
-- **Problem**: both containers mount `/var/run/docker.sock`, so a compromise of either is host root — and PufferPanel's UI is publicly reachable at `mc.$DOMAIN/panel`. `no-new-privileges` was added to PufferPanel (2026-09-11) but does not neutralise the socket.
-- **Fix** (pick one): run the panel against a dedicated/rootless Docker daemon; put `/panel` behind Cloudflare Access; or tailnet-gate `/panel` (keeps `/play` public). A socket-proxy adds little — a container manager needs near-full API access.
-- **Why approval**: each option changes the operator's access path.
-
+#### docker.sock holders = host root (Uptime Kuma)
+- **File**: `services/uptimekuma/docker-compose.yml` (ro socket). The kefoMC repo (PufferPanel, moved out) also mounts it rw.
+- **Problem**: a container with the docker socket is host root — a compromise of either is host root, and the panel's UI was publicly reachable at `mc.$DOMAIN/panel`. `no-new-privileges` does not neutralise the socket.
+- **Impact**: total host compromise from one container escape. Accepted trade-off: monitoring needs the socket, and the panel cannot run game servers without it.
+- **Status**: accepted, documented. Tracked for the edge/agent work: any socket holder should be treated as host root when writing policy.
 #### goose server secret is in git history
 - **File**: `config/goose/goose.service` (history)
 - **Problem**: `install.sh` used to `sed` a generated `GOOSE_SERVER__SECRET_KEY` into the tracked unit, so a real key sits in git history. The repo now uses `EnvironmentFile=/etc/goose/goose.env` (root:root 0640), but the old value is still in history and unrotated.
@@ -149,11 +148,6 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### Efficiency
 
-#### install.sh hardcodes `admin@fxmq.net` for the PufferPanel admin  **[generalization drift]**
-- **File**: `scripts/install.sh` (panel_admin seed + smoke recheck)
-- **Problem**: rule 12 (stay global) — the panel admin email is hardcoded to `fxmq.net` while the rest of install.sh is `$DOMAIN`-driven; a fresh install for another domain still seeds an `@fxmq.net` admin, and `scripts/smoke-vhosts.sh` asserts it.
-- **Fix**: derive the admin email from `$DOMAIN` (or accept fxmq.net as canonical and document it in REF.md/GUIDE); needs an operator decision on whether the panel admin domain may ever differ.
-
 #### PHP-FPM pool sizing under concurrent sync
 - **File**: `services/nextcloud/php-fpm.d/zz-custom.conf`
 - **Problem**: `pm.max_children = 8` with 200s terminate timeout. Slow syncs can occupy all 8 children. (Already switched to `ondemand` — idle workers now free at rest.)
@@ -164,11 +158,6 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Problem**: The goose agent service (`goose serve`) holds memory idle when no session is active. Protected by `docs/AGENTS.md` safety rules (must not delete), but temporary `systemctl stop` between sessions would free RAM.
 - **Fix**: `systemctl stop goose` when not in use; `systemctl start goose` before use.
 - **Why approval**: operator convenience trade-off (cold start latency vs. idle RAM).
-
-#### PufferPanel Statistics tab never shows RAM (upstream #1482)
-- **File**: `services/pufferpanel/docker-compose.yml` (panel `pufferpanel/pufferpanel:latest` = 3.0.9, Jul 2026)
-- **Problem**: Server Statistics page shows no memory usage for the Minecraft (Paper) server. Matches upstream [pufferpanel/pufferpanel#1482](https://github.com/pufferpanel/pufferpanel/issues/1482) (open): RAM metric missing for Minecraft servers on `:latest`; a PaperMC reporter confirms it worked on the unmaintained `pufferpanel/pufferpanel:java` image. No fix released (3.0.9 is latest); maintainer asked for the reporter's server JSON (never provided).
-- **Fix**: wait for upstream release only — operator decision: no GitHub issue interaction (do not open, comment, or send anything). Monitoring unaffected — use `docker exec 2ecfbe8c jcmd 1 GC.heap_info` / `jstat` / `docker stats` (see earlier session notes). Do NOT pin the old `:java` image (unmaintained, no Java 25).
 
 #### PufferPanel template library stalls ~1s on first open + missing minecraft README
 - **File**: `services/pufferpanel/docker-compose.yml` (runtime data under `/root/github/kefoserver/data/puffer/data/cache/template-repos/`)
