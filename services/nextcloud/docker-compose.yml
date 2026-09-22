@@ -113,6 +113,11 @@ services:
     image: strukturag/nextcloud-spreed-signaling:latest
     container_name: talk-hpb
     restart: unless-stopped
+    # PID-1 reaper (tini). spreed-signaling spawns short-lived `timeout`
+    # children and never wait()s them, so they accumulate as zombies — 77 in
+    # the first 38 minutes of uptime (2026-09-22), i.e. PID-table exhaustion
+    # over weeks. init:true makes tini PID 1 and reaps them.
+    init: true
     mem_limit: 256m
     memswap_limit: 256m
     volumes:
