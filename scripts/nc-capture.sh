@@ -13,6 +13,8 @@
 # Passwords are NOT captured (hashes are not portable) — the recovery
 # generates new ones and prints them once.
 
+. "$(dirname "$(readlink -f "$0")")/instance.sh" 2>/dev/null || true
+
 set -uo pipefail
 
 NC_CONTAINER="${NC_CONTAINER:-nextcloud}"
