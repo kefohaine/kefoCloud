@@ -5,7 +5,7 @@
 # the dok-recreate-all / update loops never pick it up — this file intentionally
 # has no `docker-compose.yml` name).
 #
-# Currently runs on the fxmq host (bridge IP 172.22.0.15, no published ports —
+# Currently runs on this host (bridge IP 172.22.0.15, no published ports —
 # only the nextcloud container on the 'net' bridge reaches it). When the
 # operator's 1 TB / 2 GB VPS joins the tailnet, migrate by: stopping this unit,
 # rsyncing ${DATA_DIR}/pgdata to the big disk there,
@@ -13,7 +13,7 @@
 # tailnet interface only, and pointing modules/nextcloud/.env POSTGRES_HOST
 # at the new tailnet IP (see docs/GUIDE.md "Nextcloud DB" for the full steps).
 #
-# Tuning targets the 2 GB RAM of the future DB host; on the 11 GB fxmq host it
+# Tuning targets the 2 GB RAM of the future DB host; on this (larger) host it
 # is deliberately conservative. Postgres default (not tuned here) settings
 # apply everywhere else.
 services:
@@ -23,7 +23,7 @@ services:
     restart: unless-stopped
 
     # Hard RAM cap (no container swap). Part of the 3 GB Nextcloud-stack
-    # ceiling on fxmq: 1g+128m+256m+128m+512m = 2.02g total.
+    # ceiling here: 1g+128m+256m+128m+512m = 2.02g total.
     mem_limit: 512m
     memswap_limit: 512m
 
