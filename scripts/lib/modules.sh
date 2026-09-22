@@ -6,7 +6,7 @@
 # live/generated state into answers, so no script hardcodes the module roster
 # or invents its own wording for "not installed".
 #
-# THE VOCABULARY (kept deliberately literal, see docs/REF.md):
+# THE VOCABULARY (kept deliberately literal, see docs/SKELETON.md):
 #   mod_state   -> `installed` | `not installed`   (from installed-modules.conf)
 #   exposure    -> `public` | `tailnet-only`       (a *route* property)
 # A `not installed` module has NO route at all: it is absent, not tailnet-only.
