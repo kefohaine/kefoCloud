@@ -4,7 +4,7 @@ __pycache__/
 services/nextcloud/.env
 services/mailserver/.env
 services/vaultwarden/.env
-# Runtime data dirs — canonical home is /root/github/kefoserver/data/: the
+# Runtime data dirs — canonical home is {{DATA_DIR}}/: the
 # single external tree (containers, databases, uploads, installed-module
 # reports). Everything untracked lives there; the repo tree stays clean.
 /data/
