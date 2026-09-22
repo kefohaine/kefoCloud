@@ -29,7 +29,7 @@ prompt: |
   table against the live config.
 
   Inspect:
-  - services/fxmq.net/Caddyfile and services/fxmq.net/vhosts/*.caddy
+  - services/caddy/Caddyfile and services/caddy/vhosts/*.caddy
   - services/mailserver/docker-compose.yml and its healthchecks
   - make smoke output for vhost/edge behavior
 
