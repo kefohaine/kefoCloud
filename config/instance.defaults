@@ -6,7 +6,7 @@
 # prompts, or by you by hand:
 #
 #   DOMAIN=example.com
-#   HOSTNAME=kefoserver
+#   HOSTNAME=server
 #   ...
 #
 # scripts/render/render.sh substitutes them (`make render`, `make install-config`);
@@ -24,7 +24,6 @@
 # DATA_DIR — absolute path of all untracked instance state ($REPO_DIR/data)
 # LOG_DIR — every log this project writes (/var/log/kefohaine)
 # STATE_DIR — install state: CF token + Tailscale key, mode 0700 (/var/lib/kefohaine)
-# TAILNET_SUBNET — the tailnet CIDR, also the render token in config/dnsmasq (/24)
 # SERVER_IP — the host's public IPv4 (needed for DNS + mail PTR checks)
 # EMAIL — the operator's contact address (admin@$DOMAIN)
 # TIMEZONE — IANA zone used by containers and cron (UTC)
