@@ -4,7 +4,7 @@
 #
 # The tail vhost is gated by two ordered layers: non-tailnet sources get 403,
 # and every request (tailnet included) needs HTTP basic auth — because /ttyd is
-# a full `op` shell and `op` has passwordless sudo. This script sets/rotates
+# a full `root` shell and `root` has passwordless sudo. This script sets/rotates
 # that credential and never prints the password.
 #
 # Usage: tail-auth.sh set [user] [password]
