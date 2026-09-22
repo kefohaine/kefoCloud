@@ -2,7 +2,7 @@
 # GitHub web git-data health check for this repo's push remote.
 # After a full-history rewrite + force-push, GitHub's web git-data index can
 # 500/404 (web root, /tree, /commits — "Page not found") while git itself
-# stays healthy; that was the 2026-09-03 kefohaine/server incident. Fix: push
+# stays healthy; that was the 2026-09-03 kefohaine/kefoserver incident. Fix: push
 # a nudge commit, which triggers GitHub's rebuild (allow ~10-20 min of
 # intermittent 500s while it settles).
 # Run `make gh-web-health` after any history rewrite; the pre-push hook warns
