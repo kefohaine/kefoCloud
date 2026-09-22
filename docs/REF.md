@@ -1,39 +1,45 @@
-# REF.md — per-setup reference (source of the docs' variables)
+# REF.md — the skeleton's variables
 
-The docs reference this demo's values as variables (`$DOMAIN`, `$DATA_DIR`, …)
-instead of hardcoding them. This file is the source of truth: **edit it for your
-own setup** — docs stay neutral and portable.
+This repo carries **no instance values**. Every deployable file is a template
+(`{{TOKEN}}`), a compose file using `${VAR}` substitution, or a script reading
+`scripts/instance.sh`. The values live in **one untracked file**,
+`data/instance.conf`, written by `scripts/install.sh`.
 
-## Variables
+- **What each token means** → `config/instance.defaults` (tracked, documented).
+- **The current values** → `data/instance.conf` (untracked, mode 0600).
+- **How rendering works, and how to rename/move an instance** →
+  `docs/SKELETON.md`.
+- **Inspect the values without reading the file** → `scripts/render.sh --tokens`.
 
-```bash
-DOMAIN='{{DOMAIN}}'                                   # demo domain (Cloudflare zone)
-GITHUB_USER='{{GITHUB_USER}}'
-GITHUB_REPO="$GITHUB_USER/{{HOSTNAME}}"               # upstream repo (public; cloned + pushed over SSH)
-REPO_DIR='{{REPO_DIR}}'                  # this repo's checkout (make REPO)
-DATA_DIR="$REPO_DIR/data"                           # all external/untracked state
-OPERATOR_USER='root'                                # only entry point: root@{{HOSTNAME}}
-HOSTNAME='{{HOSTNAME}}'                               # local machine + tailnet node name
-MAIL_IDENT="vaultwarden@$DOMAIN"                    # SMTP sender mailbox (Vaultwarden)
-WWW_WELCOME="https://www.$DOMAIN/welcome"           # the welcome page
-VHOST_PROXIED='cloud vault kuma www'                # Cloudflare orange-cloud records
-VHOST_DNSONLY='mail mc talk'                        # Cloudflare grey-cloud records
-TAILNET_SUBNET='100.117.144.0/24'                   # tailnet CIDR (also the render token in config/dnsmasq/10-tailnet.conf)
-STORAGE_HOST='root@<storage-box>'                   # second Debian system (sshpass)
-```
+## The tokens
+
+| Token | Meaning |
+|---|---|
+| `{{DOMAIN}}` | public domain: every vhost, cert and mail address |
+| `{{HOSTNAME}}` | machine name and tailnet node name |
+| `{{OPERATOR}}` | the single login user on the box |
+| `{{GITHUB_USER}}` | GitHub account that owns the repos |
+| `{{REPO_NAME}}` | repository name |
+| `{{REPO_DIR}}` | absolute path of the checkout |
+| `{{DATA_DIR}}` | all untracked instance state (`$REPO_DIR/data`) |
+| `{{LOG_DIR}}` | every log the project writes |
+| `{{STATE_DIR}}` | installer state (CF token + Tailscale key), mode 0700 |
+| `{{TAILNET_SUBNET}}` | tailnet CIDR; its address part is the placeholder in `config/dnsmasq/10-tailnet.conf`, replaced with the live tailnet IP at deploy time |
+| `{{SERVER_IP}}` | the host's public IPv4 (DNS + mail PTR checks) |
+| `{{EMAIL}}` | operator contact address |
+| `{{TIMEZONE}}` | IANA zone for containers and cron |
 
 ## Notes
 
-- `docs/` prose and commands use these names as placeholders; substitute per setup.
-- Live values (public IP, container names, tailnet peers) are still **auto-detected**
-  by scripts — never read from this file.
-- `$DATA_DIR/installed-modules.conf` (written by `scripts/install.sh`) records
-  which modules this deployment *declared*; `installed-modules.detected.conf` +
-  `installed-modules.report.txt` are the independent-probe confirmation
-  (containers / compose / on-disk data / vhost). `make smoke` + `make fetch`
-  read the declared file.
-- Secrets never belong here nor in `scripts/defaults/` (AGENTS rule 9).
-- `scripts/defaults/*.conf` hold *prompt defaults* — a different purpose than this
-  file (see ISSUES Planned ideas for the split rationale).
-- `docs/ISSUES.md` deliberately keeps concrete demo values: it is the tracker plus
-  solved history, not a portability doc.
+- Docs use the *variables* (`$DOMAIN`, `$DATA_DIR`, …) and templates use the
+  tokens; nothing in git names a real host, domain, path or user.
+- Live values (public IP, container names, tailnet peers, module list) are still
+  **auto-detected** by scripts — never read from a file (AGENTS rule 12).
+- `installed-modules.conf` (written by `install.sh`) records which modules this
+  deployment *declared*; `installed-modules.detected.conf` +
+  `installed-modules.report.txt` are the independent-probe confirmation.
+  `make smoke` and `make fetch` read the declared file.
+- Secrets never belong in git, `instance.conf` is 0600, and rendered output
+  (`data/rendered/`) is where live config actually comes from.
+- `scripts/defaults/*.conf` hold *prompt defaults* — a different purpose from the
+  token list.

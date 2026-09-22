@@ -112,7 +112,7 @@ Top-level dirs: `services/` (one compose file per running container), `config/` 
 - `config/` — reference copies of host-level configs (goose systemd unit, SSH hardening, dnsmasq, ttyd, docker daemon, sysctl). Restored to live paths by `make install-config`. For an offline copy of the whole `config/` tree, use `make bundle-config`.
 - `docs/` — `AGENTS.md` (agent rules), `GUIDE.md` (this file), `ISSUES.md` (tracker), `DEBUG.md` (deep-scan / debug runbook), `MIGRATE.md` (runbook for moving to a new VPS; printed by `make migrate`), `REF.md` (per-setup variable values).
 - `recipes/` — reusable Goose agent tasks (read-only inspection + reports), versioned with the scripts and docs they operate on. Run via the `make goose-*` recipes below.
-- `scripts/optimize.sh` — universal Debian-family VPS performance optimizer in install.sh/storage.sh style (banner, zero prompts, unattended run, Enter-refresh error loop → SUCCESS only when green). Merges OPTIMIZE.md + the repo's tuned values + `make cleanup`'s apt/docker part; idempotent, `--dry-run`/`--verify`/`--yes`, backs up edits to `/root/optimize-backup-<ts>`; applied on this host — re-running is a no-op. **It installs only the performance helpers** (`tuned`, `irqbalance`, `earlyoom`) when missing; service software (`docker`, `dnsmasq`, …) is never installed, and steps for absent software are skipped instead of failing (see Operational gotchas).
+- `scripts/optimize.sh` — universal Debian-family VPS performance optimizer in install.sh/datadir-nfs.sh style (banner, zero prompts, unattended run, Enter-refresh error loop → SUCCESS only when green). Merges OPTIMIZE.md + the repo's tuned values + `make cleanup`'s apt/docker part; idempotent, `--dry-run`/`--verify`/`--yes`, backs up edits to `/root/optimize-backup-<ts>`; applied on this host — re-running is a no-op. **It installs only the performance helpers** (`tuned`, `irqbalance`, `earlyoom`) when missing; service software (`docker`, `dnsmasq`, …) is never installed, and steps for absent software are skipped instead of failing (see Operational gotchas).
 
 ## Deployment
 
@@ -265,7 +265,7 @@ git push origin main
 
 ## Generalization principle
 
-Scripts and manifests stay **global** — they derive everything from the live system instead of hardcoding instance specifics (see `docs/AGENTS.md` rule 12). In practice here: install.sh/storage.sh auto-detect container names, the datadirectory and DB credentials; user/group lists come from `occ`/`oc_users`, never a fixed roster; persistent recovery manifests are **generated** by `make nc-capture` into `cloud/recovery/` **outside the repo** (instance state, like `pgdata`/`backups` — never commit them; the appropriate command is `make nc-capture`, re-run to refresh). Before writing a specific user, host, IP, port, path, or container name into a script or doc, ask whether it can change — if it can, detect or prompt for it instead. Existing hardcoded leftovers should be migrated to this pattern when touched.
+Scripts and manifests stay **global** — they derive everything from the live system instead of hardcoding instance specifics (see `docs/AGENTS.md` rule 12). In practice here: install.sh/datadir-nfs.sh auto-detect container names, the datadirectory and DB credentials; user/group lists come from `occ`/`oc_users`, never a fixed roster; persistent recovery manifests are **generated** by `make nc-capture` into `cloud/recovery/` **outside the repo** (instance state, like `pgdata`/`backups` — never commit them; the appropriate command is `make nc-capture`, re-run to refresh). Before writing a specific user, host, IP, port, path, or container name into a script or doc, ask whether it can change — if it can, detect or prompt for it instead. Existing hardcoded leftovers should be migrated to this pattern when touched.
 
 ## Operational gotchas
 - A deliberate `systemctl stop dnsmasq` takes all tailnet-side `*.$DOMAIN` resolution down. Restart with `make systemd-restart-dnsmasq`.
@@ -321,9 +321,9 @@ Scripts and manifests stay **global** — they derive everything from the live s
 
 ## Everything about scripts
 
-**Where scripts live**: `scripts/` — installer (`install.sh`), uninstaller (`uninstall.sh`), onboarding (`storage.sh`), optimizer (`optimize.sh`), smoke test (`smoke-vhosts.sh`), status dashboard (`fetch.sh`), and one helper per subsystem (talk-gen, mail, Kuma/panel users, `tail-auth.sh`, `nc-capture.sh`, `gh-web-health.sh`, the history-rewrite helpers); `scripts/mklog` is the uniform output helper and `scripts/defaults/` holds per-script prompt defaults. `ls scripts/` is the source of truth. The Makefile is the canonical front door — `make <recipe>`; raw git/docker/systemctl belong to recipes.
+**Where scripts live**: `scripts/` — installer (`install.sh`), uninstaller (`uninstall.sh`), onboarding (`datadir-nfs.sh`), optimizer (`optimize.sh`), smoke test (`smoke-vhosts.sh`), status dashboard (`fetch.sh`), and one helper per subsystem (talk-gen, mail, Kuma/panel users, `tail-auth.sh`, `nc-capture.sh`, `gh-web-health.sh`, the history-rewrite helpers); `scripts/mklog` is the uniform output helper and `scripts/defaults/` holds per-script prompt defaults. `ls scripts/` is the source of truth. The Makefile is the canonical front door — `make <recipe>`; raw git/docker/systemctl belong to recipes.
 
-**House style** (install.sh / storage.sh / optimize.sh share it):
+**House style** (install.sh / datadir-nfs.sh / optimize.sh share it):
 - Header comment block: what the script does, sources it merges, usage, env overrides.
 - Banner (ASCII + description + warnings), then `ask_inputs()` at the very start only — prompts with defaults, each env-overridable; optimize.sh is zero-prompt (everything auto-detected).
 - Fully unattended work after the prompts; every step idempotent; files backed up before edits (`/root/optimize-backup-<ts>`).

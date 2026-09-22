@@ -4,7 +4,18 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ---
 
+### `make connect` covers nextcloud only
+- **File**: `scripts/connect.sh`
+- **Problem**: the menu lists kuma and vaultwarden but both print why they cannot be linked instead of acting. Kuma is SQLite (v2 supports MariaDB only if installed that way, so switching is a migration); Vaultwarden is a single SQLite file with no server-side database, and sharing it over NFS is unsafe because it does not lock across hosts.
+- **Fix**: for Kuma, make it MariaDB-native on this host first, then reuse the nextcloud shape (dump → restore → re-point) through Kuma's own migration tool. For Vaultwarden, implement the documented move: stop the service, copy `db.sqlite3` + attachments + rsa keys, then either run it there or mount the remote path — a file operation, not a connection.
+
+### Per-device shells are host-local by design
+- **File**: `scripts/ttyd-devices.sh`
+- **Problem**: `make ttyd-add NAME=<device>` creates a *session on this host* and lists it on the tail page; it does not start anything on the named device. Reaching a device is a manual `ssh`/`tailscale ssh` from inside that session.
+- **Fix (if wanted)**: automate the ssh hop per device — but that is where credentials and authorisation live, so it needs an explicit decision (per-device keys? Tailscale SSH ACLs?) rather than a default. Tracked as a deliberate limitation until then.
+
 ## Open
+
 
 ### Pending (Aug 2026)
 
@@ -34,7 +45,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 #### No automated validation of the scripts
 - **File**: `scripts/`, `Makefile`
-- **Problem**: only `make smoke` + the git hooks run; nothing lints the large bash scripts that produced two bugs on 2026-09-10 (storage.sh, optimize.sh).
+- **Problem**: only `make smoke` + the git hooks run; nothing lints the large bash scripts that produced two bugs on 2026-09-10 (datadir-nfs.sh, optimize.sh).
 - **Fix**: run `bash -n` + `shellcheck` on `scripts/*.sh` in a pre-push/CI job.
 
 #### (solved 2026-09-22) install.sh rewrote the tracked `config/dnsmasq/10-tailnet.conf` in place
@@ -159,7 +170,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Fix**: `systemctl stop goose` when not in use; `systemctl start goose` before use.
 - **Why approval**: operator convenience trade-off (cold start latency vs. idle RAM).
 
-#### `storage.sh` re-prompts for the storage root password on every run
+#### `datadir-nfs.sh` (was storage.sh) re-prompts for the storage root password on every run
 - **File**: `scripts/datadir-nfs.sh`
 - **Problem**: even when the operator's SSH key is already on the storage VPS (the script installs it) and the tailnet path works, a re-run still demands `STORAGE_PASS` + `TS_AUTHKEY`.
 - **Fix**: after the tailnet check, if `ssh -o BatchMode=yes root@$TS_IP true` succeeds, skip the password/key prompts and go straight to the re-check.
@@ -296,6 +307,10 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Terminal `host-exec` shim** — chroot-to-host wrapper for glibc binaries in the Alpine ttyd container.
 
 ### Sep 2026 — edge renames + docs overhaul
+- **`make backup` path bug fixed + reverse-rendered** — it pointed at `$(REPO)/backups` and `$(REPO)/vault`, both of which moved under `data/` in the layout migration (the vault tar was failing with "Error is not recoverable"); it now reverse-renders every file it pulls back, so live config lands in the skeleton as `{{TOKENS}}` — verified with a zero-diff round trip against all seven tracked config files.
+- **`make connect` (replaces `make storage`)** — interactive connector: module → server → `link` (use the database that already lives there) or `overwrite` (copy this host's database there first), plus the NFS datadirectory move as choice 3 (`scripts/datadir-nfs.sh`, the old `storage.sh`); refuses to re-point until the target DB answers.
+- **Per-device web-terminal sessions** — `make ttyd-add/ttyd-rm/ttyd-devices`: one named tmux session per tailnet device served by the single ttyd listener (`/ttyd?arg=<name>`), listed as a card on the tail page; no new listener and no edge edit.
+- **`make render` + `docs/SKELETON.md`** — the skeleton is documented end to end: tokens, compose substitution, script variables, domain-free filenames and the rename procedure.
 - **Logs consolidated under one namespace** — every project log moved to `{{LOG_DIR}}` with one logrotate rule; the stale `/var/log/homelab-install.log` was relocated, not deleted, and the old uninstall log mode 660→640.
 - **tmux is installed and persistent** — `install.sh` installs tmux; `config/systemd/tmux-main.service` keeps a `main` session on every boot (no `ExecStop`, so a restart never kills live shells).
 - **`make fetch-more`** — read-only deep dive beyond `make fetch`: per-core cpu, memory breakdown, top processes, zombies, sockets, units/timers/cron, docker's effective log caps + per-container stats + log sizes, disk+inodes, `data/` growth, tailnet prefs, live DNS probes, TLS expiry.
@@ -310,7 +325,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **`config/dnsmasq/10-tailnet.conf` rendered at deploy time** — the tracked file keeps a placeholder address; install-config writes the live Tailscale IP and `make backup` restores the placeholder.
 - **`make status` → `make fetch`** — the AIO dashboard recipe renamed (`scripts/status.sh` → `scripts/fetch.sh`): uninstalled modules now render red (installed stay green) so the full available set is visible, and the failed-units row carries each failed unit's target in `()` marks (Where/What/Description — also fixes the old row grabbing the `●` glyph instead of the unit name).
 - **`scripts/uninstall.sh`** — the installer's exact opposite in the same house style: per-module prompts (all default keep), the edge/host-services/packages/user/tailnet phases in install-reverse order (tailscale last), tagged errors with problem/hint, Enter-refresh re-checks, a success block, and `installed-modules.conf` refreshed after every module removal (empty conf = nothing expected; the file is emptied, never deleted — a missing conf means "all expected" to smoke). Data is never touched without explicit confirms; the storage NFS export is untouchable, sshd hardening deliberately kept. Prompt defaults file: `scripts/defaults/uninstall.conf`.
-- **Boot-race NFS datadir mount outage (2026-09-12)** — reboot raced the datadir mount against tailscaled (unit started 1 s in, 0 peers) and the default 90 s mount timeout killed it; `nofail` boot continued, docker bound the empty placeholder dir as NC's `/data` → "data directory is invalid" 503s + kuma `cloud.{{DOMAIN}}` HTTP-down alert. Fixed live (systemctl start mount + `make dok-restart-nextcloud`); fstab line now `x-systemd.after=tailscaled.service,x-systemd.mount-timeout=300s,x-systemd.before=docker.service` (written by storage.sh `ensure_mount`, applied to the live fstab) so ordering is deterministic and containers never bind the placeholder; GUIDE gotcha has the full lesson.
+- **Boot-race NFS datadir mount outage (2026-09-12)** — reboot raced the datadir mount against tailscaled (unit started 1 s in, 0 peers) and the default 90 s mount timeout killed it; `nofail` boot continued, docker bound the empty placeholder dir as NC's `/data` → "data directory is invalid" 503s + kuma `cloud.{{DOMAIN}}` HTTP-down alert. Fixed live (systemctl start mount + `make dok-restart-nextcloud`); fstab line now `x-systemd.after=tailscaled.service,x-systemd.mount-timeout=300s,x-systemd.before=docker.service` (written by datadir-nfs.sh `ensure_mount`, applied to the live fstab) so ordering is deterministic and containers never bind the placeholder; GUIDE gotcha has the full lesson.
 - **Basic-auth session reworked on `tail.$DOMAIN` (2026-09-11)** — `log in` prompted inline and validated against `/ttyd`'s basic auth in the background; superseded 2026-09-12 by removing the login machinery entirely (the terminal is go-only `guest@server`; `/ttyd` keeps its basic_auth).
 - **`tail.$DOMAIN` terminal simplified + hard no-cache (2026-09-12)** — the `log in`/`log out` session machinery was removed (operator request): the homepage terminal is navigation-only (`go <vhost> [page]`, prompt always `guest@server`), `/ttyd` keeps its HTTP basic auth (user `root`), and the whole vhost now serves `no-store, no-cache, must-revalidate, max-age=0` + `Pragma: no-cache` + `Expires: 0` with ETag/Last-Modified stripped — nothing cacheable.
 - **`scripts/uninstall.sh` scope selector (2026-09-12)** — the first prompt picks between specific modules (per-module prompts, default keep) and the whole framework (every phase preselected — modules + edge + host services + packages + user + tailnet; data prompts still default keep), plus cancel; preselectable via `uninstall mode` in `scripts/defaults/uninstall.conf` or `UNINSTALL_MODE`.
@@ -347,7 +362,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Local backup tags destroyed** — `history-backup-20260902` / `history-20260902-noreply` / `history-developer-email-20260903` deleted + objects pruned (`gc --prune=now`); the {{GITHUB_USER}}-era record lives on only inside `main` under the noreply identity, per operator choice.
 - **NC recovery manifests moved out of the repo** — `users/groups/default-quota/apps.txt` now live at `homelab/cloud/recovery/` (root-owned, outside the repo like pgdata), generated by `make nc-capture`, consumed by install.sh; paths scrubbed from all history (664 commits preserved, personal doc addresses censored via `scripts/replace-string.sh`).
 - **Storage VPS onboarded (Setup A)** — `scripts/datadir-nfs.sh` migrated Nextcloud's datadirectory to the 1 TB VPS (`/srv/nextcloud-data` NFS export at `cloud/users`); PostgreSQL stays on fxmq and the nightly `pg_dump` → `/backups/nc` runs alongside.
-- **storage.sh live-run fixes (2026-09-10)** — the first live run exposed a missing NFS client (`nfs-common`) and an unverified rollback delete that lost the datadirectory files; the script now installs the client, verifies the copy before the delete prompt, and installs the operator's ssh key — files were restored from `backups/cloud-backup-20260906`.
+- **datadir-nfs.sh live-run fixes (2026-09-10)** — the first live run exposed a missing NFS client (`nfs-common`) and an unverified rollback delete that lost the datadirectory files; the script now installs the client, verifies the copy before the delete prompt, and installs the operator's ssh key — files were restored from `backups/cloud-backup-20260906`.
 - **`tail.$DOMAIN` mini terminal + gated shell** — unauthenticated command terminal at `/` (`go <vhost> [page]`, live prediction over a catalogue generated from the vhost files by `make tail-targets`) and `basic_auth` (user `root`) on `/ttyd`; `make tail-auth` sets/rotates it and prints the password once.
 - **goose secret moved out of the repo** — the unit reads `EnvironmentFile=/etc/goose/goose.env` (root:root 0640); `install.sh` generates it there instead of `sed`ing it into a tracked file.
 - **NFS datadirectory mount tightened** — `/etc/fstab` options are now `rw,nofail,_netdev,noatime,vers=4`.

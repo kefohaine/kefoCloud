@@ -38,14 +38,13 @@ On a fresh box the repo is cloned for you over **HTTPS** (the repo is public —
 |---|---|---|
 | **Cloud** | Nextcloud | files, calendar, contacts, photos, Talk chat & video calls |
 | **Mail** | Docker Mailserver + Roundcube | SMTP/IMAPS, DKIM/SPF/DMARC on your own domain |
-| **Games** | PufferPanel + Spigot/Minecraft | in-browser play (`/play`), Java server on `:25565` — servers never autostart |
 | **Vault** | Vaultwarden | any Bitwarden client, server included |
 | **Monitor** | Uptime Kuma | watches public *and* tailnet-only doors |
 
 ### Secondary helpers
 
 - `bash scripts/optimize.sh` — automated performance optimization after install
-- `bash scripts/datadir-nfs.sh` — automated external Nextcloud storage system over tailnet
+- `make connect` — join a module to another server (link an existing database there, or overwrite it with this host's data)
 
 ## Documentation
 
