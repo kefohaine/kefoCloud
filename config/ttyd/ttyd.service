@@ -6,9 +6,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=op
-Group=op
-WorkingDirectory=/var/www/custom/projects/homelab/repo
+User=root
+Group=root
+WorkingDirectory=/root/github/kefoserver
 
 # macOS Terminal "Pro" theme — colors from Apple's Terminal.app Pro
 # profile (Settings > Profiles > Pro). Font: Menlo 13pt (macOS
