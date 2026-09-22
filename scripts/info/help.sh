@@ -141,7 +141,6 @@ make nc-capture|snapshot live NC users/groups/quotas → recovery manifests (out
 make kuma-import|import an adapted Uptime Kuma db (KUMA_DB=<path>)
 make gh-web-health|check the GitHub web git-data endpoints (after a history rewrite)
 make tail-targets|regenerate the tail terminal's vhost catalogue (after adding a vhost)
-make tail-auth|set/rotate the tail web terminal's basic-auth password — printed once, never stored
 EOF
 
   sec "nextcloud db unit (PostgreSQL — not in the -all loops)"

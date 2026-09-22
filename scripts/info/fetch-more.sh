@@ -21,11 +21,10 @@ export LC_ALL=C
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DATA="$ROOT/data"
-LOG_DIR="${LOG_DIR:-$LOG_DIR}"
-CONF="$DATA/installed-modules.conf"
-MODULES="cloud vault mail monitor"
-[ -f "$CONF" ] && MODULES="$(grep -vE '^[[:space:]]*(#|$)' "$CONF" | tr '\n' ' ')"
-mod_in() { [[ " $MODULES " == *" $1 "* ]]; }
+LOG_DIR="${LOG_DIR:-/var/log/kefohaine}"
+. "$ROOT/scripts/lib/modules.sh"
+CONF="$INSTALLED_CONF"
+mod_in() { mod_installed "$1"; }
 
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
   B=$'\033[1m' D=$'\033[2m' R=$'\033[31m' G=$'\033[32m' Y=$'\033[33m' C=$'\033[36m' N=$'\033[0m'
@@ -205,19 +204,57 @@ if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   row remote "$(git -C "$ROOT" remote get-url origin 2>/dev/null)"
 fi
 mstr=""
-for m in cloud vault mail monitor; do
-  if mod_in "$m"; then mstr+="${G}${m}${N}  "; else mstr+="${R}${m}${N}  "; fi
-done
+while read -r m; do
+  [ -n "$m" ] || continue
+  if mod_installed "$m"; then mstr+="${G}${m}${N}  "; else mstr+="${R}${m} (not installed)${N}  "; fi
+done < <(mod_all)
 row modules "$mstr"
-for m in cloud vault mail monitor; do
-  d="$(case "$m" in cloud) echo nextcloud;; vault) echo vaultwarden;; mail) echo mailserver;; monitor) echo uptimekuma;; esac)"
-  [ -d "$ROOT/modules/$d" ] || continue
-  [ -z "$(ls -A "$ROOT/modules/$d" 2>/dev/null)" ] && continue
-  vh="$(ls "$ROOT/modules/$d/vhosts" 2>/dev/null | wc -l)"
-  ctns="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -cE "^(nextcloud|redis|postgresql|mailserver|roundcube|uptimekuma|vaultwarden)$" || true)"
-  printf "  %s%-16s%s %-9s %s %s\n" "${C}${B}" "module $m" "$N" "$d" \
-    "$([ "$vh" -gt 0 ] && echo "${vh} vhost(s)")" "$(mod_in "$m" && echo '' || echo "${D}(not installed)${N}")"
+
+# Per module: the state in WORDS, its route exposure, and the containers that
+# are actually running. `not installed` means ABSENT — no container, no route.
+# `tailnet-only` is a property of a route that EXISTS (tail.$DOMAIN), never of
+# a missing module. This row is the answer to "why is vault.$DOMAIN 502?".
+RUNNING_D="$(docker ps --format '{{.Names}}' 2>/dev/null)"
+while read -r m; do
+  [ -n "$m" ] || continue
+  d="$(mod_dir "$m")"; h="$(mod_host "$m")"; live=0; want=0
+  for c in $(mod_containers "$m"); do
+    want=$((want + 1))
+    grep -qx "$c" <<<"$RUNNING_D" && live=$((live + 1))
+  done
+  if mod_installed "$m"; then
+    printf "  %s%-16s%s %-11s %s\n" "${C}${B}" "module $m" "$N" "$d" \
+      "${live}/${want} container(s) up${h:+ · $(exposure "$h") route ($h)}"
+  else
+    printf "  %s%-16s%s %-11s %s\n" "${C}${B}" "module $m" "$N" "$d" \
+      "${R}not installed — no route, no container${N}"
+  fi
+done < <(mod_all)
+
+# Every vhost the edge actually loads, classified. A route is either public or
+# tailnet-only; a vhost whose module is NOT INSTALLED is neither — it is dead
+# (502), and is printed as such, so it can never be misread as tailnet-only.
+# Prefer the RENDERED vhosts (what the edge actually loads, real hostnames);
+# fall back to the tracked skeleton when nothing has been rendered yet.
+VDIR="$DATA/rendered/caddy/vhosts"
+[ -d "$VDIR" ] || VDIR="$ROOT/modules/caddy/vhosts"
+pub=""; tn=""; gone=""
+for f in "${VDIR:-$ROOT/modules/caddy/vhosts}"/*.caddy; do
+  [ -f "$f" ] || continue
+  h="$(sed -n 's|^https://\([A-Za-z0-9.-]*\)[[:space:]]*{.*|\1|p' "$f" | head -1)"
+  [ -n "$h" ] || continue
+  label="${h%%.*}"
+  if [ "$label" = tail ]; then tn+="$h  "; continue; fi
+  owner=""
+  while read -r m; do
+    [ -n "$m" ] || continue
+    [ "$(mod_host "$m")" = "$label" ] && owner="$m"
+  done < <(mod_all)
+  if [ -n "$owner" ] && ! mod_installed "$owner"; then gone+="$h (module $owner not installed)  "
+  else pub+="$h  "; fi
 done
+row routes "public: ${pub}· tailnet-only: ${tn}"
+[ -n "$gone" ] && row "!dead" "${R}${gone}${N}"
 if [ -d "$DATA/caddy_data" ]; then
   certs="$(find "$DATA/caddy_data" -name '*.crt' 2>/dev/null | wc -l)"
   soonest="$(for f in $(find "$DATA/caddy_data" -name '*.crt' 2>/dev/null); do openssl x509 -enddate -noout -in "$f" 2>/dev/null | sed 's/notAfter=//'; done | sort | head -1)"
