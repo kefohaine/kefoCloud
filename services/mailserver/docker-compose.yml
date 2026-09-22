@@ -10,6 +10,15 @@ services:
     hostname: mail.fxmq.net
     restart: unless-stopped
 
+    # Cap the container's json-file log (the daemon default in
+    # config/docker/daemon.json already does this; stated explicitly here so
+    # the cap survives a daemon.json change) — mail logs are chatty.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
     # SMTP + IMAP must actually listen before the container is "healthy".
     healthcheck:
       test: ["CMD-SHELL", "ss -tln | grep -Eq '0.0.0.0:(25|465|587|993)\\b'"]
@@ -75,6 +84,13 @@ services:
     image: roundcube/roundcubemail:latest
     container_name: roundcube
     restart: unless-stopped
+
+    # Same log cap as every other unit (see services/mailserver above).
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
     # Web root must answer (apache + php-fpm up) before "healthy".
     healthcheck:
