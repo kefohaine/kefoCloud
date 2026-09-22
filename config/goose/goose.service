@@ -10,7 +10,7 @@ Group=root
 WorkingDirectory={{REPO_DIR}}
 ExecStart=/usr/local/bin/goose serve
 # Server secret lives OUTSIDE the repo (root:root 0640) — never in a tracked file.
-# Created by scripts/install.sh; live path /etc/goose/goose.env.
+# Created by scripts/install/install.sh; live path /etc/goose/goose.env.
 EnvironmentFile=-/etc/goose/goose.env
 Restart=always
 RestartSec=3

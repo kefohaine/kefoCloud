@@ -2,7 +2,7 @@
 #
 # The live settings store is ~/.config/goose/config.yaml (goose reads it for
 # the systemd service, the CLI and the ttyd web terminal alike). Apply or
-# re-apply this file to it with `make goose-tokens` (scripts/goose-tokens.sh);
+# re-apply this file to it with `make goose-tokens` (scripts/info/goose-tokens.sh);
 # the script only touches the keys listed here, so goose-written settings and
 # provider config survive.
 #
@@ -39,7 +39,7 @@ GOOSE_CLI_SHOW_COST: true
 
 # Per-turn briefing carrying the hard output constraints (short-answer,
 # raw-code-only, no preamble). GOOSE_MOIM_MESSAGE_FILE is filled in by
-# scripts/goose-tokens.sh with this repo's absolute path — the file is
+# scripts/info/goose-tokens.sh with this repo's absolute path — the file is
 # config/goose/briefing.md. The tom extension must be on for it to apply.
 extensions:
   tom:
