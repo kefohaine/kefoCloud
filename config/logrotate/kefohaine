@@ -1,0 +1,22 @@
+# /etc/logrotate.d/kefohaine — installed by `make install-config` from
+# config/logrotate/kefohaine.
+#
+# Every log this project writes lives in /var/log/kefohaine (install.log,
+# uninstall.log, and any log an installed module writes). This single rule is
+# what keeps that namespace bounded: 8 weeks, compressed, so the namespace can
+# never grow without limit. Nothing else in the project logs per-event (no
+# chronicle-style logging), and container output is capped at the daemon level
+# (config/docker/daemon.json) — so these are the only files to rotate.
+#
+# The directory is created here too (`create` needs it to exist, and a fresh
+# host runs logrotate before `make install-config` ever has).
+/var/log/kefohaine/*.log {
+    weekly
+    rotate 8
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 root root
+    su root root
+}
