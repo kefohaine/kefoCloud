@@ -14,7 +14,7 @@ if [ "${SKIP_SMOKE:-}" = "1" ]; then
 fi
 
 repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
-smoke="$repo/scripts/smoke-vhosts.sh"
+smoke="$repo/scripts/stack/smoke-vhosts.sh"
 [ -x "$smoke" ] || [ -f "$smoke" ] || exit 0
 
 if ! bash "$smoke" >/dev/null 2>&1; then

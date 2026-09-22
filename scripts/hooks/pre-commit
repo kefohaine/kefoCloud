@@ -1,27 +1,27 @@
 #!/usr/bin/env bash
 # pre-commit hook — guards the Caddy edge (installed via `make install-hooks`).
 # Two guards:
-#  1. If any file under services/caddy/ is staged, the Caddyfile must
+#  1. If any file under modules/caddy/ is staged, the Caddyfile must
 #     validate (via the running $DOMAIN container, when it's up).
 #  2. A bare `respond "ok"` in an APP vhost (cloud/kuma/mail/vault) is
 #     blocked — that is the stub that took every public subdomain offline on
 #     2026-08-28. Operator-approved maintenance can pass with EDGE_OVERRIDE=1.
-#     Exempt by design: www (health stub + /download), tail (legit `ok` paths)
-#     and mc (its catch-all IS `ok`; its real-app routes are guarded by the
-#     pre-push smoke instead).
+#     Exempt by design: www (health stub + /download) and tail (legit `ok`
+#     paths). Any vhost another repo installs into the edge (kefoMC) is
+#     guarded by the pre-push smoke instead.
 
-. "$(git rev-parse --show-toplevel)/scripts/instance.sh" 2>/dev/null || true
+. "$(git rev-parse --show-toplevel)/scripts/lib/instance.sh" 2>/dev/null || true
 set -uo pipefail
 
 staged=$(git diff --cached --name-only)
 [ -z "$staged" ] && exit 0
 
-# 1. Caddy config must validate when anything under services/caddy/ changes.
-if echo "$staged" | grep -q '^services/caddy/'; then
-  if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^$DOMAIN$'; then
-    if ! docker exec $DOMAIN caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
+# 1. Caddy config must validate when anything under modules/caddy/ changes.
+if echo "$staged" | grep -q '^modules/caddy/'; then
+  if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'caddy'; then
+    if ! docker exec caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
       echo "pre-commit: Caddyfile invalid — refusing to commit."
-      echo "  Diagnose: docker exec $DOMAIN caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile"
+      echo "  Diagnose: docker exec caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile"
       exit 1
     fi
   fi
@@ -30,8 +30,8 @@ fi
 # 2. Stub guard on the app vhosts.
 app_vhosts="cloud.caddy kuma.caddy mail.caddy vault.caddy"
 for f in $app_vhosts; do
-  if echo "$staged" | grep -q "^services/caddy/vhosts/$f$"; then
-    if git show :"services/caddy/vhosts/$f" 2>/dev/null | grep -qE '^\s*respond "ok"'; then
+  if echo "$staged" | grep -q "^modules/caddy/vhosts/$f$"; then
+    if git show :"modules/caddy/vhosts/$f" 2>/dev/null | grep -qE '^\s*respond "ok"'; then
       if [ "${EDGE_OVERRIDE:-}" != "1" ]; then
         echo "pre-commit: $f contains a bare \`respond \"ok\"\` stub."
         echo "  Stubbing an app vhost takes the service offline for every visitor."
