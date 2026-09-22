@@ -2,7 +2,7 @@
 # folder.
 #   /          serves ./www/index.html — a zero-second redirect to /welcome.
 #   /welcome   the welcome page (welcome.html) — everything fxmq.net runs,
-#              presented as the live demo of kefohaine/server.
+#              presented as the live demo of kefohaine/kefoserver.
 #   /welcome-5 /welcome-6 /welcome-7 /welcome-9 — the kept alternate
 #              tellings (neon / journal / field manual / poster).
 #   /download* Caddy file_server browse over homelab/download (mounted at

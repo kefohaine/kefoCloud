@@ -9,7 +9,7 @@
 #                    every visit, no login, no session, no commands)
 #   * /targets.json — GENERATED navigation catalogue (scripts/tail-targets.sh):
 #                    the vhosts and their pages, so nothing is hardcoded
-#   * /ttyd*      — the shell: HTTP basic auth (user `kefohaine`). Each visit
+#   * /ttyd*      — the shell: HTTP basic auth (user `root`). Each visit
 #                    prompts unless the browser holds a valid cached credential.
 # `make tail-auth` sets/rotates the credential and prints it once (only the
 # bcrypt hash is committed — never put the password in the repo).
@@ -50,7 +50,7 @@ https://tail.fxmq.net {
         # never relying on the browser's cached credential.
         handle /ttyd* {
             basic_auth {
-                kefohaine $2a$14$SbolWVoI8etI0M368qB.VujAdZg33b0IeUwzrXrAgKyiOpZfBOVoa
+                root $2a$14$SbolWVoI8etI0M368qB.VujAdZg33b0IeUwzrXrAgKyiOpZfBOVoa
             }
             reverse_proxy 172.22.0.1:7681 {
                 transport http {

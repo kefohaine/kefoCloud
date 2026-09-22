@@ -9,10 +9,11 @@ own setup** — docs stay neutral and portable.
 ```bash
 DOMAIN='fxmq.net'                                   # demo domain (Cloudflare zone)
 GITHUB_USER='kefohaine'
-GITHUB_REPO="$GITHUB_USER/server"                   # upstream repo
-PROJECT_DIR='/var/www/custom/projects/homelab'      # host dir holding the repo
-REPO_DIR="$PROJECT_DIR/repo"                        # this repo's checkout (make REPO)
-OP_USER='op'                                        # host operator user
+GITHUB_REPO="$GITHUB_USER/kefoserver"               # upstream repo (public, HTTPS clone)
+REPO_DIR='/root/github/kefoserver'                  # this repo's checkout (make REPO)
+DATA_DIR="$REPO_DIR/data"                           # all external/untracked state
+OPERATOR_USER='root'                                # only entry point: root@kefoserver
+HOSTNAME='server'                                   # local machine name (tailnet name: kefoserver)
 MAIL_IDENT="vaultwarden@$DOMAIN"                    # SMTP sender mailbox (Vaultwarden)
 WWW_WELCOME="https://www.$DOMAIN/welcome"           # the welcome page
 VHOST_PROXIED='cloud vault kuma www'                # Cloudflare orange-cloud records
@@ -26,8 +27,11 @@ STORAGE_HOST='root@<storage-box>'                   # second Debian system (sshp
 - `docs/` prose and commands use these names as placeholders; substitute per setup.
 - Live values (public IP, container names, tailnet peers) are still **auto-detected**
   by scripts — never read from this file.
-- `$PROJECT_DIR/installed-modules.conf` (written by `scripts/install.sh`) records
-  which modules this deployment installed; `make smoke` + `make fetch` read it.
+- `$DATA_DIR/installed-modules.conf` (written by `scripts/install.sh`) records
+  which modules this deployment *declared*; `installed-modules.detected.conf` +
+  `installed-modules.report.txt` are the independent-probe confirmation
+  (containers / compose / on-disk data / vhost). `make smoke` + `make fetch`
+  read the declared file.
 - Secrets never belong here nor in `scripts/defaults/` (AGENTS rule 9).
 - `scripts/defaults/*.conf` hold *prompt defaults* — a different purpose than this
   file (see ISSUES Planned ideas for the split rationale).

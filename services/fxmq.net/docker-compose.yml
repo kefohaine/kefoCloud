@@ -26,14 +26,14 @@ services:
       retries: 3
 
     volumes:
-      - /var/www/custom/projects/homelab/cloud/html:/nextcloud:ro
+      - /root/github/kefoserver/data/cloud/html:/nextcloud:ro
       # homelab/download — the www.fxmq.net/download file browser's root
       # (drop files here; Caddy serves them read-only).
-      - /var/www/custom/projects/homelab/download:/download:ro
+      - /root/github/kefoserver/data/download:/download:ro
       # homelab/eaglercraft — the mc.fxmq.net/play in-browser Minecraft
       # client (official EaglercraftX 1.8.8 multi-file build: index.html,
       # classes.js, assets.epk, lang/ — our server pre-seeded in its list).
-      - /var/www/custom/projects/homelab/eaglercraft:/eaglercraft:ro
+      - /root/github/kefoserver/data/eaglercraft:/eaglercraft:ro
       # Top-level Caddyfile + per-vhost snippets. The dir is mounted so
       # the `import` directives in the top-level file resolve relative
       # paths (Caddy treats imports as relative to the importing file).
@@ -44,7 +44,7 @@ services:
       # simply updates the same files, so the cert survives a container
       # recreate. Without this bind every `make d-recreate-fxmq.net` would force
       # a fresh issuance and a 90-day clock restart.
-      - /var/www/custom/projects/homelab/caddy_data:/data
+      - /root/github/kefoserver/data/caddy_data:/data
 
     # Cloudflare API token for ACME DNS-01. Sourced from a host file
     # (chmod 0600, owner uid 201 = caddy) so the literal token never
@@ -52,7 +52,7 @@ services:
     # every KEY=VAL line into the container's env at start, so the
     # `env.CF_API_TOKEN` reference in the Caddyfile resolves at runtime.
     env_file:
-      - /var/www/custom/projects/homelab/caddy_data/CF_API_TOKEN
+      - /root/github/kefoserver/data/caddy_data/CF_API_TOKEN
 
     logging:
       driver: json-file

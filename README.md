@@ -1,4 +1,4 @@
-# kefohaine/server
+# kefohaine/kefoserver
 
 One repo that turns any Debian system into your own self-hosted server stack — cloud, mail, game servers and more — with one command and a few prompts.
 
@@ -23,11 +23,12 @@ Minimum RAM required: 3GB
 ## Install
 
 ```bash
-git clone https://github.com/kefohaine/server && cd server
+scp scripts/install.sh root@kefoserver:      # or clone on the box:
+ssh root@kefoserver
 bash install.sh
 ```
 
-The installer asks a few questions, then hardens the host, creates the DNS records, issues certificates and builds the selected stack unattended. Default is everything ON; opt out per module for a lean install.
+On a fresh box the repo is cloned for you over **HTTPS** (the repo is public — no GitHub SSH key ever needs to be added). Everything lives under `root@server:~/github/kefoserver/`; every external, untracked artefact (containers' data, databases, uploads, module reports) lives under `~/github/kefoserver/data/`, which `.gitignore` excludes. `root@kefoserver` is the **only** entry point (key-only SSH over the tailnet). The installer asks a few questions, then hardens the host, creates the DNS records, issues certificates and builds the selected stack unattended. Default is everything ON; opt out per module for a lean install.
 
 `scripts/uninstall.sh` reverses it in the same style — every prompt defaults to keep, operator data and the tailscale-only SSH path are never touched without an explicit confirm, and the tailnet membership goes last.
 

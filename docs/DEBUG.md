@@ -25,7 +25,7 @@ make smoke                    # every vhost must serve its real app; module-awar
 docker ps --format '{{.Names}}	{{.Status}}'
 ss -tlnp                      # listeners — compare with GUIDE "Domains and access model"
 sudo ufw status verbose
-findmnt -R /var/www/custom/projects/homelab   # mounts, incl. the NFS datadirectory
+findmnt -R /root/github/kefoserver/data   # mounts, incl. the NFS datadirectory
 free -m; df -h /              # memory / disk headroom
 sudo journalctl -p err --since "-3 days" | tail -30
 ```
