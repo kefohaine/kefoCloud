@@ -9,7 +9,7 @@
 #
 # The talk.{{DOMAIN}} A record MUST stay DNS-only (grey cloud) at Cloudflare:
 # TURN speaks UDP/TCP on 3478/5349 + relay 49160-49200, which the CF proxy
-# cannot carry (HTTP(S) only). Same constraint as mail.{{DOMAIN}} / mc.{{DOMAIN}}.
+# cannot carry (HTTP(S) only). Same constraint as mail.{{DOMAIN}}.
 
 https://talk.{{DOMAIN}} {
     tls {

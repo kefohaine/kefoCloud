@@ -3,8 +3,7 @@
 # use Let's Encrypt DNS-01 via the Cloudflare plugin (token in
 # CF_API_TOKEN env var). The old CF Origin CA wildcard cert was
 # removed because its SNI wildcard (`*.{{DOMAIN}}`) covered every
-# vhost, so Caddy served it as a fallback for `mc.{{DOMAIN}}` SNI
-# matches and the per-vhost ACME automation policy never fired.
+# vhost and the per-vhost ACME automation policy never fired.
 # Per-vhost LE certs keep each cert scoped to its own SNI.
 
 {
@@ -19,7 +18,7 @@
 # Security headers. NOTE: Caddy's header directive APPENDS to upstream values
 # (set does not replace) and a delete+set pair for the SAME field in one block
 # ends up deleted (delete wins) — so app vhosts strip the upstream's own copies
-# with `header_down` at the proxy (cloud/vault/kuma/panel/roundcube/ttyd/hpb)
+# with `header_down` at the proxy (cloud/vault/kuma/roundcube/ttyd/hpb)
 # and this snippet only ever SETS. Never add `-<Field>` delete lines here.
 (security_headers) {
     Strict-Transport-Security "max-age=31536000"
@@ -51,8 +50,8 @@ http:// {
 
 # A glob, deliberately: a glob that matches nothing is NOT an error in
 # Caddy, so vhosts/ can be empty and the edge still starts. That is what
-# makes the edge extensible — another project (kefoMC) drops in
-# vhosts/mc.caddy and the site exists, no edit to this repo required.
+# makes the edge extensible — another project drops in
+# vhosts/<name>.caddy and the site exists, no edit to this repo required.
 # Adding a file needs a CONTAINER RESTART (the edge runs `admin off`, so
 # `caddy reload` has no admin API to talk to).
 import vhosts/*.caddy

@@ -1,44 +1,71 @@
-# The skeleton: tokens, values and rendering
+# The skeleton — tokens, values and rendering
 
-This repo is a **skeleton**. It contains no operator's domain, hostname, path or
-username; those are `{{TOKENS}}` here and real values only on a live host. Two
-different mechanisms serve the two different kinds of file:
+This repo is a **skeleton**: it ships no operator's domain, hostname, path,
+username or web page, and no instance value is ever committed. Every
+deployable file carries placeholders; the real values exist only on a live
+host. That is what makes a fresh clone installable anywhere, and a rename a
+value change instead of a refactor.
+
+## How a value reaches a file
+
+Three mechanisms, one table:
 
 | Kind of file | Mechanism | Where the value comes from |
 |---|---|---|
-| Templates: `config/**`, `modules/caddy/**`, docs, `recipes/**` | `{{TOKEN}}` + `scripts/render/render.sh` | `data/instance.conf` |
+| Templates: `config/**` (incl. `config/www/*.html`), `modules/caddy/**`, docs, `recipes/**` | `{{TOKEN}}` + `scripts/render/render.sh` | `data/instance.conf` |
 | Compose files (`modules/*/docker-compose*.yml`) | `${VAR}` (docker compose substitution) | the instance block `make render` writes into `modules/*/.env` |
 | Scripts (`scripts/**`) | plain shell variables, never tokens | `scripts/lib/instance.sh`, sourced from `data/instance.conf` |
 | Filenames | domain-free by construction (`vhosts/cloud.caddy`, `kefo-stack.service`, `config/logrotate/instance`) | — |
 
+## The tokens
+
+| Token | Meaning |
+|---|---|
+| `{{DOMAIN}}` | public domain: every vhost, cert and mail address |
+| `{{HOSTNAME}}` | machine name and tailnet node name |
+| `{{OPERATOR}}` | the single login user on the box |
+| `{{GITHUB_USER}}` | GitHub account that owns the repos |
+| `{{REPO_NAME}}` | repository name |
+| `{{REPO_DIR}}` | absolute path of the checkout |
+| `{{DATA_DIR}}` | all untracked instance state (`$REPO_DIR/data`) |
+| `{{LOG_DIR}}` | every log the project writes |
+| `{{STATE_DIR}}` | installer state (CF token + Tailscale key), mode 0700 |
+| `{{SERVER_IP}}` | the host's public IPv4 (DNS + mail PTR checks) |
+| `{{EMAIL}}` | operator contact address |
+| `{{TIMEZONE}}` | IANA zone for containers and cron |
+
+`config/instance.defaults` (tracked) is the documentation for that list — it is
+never installed; it is what a new operator reads to know what to provide. To
+see every token with its current live value:
+
+```
+scripts/render/render.sh --tokens
+```
+
 ## The one file with real values
 
 `data/instance.conf` (untracked, mode 0600) is the only place an instance value
-lives. `scripts/install/install.sh` writes it when it prompts; it is plain `KEY=VALUE`
-and safe to edit by hand (`make render` afterwards).
-
-```
-scripts/render/render.sh --tokens        # every token, its current value, and what it means
-```
-
-`config/instance.defaults` is the tracked documentation for that list — it is
-never installed; it is what a new operator reads to know what to provide.
+lives. `scripts/install/install.sh` writes it when it prompts; it is plain
+`KEY=VALUE` and safe to edit by hand (`make render` afterwards).
 
 ## Rendering
 
-```bash
+```
 make render          # rebuild data/rendered/ + refresh the .env instance blocks
 ```
 
 `make render` produces:
 
-- `data/rendered/caddy/` — the Caddyfile, `vhosts/*.caddy` and the static pages.
+- `data/rendered/caddy/` — the Caddyfile and `vhosts/*.caddy`.
   **The edge container mounts this directory, never the tracked one.** Mounting
   the tracked dir by mistake is not harmless: Caddy loads site blocks for a
   literal `www.{{DOMAIN}}`, starts, listens on 80/443 and serves nothing
   (`curl` → `000` on every vhost). That happened once, 2026-09-22.
 - `data/rendered/config/` — every file under `config/`, rendered. `make
   install-config` installs from here.
+- `$DATA_DIR/www/` — the instance web root, rendered from the tracked
+  `config/www/` templates and mounted read-only by the edge at `/etc/caddy/www`.
+  Operator pages live there and are never overwritten.
 
 `scripts/stack/stack-up.sh` renders first, in every mode, so a fresh clone, a
 `git pull` or an edited `instance.conf` can never deploy stale config.
@@ -53,8 +80,10 @@ make render          # rebuild data/rendered/ + refresh the .env instance blocks
 `render.sh --check <file>` exits 1 if a token is unresolved, so a typo is a
 failed render rather than an empty string in a live config. Unresolved tokens
 are always left verbatim and reported on stderr — never silently blanked.
+`config/instance.defaults` is documentation, not an installable template, so
+`render-all` excludes it from the rendered tree.
 
-## Renaming the instance
+## Renaming or moving the instance
 
 Everything above exists so that renaming is a value change, not a refactor:
 
@@ -67,9 +96,9 @@ mv /root/github/<old> /root/github/<new>
 make render && make update
 ```
 
-`scripts/install/migrate-layout.sh` (kept for the historical 2026-09-22 layout move)
-shows the same shape with the safety rails: preflight checks, a same-filesystem
-`mv`, an edge config gate and a rollback image tag.
+`scripts/install/migrate-layout.sh` (the 2026-09-22 layout move) is the same
+shape with the safety rails: preflight checks, a same-filesystem `mv`, an edge
+config gate and a rollback image tag.
 
 ## Compose substitution, in practice
 
@@ -87,3 +116,18 @@ The block is replaced, never duplicated, and the secrets already in those files
 (the Nextcloud/Vaultwarden `.env` values) are untouched. Compose reads the
 `.env` next to the compose file, which is why the repo's compose files can use
 `${DOMAIN}` with no real value anywhere in git history.
+
+## Rules that go with the skeleton
+
+- Docs use the *variables* (`$DOMAIN`, `$DATA_DIR`, …) and templates use the
+  tokens; nothing in git names a real host, domain, path or user.
+- Live values (public IP, container names, tailnet peers, module list) are still
+  **auto-detected** by scripts — never read from a file (AGENTS rule 12).
+- `data/installed-modules.conf` (written by `install.sh`) records which modules
+  this deployment *declared*; `installed-modules.detected.conf` +
+  `installed-modules.report.txt` are the independent-probe confirmation.
+  `make smoke` and `make fetch` read the declared file.
+- Secrets never belong in git; `data/instance.conf` is 0600, and rendered
+  output (`data/rendered/`) is where live config actually comes from.
+- `scripts/install/defaults/*.conf` hold *prompt defaults* — a different purpose
+  from the token list.

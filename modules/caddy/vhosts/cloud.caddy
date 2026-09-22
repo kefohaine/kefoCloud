@@ -7,8 +7,8 @@
 # without exposing the long /remote.php/dav URL.
 #
 # TLS: Let's Encrypt DNS-01 via Cloudflare. Switched from the CF
-# Origin CA wildcard cert because the wildcard cert was serving as
-# a SNI fallback for mc.{{DOMAIN}}, blocking the mc.{{DOMAIN}}
+# Origin CA wildcard cert because the wildcard served as a SNI
+# fallback for other vhosts, blocking their per-vhost ACME
 # automation policy from firing. Per-vhost ACME keeps each cert
 # scoped to its own SNI.
 

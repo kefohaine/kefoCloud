@@ -29,14 +29,6 @@ The installer's legacy `renames()` step — which transformed a pre-migration cl
 3. Mailboxes are not scripted — create them with `make mail-gen [MAIL=…]` (or `mail-gen-alias TO=…` for a forwarder). The app SMTP sender mailboxes used for outbound mail are created automatically by the installer: `nextcloud@$DOMAIN` and `vaultwarden@$DOMAIN`.
 4. Doc pass: done for the Aug 2026 migration — the canonical repo now carries the `$DOMAIN` / `root` / `tail.` names in code, docs, and Makefile.
 
-## Minecraft server (PufferPanel) — moved out
-
-The `games` module (PufferPanel + the browser Minecraft client) is no longer
-part of this repo. It lives at `git@github.com:{{GITHUB_USER}}/kefoMC.git` and
-installs itself against this edge (`make install` there). The base install
-below therefore no longer brings up a panel, deploys no server templates and
-opens no Minecraft port; `docs/GOTCHAS.md` in that repo carries the
-server-side knowledge.
 ## Self-hosted mail (Docker Mailserver + Roundcube)
 
 `install.sh` brings up the mail platform too (`make dok-recreate-mailserver` → `mailserver` at 172.22.0.9 + `roundcube` at 172.22.0.10; the UFW ports are opened by the installer). What is NOT scripted: mailbox accounts (create with `make mail-gen [MAIL=…]`). To carry existing mail to a new VPS:

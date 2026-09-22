@@ -1,6 +1,6 @@
 # {{GITHUB_USER}}/{{REPO_NAME}}
 
-One repo that turns any Debian system into your own self-hosted server stack — cloud, mail, game servers and more — with one command and a few prompts.
+One repo that turns any Debian system into your own self-hosted server stack — cloud, mail, monitoring and more — with one command and a few prompts.
 
 **[www.{{DOMAIN}}](https://www.{{DOMAIN}}/welcome) is the live demo**: the installed modules running on one box, built entirely from this repo. Fork it, run the installer, and the same board is yours — under your own domain, with no server but yours.
 
@@ -48,7 +48,7 @@ On a fresh box the repo is cloned for you over **HTTPS** (the repo is public —
 
 ## Documentation
 
-- `docs/REF.md` — the token/variable reference (what each placeholder means)
+- `docs/SKELETON.md` — the skeleton: tokens, values and rendering (what each placeholder means, where the real values live)
 - `docs/GUIDE.md` — the operator manual: layout, recipes, per-service facts, gotchas
 - `docs/AGENTS.md` — agent operating rules (how this repo is worked on)
 - `docs/ISSUES.md` — open problems, planned ideas, and resolved history
