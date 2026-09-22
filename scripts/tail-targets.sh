@@ -17,10 +17,10 @@
 set -uo pipefail
 
 python3 - <<'PYEOF'
-import glob, json, os, re, sys
+import glob, os, json, os, re, sys
 
 pages_out, vhosts = [], 0
-for path in sorted(glob.glob("services/*/vhosts/*.caddy")):
+for path in sorted(glob.glob(os.path.join(os.environ.get("REPO_DIR","."),"services/caddy/vhosts/*.caddy"))):
     src = open(path, encoding="utf-8").read()
     m = re.search(r"^https://([A-Za-z0-9.-]+)\s*\{", src, re.M)
     if not m:
@@ -55,7 +55,7 @@ for path in sorted(glob.glob("services/*/vhosts/*.caddy")):
                       "pages": {k: pages[k] for k in sorted(pages)}})
     vhosts += 1
 
-out_dir = os.path.dirname(sorted(glob.glob("services/*/vhosts/*.caddy"))[0]).replace("vhosts", "www")
+out_dir = os.path.join(os.environ.get("DATA_DIR","."), "rendered/caddy/www")
 os.makedirs(out_dir, exist_ok=True)
 out = os.path.join(out_dir, "targets.json")
 with open(out, "w", encoding="utf-8") as fh:
