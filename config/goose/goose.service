@@ -5,11 +5,11 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=op
-Group=op
-WorkingDirectory=/var/www/custom/projects/homelab/repo
+User=root
+Group=root
+WorkingDirectory=/root/github/kefoserver
 ExecStart=/usr/local/bin/goose serve
-# Server secret lives OUTSIDE the repo (root:op 0640) — never in a tracked file.
+# Server secret lives OUTSIDE the repo (root:root 0640) — never in a tracked file.
 # Created by scripts/install.sh; live path /etc/goose/goose.env.
 EnvironmentFile=-/etc/goose/goose.env
 Restart=always
