@@ -106,7 +106,6 @@ TS_IP='${TS_IP:-}'
 MOD_CLOUD='${MOD_CLOUD:-true}'
 MOD_VAULT='${MOD_VAULT:-true}'
 MOD_MAIL='${MOD_MAIL:-true}'
-MOD_GAMES='${MOD_GAMES:-true}'
 MOD_MONITOR='${MOD_MONITOR:-true}'
 ERR_TAGS=($(printf '%q ' "${ERR_TAGS[@]}"))
 EOF
@@ -116,7 +115,7 @@ EOF
 }
 
 # module names (doors) + their display names + defaults-file aliases
-MOD_ALIASES="cloud:cloud vaultwarden:vault vault:vault mailserver:mail mail:mail pufferpanel:games mc:games games:games uptimekuma:monitor kuma:monitor monitor:monitor"
+MOD_ALIASES="cloud:cloud vaultwarden:vault vault:vault mailserver:mail mail:mail uptimekuma:monitor kuma:monitor monitor:monitor"
 
 # read scripts/defaults/install.conf (same dir as this script) for prompt defaults
 defaults_install() {
@@ -142,14 +141,14 @@ defaults_install() {
       esac
     done < "$f"
   done
-  for k in cloud vault mail games monitor; do
+  for k in cloud vault mail monitor; do
     eval "[ -z \"\${DEF_$k:-}\" ] && DEF_$k=true"
   done
 }
 
 ask_modules() {
   local k answer
-  for k in cloud vault mail games monitor; do
+  for k in cloud vault mail monitor; do
     local var="MOD_${k^^}" def
     eval "def=\${DEF_$k:-true}"
     if [ -z "${!var:-}" ]; then
@@ -204,11 +203,11 @@ write_modules_conf() {
     echo "declared = install-time choice (MOD_*); probes are independent of it."
     echo; } > "$rep"
 
-  for m in cloud vault mail games monitor; do
+  for m in cloud vault mail monitor; do
     [ "${MOD_${m^^}:-true}" = "true" ] && echo "$m" >> "$conf"
   done
 
-  for m in cloud vault mail games monitor; do
+  for m in cloud vault mail monitor; do
     ct=0; cf=0; dd=0; vh=0
     case "$m" in
       cloud)   ct=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -cx nextcloud)
@@ -223,10 +222,6 @@ write_modules_conf() {
                [ -f "$REPO/services/mailserver/docker-compose.yml" ] && cf=1
                [ -e "$DATA/mailserver/data" ] && dd=1
                ls "$REPO"/services/*/vhosts/mail.*.caddy >/dev/null 2>&1 && vh=1 ;;
-      games)   ct=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -cx pufferpanel)
-               [ -f "$REPO/services/pufferpanel/docker-compose.yml" ] && cf=1
-               [ -e "$DATA/puffer/data" ] && dd=1
-               ls "$REPO"/services/*/vhosts/mc.*.caddy >/dev/null 2>&1 && vh=1 ;;
       monitor) ct=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -cx uptimekuma)
                [ -f "$REPO/services/uptimekuma/docker-compose.yml" ] && cf=1
                [ -e "$DATA/kuma/data" ] && dd=1
@@ -417,26 +412,20 @@ prep_dirs() {
                /root/github/kefoserver/data/mailserver/roundcube \
                /root/github/kefoserver/data/pgdata \
                /root/github/kefoserver/data/talk \
-               /root/github/kefoserver/data/download \
-               /root/github/kefoserver/data/eaglercraft \
-               /root/github/kefoserver/data/puffer/data \
-               /root/github/kefoserver/data/puffer/config
+               /root/github/kefoserver/data/download
   sudo chown -R 33:33 /root/github/kefoserver/data/cloud/html /root/github/kefoserver/data/cloud/users
   sudo chown -R 1000:1000 /root/github/kefoserver/data/vault/data
   sudo chown -R 5000:5000 /root/github/kefoserver/data/mailserver/data /root/github/kefoserver/data/mailserver/state /root/github/kefoserver/data/mailserver/logs
   sudo chown -R 33:33 /root/github/kefoserver/data/mailserver/roundcube
-  # root-owned: talk configs (talk-gen), drop folder, browser-MC client, panel data.
+  # root-owned: talk configs (talk-gen) and the public drop folder.
   # pgdata stays root-owned — the postgres entrypoint chowns it on first boot.
   sudo chown -R root:root /root/github/kefoserver/data/talk \
-    /root/github/kefoserver/data/download \
-    /root/github/kefoserver/data/eaglercraft \
-    /root/github/kefoserver/data/puffer/data \
-    /root/github/kefoserver/data/puffer/config
+    /root/github/kefoserver/data/download
 }
 
 seed_stack() {
   cd "$REPO" || exit 1
-  # The repo already carries the canonical naming (services/$DOMAIN/,
+  # The repo already carries the canonical naming (services/caddy,
   # container $DOMAIN, vhosts/<host>.caddy, user root) — no domain
   # renames apply. Fresh-install state: Nextcloud admin creds, stack
   # secrets, goose secret.
@@ -515,7 +504,7 @@ containers_up() {
   # The dok-recreate recipe already falls back to docker build + compose up
   # when compose's buildx is too old (Debian trixie), so no manual fallback
   # is needed here.
-  make "dok-recreate-$DOMAIN" >>"$LOG" 2>&1 || fail caddy
+  make dok-recreate-caddy >>"$LOG" 2>&1 || fail caddy
   # PostgreSQL first — the nextcloud entrypoint's fresh install needs the DB
   # reachable (POSTGRES_HOST from .env, set by talk-gen above). Caddy's
   # DNS-01 issuance runs at startup, so the mail/turn certs the talk stack
@@ -527,7 +516,6 @@ containers_up() {
   fi
   [ "${MOD_VAULT:-true}"   = "true" ] && { make dok-recreate-vaultwarden >>"$LOG" 2>&1 || fail vaultwarden; }
   [ "${MOD_MONITOR:-true}" = "true" ] && { make dok-recreate-uptimekuma  >>"$LOG" 2>&1 || fail kuma; }
-  [ "${MOD_GAMES:-true}"   = "true" ] && { make dok-recreate-pufferpanel >>"$LOG" 2>&1 || fail pufferpanel; }
   [ "${MOD_MAIL:-true}"    = "true" ] && { make dok-recreate-mailserver  >>"$LOG" 2>&1 || fail mailserver; }
 }
 
@@ -553,68 +541,6 @@ kuma_seed() {
     >>"$LOG" 2>&1 || fail kuma_seed
 }
 
-# Fully autonomous PufferPanel first-run: bypass the setup wizard by
-# inserting the admin user directly (same pattern as the GUIDE admin-
-# recovery path); the password is printed in the final summary. Also forces
-# panel.registrationenabled=false (the make smoke lockdown assertion).
-panel_admin_setup() {
-  local i=0
-  while [ $i -lt 60 ]; do
-    sudo test -f /root/github/kefoserver/data/puffer/data/pufferpanel.db && break
-    sleep 2; i=$((i+2))
-  done
-  if ! sudo test -f /root/github/kefoserver/data/puffer/data/pufferpanel.db; then
-    fail panel_admin "panel DB not created yet"
-    return
-  fi
-  local n
-  n=$(sudo sqlite3 /root/github/kefoserver/data/puffer/data/pufferpanel.db \
-      "SELECT COUNT(*) FROM users WHERE email='admin@fxmq.net';" 2>/dev/null | tr -d '\n')
-  if [ "$n" = "0" ]; then
-    PANEL_PASS=$(openssl rand -base64 18 | tr -d '/+=' | head -c 20)
-    local HASH
-    HASH=$(htpasswd -bnBC 10 "" "$PANEL_PASS" 2>/dev/null | tr -d ':\n')
-    sudo sqlite3 /root/github/kefoserver/data/puffer/data/pufferpanel.db "
-INSERT INTO users (username, email, password, otp_active, allow_passwordless_login, created_at, updated_at)
-VALUES ('admin','admin@fxmq.net','$HASH','false','true',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
-INSERT INTO permissions (user_id, client_id, server_identifier, scopes)
-SELECT last_insert_rowid(), NULL, NULL, 'admin';" >>"$LOG" 2>&1 || fail panel_admin "user insert failed"
-  fi
-  # Registration must stay closed (smoke asserts the toggle): force it false.
-  if sudo test -f /root/github/kefoserver/data/puffer/data/config.json \
-     && ! sudo jq -e '.panel.registrationenabled == false' /root/github/kefoserver/data/puffer/data/config.json >/dev/null 2>&1; then
-    sudo jq '.panel.registrationenabled = false' /root/github/kefoserver/data/puffer/data/config.json > /tmp/panel-config.json.$$
-    sudo mv /tmp/panel-config.json.$$ /root/github/kefoserver/data/puffer/data/config.json
-  fi
-  # The daemon caches users at boot — restart to pick up the inserted admin.
-  # Safe on a fresh install: no game servers exist yet to be stopped.
-  make dok-restart-pufferpanel >>"$LOG" 2>&1 || true
-  # Verify exactly what make smoke's panel-lockdown asserts.
-  sudo sqlite3 /root/github/kefoserver/data/puffer/data/pufferpanel.db \
-    "SELECT COUNT(*) FROM users WHERE id=1 AND email='admin@fxmq.net' AND password IS NOT NULL AND length(password)>=50;" 2>/dev/null | grep -q 1 \
-    || fail panel_admin "admin user missing or hash empty"
-  sudo sqlite3 /root/github/kefoserver/data/puffer/data/pufferpanel.db \
-    "SELECT COUNT(*) FROM permissions WHERE user_id=1 AND scopes LIKE '%admin%';" 2>/dev/null | grep -q 1 \
-    || fail panel_admin "admin permission missing"
-}
-
-# Deploy the PufferPanel server templates from the repo (browser-MC playground
-# 07fd7727 + the protected game server 2ecfbe8c). The daemon loads the JSONs at
-# boot — autostart applies (07fd7727 autostarts; 2ecfbe8c does not). The server
-# DATA dirs (jars, plugins, worlds) are operator-only and stay outside the repo
-# (see docs/MIGRATE.md): drop them in and start from the panel.
-panel_servers() {
-  local src=/root/github/kefoserver/config/pufferpanel/servers
-  local dst=/root/github/kefoserver/data/puffer/data/servers
-  if [ -d "$src" ]; then
-    sudo mkdir -p "$dst"
-    sudo cp "$src"/*.json "$dst"/
-    # chown only the JSONs — daemon-created server subdirs stay root-owned.
-    sudo chown root:root "$dst"/*.json 2>/dev/null || true
-  fi
-  # any templates present in the repo are deployed — no hardcoded IDs
-  [ "$(sudo ls "$dst"/*.json 2>/dev/null | wc -l)" -gt 0 ] || fail panel_servers
-}
 
 # Post-boot Nextcloud occ wiring: Talk signaling + TURN registration, NC
 # outbound SMTP (nextcloud@$DOMAIN sender mailbox), background cron. All
@@ -890,13 +816,11 @@ ssl_mode_full() {
       www)   cf_record "$h" true;;
     esac
   done
-  # talk/mail/mc MUST be DNS-only (grey cloud): TURN relays media over
-  # UDP/TCP 3478/5349 + 49160-49200, SMTP/IMAP and the MC game ports also
-  # bypass the CF proxy (HTTP(S) only). Caddy still gets their LE certs
-  # via DNS-01.
+  # talk/mail MUST be DNS-only (grey cloud): TURN relays media over
+  # UDP/TCP 3478/5349 + 49160-49200 and SMTP/IMAP also bypass the CF proxy
+  # (HTTP(S) only). Caddy still gets their LE certs via DNS-01.
   [ "${MOD_CLOUD:-true}" = "true" ] && cf_record talk false
   [ "${MOD_MAIL:-true}"  = "true" ] && cf_record mail false
-  [ "${MOD_GAMES:-true}" = "true" ] && cf_record mc false
   curl -s -X PATCH -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
     "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/settings/ssl" -d '{"value":"full"}' >>"$LOG" 2>&1 || true
   # DNS-only tokens can't set SSL mode; surface it as an expected manual step.
@@ -924,7 +848,6 @@ issue_certs() {
   [ "${MOD_VAULT:-true}" = "true" ]   && hosts="$hosts vault"
   [ "${MOD_MONITOR:-true}" = "true" ] && hosts="$hosts kuma"
   [ "${MOD_MAIL:-true}" = "true" ]    && hosts="$hosts mail"
-  [ "${MOD_GAMES:-true}" = "true" ]   && hosts="$hosts mc"
   for h in $hosts; do
     curl -sk --resolve "$h.$DOMAIN:443:127.0.0.1" -o /dev/null "https://$h.$DOMAIN/" >>"$LOG" 2>&1 || true
     sleep 3
@@ -990,10 +913,6 @@ phase_stack() {
   [ "${MOD_MAIL:-true}" = "true" ] && dkim_setup
   issue_certs
   [ "${MOD_MONITOR:-true}" = "true" ] && kuma_seed
-  if [ "${MOD_GAMES:-true}" = "true" ]; then
-    panel_servers
-    panel_admin_setup
-  fi
   sweep
 }
 
@@ -1015,13 +934,11 @@ problem() {
     nextcloud_db)   echo "postgresql container is not running (docker-compose.db.yml)" ;;
     vaultwarden)    echo "vaultwarden container is not running" ;;
     kuma)           echo "uptimekuma container is not running" ;;
-    pufferpanel)    echo "pufferpanel container is not running" ;;
     mailserver)     echo "mailserver container is not running (mail platform)" ;;
     datadirectory)  echo "nextcloud datadirectory is not /data" ;;
     talk_gen)       echo "nextcloud stack secrets not generated (make talk-gen failed)" ;;
     kuma_admin)     echo "uptime kuma admin user is missing" ;;
     kuma_seed)      echo "uptime kuma monitors are not seeded" ;;
-    panel_admin)    echo "PufferPanel admin user was not created automatically" ;;
     zone)           echo "Cloudflare zone '$DOMAIN' not found" ;;
     dns_*)          echo "DNS record for ${1#dns_}.$DOMAIN is missing" ;;
     cert_*)         echo "cert for ${1#cert_}.$DOMAIN is not issued by Let's Encrypt" ;;
@@ -1030,7 +947,6 @@ problem() {
     nextcloud_setup) echo "Nextcloud occ wiring incomplete (Talk signaling/TURN, SMTP, background cron)" ;;
     dkim_setup)      echo "DKIM key / mail._domainkey TXT record not published" ;;
     vaultwarden_setup) echo "Vaultwarden SMTP sender mailbox missing (vaultwarden@$DOMAIN)" ;;
-    panel_servers)  echo "PufferPanel server templates not deployed (puffer/data/servers/)" ;;
     clone)          echo "repo clone failed" ;;
     *)              echo "$1" ;;
   esac
@@ -1047,15 +963,13 @@ hint() {
     ts_ip)          echo "wait a few seconds, then run: tailscale ip -4, then re-check" ;;
     install_config) echo "run: make install-config in $REPO, then re-check" ;;
     fail2ban)       echo "ensure /etc/fail2ban/jail.d/sshd.conf has backend = systemd, then: systemctl restart fail2ban; fail2ban-client status sshd" ;;
-    caddy)          echo "run: make dok-recreate-$DOMAIN, then re-check" ;;
+    caddy)          echo "run: make dok-recreate-caddy, then re-check" ;;
     nextcloud)      echo "run: make dok-recreate-nextcloud, then re-check" ;;
     nextcloud_db)   echo "run: make dok-recreate-nextcloud-db, then re-check" ;;
     talk_gen)       echo "run: make talk-gen in $REPO, then re-check" ;;
     vaultwarden)    echo "run: make dok-recreate-vaultwarden, then re-check" ;;
     kuma)           echo "run: make dok-recreate-uptimekuma, then re-check" ;;
-    pufferpanel)    echo "run: make dok-recreate-pufferpanel, then re-check" ;;
     mailserver)     echo "run: make dok-recreate-mailserver, then re-check" ;;
-    panel_admin)    echo "the automatic admin insert failed — inspect /var/log/kefohaine/install.log; fallback: create the admin in the UI at https://mc.$DOMAIN/panel, or run: sudo sqlite3 puffer/data/pufferpanel.db \"INSERT INTO users ...\" per docs/GUIDE.md 'Admin login recovery', then re-check" ;;
     datadirectory)  echo "run: docker exec -w /var/www/html nextcloud php occ config:system:set datadirectory --value /data, then re-check" ;;
     kuma_admin)     echo "create the admin account at https://kuma.$DOMAIN in the UI, then re-check" ;;
     kuma_seed)      echo "run: docker exec -i uptimekuma sqlite3 /app/data/kuma.db < services/uptimekuma/seed-monitors.sql, or create monitors in the UI, then re-check" ;;
@@ -1067,7 +981,6 @@ hint() {
     nextcloud_setup) echo "run the occ steps from docs/GUIDE.md 'Ordering after a fresh deploy' (talk:signaling:add x2, talk:turn:add x2, config:system:set mail_*, background:cron) — see the nextcloud_setup function in this script, then re-check" ;;
     dkim_setup)      echo "run: docker exec mailserver setup config dkim domain $DOMAIN; ensure ENABLE_OPENDKIM=0 in the mailserver compose (Rspamd signs); verify the CF token has Zone > DNS > Edit; then dig @<zone NS> TXT mail._domainkey.$DOMAIN" ;;
     vaultwarden_setup) echo "run: printf '%s\\n%s\\n' <pass> <pass> | docker exec -i mailserver setup email add vaultwarden@$DOMAIN, then re-check" ;;
-    panel_servers)  echo "run: sudo cp config/pufferpanel/servers/*.json /root/github/kefoserver/data/puffer/data/servers/, then re-check" ;;
     clone)          echo "add the key printed above to GitHub (Settings -> SSH keys), then re-run the script" ;;
     *)              echo "" ;;
   esac
@@ -1089,9 +1002,7 @@ recheck() {
     nextcloud_db) docker ps --format '{{.Names}}' | grep -qx postgresql ;;
     vaultwarden) docker ps --format '{{.Names}}' | grep -qx vaultwarden ;;
     kuma) docker ps --format '{{.Names}}' | grep -qx uptimekuma ;;
-    pufferpanel) docker ps --format '{{.Names}}' | grep -qx pufferpanel ;;
     mailserver) docker ps --format '{{.Names}}' | grep -qx mailserver && docker ps --format '{{.Names}}' | grep -qx roundcube ;;
-    panel_admin) sudo sqlite3 /root/github/kefoserver/data/puffer/data/pufferpanel.db "SELECT COUNT(*) FROM users WHERE id=1 AND email='admin@fxmq.net' AND password IS NOT NULL AND length(password)>=50;" 2>/dev/null | grep -q 1 && sudo sqlite3 /root/github/kefoserver/data/puffer/data/pufferpanel.db "SELECT COUNT(*) FROM permissions WHERE user_id=1 AND scopes LIKE '%admin%';" 2>/dev/null | grep -q 1 ;;
     datadirectory) if docker exec -w /var/www/html nextcloud php occ status 2>/dev/null | grep -q "installed: true"; then [ "$(docker exec -w /var/www/html nextcloud php occ config:system:get datadirectory 2>/dev/null | tr -d '\n')" = "/data" ]; else true; fi ;;
     kuma_admin) [ "$(docker exec uptimekuma sqlite3 /app/data/kuma.db "SELECT COUNT(*) FROM user WHERE username='admin';" 2>/dev/null | tr -d '\n')" = "1" ] ;;
     kuma_seed) [ "$(docker exec uptimekuma sqlite3 /app/data/kuma.db "SELECT COUNT(*) FROM monitor;" 2>/dev/null | tr -d '\n')" -gt 0 ] ;;
@@ -1103,7 +1014,6 @@ recheck() {
     nextcloud_setup) docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN" && docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://talk.$DOMAIN/signaling" && docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "talk.$DOMAIN:3478" && docker exec -u www-data nextcloud php occ config:system:get trusted_domains 2>/dev/null | grep -qx "cloud.$DOMAIN" ;;
     dkim_setup)      dig +short TXT "mail._domainkey.$DOMAIN" @"$(dig +short NS "$DOMAIN" | head -1)" 2>/dev/null | grep -qE 'p=[A-Za-z0-9+/=]{100,}' ;;
     vaultwarden_setup) docker exec mailserver setup email list 2>/dev/null | grep -qiE "^[* ] *vaultwarden@$DOMAIN( |\$|\[)" ;;
-    panel_servers)  [ "$(sudo ls /root/github/kefoserver/data/puffer/data/servers/*.json 2>/dev/null | wc -l)" -gt 0 ] ;;
     *) false ;;
   esac
 }
@@ -1224,13 +1134,12 @@ success_block() {
   echo "   1. Tailscale split-DNS: admin console -> DNS -> add $DOMAIN -> ${TS_IP:-<tailscale IP>}"
   echo "      so tail.$DOMAIN resolves for tailnet devices (dnsmasq on the VPS already answers it)"
   echo "   2. (optional) Cloudflare WAF rule skip for cloud.$DOMAIN (desktop sync)"
-  echo "   3. Git remote 'origin' is https://github.com/kefohaine/kefoserver.git (public — no key needed)"
+  echo "   3. Git remote 'origin' is git@github.com:kefohaine/kefoserver.git (SSH key on root)"
   echo "   4. Mailboxes: make mail-gen MAIL=name@$DOMAIN (or bare make mail-gen for a disposable);"
   echo "      the nextcloud@$DOMAIN SMTP sender mailbox is created automatically"
-  echo "   5. Game servers: the panel templates under config/pufferpanel/servers/ are deployed."
-  echo "      Register them in the panel DB to make them visible in the UI (docs/GUIDE.md"
-  echo "      'Registering a file-dropped server'), drop the operator jars into"
-  echo "      puffer/data/servers/<id>/, then start from the panel (docs/MIGRATE.md)"
+  echo "   5. Game servers + browser Minecraft are NOT part of this repo any more:"
+  echo "      the 'games' module moved to its own project — git@github.com:kefohaine/kefoMC.git"
+  echo "      (clone to /root/github/kefoMC && make install). Nothing here needs it."
   echo "=============================================================="
 }
 
