@@ -28,7 +28,7 @@ prompt: |
   rules 10/16/17.
 
   Determine:
-  - what files/services/configs are affected (compose files, Makefile recipes,
+  - what files/modules/configs are affected (compose files, Makefile recipes,
     host configs, DNS/firewall)
   - dependencies and ordering (e.g. DNS record before cert, cert before coturn)
   - likely failure modes and how to detect each
