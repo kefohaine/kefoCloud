@@ -15,13 +15,13 @@ SELECT 1, 'local', 'socket', '/var/run/docker.sock'
 WHERE NOT EXISTS (SELECT 1 FROM docker_host WHERE name = 'local');
 
 -- ── HTTP monitors (public hostnames via Cloudflare → VPS → Caddy) ────────
--- NOTE: no monitor uses https://mail.fxmq.net — docker's embedded DNS resolves
--- that name to the mailserver container (hostname: mail.fxmq.net → 172.22.0.9),
+-- NOTE: no monitor uses https://mail.{{DOMAIN}} — docker's embedded DNS resolves
+-- that name to the mailserver container (hostname: mail.{{DOMAIN}} → 172.22.0.9),
 -- which has no :443 (Caddy owns HTTPS on the host). Monitor roundcube on the
 -- bridge instead.
 
 INSERT INTO monitor (name, type, url, interval, retry_interval, maxretries, active, user_id, description)
-SELECT 'http: vault', 'http', 'https://vault.fxmq.net', 60, 60, 0, 1, 1, 'Vaultwarden'
+SELECT 'http: vault', 'http', 'https://vault.{{DOMAIN}}', 60, 60, 0, 1, 1, 'Vaultwarden'
 WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'http: vault');
 
 INSERT INTO monitor (name, type, url, interval, retry_interval, maxretries, active, user_id, description)
@@ -29,7 +29,7 @@ SELECT 'http: mail', 'http', 'http://172.22.0.10:80/', 60, 60, 0, 1, 1, 'Roundcu
 WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'http: mail');
 
 INSERT INTO monitor (name, type, url, interval, retry_interval, maxretries, active, user_id, description)
-SELECT 'http: cloud', 'http', 'https://cloud.fxmq.net', 60, 60, 0, 1, 1, 'Nextcloud'
+SELECT 'http: cloud', 'http', 'https://cloud.{{DOMAIN}}', 60, 60, 0, 1, 1, 'Nextcloud'
 WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'http: cloud');
 
 -- http: status omitted — Kuma's own status page is the dashboard; self-check is noise.
@@ -41,9 +41,9 @@ WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'http: cloud');
 -- ── Docker container monitors ───────────────────────────────────────────
 
 INSERT INTO monitor (name, type, interval, retry_interval, maxretries, active, user_id, docker_host, docker_container, description)
-SELECT 'docker: fxmq.net', 'docker', 3600, 60, 0, 1, 1, d.id, 'fxmq.net', 'Caddy reverse proxy'
+SELECT 'docker: {{DOMAIN}}', 'docker', 3600, 60, 0, 1, 1, d.id, '{{DOMAIN}}', 'Caddy reverse proxy'
 FROM docker_host d WHERE d.name = 'local'
-  AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: fxmq.net');
+  AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: {{DOMAIN}}');
 
 INSERT INTO monitor (name, type, interval, retry_interval, maxretries, active, user_id, docker_host, docker_container, description)
 SELECT 'docker: nextcloud', 'docker', 3600, 60, 0, 1, 1, d.id, 'nextcloud', 'Nextcloud PHP-FPM'
