@@ -14,6 +14,8 @@
 # conf = all assumed installed.
 #
 # No arguments. Colors auto-disable when stdout is not a tty or NO_COLOR is set.
+
+. "$(dirname "$(readlink -f "$0")")/instance.sh" 2>/dev/null || true
 set -uo pipefail
 export LC_ALL=C
 
