@@ -173,7 +173,7 @@ systemd-log:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: fetch smoke gh-web-health install-hooks clean-docker clean-apt clean-backups update apt-upgrade install-config kuma-import help talk-gen
+.PHONY: fetch fetch-more smoke gh-web-health install-hooks clean-docker clean-apt clean-backups update apt-upgrade install-config kuma-import help talk-gen
 .PHONY: deploy backup cleanup
 
 # AIO dashboard (scripts/fetch.sh): host perf (uptime, load, cpu, memory,
@@ -182,6 +182,17 @@ systemd-log:
 # tailnet — one aligned colored read; module-aware (installed-modules.conf).
 fetch:
 >@bash scripts/fetch.sh
+
+# Deep dive (scripts/fetch-more.sh): the same system with the depth needed to
+# answer "why isn't it okay" — memory breakdown, per-core busy, top cpu/mem/rss
+# processes, zombies+threads, every listening socket, all units (active, failed,
+# enabled-but-dead), timers, cron, journald caps, the docker engine's EFFECTIVE
+# log caps with per-container cpu/mem/net/pids + restart counts + per-container
+# log sizes and mount drift, image/volume/network inventory, per-mount disk +
+# inodes + reboot-required, data/ growth, tailnet prefs/peers, dnsmasq + live
+# DNS probes, ufw, git, module/vhost truth and TLS expiry. Read-only.
+fetch-more:
+>@bash scripts/fetch-more.sh
 
 # Shared bodies for the granular clean-* recipes. cleanup is the umbrella
 # recipe and inlines all three bodies — no chained make targets.
@@ -460,13 +471,25 @@ bash $(REPO)/scripts/tail-targets.sh
 sudo cp $(REPO)/config/fail2ban/jail.d/sshd.conf /etc/fail2ban/jail.d/sshd.conf
 sudo cp $(REPO)/config/cron/nextcloud /etc/cron.d/nextcloud
 sudo chmod 0644 /etc/cron.d/nextcloud
+# Logging: ONE namespace (/var/log/kefohaine) for every log this project writes,
+# bounded by ONE logrotate rule. Docker output is capped globally in
+# config/docker/daemon.json (10m x3) and journald in config/systemd/journald
+# caps — nothing here logs unboundedly, and nothing uses chronicle-style
+# per-event logging.
+sudo install -d -m 0755 /var/log/kefohaine
+sudo install -d -m 0700 /var/lib/kefohaine
+sudo cp $(REPO)/config/logrotate/kefohaine /etc/logrotate.d/kefohaine
+sudo chmod 0644 /etc/logrotate.d/kefohaine
 sudo systemctl enable --now fail2ban
 sudo ufw allow from 172.22.0.0/16 to any port 7681 proto tcp
 sudo cp $(REPO)/config/systemd/kefoserver-stack.service /etc/systemd/system/kefoserver-stack.service
+sudo cp $(REPO)/config/systemd/tmux-main.service /etc/systemd/system/tmux-main.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now goose ttyd
 sudo systemctl enable kefoserver-stack.service
 @scripts/mklog info "boot unit installed + enabled: kefoserver-stack.service (every deployed compose unit comes up on boot)"
+sudo systemctl enable --now tmux-main.service
+@scripts/mklog info "tmux 'main' session ensured + enabled (make tmux-open TAG=main to attach)"
 sudo systemctl restart sshd dnsmasq
 @scripts/mklog info "host install-config complete: goose + ttyd + dnsmasq + fail2ban + sshd + cron installed"
 endef
