@@ -62,7 +62,7 @@ docker exec uptimekuma sqlite3 /app/data/kuma.db <<'SQL'
 -- domain swap in monitor URLs
 UPDATE monitor SET url = replace(url, 'jehpok.com', 'fxmq.net') WHERE url LIKE '%jehpok.com%';
 -- caddy container renamed vhosts -> fxmq.net
-UPDATE monitor SET name = 'docker: fxmq.net', docker_container = 'fxmq.net' WHERE name = 'docker: vhosts';
+UPDATE monitor SET name = 'docker: caddy', docker_container = 'caddy' WHERE name = 'docker: vhosts';
 -- retired services (mc, share, homer, api, www): keep history, stop checking
 UPDATE monitor SET active = 0 WHERE name IN
   ('docker: mc','docker: mc-flask','docker: share-flask','docker: homer',
