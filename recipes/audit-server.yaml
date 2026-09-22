@@ -34,7 +34,7 @@ prompt: |
 
   Inspect the relevant files:
   - scripts/ (install.sh, uninstall.sh, optimize.sh, storage.sh, and the per-subsystem helpers)
-  - services/*/docker-compose.yml and the Caddy edge under services/fxmq.net/ ($DOMAIN in general)
+  - services/*/docker-compose.yml and the Caddy edge under services/caddy/ ($DOMAIN in general)
   - config/ (reference host configs), Makefile, docs/
 
   Pay particular attention to:
