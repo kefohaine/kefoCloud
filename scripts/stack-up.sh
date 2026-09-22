@@ -3,7 +3,7 @@
 # stack-up.sh — the single, idempotent entry point that brings every DEPLOYED
 # compose unit up. Callers:
 #
-#   stack-up.sh              (boot)    kefoserver-stack.service
+#   stack-up.sh              (boot)    $NODE_NAME-stack.service
 #   stack-up.sh --update     (manual)  make update
 #   stack-up.sh --check      (timer)   repair pass — start only what is missing
 #   stack-up.sh --validate   (gate)    validate the edge config, change nothing
@@ -24,6 +24,8 @@
 #     started and never gets empty data dirs created under it
 #   - --check/--boot never recreate a healthy container (up -d is a no-op)
 #
+
+. "$(dirname "$(readlink -f "$0")")/instance.sh" 2>/dev/null || true
 set -uo pipefail
 
 REPO=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
@@ -67,12 +69,16 @@ EDGE=$(edge_dir || true)
 EDGE_FILE="$REPO/services/${EDGE:-none}/docker-compose.yml"
 
 smoke_host() {   # a public vhost to probe (www.* preferred) — derived, never hardcoded
-  local d="$REPO/services/$EDGE/vhosts" h
+  local d="$DATA/rendered/caddy/vhosts" h
   h=$(ls "$d" 2>/dev/null | sed -n 's/^\(www\..*\)\.caddy$/\1/p' | head -1)
   [ -n "$h" ] || h=$(ls "$d" 2>/dev/null | sed -n 's/^\(.*\)\.caddy$/\1/p' | head -1)
   echo "${h:-localhost}"
 }
-SHOST=$(smoke_host)
+# The probe host: vhost files are named after the SERVICE (cloud.caddy), not the
+# domain, so the hostname is built from the instance's DOMAIN. Fall back to the
+# first vhost filename if there is somehow no DOMAIN.
+SHOST="${SHOST:-www.${DOMAIN:-}}"
+[ -n "${DOMAIN:-}" ] || SHOST=$(smoke_host)
 EDGE_CTN=$(unit_names "$EDGE_FILE" 2>/dev/null | head -1)
 
 edge_healthy() {
@@ -88,13 +94,13 @@ edge_healthy() {
 edge_config_ok() {
   [ -n "$EDGE" ] || return 0
   compose "$EDGE_FILE" config -q 2>/dev/null || return 1
-  docker run --rm --entrypoint caddy -v "$REPO/services/$EDGE:/etc/caddy:ro" \
+  docker run --rm --entrypoint caddy -v "$DATA/rendered/caddy:/etc/caddy:ro" \
     "$(docker inspect -f '{{.Config.Image}}' "$EDGE_CTN" 2>/dev/null || echo caddy:2)" \
     adapt --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1
 }
 
 edge_input_hash() {
-  find "$REPO/services/$EDGE" -type f ! -name '*.log' -print0 2>/dev/null \
+  find "$DATA/rendered/caddy" -type f ! -name '*.log' -print0 2>/dev/null \
     | sort -z | xargs -0 sha256sum 2>/dev/null | sha256sum | cut -d' ' -f1
 }
 
