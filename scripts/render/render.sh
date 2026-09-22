@@ -79,7 +79,7 @@ if mode == "reverse":
     # Live file -> template: replace each VALUE with its {{TOKEN}}. Used by
     # `make backup` so pulling config back from the host can never bake an
     # instance value into the skeleton. Only keys whose values are safe to match
-    # textually are reversed (no TIMEZONE/OPERATOR/TAILNET_SUBNET: short or
+    # textually are reversed (no TIMEZONE/OPERATOR: short or
     # generic values would rewrite unrelated words). Longest value first, so
     # /root/github/x/data is matched before /root/github/x.
     KEYS = ["REPO_DIR","DATA_DIR","STATE_DIR","LOG_DIR","GITHUB_USER","REPO_NAME",
