@@ -6,7 +6,7 @@ instructions: |
   stale, and duplicate items with the precise in-place fix for each, so the
   operator can approve. Follow docs/AGENTS.md doc-audit directives.
 author:
-  contact: "kefohaine"
+  contact: "{{GITHUB_USER}}"
 extensions:
   - type: builtin
     name: developer
