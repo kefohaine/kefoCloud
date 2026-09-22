@@ -20,7 +20,7 @@ parameters:
   - key: target
     input_type: string
     requirement: optional
-    description: "Script or area to validate (install.sh, uninstall.sh, optimize.sh, storage.sh, or 'all')"
+    description: "Script or area to validate (install.sh, uninstall.sh, optimize.sh, datadir-nfs.sh, or 'all')"
     default: "all"
 prompt: |
   Validate installer/script changes, target: {{ target }}.
