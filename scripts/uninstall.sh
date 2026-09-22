@@ -41,15 +41,20 @@
 # Usage (root on the box, from the repo checkout):
 #   sudo bash scripts/uninstall.sh
 #
-# Full log: /var/log/kefohaine/uninstall.log
+# Full log: $LOG_DIR/uninstall.log
+
+. "$(dirname "$(readlink -f "$0")")/instance.sh" 2>/dev/null || true
 
 set -uo pipefail
 
 OP_USER=root
-REPO=/root/github/kefoserver
-PROJECT_DIR=/root/github/kefoserver/data
+# The checkout path is DERIVED from this script's location — never
+# hardcoded — so the repo can live anywhere and be renamed
+# ($NODE_NAME -> kefoServer) without editing any script.
+REPO="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+PROJECT_DIR="$REPO/data"
 CONF="$PROJECT_DIR/installed-modules.conf"
-LOG_DIR=/var/log/kefohaine
+LOG_DIR=$LOG_DIR
 LOG="$LOG_DIR/uninstall.log"
 ERR_TAGS=()
 declare -A ERR_DETAIL=()
@@ -389,11 +394,11 @@ remove_host() {
     systemctl disable --now "$u" >>"$LOG" 2>&1 || true
     rm -f "/etc/systemd/system/$u.service"
   done
-  rm -f /etc/goose/goose.env /etc/kefoserver-banner.sh
+  rm -f /etc/goose/goose.env /etc/$NODE_NAME-banner.sh
   rm -f /etc/dnsmasq.d/10-tailnet.conf
   rm -f /etc/systemd/system/dnsmasq.service.d/override.conf
   rmdir /etc/systemd/system/dnsmasq.service.d 2>/dev/null || true
-  rm -f /etc/sysctl.d/99-kefoserver.conf
+  rm -f /etc/sysctl.d/99-$NODE_NAME.conf
   rm -f /etc/cron.d/nextcloud
   rm -f /etc/fail2ban/jail.d/sshd.conf
   # the binaries install.sh dropped into /usr/local/bin
@@ -423,7 +428,7 @@ remove_pkgs() {
 }
 
 remove_user() {
-  # root@kefoserver is the ONLY entry point — the operator account is never
+  # root@$NODE_NAME is the ONLY entry point — the operator account is never
   # deleted (that would end all access to the box). This phase is a no-op.
   log "  operator account is 'root' (sole entry point) — NOT removed, by design"
   rm -f /etc/sudoers.d/op-passwordless 2>/dev/null || true   # legacy cleanup only
