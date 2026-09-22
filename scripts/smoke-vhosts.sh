@@ -17,8 +17,8 @@
 # Fails (exit 1) when an installed module stops serving its real app (e.g. a
 # bare `respond "ok"` stub — the 2026-08-28 incident), the edge misbehaves
 # (tail 403 / /ttyd auth), the mail platform or a container is down, or the
-# host units/firewall drift. Run after any change to services/fxmq.net/ or
-# after `docker restart fxmq.net`. The pre-push hook runs this automatically
+# host units/firewall drift. Run after any change to services/caddy/ or
+# after `docker restart caddy`. The pre-push hook runs this automatically
 # (override with SKIP_SMOKE=1 — not on a whim).
 set -uo pipefail
 
@@ -128,7 +128,7 @@ check_ctns() {
 # Core — the Caddy edge, www and the tailnet door. Always expected.
 # ─────────────────────────────────────────────────────────────────────────────
 hdr core "Edge — Caddy · www · tail (core)"
-check_ctns edge "fxmq.net"
+check_ctns edge "caddy"
 
 # www: empty homepage (redirects to /welcome) + download drop folder.
 check www          "www.fxmq.net" "/"          "200 301 302 307 308" ""    "homepage"
