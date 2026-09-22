@@ -3,20 +3,24 @@
 # structured per MODULE so a modular install never fails on what was
 # deliberately not installed.
 #
-# Module awareness: scripts/install/install.sh writes
-# $PROJECT_DIR/installed-modules.conf (GENERATED — one installed module per
-# line) at the end of its run; this script reads it BEFORE checking anything.
-# Every check still runs factually and every FAIL line still prints — but each
-# section belongs to exactly one module, and a section whose module is absent
-# from the conf ends with ONE "module not installed — intended behaviour"
-# note (per-section, not per-error) and its failures do not fail the run.
+# Module awareness: the roster comes from config/modules.conf; the installed
+# set from $PROJECT_DIR/installed-modules.conf (GENERATED — one installed
+# module per line, written by scripts/install/install.sh). Every check still
+# runs factually and every FAIL line still prints — but each section belongs
+# to exactly one module, and a section whose module is absent from the conf
+# ends with ONE "module not installed — intended behaviour" note (per-section,
+# not per-error) and its failures do not fail the run.
+#
+# VOCABULARY: `not installed` means the module is ABSENT — no container, no
+# route. It is NOT "tailnet-only" (a property of the one route that really is
+# tailnet-only, tail.$DOMAIN, which is checked in the edge section).
 # Sections without a module (edge, host) are core and always expected. A
 # missing conf file means every module is expected (fails loud) — fresh clones
 # without an installer run.
 #
 # Fails (exit 1) when an installed module stops serving its real app (e.g. a
 # bare `respond "ok"` stub — the 2026-08-28 incident), the edge misbehaves
-# (tail 403 / /ttyd auth), the mail platform or a container is down, or the
+# (tail 403), the mail platform or a container is down, or the
 # host units/firewall drift. Run after any change to modules/caddy/ or
 # after `docker restart caddy`. The pre-push hook runs this automatically
 # (override with SKIP_SMOKE=1 — not on a whim).
@@ -25,12 +29,17 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-CONF="$ROOT/data/installed-modules.conf"
-MODULES="cloud vault mail monitor"
-[ -f "$CONF" ] && MODULES="$(grep -vE '^[[:space:]]*(#|$)' "$CONF" | tr '\n' ' ')"
-mod_in() { [[ " $MODULES " == *" $1 "* ]]; }
+. "$ROOT/scripts/lib/modules.sh"
+CONF="$INSTALLED_CONF"
+MODULES="$(mod_all | tr '\n' ' ')"
+inst=""
+while read -r m; do
+  [ -n "$m" ] || continue
+  mod_installed "$m" && inst+="$m " || mods_absent="${mods_absent:-}${m} "
+done < <(mod_all)
+mod_in() { mod_installed "$1"; }
 if [ -f "$CONF" ]; then
-  echo "modules installed: ${MODULES:-none} ($(basename "$CONF"))"
+  echo "modules installed: ${inst:-none}${mods_absent:+· not installed: ${mods_absent% }} ($(basename "$CONF"))"
 else
   echo "modules installed: ALL assumed ($CONF missing — every module section is expected)"
 fi
@@ -47,7 +56,7 @@ hdr() { sec_mod="$1"; sec_base=$fails; echo ""; echo "== $2 =="; }
 end_sec() {
   local d=$((fails - sec_base))
   if [ "$d" -gt 0 ] && [ "$sec_mod" != core ] && ! mod_in "$sec_mod"; then
-    echo "      · module '$sec_mod' not installed — intended behaviour ($d failing check(s) above do not fail this run)"
+    echo "      · module '$sec_mod' not installed — intended behaviour; the module is ABSENT (no container, no route), it is not tailnet-only ($d failing check(s) above do not fail this run)"
     intended=$((intended + d))
     fails=$sec_base
   fi
@@ -132,18 +141,25 @@ check_ctns() {
 hdr core "Edge — Caddy · www · tail (core)"
 check_ctns edge "caddy"
 
-# www: empty homepage (redirects to /welcome) + download drop folder.
+# www: the instance homepage + the drop folder + every page the operator has
+# actually put in the web root ($DATA/www). Derived from the files present, so
+# no page name is hardcoded and a fresh install (placeholder page only) passes.
 check www          "www.$DOMAIN" "/"          "200 301 302 307 308" ""    "homepage"
 check www-download "www.$DOMAIN" "/download/" "200 301 302 307 308" html "public drop folder browses"
-check www-welcome  "www.$DOMAIN" "/welcome"   "200 301 302 307 308" html "welcome page"
+for f in "$ROOT/data/www"/*.html; do
+  [ -f "$f" ] || continue
+  pg="$(basename "$f" .html)"
+  case "$pg" in index|tail) continue ;; esac
+  check "www-$pg" "www.$DOMAIN" "/$pg" "200 301 302 307 308" html "$pg page"
+done
 check_tls "www.$DOMAIN"
 
 # tail is Tailscale-only: a non-tailnet source (this host's 127.0.0.1) must
 # get 403.
 check tail "tail.$DOMAIN" "/" "403" "" "non-tailnet sources get 403"
 # From the tailnet side (the host's own Tailscale IP passes the @not_tailnet
-# matcher): the terminal serves unauthenticated, /ttyd challenges without
-# credentials. A cached credential never short-circuits these — Caddy decides.
+# matcher) everything on the vhost serves unauthenticated — including /ttyd:
+# Tailscale membership is the ONLY gate (basic auth was removed 2026-09-22).
 ts_ip="$(tailscale ip -4 2>/dev/null | head -1)"
 if [ -n "$ts_ip" ]; then
   ta=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 --resolve "tail.$DOMAIN:443:$ts_ip" "https://tail.$DOMAIN/" 2>/dev/null)
@@ -153,11 +169,12 @@ if [ -n "$ts_ip" ]; then
     echo "ok   tail-terminal: $ta — terminal serves tailnet devices"
   fi
   tt=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 --resolve "tail.$DOMAIN:443:$ts_ip" "https://tail.$DOMAIN/ttyd" 2>/dev/null)
-  if [ "$tt" != "401" ]; then
-    echo "FAIL tail-ttyd-auth: /ttyd without credentials got $tt (want 401 — basic auth must challenge)"; fails=$((fails+1))
-  else
-    echo "ok   tail-ttyd-auth: 401 — /ttyd challenges without credentials"
-  fi
+  case "$tt" in
+    200|301|302|307|308)
+      echo "ok   tail-ttyd: $tt — the shell serves tailnet devices without a second credential" ;;
+    *)
+      echo "FAIL tail-ttyd: /ttyd got $tt (want a 2xx/3xx — the shell must NOT challenge; 401 means a credential crept back in)"; fails=$((fails+1)) ;;
+  esac
 else
   echo "FAIL tailnet-edge: no Tailscale IP on this host — tailnet-side checks skipped"; fails=$((fails+1))
 fi
