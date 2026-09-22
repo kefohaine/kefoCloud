@@ -10,7 +10,7 @@
 # clone before the installer has ever run.
 #
 # SOURCED, never executed. Defines: DOMAIN, NODE_NAME, GITHUB_USER, REPO_NAME,
-# REPO_DIR, DATA_DIR, LOG_DIR, STATE_DIR, TAILNET_SUBNET, SERVER_IP, EMAIL.
+# REPO_DIR, DATA_DIR, LOG_DIR, STATE_DIR, SERVER_IP, EMAIL.
 # Variables already set by the caller win (`: "${X:=...}"` semantics), which is
 # how install.sh passes what it just prompted for.
 #
@@ -32,7 +32,7 @@ if [ -f "$_INSTANCE_CONF" ]; then
     case "$_il" in ''|'#'*) continue ;; esac
     _ik="${_il%%=*}"; _iv="${_il#*=}"
     case "$_ik" in
-      DOMAIN|HOSTNAME|GITHUB_USER|REPO_NAME|REPO_DIR|DATA_DIR|LOG_DIR|STATE_DIR|TAILNET_SUBNET|SERVER_IP|EMAIL) ;;
+      DOMAIN|HOSTNAME|GITHUB_USER|REPO_NAME|REPO_DIR|DATA_DIR|LOG_DIR|STATE_DIR|SERVER_IP|EMAIL) ;;
       *) continue ;;
     esac
     [ "$_ik" = HOSTNAME ] && _ik=NODE_NAME
@@ -46,7 +46,6 @@ fi
 : "${REPO_NAME:=kefoServer}"
 : "${LOG_DIR:=/var/log/kefohaine}"
 : "${STATE_DIR:=/var/lib/kefohaine}"
-: "${TAILNET_SUBNET:=100.64.0.0/10}"
 : "${SERVER_IP:=}"
 : "${EMAIL:=admin@$DOMAIN}"
 
