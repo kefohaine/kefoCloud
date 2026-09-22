@@ -7,8 +7,8 @@
 #     blocked — that is the stub that took every public subdomain offline on
 #     2026-08-28. Operator-approved maintenance can pass with EDGE_OVERRIDE=1.
 #     Exempt by design: www (health stub + /download) and tail (legit `ok`
-#     paths). Any vhost another repo installs into the edge (kefoMC) is
-#     guarded by the pre-push smoke instead.
+#     paths). Any vhost another repo installs into the edge is guarded by
+#     the pre-push smoke instead.
 
 . "$(git rev-parse --show-toplevel)/scripts/lib/instance.sh" 2>/dev/null || true
 set -uo pipefail
