@@ -480,11 +480,10 @@ caddy_data() {
 }
 
 host_services() {
-  if [ -n "${TS_IP:-}" ]; then
-    sed -i "s/100\.117\.144\.0/$TS_IP/g" config/dnsmasq/10-tailnet.conf
-  else
-    fail ts_ip
-  fi
+  [ -n "${TS_IP:-}" ] || fail ts_ip
+  # The tracked 10-tailnet.conf keeps a PLACEHOLDER address — install-config
+  # renders the live Tailscale IP in at deploy time, so the repo file is never
+  # mutated and no instance-specific address is ever committed.
   make install-config >>"$LOG" 2>&1 || fail install_config
   # fail2ban: on trixie the default file backend finds no /var/log/auth.log and
   # the unit exits 255. Our jail.d/sshd.conf ships backend=systemd; restart and
