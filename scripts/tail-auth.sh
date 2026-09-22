@@ -8,21 +8,23 @@
 # that credential and never prints the password.
 #
 # Usage: tail-auth.sh set [user] [password]
-#   user defaults to `kefohaine`; the password is generated when omitted. The script
+#   user defaults to `$GITHUB_USER`; the password is generated when omitted. The script
 #   rewrites the basic_auth block, validates it in the running Caddy container
 #   (reverting on failure), restarts Caddy, verifies an authenticated request and
 #   PRINTS the credential once on the terminal — no password file is left behind.
 #   The vhost is a repo file — review and commit the change afterwards.
+
+. "$(dirname "$(readlink -f "$0")")/instance.sh" 2>/dev/null || true
 
 set -uo pipefail
 
 [ "${1:-set}" = set ] || { echo "usage: tail-auth.sh set [user] [password]"; exit 1; }
 shift || true
 
-VHOST="$(ls services/*/vhosts/tail.*.caddy 2>/dev/null | head -1)"
-[ -n "$VHOST" ] || { echo "error: no services/*/vhosts/tail.*.caddy found (run from the repo root)"; exit 1; }
+VHOST="$(ls services/caddy/vhosts/tail.caddy 2>/dev/null | head -1)"
+[ -n "$VHOST" ] || { echo "error: no services/caddy/vhosts/tail.caddy found (run from the repo root)"; exit 1; }
 DOMAIN="$(basename "$VHOST" .caddy | sed 's/^tail\.//')"
-UNAME="${1:-kefohaine}"
+UNAME="${1:-$GITHUB_USER}"
 PASS="${2:-}"
 [ -n "$PASS" ] || PASS="$(openssl rand -base64 24 | tr -d '/+=' | head -c 24)"
 
