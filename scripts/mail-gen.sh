@@ -10,6 +10,8 @@
 #
 # Usage: mail-gen.sh [MAIL] [PWD] [QUOTA]
 
+. "$(dirname "$(readlink -f "$0")")/instance.sh" 2>/dev/null || true
+
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,11 +21,11 @@ MAIL="${1:-}"
 PWD="${2:-}"
 QUOTA="${3:-}"
 [ -n "$MAIL" ] || MAIL=$(tr -dc 'a-z' < /dev/urandom | head -c 7)
-case "$MAIL" in *@*) ;; *) MAIL="$MAIL@fxmq.net" ;; esac
+case "$MAIL" in *@*) ;; *) MAIL="$MAIL@$DOMAIN" ;; esac
 [ -n "$PWD" ] || PWD=$(openssl rand -base64 12 | tr -d '\n')
 [ -n "$QUOTA" ] || QUOTA="$DEFAULT_QUOTA"
 
 printf '%s\n%s\n' "$PWD" "$PWD" | docker exec -i mailserver setup email add "$MAIL" >/dev/null
 docker exec mailserver setup quota set "$MAIL" "$QUOTA" >/dev/null
 
-echo "info:  mailbox $MAIL created — password: $PWD, quota: $QUOTA, webmail https://mail.fxmq.net (login with the local part)"
+echo "info:  mailbox $MAIL created — password: $PWD, quota: $QUOTA, webmail https://mail.$DOMAIN (login with the local part)"
