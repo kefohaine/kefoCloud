@@ -6,7 +6,7 @@ instructions: |
   rule 10). Never print secrets (CF_API_TOKEN, cert keys, mail credentials).
   Verify with read-only probes only; report drift and fixes for operator review.
 author:
-  contact: "kefohaine"
+  contact: "{{GITHUB_USER}}"
 extensions:
   - type: builtin
     name: developer
