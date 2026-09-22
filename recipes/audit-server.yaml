@@ -5,7 +5,7 @@ instructions: |
   Work only within this repository and the host it describes.
   Follow docs/AGENTS.md safety rules: read-only first; never modify files;
   never run destructive or irreversible commands; never read or print secrets
-  (services/*/.env, /etc/goose/goose.env, mailserver config, private keys,
+  (modules/*/.env, /etc/goose/goose.env, mailserver config, private keys,
   certs, password hashes). Report findings with severity, file path and line
   reference where possible, explanation, and a recommended remediation. Do not
   fix anything yourself — the operator applies changes after review.
@@ -34,7 +34,7 @@ prompt: |
 
   Inspect the relevant files:
   - scripts/ (install.sh, uninstall.sh, optimize.sh, datadir-nfs.sh, and the per-subsystem helpers)
-  - services/*/docker-compose.yml and the Caddy edge under services/caddy/ ($DOMAIN in general)
+  - modules/*/docker-compose.yml and the Caddy edge under modules/caddy/ ($DOMAIN in general)
   - config/ (reference host configs), Makefile, docs/
 
   Pay particular attention to:
@@ -42,7 +42,7 @@ prompt: |
   - secrets and credentials (never print their values)
   - firewall (UFW) and exposed ports; Cloudflare proxied vs DNS-only records
   - Docker privileges, docker.sock mounts, and host path bind-mounts
-  - backup and restore behavior (make backup, the nightly pg_dump cron in scripts/datadir-nfs.sh)
+  - backup and restore behavior (make backup, the nightly pg_dump cron in scripts/ops/datadir-nfs.sh)
   - destructive make recipes and whether they have a confirmation guard
   - consistency between documentation and implementation
 
