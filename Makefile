@@ -369,11 +369,8 @@ mail-card:
   else scripts/lib/mklog error "$(MAIL) not found — create with make mail-gen [MAIL=…]"; exit 1; fi
 
 
-tail-auth:
->@bash scripts/access/tail-auth.sh set "$(if $(USER),$(USER),{{GITHUB_USER}})" "$(PASS)"
-
 # Regenerate the tail terminal's navigation catalogue from the Caddy vhost
-# files (modules/*/www/targets.json — GENERATED, do not hand-edit). Run after
+# files ($DATA_DIR/www/targets.json — GENERATED, do not hand-edit). Run after
 # adding a vhost or a public path; `make install-config` runs it too.
 tail-targets:
 >@bash scripts/access/tail-targets.sh
