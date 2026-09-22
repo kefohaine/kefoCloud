@@ -41,7 +41,7 @@
 # Usage (root on the box, from the repo checkout):
 #   sudo bash scripts/uninstall.sh
 #
-# Full log: /var/log/kefoserver-uninstall.log
+# Full log: /var/log/kefohaine/uninstall.log
 
 set -uo pipefail
 
@@ -49,7 +49,8 @@ OP_USER=root
 REPO=/root/github/kefoserver
 PROJECT_DIR=/root/github/kefoserver/data
 CONF="$PROJECT_DIR/installed-modules.conf"
-LOG=/var/log/kefoserver-uninstall.log
+LOG_DIR=/var/log/kefohaine
+LOG="$LOG_DIR/uninstall.log"
 ERR_TAGS=()
 declare -A ERR_DETAIL=()
 
@@ -615,7 +616,8 @@ trap summary EXIT
 
 main() {
   [ "$(id -u)" -eq 0 ] || { echo "Run as root: sudo bash scripts/uninstall.sh"; exit 1; }
-  touch "$LOG" && chmod 666 "$LOG"
+  install -d -m 0755 "$LOG_DIR"
+  touch "$LOG" && chmod 640 "$LOG"
   banner
   ask_inputs
   # nothing selected = nothing to do (all defaults are safe/keep)
