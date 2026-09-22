@@ -6,7 +6,7 @@ instructions: |
   only (bash -n and read-only analysis). Never read or print secrets. Follow
   docs/AGENTS.md. Return a go/no-go with findings; do not edit the scripts.
 author:
-  contact: "kefohaine"
+  contact: "{{GITHUB_USER}}"
 extensions:
   - type: builtin
     name: developer
