@@ -15,7 +15,7 @@
 
 set -uo pipefail
 
-DB=/var/www/custom/projects/homelab/puffer/data/pufferpanel.db
+DB=/root/github/kefoserver/data/puffer/data/pufferpanel.db
 
 case "${1:-}" in
   list)
