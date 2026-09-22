@@ -38,7 +38,7 @@ esac
 
 # Derive the live store path from goose itself (it knows its config dir —
 # XDG, GOOSE_* overrides and all), falling back to the default location.
-live="$(goose info 2>/dev/null | awk '/^Config yaml:/{print $NF}')"
+live="$(goose info 2>/dev/null | sed -n 's/^Config yaml:[[:space:]]*\([^[:space:]]*\).*/\1/p' | head -1)"
 live="${live:-$HOME/.config/goose/config.yaml}"
 
 PY_OUT="$(python3 - "$policy" "$live" "$briefing" "$mode" <<'PY'

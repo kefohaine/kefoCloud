@@ -37,6 +37,11 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Problem**: only `make smoke` + the git hooks run; nothing lints the large bash scripts that produced two bugs on 2026-09-10 (storage.sh, optimize.sh).
 - **Fix**: run `bash -n` + `shellcheck` on `scripts/*.sh` in a pre-push/CI job.
 
+#### install.sh rewrites the tracked `config/dnsmasq/10-tailnet.conf` in place
+- **File**: `scripts/install.sh` (`host_services`), `config/dnsmasq/10-tailnet.conf`
+- **Problem**: the installer `sed -i`s the live Tailscale IP into the repo's tracked reference copy before `make install-config` copies it to `/etc/dnsmasq.d/`, so every run leaves an instance-specific IP as an uncommitted diff — and a `git commit -a` would bake it into the repo (rule 12: stay global).
+- **Fix**: keep the repo file as a placeholder and write the instance value into the live file after the copy (`make install-config`, then `sed` `/etc/dnsmasq.d/10-tailnet.conf` + `systemctl restart dnsmasq`).
+
 #### talk-hpb was OOM-killed
 - **File**: `services/nextcloud/docker-compose.yml` (RAM caps)
 - **Problem**: `journalctl` shows the kernel OOM-killing nextcloud-spreed-signaling on 2026-09-09 under the stack's RAM cap.
@@ -355,3 +360,4 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Nextcloud password policy hardened** — the app is re-enabled with `minLength=16`, upper/lower/special/numeric requirements and the common/compromised-password lists on.
 - **False alarm: the "undocumented host process" was the uptimekuma container** — host `ps` lists container processes (`node server/server.js` → `docker-<id>.scope` = uptimekuma; `supervisord` = mailserver), not stray host daemons.
 - **optimize.sh live-run bugs fixed (2026-09-10)** — `append_lines()` doubled `/etc/fstab` and `/etc/security/limits.conf` (which broke the noatime step) and re-checks false-failed on a box without docker; it now appends only missing lines, skips absent software, and installs only the performance helpers (tuned/irqbalance/earlyoom).
+- **Fresh-install installer bugs (2026-09-22)** — fixed in `install.sh`/`goose-tokens.sh`: missing `python3-yaml`, an untraversable `caddy_data` dir, `talk:turn:add` flags instead of positional protocols, non-idempotent DKIM keygen + a truncated publish source, a stuck ACME order, `trusted_domains` clobbered with the bare domain, and the `sweep`/recheck scope mismatch.
