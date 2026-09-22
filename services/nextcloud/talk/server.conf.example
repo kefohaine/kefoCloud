@@ -1,7 +1,7 @@
 # Nextcloud Talk High Performance Backend — signaling server config
 # (strukturag/nextcloud-spreed-signaling, the official Go server).
 #
-# The real file is /var/www/custom/projects/homelab/talk/server.conf, rendered
+# The real file is /root/github/kefoserver/data/talk/server.conf, rendered
 # by `make talk-gen` from this template with secrets from
 # services/nextcloud/.env. __PLACEHOLDERS__ are never committed.
 #

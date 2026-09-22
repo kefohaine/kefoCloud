@@ -1,6 +1,6 @@
 # coturn TURN/STUN server for Nextcloud Talk WebRTC media.
 #
-# The real file is /var/www/custom/projects/homelab/talk/turnserver.conf,
+# The real file is /root/github/kefoserver/data/talk/turnserver.conf,
 # rendered by `make talk-gen` (__PLACEHOLDERS__ never committed).
 #
 # static-auth-secret must match the `occ talk:turn:add --secret` used in

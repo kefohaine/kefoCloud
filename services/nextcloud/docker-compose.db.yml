@@ -8,7 +8,7 @@
 # Currently runs on the fxmq host (bridge IP 172.22.0.15, no published ports —
 # only the nextcloud container on the 'net' bridge reaches it). When the
 # operator's 1 TB / 2 GB VPS joins the tailnet, migrate by: stopping this unit,
-# rsyncing /var/www/custom/projects/homelab/pgdata to the big disk there,
+# rsyncing /root/github/kefoserver/data/pgdata to the big disk there,
 # re-deploying this compose on that host with the port published on the
 # tailnet interface only, and pointing services/nextcloud/.env POSTGRES_HOST
 # at the new tailnet IP (see docs/GUIDE.md "Nextcloud DB" for the full steps).
@@ -60,7 +60,7 @@ services:
     volumes:
       # Data lives in the repo-sibling runtime dir (like /cloud/, /kuma/…).
       # This is the directory that migrates to the 1 TB VPS.
-      - /var/www/custom/projects/homelab/pgdata:/var/lib/postgresql/data
+      - /root/github/kefoserver/data/pgdata:/var/lib/postgresql/data
 
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
