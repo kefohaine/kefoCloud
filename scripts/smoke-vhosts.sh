@@ -24,7 +24,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONF="$ROOT/data/installed-modules.conf"
-MODULES="cloud vault mail games monitor"
+MODULES="cloud vault mail monitor"
 [ -f "$CONF" ] && MODULES="$(grep -vE '^[[:space:]]*(#|$)' "$CONF" | tr '\n' ' ')"
 mod_in() { [[ " $MODULES " == *" $1 "* ]]; }
 if [ -f "$CONF" ]; then
@@ -228,50 +228,6 @@ check_ctns monitor uptimekuma
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Module: games — PufferPanel + in-browser Minecraft.
-# ─────────────────────────────────────────────────────────────────────────────
-hdr games "Games — PufferPanel + Minecraft (module: games)"
-check mc-root  "mc.fxmq.net" "/"       "200 301 302 307 308" html "PufferPanel vhost home"
-check mc-panel "mc.fxmq.net" "/panel"  "200 301 302 307 308" html "panel SPA answers"
-# In-browser Minecraft: /play must serve the eaglercraft client page. The
-# /play/server websocket is not smoke-tested: the game server is not run
-# 24/7, so a 502 when it's stopped is expected and must not fail the smoke.
-check mc-play  "mc.fxmq.net" "/play/"  "200 301 302 307 308" html "browser Minecraft client"
-check_sec_headers mc "mc.fxmq.net" "/" "one of each"
-check_tls "mc.fxmq.net"
-
-# PufferPanel lockdown — registration must stay closed and the admin account
-# must exist. The 2026-08-30 incident: backend registration was open (the
-# toggle lives in puffer/data/config.json, not the DB) and the edge 403 only
-# covered the UI path, so POST /panel/auth/register (the API) was reachable.
-check mc-reg-ui "mc.fxmq.net" "/panel/register" "403" "" "register UI blocked at the edge"
-reg_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 --resolve "mc.fxmq.net:443:127.0.0.1" \
-  -X POST "https://mc.fxmq.net/panel/auth/register" -H 'Content-Type: application/json' \
-  -d '{"username":"smokeprobe","email":"smokeprobe@example.com","password":"smokeprobe"}' 2>/dev/null)
-if [ "$reg_code" != "404" ] && [ "$reg_code" != "403" ]; then
-  echo "FAIL panel-register-api: POST /panel/auth/register returned $reg_code (want 404/403 — registration must be closed)"; fails=$((fails+1))
-else
-  echo "ok   panel-register-api: $reg_code — API register path blocked"
-fi
-
-# Backend: config toggle off + admin account healthy (read-only, no hashes read).
-if ! python3 - 2>&1 <<'PYEOF'
-import json, sqlite3
-cfg = json.load(open("/root/github/kefoserver/data/puffer/data/config.json"))
-assert cfg.get("panel", {}).get("registrationenabled") is False, "panel.registrationenabled is not false"
-con = sqlite3.connect("file:/root/github/kefoserver/data/puffer/data/pufferpanel.db?mode=ro", uri=True)
-cur = con.cursor()
-assert cur.execute("SELECT id FROM users WHERE id=1 AND email='admin@fxmq.net' AND password IS NOT NULL AND length(password)>=50").fetchone(), "admin user missing or hash empty"
-assert cur.execute("SELECT id FROM permissions WHERE user_id=1 AND scopes LIKE '%admin%'").fetchone(), "admin permission missing"
-con.close()
-PYEOF
-then
-  echo "FAIL panel-lockdown: registration open or admin account broken (see above)"; fails=$((fails+1))
-else
-  echo "ok   panel-lockdown — registration closed + admin account healthy"
-fi
-
-check_ctns games pufferpanel
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
