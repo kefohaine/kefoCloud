@@ -8,7 +8,7 @@ SHELL := /bin/bash
 
 REPO     := /root/github/kefoserver
 COMPOSE  := docker compose -f
-CONTAINERS := caddy uptimekuma nextcloud vaultwarden pufferpanel mailserver roundcube
+CONTAINERS := caddy uptimekuma nextcloud vaultwarden mailserver roundcube
 HOST     := ttyd dnsmasq goose
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -341,35 +341,6 @@ mail-card:
     scripts/mklog warn "password is hashed — rotate with make mail-password MAIL=$(MAIL)"; \
   else scripts/mklog error "$(MAIL) not found — create with make mail-gen [MAIL=…]"; exit 1; fi
 
-# ─────────────────────────────────────────────────────────────────────────────
-# PufferPanel accounts (CLI `pufferpanel user` — binary at /pufferpanel/bin/)
-# Users table in puffer/data/pufferpanel.db; passwords live in the DB and are
-# never printed. panel-passwd writes a bcrypt hash (mkpasswd, password on stdin)
-# straight into the users table — the CLI's `user edit` has no working password
-# flag in this version. The panel caches users at boot, so the recipe restarts it.
-# ─────────────────────────────────────────────────────────────────────────────
-.PHONY: panel-list-users panel-add-user panel-del-user panel-passwd tail-auth tail-targets
-.PHONY: kuma-list-users kuma-add-user kuma-passwd kuma-del-user
-
-panel-list-users:
->@bash scripts/panel-user.sh list
-
-panel-add-user:
->@[ "$(origin USER)" = "command line" ] || { scripts/mklog error "Usage: make panel-add-user USER=<email> NAME=<name> [PASS=…] [ADMIN=1]"; exit 1; }
->@[ -n "$(NAME)" ] || { echo "NAME=<name> required"; exit 1; }
->@[ -n "$(PASS)" ] || read -s -p "Password for $(USER): " PASS; echo; \
-  bash scripts/panel-user.sh add "$(USER)" "$(NAME)" "$$PASS" $(if $(ADMIN),admin)
-
-panel-del-user:
->@[ "$(origin USER)" = "command line" ] || { scripts/mklog error "Usage: make panel-del-user USER=<email>"; exit 1; }
->@bash scripts/panel-user.sh del "$(USER)"
-
-panel-passwd:
->@[ "$(origin USER)" = "command line" ] || { scripts/mklog error "Usage: make panel-passwd USER=<email> [PASS=…]"; exit 1; }
->@[ -n "$(PASS)" ] || read -s -p "New password for $(USER): " PASS; echo; \
-  bash scripts/panel-user.sh passwd "$(USER)" "$$PASS"
->@scripts/mklog warn "panel restart applies it (stops a running game server)"
->@$(MAKE) --no-print-directory dok-restart-pufferpanel
 
 tail-auth:
 >@bash scripts/tail-auth.sh set "$(if $(USER),$(USER),kefohaine)" "$(PASS)"
@@ -1079,7 +1050,7 @@ goose-audit:
 >@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe audit-server $(if $(FOCUS),--params focus_area=$(FOCUS),)
 
 goose-review:
->@test -n "$(MODULE)" || { echo "usage: make goose-review MODULE=<cloud|vault|mail|games|monitor|edge>"; exit 1; }
+>@test -n "$(MODULE)" || { echo "usage: make goose-review MODULE=<cloud|vault|mail|monitor|edge>"; exit 1; }
 >@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe review-module --params module=$(MODULE)
 
 goose-troubleshoot:
