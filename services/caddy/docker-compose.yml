@@ -14,7 +14,7 @@ services:
     # Host network so Caddy sees the real client source IP — without it,
     # Docker DNAT rewrites every packet to 172.22.0.1 (the bridge gateway)
     # before Caddy sees it, which breaks the @not_tailnet remote_ip matcher
-    # on https://tail.fxmq.net. The host network namespace is on the
+    # on https://tail.${DOMAIN}. The host network namespace is on the
     # `net` bridge at 172.22.0.0/16, so Caddy can still reach upstream
     # containers by their bridge IP (172.22.0.4 .. .15 — see Caddyfile).
     network_mode: host
@@ -26,25 +26,28 @@ services:
       retries: 3
 
     volumes:
-      - /root/github/kefoserver/data/cloud/html:/nextcloud:ro
-      # homelab/download — the www.fxmq.net/download file browser's root
+      - ${DATA_DIR}/cloud/html:/nextcloud:ro
+      # homelab/download — the www.${DOMAIN}/download file browser's root
       # (drop files here; Caddy serves them read-only).
-      - /root/github/kefoserver/data/download:/download:ro
-      # homelab/eaglercraft — the mc.fxmq.net/play in-browser Minecraft
+      - ${DATA_DIR}/download:/download:ro
+      # homelab/eaglercraft — the mc.${DOMAIN}/play in-browser Minecraft
       # client (official EaglercraftX 1.8.8 multi-file build: index.html,
       # classes.js, assets.epk, lang/ — our server pre-seeded in its list).
-      - /root/github/kefoserver/data/eaglercraft:/eaglercraft:ro
-      # Top-level Caddyfile + per-vhost snippets. The dir is mounted so
-      # the `import` directives in the top-level file resolve relative
-      # paths (Caddy treats imports as relative to the importing file).
-      - ./:/etc/caddy:ro
+      - ${DATA_DIR}/eaglercraft:/eaglercraft:ro
+      # Top-level Caddyfile + per-vhost snippets + the static pages, as
+      # RENDERED by `make render` from the tracked skeleton. Mount the tracked
+      # dir by mistake and Caddy happily loads site blocks for a literal
+      # 'www.{{DOMAIN}}' — it starts, listens, and serves nothing (2026-09-22).
+      # The dir is mounted so the `import` directives resolve relative paths
+      # (Caddy treats imports as relative to the importing file).
+      - ${DATA_DIR}/rendered/caddy:/etc/caddy:ro
       # Persistent Caddy data: ACME certs, account keys, OCSP staples.
       # Bound at /data, which is the caddy:2.x default base directory —
       # the built-in ACME issuer writes under /data/caddy and renewal
       # simply updates the same files, so the cert survives a container
-      # recreate. Without this bind every `make d-recreate-fxmq.net` would force
+      # recreate. Without this bind every `make d-recreate-${DOMAIN}` would force
       # a fresh issuance and a 90-day clock restart.
-      - /root/github/kefoserver/data/caddy_data:/data
+      - ${DATA_DIR}/caddy_data:/data
 
     # Cloudflare API token for ACME DNS-01. Sourced from a host file
     # (chmod 0600, owner uid 201 = caddy) so the literal token never
@@ -52,7 +55,7 @@ services:
     # every KEY=VAL line into the container's env at start, so the
     # `env.CF_API_TOKEN` reference in the Caddyfile resolves at runtime.
     env_file:
-      - /root/github/kefoserver/data/caddy_data/CF_API_TOKEN
+      - ${DATA_DIR}/caddy_data/CF_API_TOKEN
 
     logging:
       driver: json-file

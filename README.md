@@ -1,8 +1,8 @@
-# kefohaine/kefoserver
+# {{GITHUB_USER}}/{{REPO_NAME}}
 
 One repo that turns any Debian system into your own self-hosted server stack — cloud, mail, game servers and more — with one command and a few prompts.
 
-**[www.fxmq.net](https://www.fxmq.net/welcome) is the live demo**: the installed modules running on one box, built entirely from this repo. Fork it, run the installer, and the same board is yours — under your own domain, with no server but yours.
+**[www.{{DOMAIN}}](https://www.{{DOMAIN}}/welcome) is the live demo**: the installed modules running on one box, built entirely from this repo. Fork it, run the installer, and the same board is yours — under your own domain, with no server but yours.
 
 ## Why
 
@@ -23,12 +23,12 @@ Minimum RAM required: 3GB
 ## Install
 
 ```bash
-scp scripts/install.sh root@kefoserver:      # or clone on the box:
-ssh root@kefoserver
+scp scripts/install.sh root@{{HOSTNAME}}:      # or clone on the box:
+ssh root@{{HOSTNAME}}
 bash install.sh
 ```
 
-On a fresh box the repo is cloned for you over **HTTPS** (the repo is public — no GitHub SSH key ever needs to be added). Everything lives under `root@server:~/github/kefoserver/`; every external, untracked artefact (containers' data, databases, uploads, module reports) lives under `~/github/kefoserver/data/`, which `.gitignore` excludes. `root@kefoserver` is the **only** entry point (key-only SSH over the tailnet). The installer asks a few questions, then hardens the host, creates the DNS records, issues certificates and builds the selected stack unattended. Default is everything ON; opt out per module for a lean install.
+On a fresh box the repo is cloned for you over **HTTPS** (the repo is public — no GitHub SSH key ever needs to be added). Everything lives under `root@server:~/github/{{HOSTNAME}}/`; every external, untracked artefact (containers' data, databases, uploads, module reports) lives under `~/github/{{HOSTNAME}}/data/`, which `.gitignore` excludes. `root@{{HOSTNAME}}` is the **only** entry point (key-only SSH over the tailnet). The installer asks a few questions, then hardens the host, creates the DNS records, issues certificates and builds the selected stack unattended. Default is everything ON; opt out per module for a lean install.
 
 `scripts/uninstall.sh` reverses it in the same style — every prompt defaults to keep, operator data and the tailscale-only SSH path are never touched without an explicit confirm, and the tailnet membership goes last.
 

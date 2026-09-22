@@ -1,7 +1,7 @@
-# vault.fxmq.net — Vaultwarden password manager.
-# TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/cloud.fxmq.net.caddy).
+# vault.{{DOMAIN}} — Vaultwarden password manager.
+# TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/cloud.{{DOMAIN}}.caddy).
 
-https://vault.fxmq.net {
+https://vault.{{DOMAIN}} {
     tls {
         dns cloudflare {env.CF_API_TOKEN}
     }

@@ -7,13 +7,13 @@ own setup** — docs stay neutral and portable.
 ## Variables
 
 ```bash
-DOMAIN='fxmq.net'                                   # demo domain (Cloudflare zone)
-GITHUB_USER='kefohaine'
-GITHUB_REPO="$GITHUB_USER/kefoserver"               # upstream repo (public; cloned + pushed over SSH)
-REPO_DIR='/root/github/kefoserver'                  # this repo's checkout (make REPO)
+DOMAIN='{{DOMAIN}}'                                   # demo domain (Cloudflare zone)
+GITHUB_USER='{{GITHUB_USER}}'
+GITHUB_REPO="$GITHUB_USER/{{HOSTNAME}}"               # upstream repo (public; cloned + pushed over SSH)
+REPO_DIR='{{REPO_DIR}}'                  # this repo's checkout (make REPO)
 DATA_DIR="$REPO_DIR/data"                           # all external/untracked state
-OPERATOR_USER='root'                                # only entry point: root@kefoserver
-HOSTNAME='kefoserver'                               # local machine + tailnet node name
+OPERATOR_USER='root'                                # only entry point: root@{{HOSTNAME}}
+HOSTNAME='{{HOSTNAME}}'                               # local machine + tailnet node name
 MAIL_IDENT="vaultwarden@$DOMAIN"                    # SMTP sender mailbox (Vaultwarden)
 WWW_WELCOME="https://www.$DOMAIN/welcome"           # the welcome page
 VHOST_PROXIED='cloud vault kuma www'                # Cloudflare orange-cloud records

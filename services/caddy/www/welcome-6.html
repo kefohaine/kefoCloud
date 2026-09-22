@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>The Server You Could Clone — fxmq.net journal</title>
-<meta name="description" content="fxmq.net journal №01: the feature-length story of kefohaine/kefoserver, a repo that runs a whole domain.">
+<title>The Server You Could Clone — {{DOMAIN}} journal</title>
+<meta name="description" content="{{DOMAIN}} journal №01: the feature-length story of {{GITHUB_USER}}/{{REPO_NAME}}, a repo that runs a whole domain.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23181410'/%3E%3Ctext x='16' y='22' font-family='Georgia' font-size='15' fill='%23c9a24b' text-anchor='middle'%3E№1%3C/text%3E%3C/svg%3E">
 <style>
   :root{--ink:#181410;--cream:#f6efdd;--gold:#c9a24b;--dim:#6d6152}
@@ -47,29 +47,29 @@
 <div class="split">
   <aside class="cover">
     <div>
-      <div class="masthead">fxmq.net journal</div>
+      <div class="masthead">{{DOMAIN}} journal</div>
       <h1>The Server You Could Clone</h1>
     </div>
     <div class="seal">EST.<br>THIS<br>RUN</div>
-    <div class="vert">kefohaine slash server</div>
+    <div class="vert">{{GITHUB_USER}} slash server</div>
     <div class="issue"><b>№ 01 — LIVE</b><br>printed by the thing it describes</div>
   </aside>
   <article>
     <p class="kicker">feature · self-hosting</p>
     <h2>A repository that runs a domain.</h2>
-    <p>There is a genre of software that promises self-hosting and delivers a weekend of YAML. This is a story about the other kind: a public repository, <em>kefohaine/kefoserver</em>, whose installer turns a bare Debian VPS into the stack you are reading this on — three answers, one unattended run, no weekend.</p>
+    <p>There is a genre of software that promises self-hosting and delivers a weekend of YAML. This is a story about the other kind: a public repository, <em>{{GITHUB_USER}}/{{REPO_NAME}}</em>, whose installer turns a bare Debian VPS into the stack you are reading this on — three answers, one unattended run, no weekend.</p>
     <div class="cols">
       <p>The craft is in what it refuses to leave vague. Hostnames are not configured by hand; they are derived from the domain you type at the first prompt. Certificates are not imported; they are issued per hostname through Cloudflare DNS and renewed forever. Admin passwords are not stored in files; they are printed once at creation and rotated by a make target. Nothing about the running system is a secret held outside the repository's own mechanisms.</p>
       <p>The restraint is in what it refuses to run. Every container carries a hard RAM ceiling, so no single service can quietly eat the box. The game panel never autostarts — a reboot brings up the panel and nothing else. And a smoke test stands between every push and production: if any vhost stops serving its real application, the push simply does not happen. Drift is not tolerated; it is mechanically impossible.</p>
     </div>
     <div class="pull">"The most persuasive architecture document is a server that anyone can clone and none of us has to babysit."
       <cite>— the repo, demonstrating itself</cite></div>
-    <p>You can read the whole thing before you run it — the compose files, the vhosts, the gotchas doc that grew from real incidents. That, more than any feature, is the pitch: <em>kefohaine/kefoserver</em> is legible. And when you are ready:</p>
-    <div class="installbox">git clone https://github.com/kefohaine/kefoserver <b>&amp;&amp; bash install.sh</b></div>
+    <p>You can read the whole thing before you run it — the compose files, the vhosts, the gotchas doc that grew from real incidents. That, more than any feature, is the pitch: <em>{{GITHUB_USER}}/{{REPO_NAME}}</em> is legible. And when you are ready:</p>
+    <div class="installbox">git clone https://github.com/{{GITHUB_USER}}/{{REPO_NAME}} <b>&amp;&amp; bash install.sh</b></div>
     <p>…the same fifteen minutes that built this journal issue builds yours.</p>
     <div class="byline">
       <span>edited on the server it covers</span>
-      <span>sources: <a href="https://github.com/kefohaine/kefoserver" rel="noopener">github.com/kefohaine/kefoserver</a></span>
+      <span>sources: <a href="https://github.com/{{GITHUB_USER}}/{{REPO_NAME}}" rel="noopener">github.com/{{GITHUB_USER}}/{{REPO_NAME}}</a></span>
     </div>
     <footer>tellings: <a href="/welcome">tour</a> · <a href="/welcome-5">5</a> · <a href="/welcome-6">6</a> · <a href="/welcome-7">7</a> · <a href="/welcome-9">9</a></footer>
   </article>

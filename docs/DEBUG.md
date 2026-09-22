@@ -14,7 +14,7 @@ How to run an occasional deep scan or triage an incident on this system. **The r
 1. **DNS** — `dig +short <host>`; tailnet name not resolving → `make systemd-restart-dnsmasq`.
 2. **TCP** — `curl -sS -o /dev/null -w '%{http_code}\n' --connect-timeout 5 https://<host>/`.
 3. **TLS** — issuer/dates on a fresh handshake *from the host* (`openssl s_client … -servername <host>`), not through Cloudflare.
-4. **Edge / proxy** — `make dok-logs-caddy`; config valid (`docker exec fxmq.net caddy validate …`); `make smoke`.
+4. **Edge / proxy** — `make dok-logs-caddy`; config valid (`docker exec {{DOMAIN}} caddy validate …`); `make smoke`.
 5. **Upstream / app** — `docker ps` health, `docker logs --since 10m <ctn>`, `journalctl -u <unit>`.
 6. **Access control** — the code tells the layer: 403 = matcher/ACL, 401 = auth, 404 = route, 502 = upstream down.
 
@@ -25,7 +25,7 @@ make smoke                    # every vhost must serve its real app; module-awar
 docker ps --format '{{.Names}}	{{.Status}}'
 ss -tlnp                      # listeners — compare with GUIDE "Domains and access model"
 sudo ufw status verbose
-findmnt -R /root/github/kefoserver/data   # mounts, incl. the NFS datadirectory
+findmnt -R {{DATA_DIR}}   # mounts, incl. the NFS datadirectory
 free -m; df -h /              # memory / disk headroom
 sudo journalctl -p err --since "-3 days" | tail -30
 ```

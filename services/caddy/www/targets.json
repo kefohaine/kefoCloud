@@ -3,26 +3,26 @@
   "targets": [
     {
       "name": "cloud",
-      "host": "cloud.fxmq.net",
-      "url": "https://cloud.fxmq.net/",
+      "host": "cloud.{{DOMAIN}}",
+      "url": "https://cloud.{{DOMAIN}}/",
       "pages": {}
     },
     {
       "name": "kuma",
-      "host": "kuma.fxmq.net",
-      "url": "https://kuma.fxmq.net/",
+      "host": "kuma.{{DOMAIN}}",
+      "url": "https://kuma.{{DOMAIN}}/",
       "pages": {}
     },
     {
       "name": "mail",
-      "host": "mail.fxmq.net",
-      "url": "https://mail.fxmq.net/",
+      "host": "mail.{{DOMAIN}}",
+      "url": "https://mail.{{DOMAIN}}/",
       "pages": {}
     },
     {
       "name": "mc",
-      "host": "mc.fxmq.net",
-      "url": "https://mc.fxmq.net/",
+      "host": "mc.{{DOMAIN}}",
+      "url": "https://mc.{{DOMAIN}}/",
       "pages": {
         "panel": "/panel",
         "play": "/play"
@@ -30,7 +30,7 @@
     },
     {
       "name": "tail",
-      "host": "tail.fxmq.net",
+      "host": "tail.{{DOMAIN}}",
       "url": "/",
       "pages": {
         "ttyd": "/ttyd"
@@ -38,22 +38,22 @@
     },
     {
       "name": "talk",
-      "host": "talk.fxmq.net",
-      "url": "https://talk.fxmq.net/",
+      "host": "talk.{{DOMAIN}}",
+      "url": "https://talk.{{DOMAIN}}/",
       "pages": {
         "signaling": "/signaling"
       }
     },
     {
       "name": "vault",
-      "host": "vault.fxmq.net",
-      "url": "https://vault.fxmq.net/",
+      "host": "vault.{{DOMAIN}}",
+      "url": "https://vault.{{DOMAIN}}/",
       "pages": {}
     },
     {
       "name": "www",
-      "host": "www.fxmq.net",
-      "url": "https://www.fxmq.net/",
+      "host": "www.{{DOMAIN}}",
+      "url": "https://www.{{DOMAIN}}/",
       "pages": {
         "download": "/download",
         "welcome": "/welcome",

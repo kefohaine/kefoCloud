@@ -1,6 +1,6 @@
 # Migration (new VPS, new domain) — script-first
 
-The primary path is `scripts/install.sh` — a plug-and-play, **root-only** installer. It prompts for three values (domain, Cloudflare API token, Tailscale auth key), then runs unattended. `root@kefoserver` is the only entry point; no sudo user is created and there is no hand-off. It installs host services (docker, tailscale, dnsmasq, ttyd, ssh hardening, ufw, sysctl), clones the repo over **HTTPS** (public repo — no GitHub SSH key), and brings up the full stack: Caddy (`$DOMAIN`), Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Vaultwarden, Uptime Kuma and Docker Mailserver + Roundcube. It also creates the Cloudflare A records (`cloud`/`vault`/`kuma`/`www` proxied, `talk`/`mail` DNS-only), sets the zone SSL mode to full, triggers Let's Encrypt issuance, seeds Uptime Kuma, creates the Kuma admin user automatically (password printed once in the final summary), wires Nextcloud's Talk/SMTP/background-cron via `occ` (incl. `mail_smtpauth` so mail actually authenticates, trusted_proxies as an array, repair + DB indices so the setup check is clean, the updater-backup dir so the cleanup job stops warning, and the recovery manifests — users/groups/quotas/apps — from `make nc-capture`), publishes the mailserver's **DKIM TXT record via the Cloudflare API**, **Fully autonomous**: no manual confirmation steps block success — the only follow-ups are printed in the summary (Tailscale split-DNS, mailboxes, and the provider-side PTR record for external mail delivery).
+The primary path is `scripts/install.sh` — a plug-and-play, **root-only** installer. It prompts for three values (domain, Cloudflare API token, Tailscale auth key), then runs unattended. `root@{{HOSTNAME}}` is the only entry point; no sudo user is created and there is no hand-off. It installs host services (docker, tailscale, dnsmasq, ttyd, ssh hardening, ufw, sysctl), clones the repo over **HTTPS** (public repo — no GitHub SSH key), and brings up the full stack: Caddy (`$DOMAIN`), Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Vaultwarden, Uptime Kuma and Docker Mailserver + Roundcube. It also creates the Cloudflare A records (`cloud`/`vault`/`kuma`/`www` proxied, `talk`/`mail` DNS-only), sets the zone SSL mode to full, triggers Let's Encrypt issuance, seeds Uptime Kuma, creates the Kuma admin user automatically (password printed once in the final summary), wires Nextcloud's Talk/SMTP/background-cron via `occ` (incl. `mail_smtpauth` so mail actually authenticates, trusted_proxies as an array, repair + DB indices so the setup check is clean, the updater-backup dir so the cleanup job stops warning, and the recovery manifests — users/groups/quotas/apps — from `make nc-capture`), publishes the mailserver's **DKIM TXT record via the Cloudflare API**, **Fully autonomous**: no manual confirmation steps block success — the only follow-ups are printed in the summary (Tailscale split-DNS, mailboxes, and the provider-side PTR record for external mail delivery).
 
 ## Run it
 
@@ -10,7 +10,7 @@ ssh root@<new-vps>
 bash install.sh
 ```
 
-Enter the domain, CF token, and TS auth key when prompted. The script runs unattended as root; full log at `/var/log/kefoserver-install.log`. Errors are printed numbered at the end, then a success summary with credentials.
+Enter the domain, CF token, and TS auth key when prompted. The script runs unattended as root; full log at `/var/log/{{HOSTNAME}}-install.log`. Errors are printed numbered at the end, then a success summary with credentials.
 
 ## What the script renames (nothing)
 
@@ -32,7 +32,7 @@ The installer's legacy `renames()` step — which transformed a pre-migration cl
 ## Minecraft server (PufferPanel) — moved out
 
 The `games` module (PufferPanel + the browser Minecraft client) is no longer
-part of this repo. It lives at `git@github.com:kefohaine/kefoMC.git` and
+part of this repo. It lives at `git@github.com:{{GITHUB_USER}}/kefoMC.git` and
 installs itself against this edge (`make install` there). The base install
 below therefore no longer brings up a panel, deploys no server templates and
 opens no Minecraft port; `docs/GOTCHAS.md` in that repo carries the

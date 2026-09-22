@@ -1,4 +1,4 @@
-# tail.fxmq.net — tailnet entry point: the door list at / and the ttyd
+# tail.{{DOMAIN}} — tailnet entry point: the door list at / and the ttyd
 # host shell at /ttyd.
 #
 # Access model:
@@ -19,7 +19,7 @@
 # Last-Modified deletes (no validators left to revalidate against) and the
 # legacy Pragma/Expires headers make every request hit the edge fresh.
 
-https://tail.fxmq.net {
+https://tail.{{DOMAIN}} {
     tls {
         dns cloudflare {env.CF_API_TOKEN}
     }

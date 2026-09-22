@@ -2,8 +2,8 @@
 # and are imported below. Each vhost declares its own TLS block — all
 # use Let's Encrypt DNS-01 via the Cloudflare plugin (token in
 # CF_API_TOKEN env var). The old CF Origin CA wildcard cert was
-# removed because its SNI wildcard (`*.fxmq.net`) covered every
-# vhost, so Caddy served it as a fallback for `mc.fxmq.net` SNI
+# removed because its SNI wildcard (`*.{{DOMAIN}}`) covered every
+# vhost, so Caddy served it as a fallback for `mc.{{DOMAIN}}` SNI
 # matches and the per-vhost ACME automation policy never fired.
 # Per-vhost LE certs keep each cert scoped to its own SNI.
 
@@ -47,7 +47,7 @@ http:// {
 # Each vhost declares its own `tls { dns cloudflare { ... } }` block so the
 # ACME cert is scoped to that vhost's SNI. The wildcard cert that used to
 # back all vhosts is no longer referenced — per-vhost ACME certs are scoped
-# to their own SNI (see ./vhosts/cloud.fxmq.net.caddy for the rationale).
+# to their own SNI (see ./vhosts/cloud.{{DOMAIN}}.caddy for the rationale).
 
 # A glob, deliberately: a glob that matches nothing is NOT an error in
 # Caddy, so vhosts/ can be empty and the edge still starts. That is what
