@@ -6,7 +6,7 @@ instructions: |
   (change procedure, rollback-first, network-listener rules). Never print
   secrets. Name likely failure modes and a rollback for each step.
 author:
-  contact: "kefohaine"
+  contact: "{{GITHUB_USER}}"
 extensions:
   - type: builtin
     name: developer
