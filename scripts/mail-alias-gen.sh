@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Disposable forwarding alias generator: random 7-digit local part (e.g.
-# 4839201@fxmq.net) forwarding to TO. No mailbox is consumed — mail to the
+# 4839201@$DOMAIN) forwarding to TO. No mailbox is consumed — mail to the
 # alias lands in TO (any address, internal or external). The alias is ALWAYS
 # generated — TO is the only argument; custom aliases aren't accepted.
 # Usage: make mail-gen-alias TO=target@example.com
+
+. "$(dirname "$(readlink -f "$0")")/instance.sh" 2>/dev/null || true
 set -euo pipefail
 
-DOMAIN=fxmq.net
+DOMAIN=$DOMAIN
 TO="${1:-}"
 [ -n "$TO" ] || { echo "Usage: make mail-gen-alias TO=target@example.com"; exit 1; }
 
