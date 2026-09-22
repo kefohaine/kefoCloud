@@ -12,7 +12,8 @@
 # Fully autonomous: the Kuma and PufferPanel admin accounts are created
 # automatically (the admin passwords are printed once in the final summary —
 # nothing is written to disk), and no manual confirmation steps block success — the only
-# follow-ups are printed in the summary (Tailscale split-DNS, mailboxes).
+# follow-ups are printed in the summary (Tailscale split-DNS, mailboxes,
+# replacing the login keypair the script mints when none was supplied).
 # Prerequisites checked up front: the Cloudflare zone must exist, and a
 # GitHub SSH key must be added when the script prints the pubkey.
 #
@@ -197,7 +198,7 @@ phase1_root() {
 
   DEBIAN_FRONTEND=noninteractive apt-get update -qq >>"$LOG" 2>&1
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-    git curl make sudo dnsmasq ufw jq apache2-utils fail2ban sqlite3 >>"$LOG" 2>&1 || fail apt
+    git curl make sudo dnsmasq ufw jq apache2-utils fail2ban sqlite3 python3-yaml >>"$LOG" 2>&1 || fail apt
   # Docker: Debian packages first (bookworm ships docker-compose-plugin).
   # trixie does not, so fall back to Docker's official repo (docker-ce).
   if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io docker-compose-plugin >>"$LOG" 2>&1; then
@@ -227,15 +228,26 @@ phase1_root() {
   mkdir -p /home/$OP_USER/.ssh /root/.ssh
   chown -R $OP_USER:$OP_USER /home/$OP_USER/.ssh
   chmod 700 /home/$OP_USER/.ssh
+  # No key handed over? Mint one for $OP_USER and authorize it for both
+  # accounts, so key-only SSH (root + op) works unattended; the operator can
+  # fetch the private key over the current session and add their own later.
+  if [ ! -s /root/.ssh/authorized_keys ]; then
+    log "no SSH key found — generating an ed25519 keypair for $OP_USER"
+    ssh-keygen -t ed25519 -N "" -f /home/$OP_USER/.ssh/id_ed25519 -C "$OP_USER@$DOMAIN" >>"$LOG" 2>&1
+    chown $OP_USER:$OP_USER /home/$OP_USER/.ssh/id_ed25519 /home/$OP_USER/.ssh/id_ed25519.pub
+    cat /home/$OP_USER/.ssh/id_ed25519.pub >> /root/.ssh/authorized_keys
+    log "  private key at /home/$OP_USER/.ssh/id_ed25519 — swap in the operator's own key when available"
+  fi
   if [ -s /root/.ssh/authorized_keys ]; then
     cp /root/.ssh/authorized_keys /home/$OP_USER/.ssh/authorized_keys
+    chown $OP_USER:$OP_USER /home/$OP_USER/.ssh/authorized_keys
     chmod 600 /home/$OP_USER/.ssh/authorized_keys
     printf 'PasswordAuthentication no\nPermitRootLogin prohibit-password\nAllowUsers %s root\n' "$OP_USER" \
       > /etc/ssh/sshd_config.d/50-cloud-init.conf
     systemctl restart sshd
   else
     fail ssh_keys
-    log "no SSH key yet — sshd hardening skipped so password login still works; add a key, then re-check"
+    log "no SSH key and keygen failed — add a key, then re-check"
   fi
 
   systemctl enable --now docker >>"$LOG" 2>&1 || log "docker enable/start failed (re-checks will catch it)"
@@ -451,6 +463,10 @@ caddy_data() {
   sudo mkdir -p /var/www/custom/projects/homelab/caddy_data
   printf 'CF_API_TOKEN=%s\n' "$CF_API_TOKEN" | sudo tee /var/www/custom/projects/homelab/caddy_data/CF_API_TOKEN >/dev/null
   sudo chown -R 201:201 /var/www/custom/projects/homelab/caddy_data
+  # 0711, never the root umask's 0700: `docker compose` runs as $OP_USER and
+  # reads env_file host-side, so it needs +x on the dir or it dies with
+  # "open .../CF_API_TOKEN: permission denied" and Caddy never starts.
+  sudo chmod 0711 /var/www/custom/projects/homelab/caddy_data
   sudo chown $OP_USER:$OP_USER /var/www/custom/projects/homelab/caddy_data/CF_API_TOKEN
   sudo chmod 0644 /var/www/custom/projects/homelab/caddy_data/CF_API_TOKEN
 }
@@ -649,11 +665,14 @@ nextcloud_setup() {
   # Talk TURN/STUN — udp+tcp on 3478, tls on 5349 (secret matches turnserver.conf).
   local trn
   trn=$(docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null)
+  # talk:turn:add <schemes> <server> <protocols> — protocols are POSITIONAL;
+  # the old --udp/--tcp flags don't exist, so the call always failed and TURN
+  # was never registered.
   if ! echo "$trn" | grep -q "talk.$DOMAIN:3478"; then
-    docker exec -u www-data nextcloud php occ talk:turn:add turn "talk.$DOMAIN:3478" --secret "$TURN_SECRET" --udp --tcp >/dev/null 2>&1 || true
+    docker exec -u www-data nextcloud php occ talk:turn:add turn "talk.$DOMAIN:3478" "udp,tcp" --secret "$TURN_SECRET" >/dev/null 2>&1 || true
   fi
   if ! echo "$trn" | grep -q "talk.$DOMAIN:5349"; then
-    docker exec -u www-data nextcloud php occ talk:turn:add turns "talk.$DOMAIN:5349" --secret "$TURN_SECRET" >/dev/null 2>&1 || true
+    docker exec -u www-data nextcloud php occ talk:turn:add turns "talk.$DOMAIN:5349" "tcp" --secret "$TURN_SECRET" >/dev/null 2>&1 || true
   fi
 
   # Background jobs via the host cron (config/cron/nextcloud, installed by install-config).
@@ -683,9 +702,12 @@ nextcloud_setup() {
     done < "$MANIFEST_DIR/users.txt"
   fi
 
-  # Fresh occ maintenance:install only trusts localhost — the vhost domain
-  # must be added or NC 400s every request on that Host.
-  docker exec -u www-data nextcloud php occ config:system:set trusted_domains 1 --value "$DOMAIN" >/dev/null 2>&1 || true
+  # The vhost Host must be trusted or NC 400s every request on it. The compose
+  # env NEXTCLOUD_TRUSTED_DOMAINS seeds cloud.$DOMAIN on a fresh DB — writing
+  # the bare $DOMAIN into index 1 clobbers it.
+  if ! docker exec -u www-data nextcloud php occ config:system:get trusted_domains 2>/dev/null | grep -qx "cloud.$DOMAIN"; then
+    docker exec -u www-data nextcloud php occ config:system:set trusted_domains 1 --value "cloud.$DOMAIN" >/dev/null 2>&1 || true
+  fi
 
   # Recovery manifest: apps enabled beyond the image defaults
   # (homelab/cloud/recovery/apps.txt).
@@ -754,10 +776,21 @@ vaultwarden_setup() {
 # (Rspamd signs — otherwise `setup config dkim` aborts on the conflict).
 dkim_setup() {
   cd "$REPO" || exit 1
-  local rec value zone id
-  docker exec mailserver setup config dkim domain "$DOMAIN" >/dev/null 2>&1 || fail dkim_setup "keygen"
-  # the zone file splits the key across quoted segments — concatenate the p= parts
-  rec=$(docker exec mailserver sh -c 'cat /tmp/docker-mailserver/rspamd/dkim/*.public.txt' 2>/dev/null \
+  local rec value zone id i=0
+  # The mailserver restart-loops until Caddy has written its mail.$DOMAIN cert
+  # (SSL_TYPE=manual) — wait for a live container, or `setup config dkim`
+  # aborts and the error surfaces as a bare "keygen".
+  while [ $i -lt 90 ]; do
+    docker exec mailserver true >/dev/null 2>&1 && break
+    sleep 2; i=$((i+2))
+  done
+  # rc=1 when the key already exists ("Not overwriting existing files") — the
+  # idempotent case, so judge by the public key, not the exit code.
+  docker exec mailserver setup config dkim domain "$DOMAIN" >/dev/null 2>&1 || true
+  # *.public.txt is the BIND zone-file form and splits the key across quoted
+  # lines (grepping it published a truncated key); *.public.dns.txt is the
+  # single-line record, ready to publish.
+  rec=$(docker exec mailserver sh -c 'cat /tmp/docker-mailserver/rspamd/dkim/*.public.dns.txt' 2>/dev/null \
     | grep -oE 'p=[A-Za-z0-9+/=]+' | sed 's/p=//' | tr -d '\n')
   [ -n "$rec" ] || fail dkim_setup "no public key"
   value="v=DKIM1; k=rsa; p=$rec"
@@ -842,8 +875,20 @@ ssl_mode_full() {
   fi
 }
 
+# Issuer of the cert Caddy presents for one vhost, polled while ACME finishes.
+cert_issuer() {
+  local h="$1" i=0 iss=""
+  while [ $i -lt 45 ]; do
+    iss=$(echo | timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$h.$DOMAIN" 2>/dev/null \
+      | openssl x509 -noout -issuer 2>/dev/null | cut -d'=' -f2-)
+    case "$iss" in *"Let's Encrypt"*) break;; esac
+    i=$((i+2)); sleep 2
+  done
+  echo "$iss"
+}
+
 issue_certs() {
-  local hosts="" h
+  local hosts="" h iss pending=()
   hosts="www"
   [ "${MOD_CLOUD:-true}" = "true" ]   && hosts="$hosts cloud talk"
   [ "${MOD_VAULT:-true}" = "true" ]   && hosts="$hosts vault"
@@ -854,10 +899,21 @@ issue_certs() {
     curl -sk --resolve "$h.$DOMAIN:443:127.0.0.1" -o /dev/null "https://$h.$DOMAIN/" >>"$LOG" 2>&1 || true
     sleep 3
   done
+  # The trigger requests above only wake Caddy up — the first DNS-01 issuance
+  # is not instant, so cert_issuer polls before declaring failure.
   for h in $hosts; do
-    local iss
-    iss=$(echo | timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$h.$DOMAIN" 2>/dev/null \
-      | openssl x509 -noout -issuer 2>/dev/null | cut -d'=' -f2-)
+    case "$(cert_issuer "$h")" in *"Let's Encrypt"*) ;; *) pending+=("$h");; esac
+  done
+  # Caddy's ACME retry backoff can leave a single order stuck (observed on
+  # kuma.fxmq.net: every other vhost issued, kuma's lock kept retrying) — one
+  # restart re-attempts the pending identifiers.
+  if [ ${#pending[@]} -gt 0 ]; then
+    log "  ${#pending[@]} cert(s) pending (${pending[*]}) — restarting Caddy to re-attempt"
+    docker restart "$DOMAIN" >>"$LOG" 2>&1 || true
+    sleep 5
+  fi
+  for h in $hosts; do
+    iss=$(cert_issuer "$h")
     case "$iss" in
       *"Let's Encrypt"*) ;;
       *) fail "cert_$h" "issuer was: $iss";;
@@ -865,14 +921,18 @@ issue_certs() {
   done
 }
 
+# Old-project references must not survive in anything the installer deploys
+# (compose files, host config, Makefile, recipes). docs/ and scripts/ are out
+# of scope by design: docs record the rename as history, and the scripts
+# (this installer, the rewrite/import tooling) name the old project by nature
+# — counting them made the check unsatisfiable on the repo's own tree.
+sweep_hits() {
+  grep -rlI 'jehpok' "$REPO" \
+    --exclude-dir=.git --exclude-dir=docs --exclude-dir=archives --exclude-dir=scripts 2>/dev/null || true
+}
+
 sweep() {
-  # Old-project references must not survive anywhere except this script.
-  local hits
-  hits=$(grep -rl 'jehpok' "$REPO" --exclude-dir=.git --exclude-dir=docs --exclude-dir=archives 2>/dev/null \
-    | grep -v "^$REPO/scripts/install.sh$" || true)
-  if [ -n "$hits" ]; then
-    fail sweep
-  fi
+  [ -z "$(sweep_hits)" ] || fail sweep
 }
 
 phase2_op() {
@@ -947,7 +1007,7 @@ problem() {
 
 hint() {
   case "$1" in
-    apt)            echo "install git curl make sudo dnsmasq ufw jq apache2-utils sqlite3, plus docker with the compose plugin (docker-ce from download.docker.com on trixie), then re-check" ;;
+    apt)            echo "install git curl make sudo dnsmasq ufw jq apache2-utils sqlite3 python3-yaml, plus docker with the compose plugin (docker-ce from download.docker.com on trixie), then re-check" ;;
     goose)          echo "run: curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | CONFIGURE=false GOOSE_BIN_DIR=/usr/local/bin bash, then re-check" ;;
     user)           echo "run: adduser --disabled-password --gecos '' $OP_USER && usermod -aG sudo,docker $OP_USER, then re-check" ;;
     ssh_keys)       echo "add a public key to /root/.ssh/authorized_keys and copy it to /home/$OP_USER/.ssh/authorized_keys, then re-check" ;;
@@ -970,7 +1030,7 @@ hint() {
     zone)           echo "add $DOMAIN as a zone in the Cloudflare dashboard, then re-check" ;;
     dns_*)          echo "create an A record ${1#dns_}.$DOMAIN -> ${VPS_IP:-<VPS IP>} in Cloudflare (turn must be DNS-only/grey-cloud — TURN bypasses the proxy; the rest proxied), then re-check" ;;
     cert_*)         echo "hit https://${1#cert_}.$DOMAIN once to trigger ACME, wait a few seconds, then re-check" ;;
-    sweep)          echo "rename or remove the files listed by: grep -rl jehpok $REPO --exclude-dir=.git" ;;
+    sweep)          echo "rename or remove the files listed by: grep -rlI jehpok $REPO --exclude-dir=.git --exclude-dir=docs --exclude-dir=archives --exclude-dir=scripts, then re-check" ;;
     sslmode)        echo "Cloudflare dashboard -> SSL/TLS -> Overview -> set mode to Full (or Full strict), then re-check" ;;
     nextcloud_setup) echo "run the occ steps from docs/GUIDE.md 'Ordering after a fresh deploy' (talk:signaling:add x2, talk:turn:add x2, config:system:set mail_*, background:cron) — see the nextcloud_setup function in this script, then re-check" ;;
     dkim_setup)      echo "run: docker exec mailserver setup config dkim domain $DOMAIN; ensure ENABLE_OPENDKIM=0 in the mailserver compose (Rspamd signs); verify the CF token has Zone > DNS > Edit; then dig @<zone NS> TXT mail._domainkey.$DOMAIN" ;;
@@ -983,7 +1043,7 @@ hint() {
 
 recheck() {
   case "$1" in
-    apt) command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 && dpkg -s git curl make sudo dnsmasq ufw jq apache2-utils sqlite3 >/dev/null 2>&1 ;;
+    apt) command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 && dpkg -s git curl make sudo dnsmasq ufw jq apache2-utils sqlite3 python3-yaml >/dev/null 2>&1 ;;
     goose) command -v goose >/dev/null 2>&1 || [ -x /usr/local/bin/goose ] ;;
     user) id -u "$OP_USER" >/dev/null 2>&1 ;;
     ssh_keys) sudo test -s /root/.ssh/authorized_keys && [ -s /home/$OP_USER/.ssh/authorized_keys ] ;;
@@ -1005,10 +1065,10 @@ recheck() {
     zone) [ -n "$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" | jq -r '.result[0].id // empty')" ] ;;
     dns_*) local h=${1#dns_}; [ -n "$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$h.$DOMAIN" | jq -r '.result[0].id // empty')" ] ;;
     cert_*) local h=${1#cert_}; echo | timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$h.$DOMAIN" 2>/dev/null | openssl x509 -noout -issuer 2>/dev/null | grep -q "Let's Encrypt" ;;
-    sweep) ! grep -rl 'jehpok' "$REPO" --exclude-dir=.git 2>/dev/null | grep -qv "^$REPO/scripts/install.sh$" ;;
+    sweep) [ -z "$(sweep_hits)" ] ;;
     sslmode) ssl_mode_full ;;
-    nextcloud_setup) docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN" && docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://talk.$DOMAIN/signaling" && docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "talk.$DOMAIN:3478" ;;
-    dkim_setup)      dig +short TXT "mail._domainkey.$DOMAIN" @"$(dig +short NS "$DOMAIN" | head -1)" 2>/dev/null | grep -q "v=DKIM1" ;;
+    nextcloud_setup) docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN" && docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://talk.$DOMAIN/signaling" && docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "talk.$DOMAIN:3478" && docker exec -u www-data nextcloud php occ config:system:get trusted_domains 2>/dev/null | grep -qx "cloud.$DOMAIN" ;;
+    dkim_setup)      dig +short TXT "mail._domainkey.$DOMAIN" @"$(dig +short NS "$DOMAIN" | head -1)" 2>/dev/null | grep -qE 'p=[A-Za-z0-9+/=]{100,}' ;;
     vaultwarden_setup) docker exec mailserver setup email list 2>/dev/null | grep -qiE "^[* ] *vaultwarden@$DOMAIN( |\$|\[)" ;;
     panel_servers)  [ "$(sudo ls /var/www/custom/projects/homelab/puffer/data/servers/*.json 2>/dev/null | wc -l)" -gt 0 ] ;;
     *) false ;;
@@ -1087,6 +1147,7 @@ success_block() {
   echo "   VPS IP ${VPS_IP:-?}   Tailscale IP ${TS_IP:-?}"
   echo ""
   echo " SSH: root and '$OP_USER' both log in with keys (tailnet-only, port 22)."
+  echo "      No key was supplied, so a keypair was minted — swap /home/$OP_USER/.ssh/id_ed25519 for the operator's own."
   echo ""
   echo " Follow-ups (none block the install):"
   echo "   1. Tailscale split-DNS: admin console -> DNS -> add $DOMAIN -> ${TS_IP:-<tailscale IP>}"
