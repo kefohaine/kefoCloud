@@ -34,7 +34,7 @@ services:
       - "mail.fxmq.net:172.22.0.9"
 
     volumes:
-      - /var/www/custom/projects/homelab/vault/data:/data
+      - /root/github/kefoserver/data/vault/data:/data
 
     expose:
       - "80"
