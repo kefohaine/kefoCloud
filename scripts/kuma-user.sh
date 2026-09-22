@@ -11,7 +11,9 @@
 
 set -uo pipefail
 
-DB=/root/github/kefoserver/data/kuma/data/kuma.db
+ROOT=\"$(cd \"$(dirname \"$(readlink -f \"$0\")\")/..\" && pwd)\"
+
+DB="$ROOT/data/kuma/data/kuma.db"
 
 hash_pass() { # hash_pass <plaintext> — bcrypt via the container (no argv leak)
   docker exec -e KUMA_PASS="$1" uptimekuma node -e \
