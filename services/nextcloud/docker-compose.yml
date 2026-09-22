@@ -27,15 +27,15 @@ services:
 
     volumes:
       # Nextcloud html root (3rdparty, core, apps, config, occ).
-      # chown -R 33:33 /root/github/kefoserver/data/cloud/html BEFORE first start.
-      - /root/github/kefoserver/data/cloud/html:/var/www/html:rw
+      # chown -R 33:33 ${DATA_DIR}/cloud/html BEFORE first start.
+      - ${DATA_DIR}/cloud/html:/var/www/html:rw
       # User files datadirectory (appdata_*, <user>/, owncloud.db, nextcloud.log).
       # Mounted at /data (not /var/www/html/data) to avoid a nested bind mount
       # inside the /var/www/html volume — the Nextcloud image declares
       # VOLUME ["/var/www/html"], which makes nested bind mounts fragile and
       # can silently detach after long uptimes or daemon events.
       # 'datadirectory' in config.php must point to /data.
-      - /root/github/kefoserver/data/cloud/users:/data:rw
+      - ${DATA_DIR}/cloud/users:/data:rw
       # Persistent PHP-FPM pool configuration
       - ./php-fpm.d/zz-custom.conf:/usr/local/etc/php-fpm.d/zz-custom.conf:ro
       # Persistent opcache tuning. Dropped into conf.d so it survives image
@@ -57,20 +57,20 @@ services:
       NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER}
       NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD}
       NEXTCLOUD_OVERWRITEPROTOCOL: https
-      NEXTCLOUD_TRUSTED_DOMAINS: "cloud.fxmq.net"
+      NEXTCLOUD_TRUSTED_DOMAINS: "cloud.${DOMAIN}"
       NEXTCLOUD_DATA_DIR: /data
       # trusted_proxies is NOT set here — the image entrypoint writes it as a
       # single comma-joined string, and NC 34's setup check requires a real
       # array. It is set as an array via occ in scripts/install.sh
       # nextcloud_setup (delete + indexed sets; the CF ranges live there too).
-      OVERWRITECLIURL: "https://cloud.fxmq.net"
+      OVERWRITECLIURL: "https://cloud.${DOMAIN}"
 
     extra_hosts:
       # Map the cert FQDN to the mail container's bridge IP so the Mail app
-      # and Nextcloud's SMTP see mail.fxmq.net with matching SNI + LE cert
+      # and Nextcloud's SMTP see mail.${DOMAIN} with matching SNI + LE cert
       # (same pattern as the roundcube container). The Mail app authenticates
-      # per-user mailboxes; NC's own outbound uses nextcloud@fxmq.net.
-      - "mail.fxmq.net:172.22.0.9"
+      # per-user mailboxes; NC's own outbound uses nextcloud@${DOMAIN}.
+      - "mail.${DOMAIN}:172.22.0.9"
 
     logging:
       driver: json-file
@@ -88,8 +88,8 @@ services:
   # redis: distributed cache + locking (see REDIS_HOST above).
   # hpb: Talk High Performance Backend (strukturag/nextcloud-spreed-
   #   signaling, the official Go server — no NATS needed). Config generated
-  #   by `make talk-gen` into /root/github/kefoserver/data/talk/.
-  # relay: TURN/STUN for WebRTC call media; talk.fxmq.net:3478/5349 + relay.
+  #   by `make talk-gen` into ${DATA_DIR}/talk/.
+  # relay: TURN/STUN for WebRTC call media; talk.${DOMAIN}:3478/5349 + relay.
 
   redis:
     image: redis:7-alpine
@@ -122,15 +122,15 @@ services:
     memswap_limit: 256m
     volumes:
       # Rendered by `make talk-gen` (gitignored runtime dir, sibling of repo/).
-      - /root/github/kefoserver/data/talk/server.conf:/config/server.conf:ro
+      - ${DATA_DIR}/talk/server.conf:/config/server.conf:ro
     extra_hosts:
       # The signaling server validates client sessions by calling back into
-      # Nextcloud ([backend1] urls = https://cloud.fxmq.net). Route that
+      # Nextcloud ([backend1] urls = https://cloud.${DOMAIN}). Route that
       # directly to Caddy on the host bridge (172.22.0.1) instead of the
       # public DNS → Cloudflare proxy path: one less hop and immune to CF
       # Bot Fight Mode challenging the server's requests (same pattern as
       # the roundcube container's extra_hosts). SNI/cert still match.
-      - "cloud.fxmq.net:172.22.0.1"
+      - "cloud.${DOMAIN}:172.22.0.1"
     healthcheck:
       test: ["CMD-SHELL", "timeout 3 bash -c '</dev/tcp/127.0.0.1/8080' || exit 1"]
       interval: 30s
@@ -170,10 +170,10 @@ services:
     volumes:
       # Rendered by `make talk-gen`. Static-auth-secret must match the
       # `occ talk:turn:add --secret` used in Nextcloud.
-      - /root/github/kefoserver/data/talk/turnserver.conf:/etc/coturn/turnserver.conf:ro
-      # Reuse the talk.fxmq.net LE cert (issued by Caddy via DNS-01) for TURNS
+      - ${DATA_DIR}/talk/turnserver.conf:/etc/coturn/turnserver.conf:ro
+      # Reuse the talk.${DOMAIN} LE cert (issued by Caddy via DNS-01) for TURNS
       # on 5349 — same pattern as the mailserver's cert reuse.
-      - /root/github/kefoserver/data/caddy_data:/caddy:ro
+      - ${DATA_DIR}/caddy_data:/caddy:ro
     networks:
       net:
         ipv4_address: 172.22.0.14
