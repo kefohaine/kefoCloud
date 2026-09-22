@@ -14,10 +14,30 @@
 #   * `@name path <a> [<b> [<c>]]` (<= 3 paths) + `handle @name` becomes pages,
 #     which picks up curated top-level routes (e.g. www's /welcome) while broad
 #     internal matchers (many paths) are ignored
+#   * every session in data/ttyd-devices.conf becomes a card on the terminal
+#     page (/ttyd?arg=<name>) — per-device shells, managed by
+#     `make ttyd-add/ttyd-rm` (scripts/ttyd-devices.sh). No vhost, no port.
 set -uo pipefail
+
+# Instance values (DOMAIN, REPO_DIR, DATA_DIR) come from data/instance.conf via
+# scripts/instance.sh — the generator below reads them from the environment.
+ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+. "$ROOT/scripts/instance.sh"
+
+export REPO_DIR DATA_DIR INSTANCE_CONF
 
 python3 - <<'PYEOF'
 import glob, os, json, os, re, sys
+
+# Per-device web-terminal sessions (make ttyd-add / ttyd-rm). One ttyd
+# listener serves them all as /ttyd?arg=<name>, so a device adds a CARD here,
+# never a vhost and never a port.
+def device_sessions():
+    reg = os.path.join(os.environ.get("DATA_DIR", "."), "ttyd-devices.conf")
+    if not os.path.exists(reg):
+        return []
+    return [l.strip() for l in open(reg, encoding="utf-8")
+            if l.strip() and not l.strip().startswith("#")]
 
 pages_out, vhosts = [], 0
 for path in sorted(glob.glob(os.path.join(os.environ.get("REPO_DIR","."),"services/caddy/vhosts/*.caddy"))):
@@ -50,6 +70,9 @@ for path in sorted(glob.glob(os.path.join(os.environ.get("REPO_DIR","."),"servic
         else:
             add(arg)
 
+    if short == "tail":
+        for dev in device_sessions():
+            pages["ttyd?arg=%s" % dev] = "/ttyd?arg=%s" % dev
     url = "/" if short == "tail" else "https://%s/" % host
     pages_out.append({"name": short, "host": host, "url": url,
                       "pages": {k: pages[k] for k in sorted(pages)}})
