@@ -42,7 +42,7 @@ prompt: |
   - secrets and credentials (never print their values)
   - firewall (UFW) and exposed ports; Cloudflare proxied vs DNS-only records
   - Docker privileges, docker.sock mounts, and host path bind-mounts
-  - backup and restore behavior (make backup, the nightly pg_dump cron in scripts/storage.sh)
+  - backup and restore behavior (make backup, the nightly pg_dump cron in scripts/datadir-nfs.sh)
   - destructive make recipes and whether they have a confirmation guard
   - consistency between documentation and implementation
 
