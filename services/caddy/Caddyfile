@@ -1,0 +1,59 @@
+# Top-level Caddy config. Per-vhost routes live in ./vhosts/*.caddy
+# and are imported below. Each vhost declares its own TLS block — all
+# use Let's Encrypt DNS-01 via the Cloudflare plugin (token in
+# CF_API_TOKEN env var). The old CF Origin CA wildcard cert was
+# removed because its SNI wildcard (`*.fxmq.net`) covered every
+# vhost, so Caddy served it as a fallback for `mc.fxmq.net` SNI
+# matches and the per-vhost ACME automation policy never fired.
+# Per-vhost LE certs keep each cert scoped to its own SNI.
+
+{
+    admin off
+    log {
+        output file /dev/null
+    }
+}
+
+# ── snippets ────────────────────────────────────────────────────────────────
+
+# Security headers. NOTE: Caddy's header directive APPENDS to upstream values
+# (set does not replace) and a delete+set pair for the SAME field in one block
+# ends up deleted (delete wins) — so app vhosts strip the upstream's own copies
+# with `header_down` at the proxy (cloud/vault/kuma/panel/roundcube/ttyd/hpb)
+# and this snippet only ever SETS. Never add `-<Field>` delete lines here.
+(security_headers) {
+    Strict-Transport-Security "max-age=31536000"
+    X-Content-Type-Options "nosniff"
+    X-Frame-Options "SAMEORIGIN"
+    Referrer-Policy "strict-origin-when-cross-origin"
+}
+
+# Compress every response that has a compressible MIME type (default 512 B
+# threshold, text/* + JSON + SVG + JS + CSS + XML). Caddy's `encode`
+# middleware can't live in the global options block — it has to be inside
+# each site block or imported via a snippet. Every vhost below either sets
+# `encode zstd gzip` explicitly or imports this snippet, so no response
+# leaks uncompressed.
+(compress) {
+    encode zstd gzip
+}
+
+# ── HTTP → HTTPS ────────────────────────────────────────────────────────────
+http:// {
+    redir https://{host}{uri} 308
+}
+
+# ── vhosts ──────────────────────────────────────────────────────────────────
+# Each vhost declares its own `tls { dns cloudflare { ... } }` block so the
+# ACME cert is scoped to that vhost's SNI. The wildcard cert that used to
+# back all vhosts is no longer referenced — per-vhost ACME certs are scoped
+# to their own SNI (see ./vhosts/cloud.fxmq.net.caddy for the rationale).
+
+import vhosts/tail.fxmq.net.caddy
+import vhosts/talk.fxmq.net.caddy
+import vhosts/mc.fxmq.net.caddy
+import vhosts/vault.fxmq.net.caddy
+import vhosts/cloud.fxmq.net.caddy
+import vhosts/kuma.fxmq.net.caddy
+import vhosts/mail.fxmq.net.caddy
+import vhosts/www.fxmq.net.caddy
