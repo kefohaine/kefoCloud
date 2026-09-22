@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Plumbing path-drop for this repo's multi-root DAG (filter tools drop the
-# jehpok-era side here — see docs/GUIDE.md lesson 2026-09-02). Removes the
+# $GITHUB_USER-era side here — see docs/GUIDE.md lesson 2026-09-02). Removes the
 # given paths from EVERY commit's tree, preserving identities, messages,
 # dates, merges, both roots and all other content byte-exact.
 # Usage: drop-path.sh <repo-dir> <path...>
+
+. "$(dirname "$(readlink -f "$0")")/instance.sh" 2>/dev/null || true
 set -euo pipefail
 repo=$1; shift
 cd "$repo"
