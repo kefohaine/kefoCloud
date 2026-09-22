@@ -6,7 +6,7 @@
 # mirror of the installer's default-ON opt-out), then optionally the edge
 # (Caddy + caddy_data), the host services (goose, ttyd, dnsmasq, cron,
 # fail2ban, the stack's ufw rules), the installed packages (docker, …),
-# the 'op' user, and the tailscale membership (always LAST, so the session
+# the 'root' user, and the tailscale membership (always LAST, so the session
 # and re-joining stay possible).
 #
 # MODE: the first prompt picks the scope —
@@ -41,15 +41,15 @@
 # Usage (root on the box, from the repo checkout):
 #   sudo bash scripts/uninstall.sh
 #
-# Full log: /var/log/homelab-uninstall.log
+# Full log: /var/log/kefoserver-uninstall.log
 
 set -uo pipefail
 
-OP_USER=op
-REPO=/var/www/custom/projects/homelab/repo
-PROJECT_DIR=/var/www/custom/projects/homelab
+OP_USER=root
+REPO=/root/github/kefoserver
+PROJECT_DIR=/root/github/kefoserver/data
 CONF="$PROJECT_DIR/installed-modules.conf"
-LOG=/var/log/homelab-uninstall.log
+LOG=/var/log/kefoserver-uninstall.log
 ERR_TAGS=()
 declare -A ERR_DETAIL=()
 
@@ -197,7 +197,7 @@ ask_mode() {
       done
       RM_EDGE=true; RM_HOST=true; RM_PKGS=true; RM_USER=true; RM_TAILNET=true
       echo "Whole-framework teardown preselected: every module, the edge, the host"
-      echo "services, the packages, the '$OP_USER' user and the tailnet membership."
+      echo "services, the packages and the tailnet membership (root is never removed)."
       ;;
     modules|*)
       :   # the per-module prompts below decide the scope
@@ -214,8 +214,7 @@ ask_inputs() {
   ask RM_CADDY_DATA "  …and delete caddy_data/ (LE certs + CF token)?" n
   [ "${RM_HOST:-false}" = true ] || ask RM_HOST "Remove the host services (goose, ttyd, dnsmasq, cron, fail2ban) + the stack's ufw rules?" "${DEF_RM_HOST:-n}"
   [ "${RM_PKGS:-false}" = true ] || ask RM_PKGS "Purge the installed packages (docker, dnsmasq, fail2ban, …)?" "${DEF_RM_PKGS:-n}"
-  [ "${RM_USER:-false}" = true ] || ask RM_USER "Delete the '$OP_USER' user?" "${DEF_RM_USER:-n}"
-  [ "${RM_USER:-false}" = true ] && ask RM_USER_DATA "  …and its home dir /home/$OP_USER?" n
+  # operator account root is never deleted (sole entry point) — no prompt
   [ "${RM_TAILNET:-false}" = true ] || ask RM_TAILNET "Remove this host from the tailnet (last step)?" "${DEF_RM_TAILNET:-n}"
   # data (all default KEEP; the storage VPS export is never touched)
   ask RM_MOD_DATA "Delete the data dirs of the modules being removed (vault/, kuma/, mailserver/, puffer/, cloud/ local files)?" "${DEF_RM_DATA:-n}"
@@ -390,11 +389,11 @@ remove_host() {
     systemctl disable --now "$u" >>"$LOG" 2>&1 || true
     rm -f "/etc/systemd/system/$u.service"
   done
-  rm -f /etc/goose/goose.env /etc/kefohaine-banner.sh
+  rm -f /etc/goose/goose.env /etc/kefoserver-banner.sh
   rm -f /etc/dnsmasq.d/10-tailnet.conf
   rm -f /etc/systemd/system/dnsmasq.service.d/override.conf
   rmdir /etc/systemd/system/dnsmasq.service.d 2>/dev/null || true
-  rm -f /etc/sysctl.d/99-homelab.conf
+  rm -f /etc/sysctl.d/99-kefoserver.conf
   rm -f /etc/cron.d/nextcloud
   rm -f /etc/fail2ban/jail.d/sshd.conf
   # the binaries install.sh dropped into /usr/local/bin
@@ -424,16 +423,10 @@ remove_pkgs() {
 }
 
 remove_user() {
-  log "  removing the '$OP_USER' user"
-  if id -u "$OP_USER" >/dev/null 2>&1; then
-    if [ "${RM_USER_DATA:-false}" = true ]; then
-      userdel -r "$OP_USER" >>"$LOG" 2>&1 || fail user "userdel -r failed"
-    else
-      userdel "$OP_USER" >>"$LOG" 2>&1 || fail user "userdel failed"
-      log "  /home/$OP_USER kept (home-dir deletion not confirmed)"
-    fi
-  fi
-  rm -f "/etc/sudoers.d/$OP_USER-passwordless"
+  # root@kefoserver is the ONLY entry point — the operator account is never
+  # deleted (that would end all access to the box). This phase is a no-op.
+  log "  operator account is 'root' (sole entry point) — NOT removed, by design"
+  rm -f /etc/sudoers.d/op-passwordless 2>/dev/null || true   # legacy cleanup only
 }
 
 remove_tailnet() {
@@ -454,7 +447,7 @@ problem() {
     host_ttyd)   echo "host service 'ttyd' not removed (or was skipped — inside-ttyd guard)" ;;
     host_dnsmasq) echo "host service 'dnsmasq' not removed" ;;
     pkgs)     echo "installed packages not purged" ;;
-    user)     echo "user '$OP_USER' not deleted" ;;
+    user)     echo "operator account is never deleted" ;;
     tailnet)  echo "still on the tailnet" ;;
     *)        echo "$1" ;;
   esac
@@ -467,7 +460,7 @@ hint() {
     host_goose|host_dnsmasq) echo "run: systemctl disable --now ${1#host_}; rm -f /etc/systemd/system/${1#host_}.service; systemctl daemon-reload, then re-check" ;;
     host_ttyd) echo "run scripts/uninstall.sh from SSH or a local terminal (not the ttyd web shell), then re-check" ;;
     pkgs)     echo "run: apt-get purge docker.io docker-ce docker-ce-cli containerd.io docker-compose-plugin dnsmasq fail2ban apache2-utils sqlite3, then re-check" ;;
-    user)     echo "run: userdel $OP_USER; rm -f /etc/sudoers.d/$OP_USER-passwordless, then re-check" ;;
+    user)     echo "no action — root is the sole entry point and is never deleted" ;;
     tailnet)  echo "run: tailscale logout, then re-check" ;;
     *)        echo "" ;;
   esac
@@ -496,7 +489,7 @@ recheck() {
     host_dnsmasq) [ ! -e /etc/dnsmasq.d/10-tailnet.conf ];;
     pkgs)  ! dpkg -s docker.io >/dev/null 2>&1 && ! dpkg -s docker-ce >/dev/null 2>&1 \
            && ! dpkg -s dnsmasq >/dev/null 2>&1 && ! dpkg -s fail2ban >/dev/null 2>&1;;
-    user)     ! id -u "$OP_USER" >/dev/null 2>&1;;
+    user)     true ;;   # root is never removed
     tailnet)  ! tailscale status >/dev/null 2>&1;;
     *)        false ;;
   esac
@@ -568,7 +561,7 @@ success_block() {
   [ "${RM_CADDY_DATA:-false}" = true ] && echo "   removed    caddy_data/"
   [ "${RM_HOST:-false}"    = true ] && echo "   removed    host services (goose, ttyd, dnsmasq, cron, fail2ban) + stack ufw ports"
   [ "${RM_PKGS:-false}"   = true ] && echo "   removed    packages (docker, dnsmasq, fail2ban, …)"
-  [ "${RM_USER:-false}"   = true ] && echo "   removed    user '$OP_USER'"
+  # user root is never removed
   [ "${RM_TAILNET:-false}" = true ] && echo "   removed    tailnet membership"
   echo ""
   echo " Kept (unless explicitly confirmed otherwise):"
