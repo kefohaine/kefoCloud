@@ -84,6 +84,9 @@ EOF
 
   sec "tmux sessions"
   rows <<'EOF'
+make ttyd-devices|list the per-device web-terminal sessions on the tail page
+make ttyd-add NAME=<dev>|create + list a session for a tailnet device (/ttyd?arg=<dev>)
+make ttyd-rm NAME=<dev>|kill + unlist that session
 make tmux-new TAG=<tag>|create a detached session
 make tmux-open TAG=<tag>|attach to a session (Ctrl-b d detaches)
 make tmux-kill TAG=<tag>|kill a session
@@ -132,7 +135,7 @@ EOF
 
   sec "onboarding & stack tools"
   rows <<'EOF'
-make storage|move the live NC datadirectory to the storage VPS (NFS over tailnet)
+make connect|join a module to another server — link an existing database there, or overwrite it with this host's data
 make talk-gen|generate NC-stack secrets + Talk/TURN configs (idempotent)
 make nc-capture|snapshot live NC users/groups/quotas → recovery manifests (outside the repo)
 make kuma-import|import an adapted Uptime Kuma db (KUMA_DB=<path>)
