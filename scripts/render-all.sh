@@ -37,7 +37,7 @@ val() { sed -n "s/^$1=//p" "$CONF" | head -1; }
 # /download, /play) until the container is recreated — which is exactly what
 # happened on 2026-09-22. Render into a scratch tree and rsync it in place:
 # rsync writes files into the EXISTING directory and deletes only stale files.
-TMP="$DATA/.render-tmp.$$"
+TMP="$(dirname "$OUT")/.render-tmp.$$"
 rm -rf "$TMP"; mkdir -p "$TMP/caddy" "$TMP/config"
 
 render_tree() {   # render_tree <src-dir> <dest-dir> [exclude-name]
