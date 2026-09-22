@@ -21,7 +21,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DATA="$ROOT/data"
 LOG_DIR="${LOG_DIR:-/var/log/kefohaine}"
 CONF="$DATA/installed-modules.conf"
-MODULES="cloud vault mail games monitor"
+MODULES="cloud vault mail monitor"
 [ -f "$CONF" ] && MODULES="$(grep -vE '^[[:space:]]*(#|$)' "$CONF" | tr '\n' ' ')"
 mod_in() { [[ " $MODULES " == *" $1 "* ]]; }
 DOMAIN="$(sed -n "s/^DOMAIN=['\"]\?\([^'\"]*\)['\"]\?.*/\1/p" "$ROOT/docs/REF.md" 2>/dev/null | head -1)"
@@ -204,16 +204,16 @@ if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   row remote "$(git -C "$ROOT" remote get-url origin 2>/dev/null)"
 fi
 mstr=""
-for m in cloud vault mail games monitor; do
+for m in cloud vault mail monitor; do
   if mod_in "$m"; then mstr+="${G}${m}${N}  "; else mstr+="${R}${m}${N}  "; fi
 done
 row modules "$mstr"
-for m in cloud vault mail games monitor; do
-  d="$(case "$m" in cloud) echo nextcloud;; vault) echo vaultwarden;; mail) echo mailserver;; games) echo pufferpanel;; monitor) echo uptimekuma;; esac)"
+for m in cloud vault mail monitor; do
+  d="$(case "$m" in cloud) echo nextcloud;; vault) echo vaultwarden;; mail) echo mailserver;; monitor) echo uptimekuma;; esac)"
   [ -d "$ROOT/services/$d" ] || continue
   [ -z "$(ls -A "$ROOT/services/$d" 2>/dev/null)" ] && continue
   vh="$(ls "$ROOT/services/$d/vhosts" 2>/dev/null | wc -l)"
-  ctns="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -cE "^(nextcloud|redis|postgresql|mailserver|roundcube|pufferpanel|uptimekuma|vaultwarden)$" || true)"
+  ctns="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -cE "^(nextcloud|redis|postgresql|mailserver|roundcube|uptimekuma|vaultwarden)$" || true)"
   printf "  %s%-16s%s %-9s %s %s\n" "${C}${B}" "module $m" "$N" "$d" \
     "$([ "$vh" -gt 0 ] && echo "${vh} vhost(s)")" "$(mod_in "$m" && echo '' || echo "${D}(not installed)${N}")"
 done
