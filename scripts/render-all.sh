@@ -31,8 +31,14 @@ RENDER="$ROOT/scripts/render.sh"
 
 val() { sed -n "s/^$1=//p" "$CONF" | head -1; }
 
-rm -rf "$OUT"
-mkdir -p "$OUT/caddy" "$OUT/config"
+# NEVER rm -rf $OUT: data/rendered/caddy is bind-mounted into the running edge,
+# and deleting the directory deletes the inode the container holds. Caddy keeps
+# serving its already-loaded config but every static file 404s (/welcome,
+# /download, /play) until the container is recreated — which is exactly what
+# happened on 2026-09-22. Render into a scratch tree and rsync it in place:
+# rsync writes files into the EXISTING directory and deletes only stale files.
+TMP="$DATA/.render-tmp.$$"
+rm -rf "$TMP"; mkdir -p "$TMP/caddy" "$TMP/config"
 
 render_tree() {   # render_tree <src-dir> <dest-dir> [exclude-name]
   local src="$1" dst="$2" skip="${3:-}" rel
@@ -44,8 +50,23 @@ render_tree() {   # render_tree <src-dir> <dest-dir> [exclude-name]
   done
 }
 
-render_tree "$ROOT/services/caddy" "$OUT/caddy" Dockerfile
-render_tree "$ROOT/config" "$OUT/config" instance.defaults   # docs, not a template to install
+render_tree "$ROOT/services/caddy" "$TMP/caddy" Dockerfile
+render_tree "$ROOT/config" "$TMP/config" instance.defaults   # docs, not a template to install
+
+# Swap in place (keeps the mounted inode alive), then drop the scratch tree.
+mkdir -p "$OUT/caddy" "$OUT/config"
+if command -v rsync >/dev/null 2>&1; then
+  rsync -a --delete "$TMP/caddy/"  "$OUT/caddy/"
+  rsync -a --delete "$TMP/config/" "$OUT/config/"
+else
+  # Fallback: copy over, then remove files whose source is gone. Never rm -rf.
+  cp -a "$TMP/." "$OUT/"
+  ( cd "$TMP" && find . -type f ) | sed 's|^\./||' > "$TMP/.list"
+  ( cd "$OUT" && find . -type f ) | sed 's|^\./||' | while IFS= read -r f; do
+      grep -qxF "$f" "$TMP/.list" || rm -f "$OUT/$f"
+    done
+fi
+rm -rf "$TMP"
 
 # ── instance block for compose ──────────────────────────────────────────────
 block() {
