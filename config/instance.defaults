@@ -5,7 +5,7 @@
 # in data/instance.conf (untracked), written by scripts/install.sh when it
 # prompts, or by you by hand:
 #
-#   DOMAIN=fxmq.net
+#   DOMAIN=example.com
 #   HOSTNAME=kefoserver
 #   ...
 #
