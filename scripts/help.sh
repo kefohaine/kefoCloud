@@ -44,7 +44,8 @@ EOF
 
   sec "maintain"
   rows <<'EOF'
-make update|apt update/upgrade, then docker pull + force-recreate every service
+make update|pull + recreate every deployed unit via stack-up.sh — edge last, gated, auto-rollback
+make apt-upgrade|apt-get update + upgrade (deliberately separate from the container work)
 make backup|container databases & secrets → backups/; live server config → repo/config/ (git add/commit after)
 make cleanup|apt autoremove/clean, docker prune, keep latest 3 backups per pattern
 EOF
