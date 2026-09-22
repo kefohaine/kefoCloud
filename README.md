@@ -45,7 +45,7 @@ On a fresh box the repo is cloned for you over **HTTPS** (the repo is public —
 ### Secondary helpers
 
 - `bash scripts/optimize.sh` — automated performance optimization after install
-- `bash scripts/storage.sh` — automated external Nextcloud storage system over tailnet
+- `bash scripts/datadir-nfs.sh` — automated external Nextcloud storage system over tailnet
 
 ## Documentation
 

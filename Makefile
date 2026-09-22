@@ -180,8 +180,22 @@ systemd-log:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: fetch fetch-more render smoke gh-web-health install-hooks clean-docker clean-apt clean-backups update apt-upgrade install-config kuma-import help talk-gen
-.PHONY: deploy backup cleanup
+.PHONY: fetch fetch-more render ttyd-devices ttyd-add ttyd-rm smoke gh-web-health install-hooks clean-docker clean-apt clean-backups update apt-upgrade install-config kuma-import help talk-gen
+.PHONY: deploy backup cleanup connect
+
+# Per-tailnet-device web-terminal sessions: one named tmux session each, served
+# by the SINGLE ttyd listener as /ttyd?arg=<name> and listed on the tail page.
+# No new port, no new vhost — see scripts/ttyd-devices.sh for why that matters.
+ttyd-devices:
+>@bash scripts/ttyd-devices.sh list
+
+ttyd-add:
+>@[ "$(origin NAME)" = "command line" ] || { scripts/mklog error "usage: make ttyd-add NAME=<device>"; exit 1; }
+>@bash scripts/ttyd-devices.sh add "$(NAME)"
+
+ttyd-rm:
+>@[ "$(origin NAME)" = "command line" ] || { scripts/mklog error "usage: make ttyd-rm NAME=<device>"; exit 1; }
+>@bash scripts/ttyd-devices.sh rm "$(NAME)"
 
 # AIO dashboard (scripts/fetch.sh): host perf (uptime, load, cpu, memory,
 # swap, disk), all available modules (installed green / uninstalled red),
@@ -399,11 +413,14 @@ talk-gen:
 nc-capture:
 >@bash scripts/nc-capture.sh
 
-# Onboard the 1 TB / 2 GB storage VPS as Nextcloud's live datadirectory over NFS
-# (Setup A: PostgreSQL stays on fxmq, user files move to the 1 TB box). Prompts for
-# the storage root password + a tailscale auth key; lockout-safe, idempotent.
-storage:
->@bash scripts/storage.sh
+# Connect this host's modules to another server. Prompts: which module, which
+# server, and what to do with the data — 'link' (use the database that already
+# lives there) or 'overwrite' (copy this host's database there, replacing it),
+# plus the NFS datadirectory move (the old `make storage`). It refuses to
+# re-point a module until the target database answers a test query, and it
+# always dumps locally before an overwrite.
+connect:
+>@bash scripts/connect.sh
 
 # ─────────────────────────────────────────────────────────────────────────────
 # config/ (live <-> repo)
