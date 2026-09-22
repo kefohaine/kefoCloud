@@ -1,7 +1,7 @@
 [Unit]
 Description=tmux 'main' session — one persistent shell session on every boot
 Documentation=man:tmux(1)
-Documentation=file:/root/github/kefoserver/docs/GUIDE.md
+Documentation=file:{{REPO_DIR}}/docs/GUIDE.md
 After=network-online.target local-fs.target
 Wants=network-online.target
 

@@ -1,6 +1,6 @@
 [Unit]
-Description=kefoserver stack — every deployed compose unit up on boot
-Documentation=file:///root/github/kefoserver/docs/GUIDE.md
+Description={{HOSTNAME}} stack — every deployed compose unit up on boot
+Documentation=file://{{REPO_DIR}}/docs/GUIDE.md
 After=docker.service network-online.target tailscaled.service remote-fs.target
 Wants=network-online.target
 Requires=docker.service
@@ -11,8 +11,8 @@ RemainAfterExit=yes
 # Idempotent: brings up every DEPLOYED compose unit, edge last. Never rebuilds
 # and never recreates a healthy container — `docker compose up -d` is a no-op
 # when nothing changed, so a boot costs no downtime and no image pull.
-ExecStart=/root/github/kefoserver/scripts/stack-up.sh
-ExecReload=/root/github/kefoserver/scripts/stack-up.sh
+ExecStart={{REPO_DIR}}/scripts/stack-up.sh
+ExecReload={{REPO_DIR}}/scripts/stack-up.sh
 TimeoutStartSec=900
 
 [Install]
