@@ -33,7 +33,7 @@ set -uo pipefail
 NC_CONTAINER="${NC_CONTAINER:-nextcloud}"
 QUOTA="${QUOTA:-}"
 NC_MOUNT="${NC_MOUNT:-/srv/nextcloud-data}"          # dir on the storage VPS
-LOCAL_MOUNT=/var/www/custom/projects/homelab/cloud/users   # NC datadirectory (host path)
+LOCAL_MOUNT=/root/github/kefoserver/data/cloud/users   # NC datadirectory (host path)
 
 log() { echo "[storage] $*"; }
 die() { echo "[storage] FATAL: $*" >&2; exit 1; }
