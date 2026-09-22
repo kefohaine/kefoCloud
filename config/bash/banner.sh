@@ -14,7 +14,7 @@ cat <<'BANNER'
   ╭──────────────────────────────────────────────────────────────╮
   │  root@{{HOSTNAME}} · {{DOMAIN}} {{HOSTNAME}} · Debian 13             │
   ╰──────────────────────────────────────────────────────────────╯
-   cloud  vault  kuma  mail  mc  talk  www        dashboard: https://tail.{{DOMAIN}}
+   cloud  vault  kuma  mail  talk  www        dashboard: https://tail.{{DOMAIN}}
    make help · make help-more · make smoke · make dok-logs-<ctn>
 
 BANNER
