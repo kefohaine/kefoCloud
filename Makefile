@@ -173,7 +173,7 @@ systemd-log:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: fetch smoke gh-web-health install-hooks clean-docker clean-apt clean-backups update install-config kuma-import help talk-gen
+.PHONY: fetch smoke gh-web-health install-hooks clean-docker clean-apt clean-backups update apt-upgrade install-config kuma-import help talk-gen
 .PHONY: deploy backup cleanup
 
 # AIO dashboard (scripts/fetch.sh): host perf (uptime, load, cpu, memory,
@@ -219,19 +219,24 @@ cleanup:
 >$(clean_apt_cmds)
 >$(clean_backups_cmds)
 
-# Pull every image that isn't built locally, then bring everything up
-# (self-contained: no sub-make, the recreate loop is inline).
-update:
+# apt is its own recipe, on purpose. A full `apt-get upgrade` is the
+# riskiest line in the toolbox — a debconf/postinst/needrestart hiccup exits
+# non-zero mid-upgrade, and under this Makefile's `-eu` that used to abort
+# `make update` before a single container was touched (leaving a half-upgraded
+# host and nothing recreated). Run it deliberately, on its own.
+apt-upgrade:
 >sudo apt-get update
 >sudo apt-get upgrade -y
->@for f in $(REPO)/services/*/docker-compose.yml; do \
-    if grep -qE '^[[:space:]]*build:' "$$f"; then \
-      scripts/mklog info "skip pull (built locally): $$f"; \
-    else \
-      $(COMPOSE) "$$f" pull; \
-    fi; \
-  done
->$(dok_recreate_all_cmds)
+>@scripts/mklog info "apt upgrade done — if the kernel/libc moved, reboot, then run: make update"
+
+# Pull every image that isn't built locally, then recreate every DEPLOYED unit
+# through scripts/stack-up.sh: failures are COLLECTED so one broken unit can no
+# longer abort the run, the Caddy edge goes LAST behind a config validate + a
+# health gate with an automatic image rollback, and the PostgreSQL unit
+# (docker-compose.db.yml) is included. Ends with the live edge smoke test.
+update:
+>@scripts/stack-up.sh --update
+>@bash scripts/smoke-vhosts.sh || scripts/mklog warn "smoke reported failures — see above"
 
 # Live edge smoke test — every vhost must serve its real app (see
 # scripts/smoke-vhosts.sh). Run after any services/fxmq.net/ change or
@@ -427,7 +432,14 @@ sudo test -s /etc/goose/goose.env || { sudo install -d -m 0755 /etc/goose; echo 
 sudo cp $(REPO)/config/goose/goose.service /etc/systemd/system/goose.service
 bash $(REPO)/scripts/goose-tokens.sh
 sudo cp $(REPO)/config/ssh/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf
-sudo cp $(REPO)/config/dnsmasq/10-tailnet.conf /etc/dnsmasq.d/10-tailnet.conf
+# The tracked copy keeps a PLACEHOLDER tailnet address; the live IP is rendered
+# in at deploy time so an instance-specific address never lands in a tracked
+# file (AGENTS rule 12). The old plain `cp` here silently overwrote the live
+# 10-tailnet.conf with the placeholder — dnsmasq then fail-looped on
+# "Cannot assign requested address" and tailnet DNS died with it.
+TS_IP=$$(tailscale ip -4 2>/dev/null | head -n1)
+[ -n "$$TS_IP" ] || { echo "error: no tailscale IP — cannot render 10-tailnet.conf"; exit 1; }
+sed "s/100\.117\.144\.0/$$TS_IP/g" $(REPO)/config/dnsmasq/10-tailnet.conf | sudo tee /etc/dnsmasq.d/10-tailnet.conf >/dev/null
 sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
 sudo cp $(REPO)/config/dnsmasq/dnsmasq.service.conf /etc/systemd/system/dnsmasq.service.d/override.conf
 sudo cp $(REPO)/config/sysctl/99-kefoserver.conf /etc/sysctl.d/99-kefoserver.conf
@@ -450,8 +462,11 @@ sudo cp $(REPO)/config/cron/nextcloud /etc/cron.d/nextcloud
 sudo chmod 0644 /etc/cron.d/nextcloud
 sudo systemctl enable --now fail2ban
 sudo ufw allow from 172.22.0.0/16 to any port 7681 proto tcp
+sudo cp $(REPO)/config/systemd/kefoserver-stack.service /etc/systemd/system/kefoserver-stack.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now goose ttyd
+sudo systemctl enable kefoserver-stack.service
+@scripts/mklog info "boot unit installed + enabled: kefoserver-stack.service (every deployed compose unit comes up on boot)"
 sudo systemctl restart sshd dnsmasq
 @scripts/mklog info "host install-config complete: goose + ttyd + dnsmasq + fail2ban + sshd + cron installed"
 endef
@@ -503,7 +518,10 @@ install-ssh:
 
 install-dnsmasq-conf:
 >@echo "install-dnsmasq-conf: 10-tailnet.conf"
->@sudo cp $(REPO)/config/dnsmasq/10-tailnet.conf /etc/dnsmasq.d/10-tailnet.conf
+>@TS_IP=$$(tailscale ip -4 2>/dev/null | head -n1); \
+    [ -n "$$TS_IP" ] || { scripts/mklog error "no tailscale IP — cannot render 10-tailnet.conf"; exit 1; }; \
+    sed "s/100\.117\.144\.0/$$TS_IP/g" $(REPO)/config/dnsmasq/10-tailnet.conf | sudo tee /etc/dnsmasq.d/10-tailnet.conf >/dev/null; \
+    scripts/mklog info "dnsmasq split-DNS rendered for $$TS_IP"
 >@sudo systemctl restart dnsmasq
 
 install-dnsmasq-override:
@@ -694,7 +712,9 @@ backup:
 >@sudo cp /etc/systemd/system/goose.service $(REPO)/config/goose/goose.service
 >@sudo cp /etc/systemd/system/ttyd.service $(REPO)/config/ttyd/ttyd.service
 >@sudo cp /etc/ssh/sshd_config.d/50-cloud-init.conf $(REPO)/config/ssh/50-cloud-init.conf
->@sudo cp /etc/dnsmasq.d/10-tailnet.conf $(REPO)/config/dnsmasq/10-tailnet.conf
+>@TS_IP=$$(tailscale ip -4 2>/dev/null | head -n1); \
+    sed "s/$${TS_IP:-__none__}/100.117.144.0/g" /etc/dnsmasq.d/10-tailnet.conf | sudo tee $(REPO)/config/dnsmasq/10-tailnet.conf >/dev/null; \
+    scripts/mklog info "10-tailnet.conf pulled back with the placeholder restored (never the live IP)"
 >@sudo cp /etc/systemd/system/dnsmasq.service.d/override.conf $(REPO)/config/dnsmasq/dnsmasq.service.conf
 >@sudo cp /etc/sysctl.d/99-kefoserver.conf $(REPO)/config/sysctl/99-kefoserver.conf
 >@sudo cp /etc/docker/daemon.json $(REPO)/config/docker/daemon.json

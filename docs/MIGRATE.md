@@ -41,7 +41,7 @@ The installer's legacy `renames()` step — which transformed a pre-migration cl
 
 `install.sh` brings up the mail platform too (`make dok-recreate-mailserver` → `mailserver` at 172.22.0.9 + `roundcube` at 172.22.0.10; the UFW ports are opened by the installer). What is NOT scripted: mailbox accounts (create with `make mail-gen [MAIL=…]`). To carry existing mail to a new VPS:
 
-1. Operator-only (copy from the old host): `$PROJECT_DIR/mailserver/` (Maildirs, DMS config + DKIM keys, roundcube sqlite), `services/mailserver/.env` (mailbox passwords), and the CF DNS records (MX, mail A DNS-only, SPF, DMARC, DKIM TXT).
+1. Operator-only (copy from the old host): `$DATA_DIR/mailserver/` (Maildirs, DMS config + DKIM keys, roundcube sqlite), `services/mailserver/.env` (mailbox passwords), and the CF DNS records (MX, mail A DNS-only, SPF, DMARC, DKIM TXT).
 2. Re-issue the mail.$DOMAIN LE cert via the Caddy vhost; DMS reads it from caddy_data.
 
 ## Manual fallback

@@ -17,7 +17,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 #### Destructive make recipes run with no confirmation guard
 - **File**: `Makefile`
-- **Problem**: several recipes destroy data or overwrite live state with no prompt and no automatic backup. Data-destroying: `clean-docker` / `cleanup` (docker prune -af + apt autoremove), `clean-backups` (deletes older backups), `nc-user-del` / `mail-del` / `panel-del-user` / `kuma-del-user` (user + data), `storage` (moves the datadirectory and can delete the local copy). Live-state overwriting: `install-config` (overwrites host config, restarts sshd/dnsmasq), `deploy` / `install-secrets` (extract a bundle over `/etc`, `~/.ssh`, `/var/lib/tailscale`), `update` (apt upgrade + pull/recreate), `dok-recreate-all` / `dok-stop-all` / `dok-recreate-nextcloud-db`. Interrupting: `panel-passwd` (restarts the panel → stops a running game server) and `tail-auth` (restarts Caddy). `backup` also pulls live config into the repo (a secret-leak path — tracked separately).
+- **Problem**: several recipes destroy data or overwrite live state with no prompt and no automatic backup. Data-destroying: `clean-docker` / `cleanup` (docker prune -af + apt autoremove), `clean-backups` (deletes older backups), `nc-user-del` / `mail-del` / `panel-del-user` / `kuma-del-user` (user + data), `storage` (moves the datadirectory and can delete the local copy). Live-state overwriting: `install-config` (overwrites host config, restarts sshd/dnsmasq), `deploy` / `install-secrets` (extract a bundle over `/etc`, `~/.ssh`, `/var/lib/tailscale`), `update` (pull/recreate; the apt half is now the separate `apt-upgrade`), `dok-recreate-all` / `dok-stop-all` / `dok-recreate-nextcloud-db`. Interrupting: `panel-passwd` (restarts the panel → stops a running game server) and `tail-auth` (restarts Caddy). `backup` also pulls live config into the repo (a secret-leak path — tracked separately).
 - **Fix**: pick a policy — a `CONFIRM=1` gate on the destructive recipes, or keep them unguarded and list them explicitly in `make help-more`. Today they are not in one obvious list.
 - **Why approval**: changing recipe UX affects every documented workflow (GUIDE/README).
 
@@ -37,7 +37,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Problem**: only `make smoke` + the git hooks run; nothing lints the large bash scripts that produced two bugs on 2026-09-10 (storage.sh, optimize.sh).
 - **Fix**: run `bash -n` + `shellcheck` on `scripts/*.sh` in a pre-push/CI job.
 
-#### install.sh rewrites the tracked `config/dnsmasq/10-tailnet.conf` in place
+#### (solved 2026-09-22) install.sh rewrote the tracked `config/dnsmasq/10-tailnet.conf` in place
 - **File**: `scripts/install.sh` (`host_services`), `config/dnsmasq/10-tailnet.conf`
 - **Problem**: the installer `sed -i`s the live Tailscale IP into the repo's tracked reference copy before `make install-config` copies it to `/etc/dnsmasq.d/`, so every run leaves an instance-specific IP as an uncommitted diff — and a `git commit -a` would bake it into the repo (rule 12: stay global).
 - **Fix**: keep the repo file as a placeholder and write the instance value into the live file after the copy (`make install-config`, then `sed` `/etc/dnsmasq.d/10-tailnet.conf` + `systemctl restart dnsmasq`).
@@ -205,7 +205,7 @@ Implemented 2026-09-06 (→ Solved): installer per-module prompts + `scripts/def
 #### social.$DOMAIN — Mastodon (or the minimal fediverse alternative)
 - **Status**: operator is thinking it through (2026-09-12) — do not start without the go-ahead.
 - **Decision needed**: Mastodon (5 containers, ~1.2–1.8 GB added idle — a full-featured instance) vs GoToSocial (single Go binary, SQLite, ~60 MB — same ActivityPub network, minimal by construction).
-- **If built (either way)**: new `social` module — compose file + data under `$PROJECT_DIR` local disk, SMTP via the mailserver (`social@$DOMAIN` mailbox, `mail-gen` pattern), CF-proxied A record + LE DNS-01, kuma monitor + smoke section + fetch row, install.sh/uninstall.sh module hooks, mem limits from day one (the RAM-budget review applies), docs.
+- **If built (either way)**: new `social` module — compose file + data under `$DATA_DIR` local disk, SMTP via the mailserver (`social@$DOMAIN` mailbox, `mail-gen` pattern), CF-proxied A record + LE DNS-01, kuma monitor + smoke section + fetch row, install.sh/uninstall.sh module hooks, mem limits from day one (the RAM-budget review applies), docs.
 
 #### NC user isolation across apps
 - **Goal**: keep Nextcloud users isolated from each other (own groups) across the apps they touch.
@@ -307,13 +307,17 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Kuma monitor set trimmed** — unreachable/redundant/self-check monitors dropped.
 - **Kuma `seed-monitors.sql`** — idempotent SQL applied once.
 - **Homer config bind tightened** — only `config.yml` bound into the container.
-- **Repo relocated** — `/var/www/github/homelab.com` → `/root/github/kefoserver/data`.
+- **Repo relocated** — `/var/www/custom/projects/homelab/repo` → `/root/github/kefoserver`, data under `/root/github/kefoserver/data`.
 - **Hostname `vps` → `ops` → `server.homelab.com`** — renamed in Caddyfile, dnsmasq, docs.
 - **`server.homelab.com/shell` runs as `debian`** — ttyd entrypoint switched to `runuser`.
 - **Homer dashboard expanded** — Files + Terminal entries.
 - **Terminal `host-exec` shim** — chroot-to-host wrapper for glibc binaries in the Alpine ttyd container.
 
 ### Sep 2026 — edge renames + docs overhaul
+- **Root-only kefoserver layout migration** — repo moved to `/root/github/kefoserver` with all state under `data/`, host + tailnet renamed `kefoserver`, units/cron switched to root, every deployed unit recreated on the new mounts by `scripts/migrate-layout.sh`.
+- **`make update` split and made safe** — apt moved to its own `apt-upgrade` recipe, `update` runs `scripts/stack-up.sh --update` (failures collected, edge last behind a config gate + image rollback, PostgreSQL unit included) and ends with `make smoke`.
+- **`kefoserver-stack.service`** — enabled boot unit that brings every deployed compose unit up via `scripts/stack-up.sh`, edge last.
+- **`config/dnsmasq/10-tailnet.conf` rendered at deploy time** — the tracked file keeps a placeholder address; install-config writes the live Tailscale IP and `make backup` restores the placeholder.
 - **`make status` → `make fetch`** — the AIO dashboard recipe renamed (`scripts/status.sh` → `scripts/fetch.sh`): uninstalled modules now render red (installed stay green) so the full available set is visible, and the failed-units row carries each failed unit's target in `()` marks (Where/What/Description — also fixes the old row grabbing the `●` glyph instead of the unit name).
 - **`scripts/uninstall.sh`** — the installer's exact opposite in the same house style: per-module prompts (all default keep), the edge/host-services/packages/user/tailnet phases in install-reverse order (tailscale last), tagged errors with problem/hint, Enter-refresh re-checks, a success block, and `installed-modules.conf` refreshed after every module removal (empty conf = nothing expected; the file is emptied, never deleted — a missing conf means "all expected" to smoke). Data is never touched without explicit confirms; the storage NFS export is untouchable, sshd hardening deliberately kept. Prompt defaults file: `scripts/defaults/uninstall.conf`.
 - **Boot-race NFS datadir mount outage (2026-09-12)** — reboot raced the datadir mount against tailscaled (unit started 1 s in, 0 peers) and the default 90 s mount timeout killed it; `nofail` boot continued, docker bound the empty placeholder dir as NC's `/data` → "data directory is invalid" 503s + kuma `cloud.fxmq.net` HTTP-down alert. Fixed live (systemctl start mount + `make dok-restart-nextcloud`); fstab line now `x-systemd.after=tailscaled.service,x-systemd.mount-timeout=300s,x-systemd.before=docker.service` (written by storage.sh `ensure_mount`, applied to the live fstab) so ordering is deterministic and containers never bind the placeholder; GUIDE gotcha has the full lesson.
@@ -332,14 +336,14 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **GitHub graph empty + ghost contributor fixed** — two-root merge DAG made GitHub's date queries 500 (graph empty since 08-01); single-root linearization restored the cells and scrubbing `Co-Authored-By:` AI-assistant trailer credits removed the ghost contributor (details in the GUIDE 2026-09-06 debug-hell lesson); the two-root repo was deleted and the clean history is now canonical on `kefohaine/kefoserver` (scratch repos deleted).
 - **installer: per-module install selection** — `ask_inputs` now prompts for cloud/vault/mail/games/monitor (default all ON, env/state-overridable); `phase2_op`, `containers_up`, `cf_dns` and `issue_certs` gate on the choice; defaults come from `scripts/defaults/install.conf`; verified with `bash -n` + parser unit test (fresh-VPS run still pending).
 - **`make status`** — rebuilt as the AIO dashboard (`scripts/status.sh`): one aligned colored read of perf/modules/git/units/docker/tmux/backups/mail/tailnet with no duplicate rows (the 2026-09-11 list+perf merge listed containers/units twice).
-- **Module-aware smoke + status via `installed-modules.conf`** — `install.sh` writes the installed-module list to `$PROJECT_DIR/installed-modules.conf` at install end; `make smoke` structures its sections per module, still checks everything factually, but marks a failed section whose module was not installed as "intended behaviour" (per-section) and keeps it out of the exit code; a missing conf = all modules expected.
+- **Module-aware smoke + status via `installed-modules.conf`** — `install.sh` writes the installed-module list to `$DATA_DIR/installed-modules.conf` at install end; `make smoke` structures its sections per module, still checks everything factually, but marks a failed section whose module was not installed as "intended behaviour" (per-section) and keeps it out of the exit code; a missing conf = all modules expected.
 - **`make smoke` expanded** — beyond the vhost checks: tailnet-edge (`/` serves tailnet sources, `/ttyd` challenges without credentials), containers/units/ufw/NFS/disk/nc-status/coturn assertions; `ok` lines carry short plain-words descriptions.
 - **`make taildrop-file` / `make taildrop-folder`** — `sudo tailscale file cp` wrappers (`FILE=`/`DIR=`, `TAILDROP_HOST` default `server`).
 - **Makefile `TARGET=` dispatchers** — `dok-recreate/restart/stop/logs TARGET=<ctn>` as the primary style; the `-<ctn>` suffixes remain as aliases.
 - **`REF.md`** — demo public-terms reference (domain, IPs, names, proxy modes) so docs stay portable; secrets excluded; scripts still auto-detect live values.
 - **`make install-ttyd` self-kill guard (2026-09-11)** — refuses from any shell inside the ttyd cgroup: the evening's `systemctl restart ttyd` killed the running agent + its tmux session mid-deploy.
 - **smoke `nc-status` false FAIL fixed** — the check grepped JSON keys against `occ status` YAML output; now uses `--output=json` and passes.
-- **docs neutralised via `docs/REF.md` variables** — GUIDE + MIGRATE now reference `$DOMAIN` / `$PROJECT_DIR` / `$GITHUB_REPO` (defined per-setup in `docs/REF.md`); README points there; ISSUES keeps concrete values as tracker + history.
+- **docs neutralised via `docs/REF.md` variables** — GUIDE + MIGRATE now reference `$DOMAIN` / `$DATA_DIR` / `$GITHUB_REPO` (defined per-setup in `docs/REF.md`); README points there; ISSUES keeps concrete values as tracker + history.
 - **`scripts/defaults/`** — per-script prompt-defaults files (`install.conf` populated, `optimize.conf`/`storage.conf` skeletons); README + www copy matched to the real module flow.
 - **Debian VPS → Debian system wording** — README and the www welcome lede no longer imply only a rented VPS.
 - **`optimize.sh` universal VPS optimizer** — OPTIMIZE.md + repo tuning + `make cleanup`'s apt/docker part merged into one idempotent, zero-prompt bash script with an Enter-refresh error loop; applied here (swap RAM/3, noatime, THP, sysctls, tuned/irqbalance/earlyoom auto, SSD/HDD auto-detect → fstrim or SETRA).
