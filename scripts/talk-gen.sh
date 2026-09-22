@@ -3,13 +3,16 @@
 #
 # Writes any missing secrets into services/nextcloud/.env (idempotent —
 # existing values are kept) and renders the signaling + coturn configs into
-# the gitignored runtime dir /root/github/kefoserver/data/talk/.
+# the gitignored runtime dir $ROOT/data/talk/.
 # Prints nothing sensitive.
 #
 # Recipe: make talk-gen   (also sets POSTGRES_*/REDIS_HOST defaults in .env)
+
+. "$(dirname "$(readlink -f "$0")")/instance.sh" 2>/dev/null || true
 set -euo pipefail
 
-REPO=/root/github/kefoserver/data
+# NOTE: REPO here is the DATA dir (historical name), derived not hardcoded.
+REPO="$(cd "$(dirname "$(readlink -f "$0")")/../data" && pwd)"
 ENV="$REPO/repo/services/nextcloud/.env"
 TALK="$REPO/talk"
 
@@ -31,7 +34,7 @@ set_env SIGNALING_HASH_KEY "$(openssl rand -hex 32)"
 set_env SIGNALING_BLOCK_KEY "$(openssl rand -hex 16)"
 set_env SIGNALING_INTERNAL_SECRET "$(openssl rand -hex 32)"
 set_env TURN_SECRET "$(openssl rand -hex 32)"
-# Password for the nextcloud@fxmq.net mailbox used as NC's SMTP sender.
+# Password for the nextcloud@$DOMAIN mailbox used as NC's SMTP sender.
 set_env SMTP_PASSWORD "$(openssl rand -hex 16)"
 
 # Non-secret stack wiring.
