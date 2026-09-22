@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Plumbing identity rebuild for this repo's multi-root merge DAG.
 # filter-branch AND filter-repo both drop the second root's line (131 commits,
-# the jehpok era) on this history — only a parents-first plumbing rebuild
+# the $GITHUB_USER era) on this history — only a parents-first plumbing rebuild
 # preserves it exactly (see docs/GUIDE.md "History rewrites", lesson 2026-09-02).
 # Rewrites author+committer EMAIL on every commit reachable from HEAD,
 # preserving trees, dates, messages (byte-exact), merges and both roots.
@@ -10,6 +10,8 @@
 #    then run `make gh-web-health` — see docs/GUIDE.md lesson 2026-09-03.)
 # Verify after every run: uniform identities, unchanged tip tree, byte-identical
 # messages/dates, 2 roots / 9 merges / full commit count, `git fsck` clean.
+
+. "$(dirname "$(readlink -f "$0")")/instance.sh" 2>/dev/null || true
 set -euo pipefail
 old_email=$1; new_email=$2
 tip=$(git rev-parse HEAD)
