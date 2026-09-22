@@ -10,18 +10,5 @@ modules/*/.env
 # reports). Everything untracked lives there; the repo tree stays clean.
 /data/
 
-# Defensive: never commit these even if a stray copy lands in the repo root.
-/backups/
-/caddy_data/
-/cloud/
-/download/
-/eaglercraft/
-/kuma/
-/mailserver/
-/pgdata/
-/puffer/
-/talk/
-/vault/
-
 # Secrets — never commit (goose reads this via EnvironmentFile=; live path is /etc/goose/goose.env)
 config/goose/goose.env
