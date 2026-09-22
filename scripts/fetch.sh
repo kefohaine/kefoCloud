@@ -18,7 +18,7 @@ set -uo pipefail
 export LC_ALL=C
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PROJECT_DIR="$(dirname "$ROOT")"
+PROJECT_DIR="$ROOT/data"
 CONF="$PROJECT_DIR/installed-modules.conf"
 MODULES="cloud vault mail games monitor"
 [ -f "$CONF" ] && MODULES="$(grep -vE '^[[:space:]]*(#|$)' "$CONF" | tr '\n' ' ')"
