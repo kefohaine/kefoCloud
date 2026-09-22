@@ -11,7 +11,7 @@
 
 set -uo pipefail
 
-DB=/var/www/custom/projects/homelab/kuma/data/kuma.db
+DB=/root/github/kefoserver/data/kuma/data/kuma.db
 
 hash_pass() { # hash_pass <plaintext> — bcrypt via the container (no argv leak)
   docker exec -e KUMA_PASS="$1" uptimekuma node -e \
