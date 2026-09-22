@@ -35,12 +35,15 @@ mkdir -p "$DATA_DIR"
 # One session name per line (a-z A-Z 0-9 . _ -), '#' comments allowed.
 # Managed with: make ttyd-add NAME=<name> | make ttyd-rm NAME=<name>
 # Each name is served by the single ttyd listener as /ttyd?arg=<name> and is
-# listed on https://tail.${DOMAIN}/ by `make tail-targets`.
+# listed on https://tail.${DOMAIN}/ by \`make tail-targets\`.
 main
 EOF
 
 sanitise() { printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_' | cut -c1-32; }
-names()    { grep -vE '^[[:space:]]*(#|$)' "$REG" 2>/dev/null; }
+# Only ever return syntactically valid session names: a registry that got
+# polluted (an unescaped heredoc once injected make's output into it) can then
+# never produce a card or a route.
+names()    { grep -vE '^[[:space:]]*(#|$)' "$REG" 2>/dev/null | grep -xE '[A-Za-z0-9][A-Za-z0-9._-]{0,31}'; }
 has()      { tmux has-session -t "$1" 2>/dev/null; }
 
 cmd_list() {
