@@ -102,7 +102,7 @@ make install-ssh|50-cloud-init.conf → sshd_config.d (validates with sshd -t, t
 make install-dnsmasq-conf|10-tailnet.conf → /etc/dnsmasq.d
 make install-dnsmasq-override|dnsmasq drop-in override → /etc/systemd/system/dnsmasq.service.d
 make install-docker|daemon.json → /etc/docker (docker daemon restart needed to apply)
-make install-sysctl|99-homelab.conf → /etc/sysctl.d
+make install-sysctl|99-kefoserver.conf → /etc/sysctl.d
 make install-cron|nextcloud → /etc/cron.d (occ cron every 5 min)
 make install-hooks|git hooks — pre-commit edge guard, pre-push smoke + history-rewrite warning
 EOF
