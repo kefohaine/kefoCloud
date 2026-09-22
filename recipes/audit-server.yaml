@@ -10,7 +10,7 @@ instructions: |
   reference where possible, explanation, and a recommended remediation. Do not
   fix anything yourself — the operator applies changes after review.
 author:
-  contact: "kefohaine"
+  contact: "{{GITHUB_USER}}"
 extensions:
   - type: builtin
     name: developer
