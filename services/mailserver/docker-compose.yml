@@ -53,11 +53,11 @@ services:
       - "993:993"
 
     volumes:
-      - /var/www/custom/projects/homelab/mailserver/data:/var/mail
-      - /var/www/custom/projects/homelab/mailserver/state:/var/mail-state
-      - /var/www/custom/projects/homelab/mailserver/logs:/var/log/mail
-      - /var/www/custom/projects/homelab/mailserver/config:/tmp/docker-mailserver
-      - /var/www/custom/projects/homelab/caddy_data:/caddy:ro
+      - /root/github/kefoserver/data/mailserver/data:/var/mail
+      - /root/github/kefoserver/data/mailserver/state:/var/mail-state
+      - /root/github/kefoserver/data/mailserver/logs:/var/log/mail
+      - /root/github/kefoserver/data/mailserver/config:/tmp/docker-mailserver
+      - /root/github/kefoserver/data/caddy_data:/caddy:ro
       - /etc/localtime:/etc/localtime:ro
 
     cap_add:
@@ -100,7 +100,7 @@ services:
       ROUNDCUBEMAIL_USERNAME_DOMAIN: fxmq.net
 
     volumes:
-      - /var/www/custom/projects/homelab/mailserver/roundcube:/var/roundcube/db
+      - /root/github/kefoserver/data/mailserver/roundcube:/var/roundcube/db
       # STARTTLS overrides (see file header) — included by the entrypoint.
       - ./roundcube-tls.inc.php:/var/roundcube/config/roundcube-tls.inc.php:ro
 
