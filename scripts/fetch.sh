@@ -20,7 +20,7 @@ export LC_ALL=C
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT_DIR="$ROOT/data"
 CONF="$PROJECT_DIR/installed-modules.conf"
-MODULES="cloud vault mail games monitor"
+MODULES="cloud vault mail monitor"
 [ -f "$CONF" ] && MODULES="$(grep -vE '^[[:space:]]*(#|$)' "$CONF" | tr '\n' ' ')"
 mod_in() { [[ " $MODULES " == *" $1 "* ]]; }
 
@@ -74,7 +74,7 @@ row "top mem" "$topmem"
 # modules (same conf `make smoke` reads) — every available module shown;
 # installed = green, uninstalled = red
 mods=""
-for m in cloud vault mail games monitor; do
+for m in cloud vault mail monitor; do
   if mod_in "$m"; then mods+="${G}${m}${N}  "; else mods+="${R}${m}${N}  "; fi
 done
 if [ -f "$CONF" ]; then
