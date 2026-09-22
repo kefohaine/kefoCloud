@@ -4,12 +4,12 @@
 # Prompts for three values (domain, Cloudflare API token, Tailscale auth
 # key), then runs unattended: host services, docker, tailscale, the full
 # stack — Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Caddy,
-# Vaultwarden, Uptime Kuma, PufferPanel, Docker Mailserver + Roundcube —
+# Vaultwarden, Uptime Kuma, Docker Mailserver + Roundcube —
 # Cloudflare DNS records, and LE cert issuance. The repo already carries
 # the canonical <domain> naming (modules/<domain>/, vhosts/<host>.caddy);
 # no legacy renames are applied.
 #
-# Fully autonomous: the Kuma and PufferPanel admin accounts are created
+# Fully autonomous: the Kuma admin account is created
 # automatically (the admin passwords are printed once in the final summary —
 # nothing is written to disk), and no manual confirmation steps block success —
 # the only follow-ups are printed in the summary (Tailscale split-DNS, mailboxes).
@@ -79,7 +79,7 @@ cat <<'EOF'
 ╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝╚═════╝
 
   One-shot setup for a fresh Debian VPS: Nextcloud (app + PostgreSQL +
-  Redis + Talk HPB/TURN), Caddy, Vaultwarden, Uptime Kuma, PufferPanel
+  Redis + Talk HPB/TURN), Caddy, Vaultwarden, Uptime Kuma
   and the Docker Mailserver + Roundcube platform (named after your
   domain) behind Cloudflare, with tailscale, ttyd, dnsmasq and goose
   as host services. Prompts once (domain, Cloudflare API token,
@@ -358,14 +358,6 @@ EOF
   fi
   ufw allow 80/tcp >/dev/null 2>&1
   ufw allow 443/tcp >/dev/null 2>&1
-  # Minecraft game ports — both PufferPanel servers bind host-net 25565
-  # (protected 2ecfbe8c Java + Geyser-Spigot Bedrock 19132/udp, and the
-  # browser-MC playground 07fd7727). They SHARE 25565 — one server runs
-  # at a time by design, so a single ANYWHERE rule covers both (19132/udp
-  # only answers while the game server with Geyser is up). 25567 closed
-  # 2026-08-31 (operator: port consolidation).
-  ufw allow 25565/tcp >/dev/null 2>&1
-  ufw allow 19132/udp >/dev/null 2>&1
   # Self-hosted mail (Docker Mailserver): SMTP + submission + IMAPS. Inbound 25
   # can be provider-blocked on some VPSes — these are open so mail works the
   # moment the provider allows it.
@@ -442,12 +434,12 @@ prep_dirs() {
 write_instance_conf() {
   # data/instance.conf is the ONE place this instance's values live: templates
   # are rendered from it (make render) and scripts read it (scripts/lib/instance.sh).
-  # Values we do not own here (GITHUB_USER, SERVER_IP, TAILNET_SUBNET, EMAIL,
+  # Values we do not own here (GITHUB_USER, SERVER_IP, EMAIL,
   # TIMEZONE) are PRESERVED from an existing file — re-running install.sh must
   # never wipe them.
   local f="$DATA/instance.conf" keep=""
   mkdir -p "$DATA"
-  [ -f "$f" ] && keep=$(grep -E '^(GITHUB_USER|SERVER_IP|TAILNET_SUBNET|EMAIL|TIMEZONE)=' "$f" || true)
+  [ -f "$f" ] && keep=$(grep -E '^(GITHUB_USER|SERVER_IP|EMAIL|TIMEZONE)=' "$f" || true)
   {
     echo "# data/instance.conf — the values for THIS host (untracked, mode 0600)."
     echo "# Written by scripts/install/install.sh; see config/instance.defaults for what"
@@ -1139,7 +1131,6 @@ success_block() {
   echo "   Nextcloud    https://cloud.$DOMAIN      admin / ${NEXTCLOUD_ADMIN_PASSWORD:-<see modules/nextcloud/.env>}"
   echo "   Vaultwarden  https://vault.$DOMAIN"
   echo "   Uptime Kuma  https://kuma.$DOMAIN       admin / ${KUMA_PASS:-(already set — rotate with: make kuma-passwd USER=admin PASS=…)}"
-  echo "   PufferPanel  https://mc.$DOMAIN/panel   admin / ${PANEL_PASS:-(already set — rotate with: make panel-passwd USER=admin@$DOMAIN)}"
   echo "   Webmail      https://mail.$DOMAIN       (mailboxes via make mail-gen)"
   echo "   Shell        https://tail.$DOMAIN      (tailnet-only)"
   echo "   VPS IP ${VPS_IP:-?}   Tailscale IP ${TS_IP:-?}"
