@@ -28,12 +28,16 @@
 # Vars (all overridable): STORAGE_SSH STORAGE_PASS TS_AUTHKEY QUOTA_USER
 # QUOTA NC_CONTAINER SIZE_GB NC_MOUNT (storage export dir + local mount)
 
+. "$(dirname "$(readlink -f "$0")")/instance.sh" 2>/dev/null || true
+
 set -uo pipefail
+
+ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 
 NC_CONTAINER="${NC_CONTAINER:-nextcloud}"
 QUOTA="${QUOTA:-}"
 NC_MOUNT="${NC_MOUNT:-/srv/nextcloud-data}"          # dir on the storage VPS
-LOCAL_MOUNT=/root/github/kefoserver/data/cloud/users   # NC datadirectory (host path)
+LOCAL_MOUNT=$ROOT/data/cloud/users   # NC datadirectory (host path)
 
 log() { echo "[storage] $*"; }
 die() { echo "[storage] FATAL: $*" >&2; exit 1; }
