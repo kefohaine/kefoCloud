@@ -8,6 +8,7 @@
 #
 #   scripts/render.sh <input> [output]     # output defaults to stdout
 #   scripts/render.sh --check <input>      # exit 1 if any token is unresolved
+#   scripts/render.sh --reverse <in> <out> # live values -> {{TOKENS}} (for `make backup`)
 #   scripts/render.sh --tokens             # list the tokens + the values in use
 #
 # Unknown tokens are left VERBATIM and reported on stderr — a missing value is
@@ -27,6 +28,7 @@ MODE=render; IN=""; OUT=""
 case "${1:-}" in
   --tokens) MODE=tokens ;;
   --check)  MODE=check; IN="${2:-}" ;;
+  --reverse) MODE=reverse; IN="${2:-}"; OUT="${3:-}" ;;
   -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   "")       echo "usage: scripts/render.sh <input> [output] | --check <input> | --tokens" >&2; exit 2 ;;
   *)        IN="$1"; OUT="${2:-}" ;;
@@ -38,7 +40,7 @@ esac
   echo "  see config/instance.defaults for the token list." >&2
   exit 1
 }
-[ "$MODE" = render ] || [ "$MODE" = tokens ] || [ "$MODE" = check ] || exit 2
+[ "$MODE" = render ] || [ "$MODE" = tokens ] || [ "$MODE" = check ] || [ "$MODE" = reverse ] || exit 2
 [ -n "$IN" ] || [ "$MODE" = tokens ] || [ "$MODE" = render ] && [ -z "$IN" ] && IN="$CONF"
 [ "$MODE" != tokens ] && [ -n "$IN" ] && [ ! -f "$IN" ] && { echo "render.sh: no such file: $IN" >&2; exit 1; }
 
@@ -72,6 +74,24 @@ if mode == "tokens":
     sys.exit(0)
 
 data = open(inp, encoding="utf-8", errors="surrogateescape").read()
+
+if mode == "reverse":
+    # Live file -> template: replace each VALUE with its {{TOKEN}}. Used by
+    # `make backup` so pulling config back from the host can never bake an
+    # instance value into the skeleton. Only keys whose values are safe to match
+    # textually are reversed (no TIMEZONE/OPERATOR/TAILNET_SUBNET: short or
+    # generic values would rewrite unrelated words). Longest value first, so
+    # /root/github/x/data is matched before /root/github/x.
+    KEYS = ["REPO_DIR","DATA_DIR","STATE_DIR","LOG_DIR","GITHUB_USER","REPO_NAME",
+            "HOSTNAME","SERVER_IP","EMAIL","DOMAIN"]
+    for k in sorted((k for k in KEYS if V.get(k)), key=lambda k: -len(V[k])):
+        data = data.replace(V[k], "{{%s}}" % k)
+    if outp:
+        with open(outp, "w", encoding="utf-8", errors="surrogateescape") as f: f.write(data)
+        os.chmod(outp, 0o644)
+    else:
+        sys.stdout.write(data)
+    sys.exit(0)
 missing = []
 def sub(m):
     k = m.group(1)
