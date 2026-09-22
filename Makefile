@@ -451,9 +451,8 @@ sudo cp $(RENDER_DIR)/config/ssh/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cl
 # 10-tailnet.conf with the placeholder — dnsmasq then fail-looped on
 # "Cannot assign requested address" and tailnet DNS died with it.
 @TS_IP=$$(tailscale ip -4 2>/dev/null | head -n1); \
-    TS_ADDR=$$(sed -n 's/^TAILNET_SUBNET=//p' $(CONF) 2>/dev/null | head -1 | cut -d/ -f1); \
     [ -n "$$TS_IP" ] || { scripts/lib/mklog error "no tailscale IP — cannot render 10-tailnet.conf"; exit 1; }; \
-    sed "s/$$TS_ADDR/$$TS_IP/g" $(RENDER_DIR)/config/dnsmasq/10-tailnet.conf | sudo tee /etc/dnsmasq.d/10-tailnet.conf >/dev/null
+    sed "s/100.64.0.1/$$TS_IP/g" $(RENDER_DIR)/config/dnsmasq/10-tailnet.conf | sudo tee /etc/dnsmasq.d/10-tailnet.conf >/dev/null
 sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
 sudo cp $(RENDER_DIR)/config/dnsmasq/dnsmasq.service.conf /etc/systemd/system/dnsmasq.service.d/override.conf
 sudo cp $(RENDER_DIR)/config/sysctl/99-kefo.conf /etc/sysctl.d/99-kefo.conf
@@ -489,10 +488,6 @@ sudo cp $(RENDER_DIR)/config/systemd/kefo-stack.service /etc/systemd/system/kefo
 sudo cp $(RENDER_DIR)/config/systemd/tmux-main.service /etc/systemd/system/tmux-main.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now goose ttyd
-# The boot unit was renamed (kefoserver-stack -> kefo-stack) so no machine
-# name is baked into a unit name: retire the old one if it is still around.
-sudo systemctl disable --now kefoserver-stack.service >/dev/null 2>&1 || true
-sudo rm -f /etc/systemd/system/kefoserver-stack.service
 sudo systemctl enable kefo-stack.service
 @scripts/lib/mklog info "boot unit installed + enabled: kefo-stack.service (every deployed compose unit comes up on boot)"
 sudo systemctl enable --now tmux-main.service
@@ -549,9 +544,8 @@ install-ssh:
 install-dnsmasq-conf:
 >@echo "install-dnsmasq-conf: 10-tailnet.conf"
 >@TS_IP=$$(tailscale ip -4 2>/dev/null | head -n1); \
-    TS_ADDR=$$(sed -n 's/^TAILNET_SUBNET=//p' $(CONF) 2>/dev/null | head -1 | cut -d/ -f1); \
     [ -n "$$TS_IP" ] || { scripts/lib/mklog error "no tailscale IP — cannot render 10-tailnet.conf"; exit 1; }; \
-    sed "s/$$TS_ADDR/$$TS_IP/g" $(RENDER_DIR)/config/dnsmasq/10-tailnet.conf | sudo tee /etc/dnsmasq.d/10-tailnet.conf >/dev/null; \
+    sed "s/100.64.0.1/$$TS_IP/g" $(RENDER_DIR)/config/dnsmasq/10-tailnet.conf | sudo tee /etc/dnsmasq.d/10-tailnet.conf >/dev/null; \
     scripts/lib/mklog info "dnsmasq split-DNS rendered for $$TS_IP"
 >@sudo systemctl restart dnsmasq
 
@@ -580,7 +574,7 @@ install-cron:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Nextcloud database (modules/nextcloud/docker-compose.db.yml)
-# Runs on the fxmq host for now; migrates to the operator's 1 TB VPS later
+# Runs on this host for now; migrates to the operator's 1 TB VPS later
 # (see docs/GUIDE.md "Nextcloud DB"). Deliberately NOT in $(CONTAINERS) —
 # the -all loops glob modules/*/docker-compose.yml only, and this file is
 # named docker-compose.db.yml so they never see it.
@@ -744,7 +738,7 @@ backup:
 >@bash $(REPO)/scripts/render/render.sh --reverse /etc/systemd/system/ttyd.service $(REPO)/config/ttyd/ttyd.service
 >@bash $(REPO)/scripts/render/render.sh --reverse /etc/ssh/sshd_config.d/50-cloud-init.conf $(REPO)/config/ssh/50-cloud-init.conf
 >@TS_IP=$$(tailscale ip -4 2>/dev/null | head -n1); \
-TS_ADDR=$$(sed -n 's/^TAILNET_SUBNET=//p' $(CONF) 2>/dev/null | head -1 | cut -d/ -f1);     sed "s/$${TS_IP:-__none__}/$$TS_ADDR/g" /etc/dnsmasq.d/10-tailnet.conf | sudo tee $(REPO)/config/dnsmasq/10-tailnet.conf >/dev/null; \
+    sed "s/$${TS_IP:-__none__}/100.64.0.1/g" /etc/dnsmasq.d/10-tailnet.conf | sudo tee $(REPO)/config/dnsmasq/10-tailnet.conf >/dev/null; \
     scripts/lib/mklog info "10-tailnet.conf pulled back with the placeholder restored (never the live IP)"
 >@bash $(REPO)/scripts/render/render.sh --reverse /etc/systemd/system/dnsmasq.service.d/override.conf $(REPO)/config/dnsmasq/dnsmasq.service.conf
 >@bash $(REPO)/scripts/render/render.sh --reverse /etc/sysctl.d/99-kefo.conf $(REPO)/config/sysctl/99-kefo.conf

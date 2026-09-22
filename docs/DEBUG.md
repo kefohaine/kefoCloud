@@ -43,7 +43,7 @@ bash scripts/info/gh-web-health.sh                      # after any history rewr
 Decide what "healthy" means *before* changing anything, then demonstrate it. Examples: a vhost is healthy when `make smoke` passes; Nextcloud is healthy when `occ status` reports installed + no maintenance and a file write round-trips; the NFS datadirectory is healthy when `findmnt` shows the mount and a real file reads at expected speed.
 
 ## 5. Where the answers already are
-- Symptom → cause map: `docs/GUIDE.md` "Operational gotchas" (e.g. NFS client-helper failure, the `respond "ok"` edge stub, force-recreate name collisions, the tailscaled boot-race, Spigot 1.8.8's epoll/Netty crash on modern JDKs, the eaglercraft black-screen double-comma, `fs.protected_regular` root-writes in /tmp).
+- Symptom → cause map: `docs/GUIDE.md` "Operational gotchas" (e.g. NFS client-helper failure, the `respond "ok"` edge stub, force-recreate name collisions, the tailscaled boot-race, `fs.protected_regular` root-writes in /tmp).
 - Open problems and their status: `docs/ISSUES.md`.
 - Migration/rebuild path: `docs/MIGRATE.md`.
 - JS/static-client triage: diff the *served* page against the pristine upstream copy before assuming the server is broken; a single SyntaxError in the only inline script black-screens with no server-side error.

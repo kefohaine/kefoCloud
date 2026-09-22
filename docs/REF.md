@@ -24,7 +24,6 @@ This repo carries **no instance values**. Every deployable file is a template
 | `{{DATA_DIR}}` | all untracked instance state (`$REPO_DIR/data`) |
 | `{{LOG_DIR}}` | every log the project writes |
 | `{{STATE_DIR}}` | installer state (CF token + Tailscale key), mode 0700 |
-| `{{TAILNET_SUBNET}}` | tailnet CIDR; its address part is the placeholder in `config/dnsmasq/10-tailnet.conf`, replaced with the live tailnet IP at deploy time |
 | `{{SERVER_IP}}` | the host's public IPv4 (DNS + mail PTR checks) |
 | `{{EMAIL}}` | operator contact address |
 | `{{TIMEZONE}}` | IANA zone for containers and cron |

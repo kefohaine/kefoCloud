@@ -28,7 +28,7 @@ ssh root@{{HOSTNAME}}
 bash install.sh
 ```
 
-On a fresh box the repo is cloned for you over **HTTPS** (the repo is public — no GitHub SSH key ever needs to be added). Everything lives under `root@server:~/github/{{HOSTNAME}}/`; every external, untracked artefact (containers' data, databases, uploads, module reports) lives under `~/github/{{HOSTNAME}}/data/`, which `.gitignore` excludes. `root@{{HOSTNAME}}` is the **only** entry point (key-only SSH over the tailnet). The installer asks a few questions, then hardens the host, creates the DNS records, issues certificates and builds the selected stack unattended. Default is everything ON; opt out per module for a lean install.
+On a fresh box the repo is cloned for you over **HTTPS** (the repo is public — no GitHub SSH key ever needs to be added). Everything lives under the checkout (`~/github/<repo>/`); every external, untracked artefact (containers' data, databases, uploads, the web root, module reports) lives under its `data/`, which `.gitignore` excludes. `root@{{HOSTNAME}}` is the **only** entry point (key-only SSH over the tailnet). The installer asks a few questions, then hardens the host, creates the DNS records, issues certificates and builds the selected stack unattended. Default is everything ON; opt out per module for a lean install.
 
 `scripts/install/uninstall.sh` reverses it in the same style — every prompt defaults to keep, operator data and the tailscale-only SSH path are never touched without an explicit confirm, and the tailnet membership goes last.
 
@@ -48,14 +48,14 @@ On a fresh box the repo is cloned for you over **HTTPS** (the repo is public —
 
 ## Documentation
 
-- `docs/REF.md` — per-setup source of truth: adapt variables to yours in it
+- `docs/REF.md` — the token/variable reference (what each placeholder means)
 - `docs/GUIDE.md` — the operator manual: layout, recipes, per-service facts, gotchas
 - `docs/AGENTS.md` — agent operating rules (how this repo is worked on)
 - `docs/ISSUES.md` — open problems, planned ideas, and resolved history
 - `docs/DEBUG.md` — deep-scan / debugging runbook (read-only first, layer ladder, verification probes)
-- `scripts/install/defaults/` — per-script prompt defaults
+- `scripts/install/defaults/` — per-script prompt answer sheets
 
 ## Risks & Considerations
-- Single Point of Failure: Running your cloud, your passwords, your email, and a game server on one operating system means that if the host crashes, goes offline, or gets compromised, your entire digital footprint goes dark simultaneously.
+- Single Point of Failure: Running your cloud, your passwords, your email and your monitoring on one operating system means that if the host crashes, goes offline, or gets compromised, your entire digital footprint goes dark simultaneously.
 - The "Mail Server" Headache: Operating a self-hosted mail server is notoriously difficult. Even if the project configures your DKIM and SPF records perfectly, large providers like Gmail, Yahoo, and Outlook frequently block or flag IP addresses originating from residential connections or cheap cloud VPS networks (like DigitalOcean or Linode).
 - Maintenance: If anything breaks when you install as intended, report it here as an issue; Please don't open an issue if it was caused from manual tweaks on your end.
