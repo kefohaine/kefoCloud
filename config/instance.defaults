@@ -1,0 +1,30 @@
+# config/instance.defaults — the skeleton's token list, with documentation.
+#
+# The repo contains NO operator-specific value: deployable files carry
+# {{TOKENS}} and this file says what each one means. The values themselves live
+# in data/instance.conf (untracked), written by scripts/install.sh when it
+# prompts, or by you by hand:
+#
+#   DOMAIN=fxmq.net
+#   HOSTNAME=kefoserver
+#   ...
+#
+# scripts/render.sh substitutes them (`make render`, `make install-config`);
+# compose files get the same names as ${DOMAIN} from the .env that
+# `make render` writes next to each compose file.
+#
+# Keep this list alphabetical. Values here are EXAMPLES, never a real instance.
+
+# DOMAIN — the public domain every vhost, cert and mail address uses (example.com)
+# HOSTNAME — the machine name AND the tailnet node name (server)
+# OPERATOR — the single login user on the box (root)
+# GITHUB_USER — the GitHub account that owns the repos (exampleuser)
+# REPO_NAME — the repository name (kefoServer)
+# REPO_DIR — absolute path of the checkout on the host (/root/github/kefoServer)
+# DATA_DIR — absolute path of all untracked instance state ($REPO_DIR/data)
+# LOG_DIR — every log this project writes (/var/log/kefohaine)
+# STATE_DIR — install state: CF token + Tailscale key, mode 0700 (/var/lib/kefohaine)
+# TAILNET_SUBNET — the tailnet CIDR, also the render token in config/dnsmasq (/24)
+# SERVER_IP — the host's public IPv4 (needed for DNS + mail PTR checks)
+# EMAIL — the operator's contact address (admin@$DOMAIN)
+# TIMEZONE — IANA zone used by containers and cron (UTC)
