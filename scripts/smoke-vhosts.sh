@@ -23,7 +23,7 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CONF="$(dirname "$ROOT")/installed-modules.conf"
+CONF="$ROOT/data/installed-modules.conf"
 MODULES="cloud vault mail games monitor"
 [ -f "$CONF" ] && MODULES="$(grep -vE '^[[:space:]]*(#|$)' "$CONF" | tr '\n' ' ')"
 mod_in() { [[ " $MODULES " == *" $1 "* ]]; }
@@ -257,9 +257,9 @@ fi
 # Backend: config toggle off + admin account healthy (read-only, no hashes read).
 if ! python3 - 2>&1 <<'PYEOF'
 import json, sqlite3
-cfg = json.load(open("/var/www/custom/projects/homelab/puffer/data/config.json"))
+cfg = json.load(open("/root/github/kefoserver/data/puffer/data/config.json"))
 assert cfg.get("panel", {}).get("registrationenabled") is False, "panel.registrationenabled is not false"
-con = sqlite3.connect("file:/var/www/custom/projects/homelab/puffer/data/pufferpanel.db?mode=ro", uri=True)
+con = sqlite3.connect("file:/root/github/kefoserver/data/puffer/data/pufferpanel.db?mode=ro", uri=True)
 cur = con.cursor()
 assert cur.execute("SELECT id FROM users WHERE id=1 AND email='admin@fxmq.net' AND password IS NOT NULL AND length(password)>=50").fetchone(), "admin user missing or hash empty"
 assert cur.execute("SELECT id FROM permissions WHERE user_id=1 AND scopes LIKE '%admin%'").fetchone(), "admin permission missing"
@@ -325,7 +325,7 @@ fi
 # NFS datadirectory: only asserted when fstab expects the mount (no fstab
 # entry = storage not onboarded; the check then passes vacuously).
 if grep -q 'cloud/users' /etc/fstab 2>/dev/null; then
-  if ! findmnt -n /var/www/custom/projects/homelab/cloud/users >/dev/null 2>&1; then
+  if ! findmnt -n /root/github/kefoserver/data/cloud/users >/dev/null 2>&1; then
     echo "FAIL nfs-datadir: fstab expects cloud/users but it is not mounted"; fails=$((fails+1))
   else
     echo "ok   nfs-datadir — datadirectory mounted"
