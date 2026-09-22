@@ -2,14 +2,14 @@
 #
 # The repo contains NO operator-specific value: deployable files carry
 # {{TOKENS}} and this file says what each one means. The values themselves live
-# in data/instance.conf (untracked), written by scripts/install.sh when it
+# in data/instance.conf (untracked), written by scripts/install/install.sh when it
 # prompts, or by you by hand:
 #
 #   DOMAIN=example.com
 #   HOSTNAME=kefoserver
 #   ...
 #
-# scripts/render.sh substitutes them (`make render`, `make install-config`);
+# scripts/render/render.sh substitutes them (`make render`, `make install-config`);
 # compose files get the same names as ${DOMAIN} from the .env that
 # `make render` writes next to each compose file.
 #
