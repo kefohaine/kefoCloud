@@ -1,0 +1,183 @@
+services:
+  cloud:
+    image: nextcloud:34.0.3-fpm
+    container_name: nextcloud
+    restart: unless-stopped
+
+    # Hard RAM cap (no container swap) — survives recreates, unlike `docker update`.
+    # The whole stack (nextcloud+redis+hpb+relay+db) stays under the
+    # operator's 3 GB ceiling: 1g+128m+256m+128m+512m = 2.02g.
+    mem_limit: 1g
+    memswap_limit: 1g
+
+    # No published ports — only Caddy (on the 'net' bridge) reaches this container.
+    # If you ever need to debug from the host: `docker exec -it nextcloud bash`.
+    expose:
+      - "9000"
+
+    healthcheck:
+      test: ["CMD-SHELL", "php -r 'echo phpversion();' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+    depends_on:
+      - redis
+
+    volumes:
+      # Nextcloud html root (3rdparty, core, apps, config, occ).
+      # chown -R 33:33 ${DATA_DIR}/cloud/html BEFORE first start.
+      - ${DATA_DIR}/cloud/html:/var/www/html:rw
+      # User files datadirectory (appdata_*, <user>/, owncloud.db, nextcloud.log).
+      # Mounted at /data (not /var/www/html/data) to avoid a nested bind mount
+      # inside the /var/www/html volume — the Nextcloud image declares
+      # VOLUME ["/var/www/html"], which makes nested bind mounts fragile and
+      # can silently detach after long uptimes or daemon events.
+      # 'datadirectory' in config.php must point to /data.
+      - ${DATA_DIR}/cloud/users:/data:rw
+      # Persistent PHP-FPM pool configuration
+      - ./php-fpm.d/zz-custom.conf:/usr/local/etc/php-fpm.d/zz-custom.conf:ro
+      # Persistent opcache tuning. Dropped into conf.d so it survives image
+      # upgrades; zz- prefix so it loads last (overrides anything earlier).
+      - ./php-conf.d/zz-opcache.ini:/usr/local/etc/php/conf.d/zz-opcache.ini:ro
+
+    environment:
+      # Database: PostgreSQL. For now the db container runs on this host
+      # (docker-compose.db.yml, bridge IP 172.22.0.15); when the operator's
+      # 1 TB VPS joins the tailnet, move pgdata + that compose file there and
+      # set POSTGRES_HOST to its tailnet IP (see docs/GUIDE.md "Nextcloud DB").
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      # Redis distributed cache + file locking — the entrypoint writes these
+      # into config.php (memcache.distributed / memcache.locking) at install.
+      REDIS_HOST: ${REDIS_HOST}
+      NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER}
+      NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD}
+      NEXTCLOUD_OVERWRITEPROTOCOL: https
+      NEXTCLOUD_TRUSTED_DOMAINS: "cloud.${DOMAIN}"
+      NEXTCLOUD_DATA_DIR: /data
+      # trusted_proxies is NOT set here — the image entrypoint writes it as a
+      # single comma-joined string, and NC 34's setup check requires a real
+      # array. It is set as an array via occ in scripts/install/install.sh
+      # nextcloud_setup (delete + indexed sets; the CF ranges live there too).
+      OVERWRITECLIURL: "https://cloud.${DOMAIN}"
+
+    extra_hosts:
+      # Map the cert FQDN to the mail container's bridge IP so the Mail app
+      # and Nextcloud's SMTP see mail.${DOMAIN} with matching SNI + LE cert
+      # (same pattern as the roundcube container). The Mail app authenticates
+      # per-user mailboxes; NC's own outbound uses nextcloud@${DOMAIN}.
+      - "mail.${DOMAIN}:172.22.0.9"
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Pin the bridge IP — modules/vhosts/Caddyfile php_fastcgi upstream
+    # is 172.22.0.5:9000.
+    networks:
+      net:
+        ipv4_address: 172.22.0.5
+
+  # ── Nextcloud Talk support stack ──────────────────────────────────────────
+  # redis: distributed cache + locking (see REDIS_HOST above).
+  # hpb: Talk High Performance Backend (strukturag/nextcloud-spreed-
+  #   signaling, the official Go server — no NATS needed). Config generated
+  #   by `make talk-gen` into ${DATA_DIR}/talk/.
+  # relay: TURN/STUN for WebRTC call media; talk.${DOMAIN}:3478/5349 + relay.
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    mem_limit: 128m
+    memswap_limit: 128m
+    # Pure cache: no persistence, LRU eviction at 128 MB. Locks live here too —
+    # losing them on restart is harmless (they are ephemeral by design).
+    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      net:
+        ipv4_address: 172.22.0.11
+
+  hpb:
+    image: strukturag/nextcloud-spreed-signaling:latest
+    container_name: talk-hpb
+    restart: unless-stopped
+    # PID-1 reaper (tini). spreed-signaling spawns short-lived `timeout`
+    # children and never wait()s them, so they accumulate as zombies — 77 in
+    # the first 38 minutes of uptime (2026-09-22), i.e. PID-table exhaustion
+    # over weeks. init:true makes tini PID 1 and reaps them.
+    init: true
+    mem_limit: 256m
+    memswap_limit: 256m
+    volumes:
+      # Rendered by `make talk-gen` (gitignored runtime dir, sibling of repo/).
+      - ${DATA_DIR}/talk/server.conf:/config/server.conf:ro
+    extra_hosts:
+      # The signaling server validates client sessions by calling back into
+      # Nextcloud ([backend1] urls = https://cloud.${DOMAIN}). Route that
+      # directly to Caddy on the host bridge (172.22.0.1) instead of the
+      # public DNS → Cloudflare proxy path: one less hop and immune to CF
+      # Bot Fight Mode challenging the server's requests (same pattern as
+      # the roundcube container's extra_hosts). SNI/cert still match.
+      - "cloud.${DOMAIN}:172.22.0.1"
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 3 bash -c '</dev/tcp/127.0.0.1/8080' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      net:
+        ipv4_address: 172.22.0.12
+
+  relay:
+    image: coturn/coturn:4.6
+    container_name: talk-relay
+    restart: unless-stopped
+    # The image defaults to uid nobody, which cannot read the TURN secret
+    # conf (0600) or the caddy_data LE certs (uid 201). turnserver as root is
+    # the standard deployment (same pattern as the mailserver reading
+    # caddy_data); it still only relays for clients holding a TURN credential.
+    user: "0:0"
+    mem_limit: 128m
+    memswap_limit: 128m
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      - "5349:5349/tcp"
+      - "49160-49200:49160-49200/udp"
+      - "49160-49200:49160-49200/tcp"
+    command: ["-c", "/etc/coturn/turnserver.conf", "--log-file=stdout", "--external-ip=$(detect-external-ip)"]
+    # Real STUN round-trip on 3478 (the image ships turnutils_stunclient;
+    # a bare TCP connect would pass while the TURN/STUN stack is broken).
+    healthcheck:
+      test: ["CMD", "turnutils_stunclient", "127.0.0.1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    volumes:
+      # Rendered by `make talk-gen`. Static-auth-secret must match the
+      # `occ talk:turn:add --secret` used in Nextcloud.
+      - ${DATA_DIR}/talk/turnserver.conf:/etc/coturn/turnserver.conf:ro
+      # Reuse the talk.${DOMAIN} LE cert (issued by Caddy via DNS-01) for TURNS
+      # on 5349 — same pattern as the mailserver's cert reuse.
+      - ${DATA_DIR}/caddy_data:/caddy:ro
+    networks:
+      net:
+        ipv4_address: 172.22.0.14
+
+networks:
+  net:
+    external: true
