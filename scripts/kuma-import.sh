@@ -5,7 +5,7 @@
 # The old host is not reachable from this VPS (SSH keys denied, Tailscale
 # SSH off, no taildrop inbox), so the operator must deliver the DB:
 #   on jehpok:  tailscale file cp kuma.db fxmq:    (or scp once a key exists)
-#   on fxmq:    tailscale file get /var/www/custom/projects/homelab/kuma/import
+#   on fxmq:    tailscale file get /root/github/kefoserver/data/kuma/import
 # then run:  make kuma-import        (defaults to kuma/import/kuma.db)
 #        or:  make kuma-import KUMA_DB=/path/to/kuma.db
 #
@@ -24,9 +24,9 @@
 
 set -euo pipefail
 
-REPO=/var/www/custom/projects/homelab/repo
-KUMA_DATA=/var/www/custom/projects/homelab/kuma/data
-IMPORT_DIR=/var/www/custom/projects/homelab/kuma/import
+REPO=/root/github/kefoserver
+KUMA_DATA=/root/github/kefoserver/data/kuma/data
+IMPORT_DIR=/root/github/kefoserver/data/kuma/import
 SRC="${1:-$IMPORT_DIR/kuma.db}"
 STAMP=$(date +%Y%m%d-%H%M%S)
 
