@@ -1,11 +1,11 @@
 # Migration (new VPS, new domain) — script-first
 
-The primary path is `scripts/install.sh` — a plug-and-play, **root-only** installer. It prompts for three values (domain, Cloudflare API token, Tailscale auth key), then runs unattended. `root@{{HOSTNAME}}` is the only entry point; no sudo user is created and there is no hand-off. It installs host services (docker, tailscale, dnsmasq, ttyd, ssh hardening, ufw, sysctl), clones the repo over **HTTPS** (public repo — no GitHub SSH key), and brings up the full stack: Caddy (`$DOMAIN`), Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Vaultwarden, Uptime Kuma and Docker Mailserver + Roundcube. It also creates the Cloudflare A records (`cloud`/`vault`/`kuma`/`www` proxied, `talk`/`mail` DNS-only), sets the zone SSL mode to full, triggers Let's Encrypt issuance, seeds Uptime Kuma, creates the Kuma admin user automatically (password printed once in the final summary), wires Nextcloud's Talk/SMTP/background-cron via `occ` (incl. `mail_smtpauth` so mail actually authenticates, trusted_proxies as an array, repair + DB indices so the setup check is clean, the updater-backup dir so the cleanup job stops warning, and the recovery manifests — users/groups/quotas/apps — from `make nc-capture`), publishes the mailserver's **DKIM TXT record via the Cloudflare API**, **Fully autonomous**: no manual confirmation steps block success — the only follow-ups are printed in the summary (Tailscale split-DNS, mailboxes, and the provider-side PTR record for external mail delivery).
+The primary path is `scripts/install/install.sh` — a plug-and-play, **root-only** installer. It prompts for three values (domain, Cloudflare API token, Tailscale auth key), then runs unattended. `root@{{HOSTNAME}}` is the only entry point; no sudo user is created and there is no hand-off. It installs host services (docker, tailscale, dnsmasq, ttyd, ssh hardening, ufw, sysctl), clones the repo over **HTTPS** (public repo — no GitHub SSH key), and brings up the full stack: Caddy (`$DOMAIN`), Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Vaultwarden, Uptime Kuma and Docker Mailserver + Roundcube. It also creates the Cloudflare A records (`cloud`/`vault`/`kuma`/`www` proxied, `talk`/`mail` DNS-only), sets the zone SSL mode to full, triggers Let's Encrypt issuance, seeds Uptime Kuma, creates the Kuma admin user automatically (password printed once in the final summary), wires Nextcloud's Talk/SMTP/background-cron via `occ` (incl. `mail_smtpauth` so mail actually authenticates, trusted_proxies as an array, repair + DB indices so the setup check is clean, the updater-backup dir so the cleanup job stops warning, and the recovery manifests — users/groups/quotas/apps — from `make nc-capture`), publishes the mailserver's **DKIM TXT record via the Cloudflare API**, **Fully autonomous**: no manual confirmation steps block success — the only follow-ups are printed in the summary (Tailscale split-DNS, mailboxes, and the provider-side PTR record for external mail delivery).
 
 ## Run it
 
 ```
-scp scripts/install.sh root@<new-vps>:
+scp scripts/install/install.sh root@<new-vps>:
 ssh root@<new-vps>
 bash install.sh
 ```
@@ -14,7 +14,7 @@ Enter the domain, CF token, and TS auth key when prompted. The script runs unatt
 
 ## What the script renames (nothing)
 
-The installer's legacy `renames()` step — which transformed a pre-migration clone (`homelab.com` → `$DOMAIN`, `services/vhosts` → `services/$DOMAIN`, `debian` → `root`, trimming to 4 containers) — was removed 2026-08-31. The canonical repo already carries the final naming ($DOMAIN / `root` / `tail.`), and `install.sh` deploys it as-is.
+The installer's legacy `renames()` step — which transformed a pre-migration clone (`homelab.com` → `$DOMAIN`, `modules/vhosts` → `modules/$DOMAIN`, `debian` → `root`, trimming to 4 containers) — was removed 2026-08-31. The canonical repo already carries the final naming ($DOMAIN / `root` / `tail.`), and `install.sh` deploys it as-is.
 
 ## Prerequisites (manual, unavoidable)
 
@@ -41,7 +41,7 @@ server-side knowledge.
 
 `install.sh` brings up the mail platform too (`make dok-recreate-mailserver` → `mailserver` at 172.22.0.9 + `roundcube` at 172.22.0.10; the UFW ports are opened by the installer). What is NOT scripted: mailbox accounts (create with `make mail-gen [MAIL=…]`). To carry existing mail to a new VPS:
 
-1. Operator-only (copy from the old host): `$DATA_DIR/mailserver/` (Maildirs, DMS config + DKIM keys, roundcube sqlite), `services/mailserver/.env` (mailbox passwords), and the CF DNS records (MX, mail A DNS-only, SPF, DMARC, DKIM TXT).
+1. Operator-only (copy from the old host): `$DATA_DIR/mailserver/` (Maildirs, DMS config + DKIM keys, roundcube sqlite), `modules/mailserver/.env` (mailbox passwords), and the CF DNS records (MX, mail A DNS-only, SPF, DMARC, DKIM TXT).
 2. Re-issue the mail.$DOMAIN LE cert via the Caddy vhost; DMS reads it from caddy_data.
 
 ## Manual fallback

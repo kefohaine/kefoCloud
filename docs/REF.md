@@ -2,14 +2,14 @@
 
 This repo carries **no instance values**. Every deployable file is a template
 (`{{TOKEN}}`), a compose file using `${VAR}` substitution, or a script reading
-`scripts/instance.sh`. The values live in **one untracked file**,
-`data/instance.conf`, written by `scripts/install.sh`.
+`scripts/lib/instance.sh`. The values live in **one untracked file**,
+`data/instance.conf`, written by `scripts/install/install.sh`.
 
 - **What each token means** → `config/instance.defaults` (tracked, documented).
 - **The current values** → `data/instance.conf` (untracked, mode 0600).
 - **How rendering works, and how to rename/move an instance** →
   `docs/SKELETON.md`.
-- **Inspect the values without reading the file** → `scripts/render.sh --tokens`.
+- **Inspect the values without reading the file** → `scripts/render/render.sh --tokens`.
 
 ## The tokens
 
@@ -41,5 +41,5 @@ This repo carries **no instance values**. Every deployable file is a template
   `make smoke` and `make fetch` read the declared file.
 - Secrets never belong in git, `instance.conf` is 0600, and rendered output
   (`data/rendered/`) is where live config actually comes from.
-- `scripts/defaults/*.conf` hold *prompt defaults* — a different purpose from the
+- `scripts/install/defaults/*.conf` hold *prompt defaults* — a different purpose from the
   token list.

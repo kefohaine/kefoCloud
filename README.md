@@ -23,14 +23,14 @@ Minimum RAM required: 3GB
 ## Install
 
 ```bash
-scp scripts/install.sh root@{{HOSTNAME}}:      # or clone on the box:
+scp scripts/install/install.sh root@{{HOSTNAME}}:      # or clone on the box:
 ssh root@{{HOSTNAME}}
 bash install.sh
 ```
 
 On a fresh box the repo is cloned for you over **HTTPS** (the repo is public — no GitHub SSH key ever needs to be added). Everything lives under `root@server:~/github/{{HOSTNAME}}/`; every external, untracked artefact (containers' data, databases, uploads, module reports) lives under `~/github/{{HOSTNAME}}/data/`, which `.gitignore` excludes. `root@{{HOSTNAME}}` is the **only** entry point (key-only SSH over the tailnet). The installer asks a few questions, then hardens the host, creates the DNS records, issues certificates and builds the selected stack unattended. Default is everything ON; opt out per module for a lean install.
 
-`scripts/uninstall.sh` reverses it in the same style — every prompt defaults to keep, operator data and the tailscale-only SSH path are never touched without an explicit confirm, and the tailnet membership goes last.
+`scripts/install/uninstall.sh` reverses it in the same style — every prompt defaults to keep, operator data and the tailscale-only SSH path are never touched without an explicit confirm, and the tailnet membership goes last.
 
 ### Modules (pick at install time)
 
@@ -43,7 +43,7 @@ On a fresh box the repo is cloned for you over **HTTPS** (the repo is public —
 
 ### Secondary helpers
 
-- `bash scripts/optimize.sh` — automated performance optimization after install
+- `bash scripts/ops/optimize.sh` — automated performance optimization after install
 - `make connect` — join a module to another server (link an existing database there, or overwrite it with this host's data)
 
 ## Documentation
@@ -53,7 +53,7 @@ On a fresh box the repo is cloned for you over **HTTPS** (the repo is public —
 - `docs/AGENTS.md` — agent operating rules (how this repo is worked on)
 - `docs/ISSUES.md` — open problems, planned ideas, and resolved history
 - `docs/DEBUG.md` — deep-scan / debugging runbook (read-only first, layer ladder, verification probes)
-- `scripts/defaults/` — per-script prompt defaults
+- `scripts/install/defaults/` — per-script prompt defaults
 
 ## Risks & Considerations
 - Single Point of Failure: Running your cloud, your passwords, your email, and a game server on one operating system means that if the host crashes, goes offline, or gets compromised, your entire digital footprint goes dark simultaneously.

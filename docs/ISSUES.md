@@ -5,12 +5,12 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 ---
 
 ### `make connect` covers nextcloud only
-- **File**: `scripts/connect.sh`
+- **File**: `scripts/ops/connect.sh`
 - **Problem**: the menu lists kuma and vaultwarden but both print why they cannot be linked instead of acting. Kuma is SQLite (v2 supports MariaDB only if installed that way, so switching is a migration); Vaultwarden is a single SQLite file with no server-side database, and sharing it over NFS is unsafe because it does not lock across hosts.
 - **Fix**: for Kuma, make it MariaDB-native on this host first, then reuse the nextcloud shape (dump → restore → re-point) through Kuma's own migration tool. For Vaultwarden, implement the documented move: stop the service, copy `db.sqlite3` + attachments + rsa keys, then either run it there or mount the remote path — a file operation, not a connection.
 
 ### Per-device shells are host-local by design
-- **File**: `scripts/ttyd-devices.sh`
+- **File**: `scripts/access/ttyd-devices.sh`
 - **Problem**: `make ttyd-add NAME=<device>` creates a *session on this host* and lists it on the tail page; it does not start anything on the named device. Reaching a device is a manual `ssh`/`tailscale ssh` from inside that session.
 - **Fix (if wanted)**: automate the ssh hop per device — but that is where credentials and authorisation live, so it needs an explicit decision (per-device keys? Tailscale SSH ACLs?) rather than a default. Tracked as a deliberate limitation until then.
 
@@ -20,7 +20,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 ### Pending (Aug 2026)
 
 #### Kuma config copy from the {{GITHUB_USER}} VPS is blocked  **[needs human approval]**
-- **File**: `scripts/kuma-import.sh` (prepared); source db on `{{GITHUB_USER}}` (100.81.245.77)
+- **File**: `scripts/modules/kuma-import.sh` (prepared); source db on `{{GITHUB_USER}}` (100.81.245.77)
 - **Problem**: SSH to `{{GITHUB_USER}}` denies every key tried from fxmq (`root`/`root`/`debian`, incl. `github_key`), Tailscale SSH is not enabled there, and its Taildrop inbox is empty — the old `kuma.db` cannot be fetched. The operator's Mac is also blocked: {{GITHUB_USER}}'s ED25519 host key changed (`REMOTE HOST IDENTIFICATION HAS CHANGED`, new fingerprint `SHA256:o0MmsggDn/Hi2LiThbkSLlLGUadoQfEKi0NBvmFb61k`) — likely the VPS was reinstalled. kuma.{{DOMAIN}} currently has the seeded admin (reset Aug 2026 — rotate with `make kuma-passwd`) + 4 monitors but not the old account/status pages.
 - **Fix**: on the Mac run `ssh-keygen -R 100.81.245.77` (clears the stale host key), then `ssh debian@100.81.245.77` — if the box was reinstalled the old key may no longer be authorized; re-add it. Deliver the db either by taildrop from {{GITHUB_USER}} (`tailscale file cp kuma.db fxmq:`, then on fxmq `tailscale file get {{DATA_DIR}}/kuma/import`) or by adding the fxmq `root` SSH key to {{GITHUB_USER}}'s `authorized_keys`. Then `make kuma-import` swaps it in, adapts it ({{DOMAIN}}→{{DOMAIN}} URLs, old container names, deactivates retired-service monitors) and re-seeds the current monitor set.
 
@@ -34,7 +34,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 
 #### PHP sessions live in a non-persistent Redis
-- **File**: `services/nextcloud/docker-compose.yml` (redis runs `--save "" --appendonly no`, `allkeys-lru`)
+- **File**: `modules/nextcloud/docker-compose.yml` (redis runs `--save "" --appendonly no`, `allkeys-lru`)
 - **Problem**: the image entrypoint stores PHP sessions in Redis, so a `redis` restart/recreate (or eviction) logs every user out.
 - **Fix**: accept, or give Redis minimal RDB persistence so sessions survive a restart.
 
@@ -49,12 +49,12 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Fix**: run `bash -n` + `shellcheck` on `scripts/*.sh` in a pre-push/CI job.
 
 #### (solved 2026-09-22) install.sh rewrote the tracked `config/dnsmasq/10-tailnet.conf` in place
-- **File**: `scripts/install.sh` (`host_services`), `config/dnsmasq/10-tailnet.conf`
+- **File**: `scripts/install/install.sh` (`host_services`), `config/dnsmasq/10-tailnet.conf`
 - **Problem**: the installer `sed -i`s the live Tailscale IP into the repo's tracked reference copy before `make install-config` copies it to `/etc/dnsmasq.d/`, so every run leaves an instance-specific IP as an uncommitted diff — and a `git commit -a` would bake it into the repo (rule 12: stay global).
 - **Fix**: keep the repo file as a placeholder and write the instance value into the live file after the copy (`make install-config`, then `sed` `/etc/dnsmasq.d/10-tailnet.conf` + `systemctl restart dnsmasq`).
 
 #### talk-hpb was OOM-killed
-- **File**: `services/nextcloud/docker-compose.yml` (RAM caps)
+- **File**: `modules/nextcloud/docker-compose.yml` (RAM caps)
 - **Problem**: `journalctl` shows the kernel OOM-killing nextcloud-spreed-signaling on 2026-09-09 under the stack's RAM cap.
 - **Fix**: confirm recurrence; raise the cap or reduce concurrency if it repeats.
 
@@ -65,26 +65,26 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Fix**: operator decision — either set spigot.yml `world-settings.default.view-distance: 4` (matches the tuning intent) or accept 6 and update the docs. Requires a server restart (spigot.yml is read at world load).
 
 #### Nextcloud reset (2026-09-01) — fresh install, recovery manifests
-- **File**: `cloud/recovery/{users,apps}.txt` (recovery manifests, OUTSIDE the repo — generated by `make nc-capture`) + `scripts/install.sh` `nextcloud_setup`
+- **File**: `cloud/recovery/{users,apps}.txt` (recovery manifests, OUTSIDE the repo — generated by `make nc-capture`) + `scripts/install/install.sh` `nextcloud_setup`
 - **Problem**: the object-store migration corrupted the filecache repeatedly (blobs keyed `urn:oid:<fileid>`, scans trashing files, storage-switch SQL idempotency bugs). The instance held only default skeleton files, so it was erased and freshly installed: `cloud/users`, `pgdata` and `config.php` deleted, PostgreSQL recreated **on fxmq** (local latency — the storage VPS is for files/backups, not the DB), `occ maintenance:install` run, then the recovery applied.
 - **Done (2026-09-01)**: fresh NC 34.0.3 on the local PG; `trusted_domains` + `cloud.{{DOMAIN}}` (occ install only trusts localhost — added to `install.sh`); users `admin`/`sunny`/`niyaz25` recreated from `cloud/recovery/users.txt` (new generated passwords for sunny/niyaz25 — printed once; share them with the users); apps `spreed`/`calendar`/`contacts`/`mail`/`notes` re-enabled, `app_api` disabled; occ config re-applied (trusted_proxies array, mail SMTP, serverid, maintenance window 4, cron mode, Talk signaling + TURN); quota admin 300 GB. Smoke passes. The recovery path is now scripted — a fresh install reproduces the exact setup (users, apps, config) without the data.
 - **Residual**: sunny/niyaz25 passwords are new (reset); nothing else lost (data was skeleton-only).
 
 #### No automated backup script (partial — DB side solved)
 - **File**: (missing) `scripts/backup.sh`
-- **Problem**: `make backup` tars Nextcloud `/data` in maintenance mode; there was no consistent PostgreSQL snapshot and no off-site copy target. Since 2026-08-31 the DB side is covered: `scripts/datadir-nfs.sh` installs a nightly cron that `pg_dump`s the `postgresql` container and pushes it to `storage:/backups/nc` (key auth, keeps 7). The FILE side: user files live on the storage VPS (`cloud/users/` NFS export — the live datadirectory after the datadirectory move), so the only copy sits on the same box as the DB dumps; there is no off-site/DR copy.
+- **Problem**: `make backup` tars Nextcloud `/data` in maintenance mode; there was no consistent PostgreSQL snapshot and no off-site copy target. Since 2026-08-31 the DB side is covered: `scripts/ops/datadir-nfs.sh` installs a nightly cron that `pg_dump`s the `postgresql` container and pushes it to `storage:/backups/nc` (key auth, keeps 7). The FILE side: user files live on the storage VPS (`cloud/users/` NFS export — the live datadirectory after the datadirectory move), so the only copy sits on the same box as the DB dumps; there is no off-site/DR copy.
 - **Fix**: add `scripts/backup.sh` (or extend the cron): `occ maintenance:mode --on` → `pg_dump` (already nightly) + rsync the storage VPS's `/srv/nextcloud-data` to a second target (plus a copy of the DB dumps) → `--off`.
 - **Why approval**: operator picks the file-backup target (second disk / another provider / off-site).
 
 #### GUIDE "Nextcloud DB" section still documents moving PostgreSQL to the 1 TB VPS
-- **File**: `docs/GUIDE.md` ("Nextcloud DB" section) + `services/nextcloud/docker-compose.db.yml` comments
+- **File**: `docs/GUIDE.md` ("Nextcloud DB" section) + `modules/nextcloud/docker-compose.db.yml` comments
 - **Problem**: Setup A keeps PostgreSQL on fxmq and puts only Nextcloud's user files on the 1 TB VPS (which has already joined the tailnet — the nightly `pg_dump` lands on it), but GUIDE still gives step-by-step instructions to move the whole DB there and the db compose comments are tuned for "the 2 GB future DB host". One of the two is the plan.
 - **Fix**: operator decision — delete the DB-migration steps from GUIDE (Setup A won) or re-document them as an option if the DB ever outgrows fxmq.
 
 ### Security
 
 #### docker.sock holders = host root (Uptime Kuma)
-- **File**: `services/uptimekuma/docker-compose.yml` (ro socket). The kefoMC repo (PufferPanel, moved out) also mounts it rw.
+- **File**: `modules/uptimekuma/docker-compose.yml` (ro socket). The kefoMC repo (PufferPanel, moved out) also mounts it rw.
 - **Problem**: a container with the docker socket is host root — a compromise of either is host root, and the panel's UI was publicly reachable at `mc.$DOMAIN/panel`. `no-new-privileges` does not neutralise the socket.
 - **Impact**: total host compromise from one container escape. Accepted trade-off: monitoring needs the socket, and the panel cannot run game servers without it.
 - **Status**: accepted, documented. Tracked for the edge/agent work: any socket holder should be treated as host root when writing policy.
@@ -95,7 +95,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Why approval**: rotation restarts the agent service; a history purge needs a force-push.
 
 #### `curl … | sh` in the installers
-- **File**: `scripts/install.sh` (tailscale, goose), `scripts/datadir-nfs.sh` (tailscale)
+- **File**: `scripts/install/install.sh` (tailscale, goose), `scripts/ops/datadir-nfs.sh` (tailscale)
 - **Problem**: piping a remote script into a shell is supply-chain exposure.
 - **Fix**: use the official Tailscale apt repo (keyring + sources.list + `apt-get install`); keep the vendor's goose installer (or verify a released binary) and note the exception.
 
@@ -105,14 +105,14 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Fix**: keep secrets in dedicated files outside the copied set (as goose now does); optionally add a secret-scan guard to the pre-commit hook.
 - **Note (2026-09-12)**: the pull also resurrects *scrubbed* content — a stale live `/etc/sysctl.d/99-{{HOSTNAME}}.conf` re-imported a banned-assistant name the repo had deliberately removed (commit 070d35f), landing uncommitted in the working tree. After `make backup`, `git diff config/` before any `git add`; re-apply `make install-config` when the live copies are behind the repo.
 
-#### `install.sh` `eval`s values from `scripts/defaults/install.conf`
-- **File**: `scripts/install.sh` (`defaults_install` / `ask_modules`)
+#### `install.sh` `eval`s values from `scripts/install/defaults/install.conf`
+- **File**: `scripts/install/install.sh` (`defaults_install` / `ask_modules`)
 - **Problem**: module defaults are applied with `eval "DEF_${canon}=$val"` and `eval "$var=$def"` — arbitrary content in that file executes. It is repo-tracked (low risk today), but it is an injection surface if the file is ever untrusted.
 - **Fix**: parse `key=value` with `read`/`case` instead of `eval`.
 
 
 #### Mail platform: no PTR record (operator will set at AlphaVPS)  **[needs human approval]**
-- **File**: `services/mailserver/docker-compose.yml` (installed); DNS + UFW configured
+- **File**: `modules/mailserver/docker-compose.yml` (installed); DNS + UFW configured
 - **Problem**: inbound TCP 25 is now open (verified 2026-08-28: external nodes connect, postfix serves `220 mail.{{DOMAIN}} ESMTP` with the LE cert). The remaining blocker: 82.118.230.117 has **no PTR** — outbound mail to Gmail/Outlook will be rejected or spam-foldered until reverse DNS exists. The reverse zone is provider-hosted, not delegated to us, so only the operator can set it.
 - **Fix** (operator, ~2 min): provider is **AlphaVPS** (netname `DAGroup`, RIPE `AA29428-RIPE`, block `82.118.230.0/24`). In the AlphaVPS client area (VPS → rDNS/Reverse DNS) set `82.118.230.117` → `mail.{{DOMAIN}}`, or ticket `support@alphavps.bg` / `abuse@alphavps.bg` with: *"Please set reverse DNS for 82.118.230.117 to `mail.{{DOMAIN}}`."* Must match postfix HELO + the `mail.{{DOMAIN}}` A record (both already `mail.{{DOMAIN}}`). Verify with `dig -x 82.118.230.117`, then send a test to an external inbox.
 
@@ -135,7 +135,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Why approval**: operator action on GitHub.
 
 #### Nextcloud 2FA not enforced  **[needs human approval]**
-- **File**: `services/nextcloud/docker-compose.yml` (app config via `occ`)
+- **File**: `modules/nextcloud/docker-compose.yml` (app config via `occ`)
 - **Problem**: the setup check reports second-factor providers are available but two-factor authentication is not enforced — any stolen password alone grants access.
 - **Fix**: operator sets up a 2FA provider on their account (TOTP app), then `occ twofactorauth:enforce admin` (or `--all` for every user). Enforcing before the provider is configured can lock the account out.
 - **Why approval**: operator's own account; lockout risk.
@@ -149,7 +149,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 #### Re-apply Cloudflare WAF skip on the new domain
 - **File**: Cloudflare dashboard ({{DOMAIN}} zone)
 - **Problem**: after the migration, `cloud.{{DOMAIN}}` Nextcloud desktop sync is bot-challenged until the per-hostname WAF rule skip is re-created (same rationale as the `cloud.{{DOMAIN}}` `Intended` entry).
-- **Fix**: re-add the per-hostname WAF rule skip for `cloud.{{DOMAIN}}` after `scripts/install.sh` finishes.
+- **Fix**: re-add the per-hostname WAF rule skip for `cloud.{{DOMAIN}}` after `scripts/install/install.sh` finishes.
 
 #### Bedrock skins invisible to Java clients (Geyser 1228 / Floodgate b140 upstream bug)  **[needs human approval]**
 - **File**: upstream Geyser/Floodgate; local workaround = plugin drop
@@ -160,7 +160,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 ### Efficiency
 
 #### PHP-FPM pool sizing under concurrent sync
-- **File**: `services/nextcloud/php-fpm.d/zz-custom.conf`
+- **File**: `modules/nextcloud/php-fpm.d/zz-custom.conf`
 - **Problem**: `pm.max_children = 8` with 200s terminate timeout. Slow syncs can occupy all 8 children. (Already switched to `ondemand` — idle workers now free at rest.)
 - **Fix**: Monitor `docker exec -w /var/www/html nextcloud php occ status` and `docker stats nextcloud`. Raise `max_children` only if sync load grows; lower `request_terminate_timeout` if 504s appear.
 
@@ -171,12 +171,12 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Why approval**: operator convenience trade-off (cold start latency vs. idle RAM).
 
 #### `datadir-nfs.sh` (was storage.sh) re-prompts for the storage root password on every run
-- **File**: `scripts/datadir-nfs.sh`
+- **File**: `scripts/ops/datadir-nfs.sh`
 - **Problem**: even when the operator's SSH key is already on the storage VPS (the script installs it) and the tailnet path works, a re-run still demands `STORAGE_PASS` + `TS_AUTHKEY`.
 - **Fix**: after the tailnet check, if `ssh -o BatchMode=yes root@$TS_IP true` succeeds, skip the password/key prompts and go straight to the re-check.
 
 #### Nextcloud Talk: no Client Push proxy
-- **File**: `services/nextcloud/docker-compose.yml` (Talk stack: `talk-hpb` HPB + `talk-relay` already deployed)
+- **File**: `modules/nextcloud/docker-compose.yml` (Talk stack: `talk-hpb` HPB + `talk-relay` already deployed)
 - **Problem**: mobile push notifications are delayed — no push proxy (UnifiedPush / nextcloud-push) is installed. The old entry's "no HPB" premise is stale: the Go signaling server (strukturag/nextcloud-spreed-signaling) has run since the 2026-08-30 rebuild.
 - **Fix**: install a push proxy + Notifications backend when Talk push becomes a real use case.
 
@@ -195,7 +195,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 ## Planned ideas
 
 Future roadmap, operator-reviewed later; when one is picked up it moves to Open, when done it lands in Solved.
-Implemented 2026-09-06 (→ Solved): installer per-module prompts + `scripts/defaults/install.conf` (default all ON), `REF.md` demo-terms reference, the original `make status` merge (later rebuilt 2026-09-11 as `scripts/status.sh`), `make taildrop-file|folder`, `TARGET=` dispatchers for the dok actions, Debian-system wording in README/www.
+Implemented 2026-09-06 (→ Solved): installer per-module prompts + `scripts/install/defaults/install.conf` (default all ON), `REF.md` demo-terms reference, the original `make status` merge (later rebuilt 2026-09-11 as `scripts/status.sh`), `make taildrop-file|folder`, `TARGET=` dispatchers for the dok actions, Debian-system wording in README/www.
 
 #### social.$DOMAIN — Mastodon (or the minimal fediverse alternative)
 - **Status**: operator is thinking it through (2026-09-12) — do not start without the go-ahead.
@@ -220,7 +220,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Initial site + Docker** — `index.html` and the first `docker-compose.yml`.
 - **Caddy setup** — first vhost config.
 - **GitHub Actions deploy** — SSH-key deploy workflow, later retired.
-- **AI/LLM API service** — Ollama-backed `services/ai/app.py`, later removed.
+- **AI/LLM API service** — Ollama-backed `modules/ai/app.py`, later removed.
 
 ### Aug 2026 — Nextcloud, TLS, hardening, ops
 - **Orphaned MC template `ea3b4585` removed** — lazymc-era Fabric install deleted (pre-removal tarball kept in `backups/`).
@@ -308,7 +308,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 
 ### Sep 2026 — edge renames + docs overhaul
 - **`make backup` path bug fixed + reverse-rendered** — it pointed at `$(REPO)/backups` and `$(REPO)/vault`, both of which moved under `data/` in the layout migration (the vault tar was failing with "Error is not recoverable"); it now reverse-renders every file it pulls back, so live config lands in the skeleton as `{{TOKENS}}` — verified with a zero-diff round trip against all seven tracked config files.
-- **`make connect` (replaces `make storage`)** — interactive connector: module → server → `link` (use the database that already lives there) or `overwrite` (copy this host's database there first), plus the NFS datadirectory move as choice 3 (`scripts/datadir-nfs.sh`, the old `storage.sh`); refuses to re-point until the target DB answers.
+- **`make connect` (replaces `make storage`)** — interactive connector: module → server → `link` (use the database that already lives there) or `overwrite` (copy this host's database there first), plus the NFS datadirectory move as choice 3 (`scripts/ops/datadir-nfs.sh`, the old `storage.sh`); refuses to re-point until the target DB answers.
 - **Per-device web-terminal sessions** — `make ttyd-add/ttyd-rm/ttyd-devices`: one named tmux session per tailnet device served by the single ttyd listener (`/ttyd?arg=<name>`), listed as a card on the tail page; no new listener and no edge edit.
 - **`make render` + `docs/SKELETON.md`** — the skeleton is documented end to end: tokens, compose substitution, script variables, domain-free filenames and the rename procedure.
 - **Logs consolidated under one namespace** — every project log moved to `{{LOG_DIR}}` with one logrotate rule; the stale `/var/log/homelab-install.log` was relocated, not deleted, and the old uninstall log mode 660→640.
@@ -316,30 +316,30 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **`make fetch-more`** — read-only deep dive beyond `make fetch`: per-core cpu, memory breakdown, top processes, zombies, sockets, units/timers/cron, docker's effective log caps + per-container stats + log sizes, disk+inodes, `data/` growth, tailnet prefs, live DNS probes, TLS expiry.
 - **Uptime Kuma upgraded to v2** — `louislam/uptime-kuma:2` (v1 is EOL); `data/kuma` backed up first, DB migrated to `database_version 10`, admin hash preserved.
 - **talk-hpb zombie leak fixed** — `init: true` (tini reaps the unreaped `timeout` children); 81 zombies → 0.
-- **Edge renamed to `caddy`** — dir/container/image are `services/caddy`, `caddy`, `caddy:local` (rollback tag `caddy:rollback`); the old names read as a domain and made the compose project name `fxmq.net`.
+- **Edge renamed to `caddy`** — dir/container/image are `modules/caddy`, `caddy`, `caddy:local` (rollback tag `caddy:rollback`); the old names read as a domain and made the compose project name `fxmq.net`.
 - **mc module extracted to kefoMC** — PufferPanel, its server templates, its vhost, its panel CLI, its data and its docs now live in `git@github.com:kefohaine/kefoMC.git`; the edge imports `vhosts/*.caddy` so another project can own a vhost.
 - **Repo is a skeleton** — `{{TOKENS}}` in templates, `${VARS}` from a generated `.env` block in compose, `data/instance.conf` as the only real values, `make render` → `data/rendered/` (the edge mounts that), domain-free filenames, `REPO` derived from the Makefile path; `install.sh` writes the instance file and preserves values it does not own.
-- **Root-only {{HOSTNAME}} layout migration** — repo moved to `{{REPO_DIR}}` with all state under `data/`, host + tailnet renamed `{{HOSTNAME}}`, units/cron switched to root, every deployed unit recreated on the new mounts by `scripts/migrate-layout.sh`.
-- **`make update` split and made safe** — apt moved to its own `apt-upgrade` recipe, `update` runs `scripts/stack-up.sh --update` (failures collected, edge last behind a config gate + image rollback, PostgreSQL unit included) and ends with `make smoke`.
-- **`{{HOSTNAME}}-stack.service`** — enabled boot unit that brings every deployed compose unit up via `scripts/stack-up.sh`, edge last.
+- **Root-only {{HOSTNAME}} layout migration** — repo moved to `{{REPO_DIR}}` with all state under `data/`, host + tailnet renamed `{{HOSTNAME}}`, units/cron switched to root, every deployed unit recreated on the new mounts by `scripts/install/migrate-layout.sh`.
+- **`make update` split and made safe** — apt moved to its own `apt-upgrade` recipe, `update` runs `scripts/stack/stack-up.sh --update` (failures collected, edge last behind a config gate + image rollback, PostgreSQL unit included) and ends with `make smoke`.
+- **`{{HOSTNAME}}-stack.service`** — enabled boot unit that brings every deployed compose unit up via `scripts/stack/stack-up.sh`, edge last.
 - **`config/dnsmasq/10-tailnet.conf` rendered at deploy time** — the tracked file keeps a placeholder address; install-config writes the live Tailscale IP and `make backup` restores the placeholder.
-- **`make status` → `make fetch`** — the AIO dashboard recipe renamed (`scripts/status.sh` → `scripts/fetch.sh`): uninstalled modules now render red (installed stay green) so the full available set is visible, and the failed-units row carries each failed unit's target in `()` marks (Where/What/Description — also fixes the old row grabbing the `●` glyph instead of the unit name).
-- **`scripts/uninstall.sh`** — the installer's exact opposite in the same house style: per-module prompts (all default keep), the edge/host-services/packages/user/tailnet phases in install-reverse order (tailscale last), tagged errors with problem/hint, Enter-refresh re-checks, a success block, and `installed-modules.conf` refreshed after every module removal (empty conf = nothing expected; the file is emptied, never deleted — a missing conf means "all expected" to smoke). Data is never touched without explicit confirms; the storage NFS export is untouchable, sshd hardening deliberately kept. Prompt defaults file: `scripts/defaults/uninstall.conf`.
+- **`make status` → `make fetch`** — the AIO dashboard recipe renamed (`scripts/status.sh` → `scripts/info/fetch.sh`): uninstalled modules now render red (installed stay green) so the full available set is visible, and the failed-units row carries each failed unit's target in `()` marks (Where/What/Description — also fixes the old row grabbing the `●` glyph instead of the unit name).
+- **`scripts/install/uninstall.sh`** — the installer's exact opposite in the same house style: per-module prompts (all default keep), the edge/host-modules/packages/user/tailnet phases in install-reverse order (tailscale last), tagged errors with problem/hint, Enter-refresh re-checks, a success block, and `installed-modules.conf` refreshed after every module removal (empty conf = nothing expected; the file is emptied, never deleted — a missing conf means "all expected" to smoke). Data is never touched without explicit confirms; the storage NFS export is untouchable, sshd hardening deliberately kept. Prompt defaults file: `scripts/install/defaults/uninstall.conf`.
 - **Boot-race NFS datadir mount outage (2026-09-12)** — reboot raced the datadir mount against tailscaled (unit started 1 s in, 0 peers) and the default 90 s mount timeout killed it; `nofail` boot continued, docker bound the empty placeholder dir as NC's `/data` → "data directory is invalid" 503s + kuma `cloud.{{DOMAIN}}` HTTP-down alert. Fixed live (systemctl start mount + `make dok-restart-nextcloud`); fstab line now `x-systemd.after=tailscaled.service,x-systemd.mount-timeout=300s,x-systemd.before=docker.service` (written by datadir-nfs.sh `ensure_mount`, applied to the live fstab) so ordering is deterministic and containers never bind the placeholder; GUIDE gotcha has the full lesson.
 - **Basic-auth session reworked on `tail.$DOMAIN` (2026-09-11)** — `log in` prompted inline and validated against `/ttyd`'s basic auth in the background; superseded 2026-09-12 by removing the login machinery entirely (the terminal is go-only `guest@server`; `/ttyd` keeps its basic_auth).
 - **`tail.$DOMAIN` terminal simplified + hard no-cache (2026-09-12)** — the `log in`/`log out` session machinery was removed (operator request): the homepage terminal is navigation-only (`go <vhost> [page]`, prompt always `guest@server`), `/ttyd` keeps its HTTP basic auth (user `root`), and the whole vhost now serves `no-store, no-cache, must-revalidate, max-age=0` + `Pragma: no-cache` + `Expires: 0` with ETag/Last-Modified stripped — nothing cacheable.
-- **`scripts/uninstall.sh` scope selector (2026-09-12)** — the first prompt picks between specific modules (per-module prompts, default keep) and the whole framework (every phase preselected — modules + edge + host services + packages + user + tailnet; data prompts still default keep), plus cancel; preselectable via `uninstall mode` in `scripts/defaults/uninstall.conf` or `UNINSTALL_MODE`.
+- **`scripts/install/uninstall.sh` scope selector (2026-09-12)** — the first prompt picks between specific modules (per-module prompts, default keep) and the whole framework (every phase preselected — modules + edge + host services + packages + user + tailnet; data prompts still default keep), plus cancel; preselectable via `uninstall mode` in `scripts/install/defaults/uninstall.conf` or `UNINSTALL_MODE`.
 - **Browser MC reset to Spigot 1.8.8 + EaglercraftX 1.8.8 client (2026-09-12)** — the 07fd7727 server rebuilt: Spigot 1.8.8 (JDK 17, 2 GB heap, no AlwaysPreTouch, view-distance 8, `online-mode=false`), EaglerXServer v1.1.1, the epoll natives stripped from the jar so the eagler websocket handshake answers 101 on the NIO transport (see the GUIDE lesson), the old world wiped per operator confirm; `/play` now serves the official multi-file EaglercraftX 1.8.8 client (classes.js + assets.epk + 74 languages, our server pre-seeded); no panel server autostarts.
 - **Mem limits reviewed + tightened (2026-09-12)** — caddy edge 256m→128m, vaultwarden 512m→384m, roundcube 512m→384m (idle→limit headroom vs realistic spike for every container; caps are ceilings not allocations); live after `make dok-recreate` of the three; smoke green.
 - **tail homepage reset to the door list (2026-09-12)** — `/` now renders every webpage of the domain (public + tailnet-only) as links, fetched live from `/targets.json` on every visit (`cache: "no-store"` + the vhost no-cache headers); the `go` terminal is gone, `/ttyd` basic auth unchanged.
 - **Welcome-1..3 (2026-09-12)** — three alternate tellings of the repo pitch live at `/welcome-1` (proof: everything is running from one repo), `/welcome-2` (terminal-native tour), `/welcome-3` (the numbers: constraints over screenshots); the original `/welcome` untouched; all four auto-appear in the tail door list and the smoke passes.
-- **Docs made count-agnostic (2026-09-12)** — GUIDE/README no longer hardcode container/hostname/service counts (the runtime-derivable lists — `ls services/`, `installed-modules.conf`, `docker ps` — are named as authoritative); the two-game-servers gotcha generalized to all panel servers sharing 25565 + the no-autostart rationale.
+- **Docs made count-agnostic (2026-09-12)** — GUIDE/README no longer hardcode container/hostname/service counts (the runtime-derivable lists — `ls modules/`, `installed-modules.conf`, `docker ps` — are named as authoritative); the two-game-servers gotcha generalized to all panel servers sharing 25565 + the no-autostart rationale.
 - **Welcome-4..9 (2026-09-13)** — six more welcome tellings, each a distinct design: Swiss typographic manifest, vaporwave neon grid, literary journal (split cover + columns), operator's field manual, quiet minimal, monospace poster; all live at `/welcome-4`…`/welcome-9`, cross-linked with the earlier four, auto-catalogued in the tail door list.
 - **`/play` black screen fixed (2026-09-13)** — the served eaglercraft `index.html` had a double comma (`],,`) after patching the servers array → SyntaxError killed the whole launch script → black screen; also `lang/en_US.lang` was 404 (the official client list ships no en_US — en_GB copied as en_US). Both fixed; the asset chain (index/classes.js/assets.epk/lang) verified 200 end-to-end and the EPK magic checks out.
 - **Welcome pages curated (2026-09-13)** — the operator kept the original `/welcome` plus four favourites: `/welcome-5` (neon), `/welcome-6` (journal), `/welcome-7` (field manual), `/welcome-9` (poster); the other five (proof/terminal/numbers/Swiss/quiet) were removed — files, vhost routes, footer cross-links and the door-list entries all updated, numbers intentionally non-contiguous.
 - **Client update service disabled (2026-09-13)** — `allowUpdateSvc`/`allowUpdateDL: false` in the served `eaglercraft/index.html`: the u-build channel has no file distribution (mirrors ship u50 only), so the boot prompt was per-browser noise; the served u50 bundle is the client. Structural validation applied (the black-screen lesson).
 - **GitHub graph empty + ghost contributor fixed** — two-root merge DAG made GitHub's date queries 500 (graph empty since 08-01); single-root linearization restored the cells and scrubbing `Co-Authored-By:` AI-assistant trailer credits removed the ghost contributor (details in the GUIDE 2026-09-06 debug-hell lesson); the two-root repo was deleted and the clean history is now canonical on `{{GITHUB_USER}}/{{REPO_NAME}}` (scratch repos deleted).
-- **installer: per-module install selection** — `ask_inputs` now prompts for cloud/vault/mail/games/monitor (default all ON, env/state-overridable); `phase2_op`, `containers_up`, `cf_dns` and `issue_certs` gate on the choice; defaults come from `scripts/defaults/install.conf`; verified with `bash -n` + parser unit test (fresh-VPS run still pending).
+- **installer: per-module install selection** — `ask_inputs` now prompts for cloud/vault/mail/games/monitor (default all ON, env/state-overridable); `phase2_op`, `containers_up`, `cf_dns` and `issue_certs` gate on the choice; defaults come from `scripts/install/defaults/install.conf`; verified with `bash -n` + parser unit test (fresh-VPS run still pending).
 - **`make status`** — rebuilt as the AIO dashboard (`scripts/status.sh`): one aligned colored read of perf/modules/git/units/docker/tmux/backups/mail/tailnet with no duplicate rows (the 2026-09-11 list+perf merge listed containers/units twice).
 - **Module-aware smoke + status via `installed-modules.conf`** — `install.sh` writes the installed-module list to `$DATA_DIR/installed-modules.conf` at install end; `make smoke` structures its sections per module, still checks everything factually, but marks a failed section whose module was not installed as "intended behaviour" (per-section) and keeps it out of the exit code; a missing conf = all modules expected.
 - **`make smoke` expanded** — beyond the vhost checks: tailnet-edge (`/` serves tailnet sources, `/ttyd` challenges without credentials), containers/units/ufw/NFS/disk/nc-status/coturn assertions; `ok` lines carry short plain-words descriptions.
@@ -349,7 +349,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **`make install-ttyd` self-kill guard (2026-09-11)** — refuses from any shell inside the ttyd cgroup: the evening's `systemctl restart ttyd` killed the running agent + its tmux session mid-deploy.
 - **smoke `nc-status` false FAIL fixed** — the check grepped JSON keys against `occ status` YAML output; now uses `--output=json` and passes.
 - **docs neutralised via `docs/REF.md` variables** — GUIDE + MIGRATE now reference `$DOMAIN` / `$DATA_DIR` / `$GITHUB_REPO` (defined per-setup in `docs/REF.md`); README points there; ISSUES keeps concrete values as tracker + history.
-- **`scripts/defaults/`** — per-script prompt-defaults files (`install.conf` populated, `optimize.conf`/`storage.conf` skeletons); README + www copy matched to the real module flow.
+- **`scripts/install/defaults/`** — per-script prompt-defaults files (`install.conf` populated, `optimize.conf`/`storage.conf` skeletons); README + www copy matched to the real module flow.
 - **Debian VPS → Debian system wording** — README and the www welcome lede no longer imply only a rented VPS.
 - **`optimize.sh` universal VPS optimizer** — OPTIMIZE.md + repo tuning + `make cleanup`'s apt/docker part merged into one idempotent, zero-prompt bash script with an Enter-refresh error loop; applied here (swap RAM/3, noatime, THP, sysctls, tuned/irqbalance/earlyoom auto, SSD/HDD auto-detect → fstrim or SETRA).
 - **`turn.{{DOMAIN}}` renamed `talk.{{DOMAIN}}`** — vhost, DNS (grey-cloud A record), occ signaling entry, coturn cert path, smoke and docs updated; stale cert dir removed.
@@ -358,10 +358,10 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **All 301 redirects upgraded to 308** — CardDAV/CalDAV well-known redirects included.
 - **Docs restructured** — AGENTS.md portable-only (project specifics + lessons + intended moved to GUIDE.md), ISSUES.md Solved one sentence per record, volatile operator-editable state removed everywhere.
 - **`{{GITHUB_USER}}/{{REPO_NAME}}` GitHub web page restored after history rewrite** — web code views 404'd and git-data API 500'd while git/raw/codeload stayed healthy; fixed by pushing an empty nudge commit (`daf119d`), which rebuilt GitHub's index (intermittent 500s for ~10 min while settling).
-- **`services/nextcloud/.env` purged from all GitHub history** — removed from every commit via `scripts/drop-path.sh` plumbing rebuild (661 commits / 2 roots / 9 merges preserved, tip tree byte-identical); the exposed NC admin password is moot — the account no longer exists.
+- **`modules/nextcloud/.env` purged from all GitHub history** — removed from every commit via `scripts/ops/drop-path.sh` plumbing rebuild (661 commits / 2 roots / 9 merges preserved, tip tree byte-identical); the exposed NC admin password is moot — the account no longer exists.
 - **Local backup tags destroyed** — `history-backup-20260902` / `history-20260902-noreply` / `history-developer-email-20260903` deleted + objects pruned (`gc --prune=now`); the {{GITHUB_USER}}-era record lives on only inside `main` under the noreply identity, per operator choice.
-- **NC recovery manifests moved out of the repo** — `users/groups/default-quota/apps.txt` now live at `homelab/cloud/recovery/` (root-owned, outside the repo like pgdata), generated by `make nc-capture`, consumed by install.sh; paths scrubbed from all history (664 commits preserved, personal doc addresses censored via `scripts/replace-string.sh`).
-- **Storage VPS onboarded (Setup A)** — `scripts/datadir-nfs.sh` migrated Nextcloud's datadirectory to the 1 TB VPS (`/srv/nextcloud-data` NFS export at `cloud/users`); PostgreSQL stays on fxmq and the nightly `pg_dump` → `/backups/nc` runs alongside.
+- **NC recovery manifests moved out of the repo** — `users/groups/default-quota/apps.txt` now live at `homelab/cloud/recovery/` (root-owned, outside the repo like pgdata), generated by `make nc-capture`, consumed by install.sh; paths scrubbed from all history (664 commits preserved, personal doc addresses censored via `scripts/ops/replace-string.sh`).
+- **Storage VPS onboarded (Setup A)** — `scripts/ops/datadir-nfs.sh` migrated Nextcloud's datadirectory to the 1 TB VPS (`/srv/nextcloud-data` NFS export at `cloud/users`); PostgreSQL stays on fxmq and the nightly `pg_dump` → `/backups/nc` runs alongside.
 - **datadir-nfs.sh live-run fixes (2026-09-10)** — the first live run exposed a missing NFS client (`nfs-common`) and an unverified rollback delete that lost the datadirectory files; the script now installs the client, verifies the copy before the delete prompt, and installs the operator's ssh key — files were restored from `backups/cloud-backup-20260906`.
 - **`tail.$DOMAIN` mini terminal + gated shell** — unauthenticated command terminal at `/` (`go <vhost> [page]`, live prediction over a catalogue generated from the vhost files by `make tail-targets`) and `basic_auth` (user `root`) on `/ttyd`; `make tail-auth` sets/rotates it and prints the password once.
 - **goose secret moved out of the repo** — the unit reads `EnvironmentFile=/etc/goose/goose.env` (root:root 0640); `install.sh` generates it there instead of `sed`ing it into a tracked file.

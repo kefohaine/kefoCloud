@@ -1,0 +1,77 @@
+# www.{{DOMAIN}} — static pages: the welcome pages and the public download drop
+# folder.
+#   /          serves ./www/index.html — a zero-second redirect to /welcome.
+#   /welcome   the welcome page (welcome.html) — everything {{DOMAIN}} runs,
+#              presented as the live demo of {{GITHUB_USER}}/{{REPO_NAME}}.
+#   /welcome-5 /welcome-6 /welcome-7 /welcome-9 — the kept alternate
+#              tellings (neon / journal / field manual / poster).
+#   /download* Caddy file_server browse over homelab/download (mounted at
+#              /download:ro in the caddy container — drop files here).
+#   everything else — plain "ok" stub.
+# TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/cloud.{{DOMAIN}}.caddy).
+
+https://www.{{DOMAIN}} {
+    tls {
+        dns cloudflare {env.CF_API_TOKEN}
+    }
+    import compress
+    header {
+        import security_headers
+    }
+    handle_path /download {
+        root * /download
+        file_server browse
+    }
+    handle_path /download/* {
+        root * /download
+        file_server browse
+    }
+    # The welcome page — one self-contained HTML file. Matched with or
+    # without a trailing slash; anything else keeps falling through to the
+    # ok stub.
+    @welcome path /welcome /welcome/
+    handle @welcome {
+        root * /etc/caddy/www
+        rewrite /welcome.html
+        file_server
+    }
+    # The welcome family: the original `/welcome` plus the kept alternate
+    # tellings — /welcome-5 (neon), /welcome-6 (journal), /welcome-7 (field
+    # manual), /welcome-9 (poster). Removed designs were dropped 2026-09-13
+    # by operator choice; numbers are intentionally non-contiguous.
+    # The @wN matcher + handle pairs are also what the targets catalogue
+    # generator reads, so the pages auto-appear in the tail door list.
+    @w5 path /welcome-5 /welcome-5/
+    handle @w5 {
+        root * /etc/caddy/www
+        rewrite /welcome-5.html
+        file_server
+    }
+    @w6 path /welcome-6 /welcome-6/
+    handle @w6 {
+        root * /etc/caddy/www
+        rewrite /welcome-6.html
+        file_server
+    }
+    @w7 path /welcome-7 /welcome-7/
+    handle @w7 {
+        root * /etc/caddy/www
+        rewrite /welcome-7.html
+        file_server
+    }
+    @w9 path /welcome-9 /welcome-9/
+    handle @w9 {
+        root * /etc/caddy/www
+        rewrite /welcome-9.html
+        file_server
+    }
+    # Homepage: the index.html placeholder (meta-redirects to /welcome).
+    @home path /
+    handle @home {
+        root * /etc/caddy/www
+        file_server
+    }
+    handle {
+        respond "ok" 200
+    }
+}
