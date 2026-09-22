@@ -27,6 +27,8 @@
 # It never deletes data. It never runs `tailscale up` (that would reset
 # --ssh and could cost the tailnet login path) — it uses `tailscale set`.
 #
+
+. "$(dirname "$(readlink -f "$0")")/instance.sh" 2>/dev/null || true
 set -uo pipefail
 
 REPO_NEW=/root/github/kefoserver
