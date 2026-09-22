@@ -578,7 +578,6 @@ kuma_seed() {
     >>"$LOG" 2>&1 || fail kuma_seed
 }
 
-
 # Post-boot Nextcloud occ wiring: Talk signaling + TURN registration, NC
 # outbound SMTP (nextcloud@$DOMAIN sender mailbox), background cron. All
 # steps are idempotent (safe to re-run; never clobbers operator settings).
@@ -1175,9 +1174,6 @@ success_block() {
   echo "   3. Git remote 'origin' is git@github.com:$GITHUB_USER/$REPO_NAME.git (SSH key on root)"
   echo "   4. Mailboxes: make mail-gen MAIL=name@$DOMAIN (or bare make mail-gen for a disposable);"
   echo "      the nextcloud@$DOMAIN SMTP sender mailbox is created automatically"
-  echo "   5. Game servers + browser Minecraft are NOT part of this repo any more:"
-  echo "      the 'games' module moved to its own project — git@github.com:$GITHUB_USER/kefoMC.git"
-  echo "      (clone to /root/github/kefoMC && make install). Nothing here needs it."
   echo "=============================================================="
 }
 

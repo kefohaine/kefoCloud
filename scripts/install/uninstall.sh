@@ -408,7 +408,7 @@ remove_host() {
   # re-enable password auth — weakening is never the uninstall's job
   # the stack's ufw service ports — the tailnet SSH rule ALWAYS stays
   local p
-  for p in 80/tcp 443/tcp 25565/tcp 19132/udp 25/tcp 465/tcp 587/tcp 993/tcp \
+  for p in 80/tcp 443/tcp 25/tcp 465/tcp 587/tcp 993/tcp \
            3478/udp 3478/tcp 5349/tcp 49160:49200/udp 49160:49200/tcp; do
     ufw delete allow "$p" >>"$LOG" 2>&1 || true
   done
