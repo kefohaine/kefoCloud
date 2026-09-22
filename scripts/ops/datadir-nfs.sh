@@ -204,7 +204,7 @@ T "sed -i 's/^#\?port=.*/port=20048/' /etc/nfs.conf 2>/dev/null; sed -i 's/^\[mo
 T "exportfs -ra && systemctl enable --now nfs-server >/dev/null 2>&1 && exportfs -v 2>/dev/null | grep -q '$NC_MOUNT'" \
   || fail nfs "export"
 
-# ---------- fxmq: mount + migrate the live datadirectory (idempotent, re-checkable) ----------
+# ---------- this host: mount + migrate the live datadirectory (idempotent, re-checkable) ----------
 ensure_mount() {   # also the 'mount' re-check: makes the export live, so the Enter-loop can finish
   mount | grep -q "$LOCAL_MOUNT " && return 0
   # NFS needs its client helper; without /sbin/mount.nfs the kernel refuses the
