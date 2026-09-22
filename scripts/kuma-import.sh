@@ -1,11 +1,11 @@
 #!/bin/bash
 # kuma-import.sh — import a Uptime Kuma DB from another host (e.g. the old
-# jehpok VPS) into uptimekuma, adapting it to the current stack.
+# $GITHUB_USER VPS) into uptimekuma, adapting it to the current stack.
 #
 # The old host is not reachable from this VPS (SSH keys denied, Tailscale
 # SSH off, no taildrop inbox), so the operator must deliver the DB:
-#   on jehpok:  tailscale file cp kuma.db fxmq:    (or scp once a key exists)
-#   on fxmq:    tailscale file get /root/github/kefoserver/data/kuma/import
+#   on $GITHUB_USER:  tailscale file cp kuma.db fxmq:    (or scp once a key exists)
+#   on fxmq:    tailscale file get $ROOT/data/kuma/import
 # then run:  make kuma-import        (defaults to kuma/import/kuma.db)
 #        or:  make kuma-import KUMA_DB=/path/to/kuma.db
 #
@@ -15,18 +15,23 @@
 # What the script does:
 #   1. stops uptimekuma, backs up the current db, swaps the imported db in
 #   2. starts uptimekuma and waits for it to migrate the schema on boot
-#   3. adapts monitors: jehpok.com -> fxmq.net URLs, old docker container
+#   3. adapts monitors: $DOMAIN -> $DOMAIN URLs, old docker container
 #      names -> current names, deactivates monitors for retired services
 #   4. re-runs services/uptimekuma/seed-monitors.sql (idempotent) so the
 #      current container set's monitors/groups exist
 #
 # Run via `make kuma-import`; requires docker + sqlite3 in uptimekuma.
 
+. "$(dirname "$(readlink -f "$0")")/instance.sh" 2>/dev/null || true
+
 set -euo pipefail
 
-REPO=/root/github/kefoserver
-KUMA_DATA=/root/github/kefoserver/data/kuma/data
-IMPORT_DIR=/root/github/kefoserver/data/kuma/import
+# The checkout path is DERIVED from this script's location — never
+# hardcoded — so the repo can live anywhere and be renamed
+# ($NODE_NAME -> kefoServer) without editing any script.
+REPO="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+KUMA_DATA=$ROOT/data/kuma/data
+IMPORT_DIR=$ROOT/data/kuma/import
 SRC="${1:-$IMPORT_DIR/kuma.db}"
 STAMP=$(date +%Y%m%d-%H%M%S)
 
@@ -57,11 +62,11 @@ for i in $(seq 1 30); do
 done
 sleep 5
 
-echo "-> adapting monitors to the fxmq.net stack"
+echo "-> adapting monitors to the $DOMAIN stack"
 docker exec uptimekuma sqlite3 /app/data/kuma.db <<'SQL'
 -- domain swap in monitor URLs
-UPDATE monitor SET url = replace(url, 'jehpok.com', 'fxmq.net') WHERE url LIKE '%jehpok.com%';
--- caddy container renamed vhosts -> fxmq.net
+UPDATE monitor SET url = replace(url, '$DOMAIN', '$DOMAIN') WHERE url LIKE '%$DOMAIN%';
+-- caddy container renamed vhosts -> $DOMAIN
 UPDATE monitor SET name = 'docker: caddy', docker_container = 'caddy' WHERE name = 'docker: vhosts';
 -- retired services (mc, share, homer, api, www): keep history, stop checking
 UPDATE monitor SET active = 0 WHERE name IN
@@ -74,5 +79,5 @@ SQL
 echo "-> seeding current container monitors"
 docker exec -i uptimekuma sqlite3 /app/data/kuma.db < "$REPO/services/uptimekuma/seed-monitors.sql"
 
-echo "done. verify at https://kuma.fxmq.net — old account/status pages are in;"
+echo "done. verify at https://kuma.$DOMAIN — old account/status pages are in;"
 echo "backup of the pre-import db: $IMPORT_DIR/kuma.db.pre-import-$STAMP"
