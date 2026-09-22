@@ -3,13 +3,13 @@
 #
 # Writes any missing secrets into services/nextcloud/.env (idempotent —
 # existing values are kept) and renders the signaling + coturn configs into
-# the gitignored runtime dir /var/www/custom/projects/homelab/talk/.
+# the gitignored runtime dir /root/github/kefoserver/data/talk/.
 # Prints nothing sensitive.
 #
 # Recipe: make talk-gen   (also sets POSTGRES_*/REDIS_HOST defaults in .env)
 set -euo pipefail
 
-REPO=/var/www/custom/projects/homelab
+REPO=/root/github/kefoserver/data
 ENV="$REPO/repo/services/nextcloud/.env"
 TALK="$REPO/talk"
 
