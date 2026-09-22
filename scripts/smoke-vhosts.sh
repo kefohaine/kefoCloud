@@ -20,6 +20,8 @@
 # host units/firewall drift. Run after any change to services/caddy/ or
 # after `docker restart caddy`. The pre-push hook runs this automatically
 # (override with SKIP_SMOKE=1 — not on a whim).
+
+. "$(dirname "$(readlink -f "$0")")/instance.sh" 2>/dev/null || true
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -131,26 +133,26 @@ hdr core "Edge — Caddy · www · tail (core)"
 check_ctns edge "caddy"
 
 # www: empty homepage (redirects to /welcome) + download drop folder.
-check www          "www.fxmq.net" "/"          "200 301 302 307 308" ""    "homepage"
-check www-download "www.fxmq.net" "/download/" "200 301 302 307 308" html "public drop folder browses"
-check www-welcome  "www.fxmq.net" "/welcome"   "200 301 302 307 308" html "welcome page"
-check_tls "www.fxmq.net"
+check www          "www.$DOMAIN" "/"          "200 301 302 307 308" ""    "homepage"
+check www-download "www.$DOMAIN" "/download/" "200 301 302 307 308" html "public drop folder browses"
+check www-welcome  "www.$DOMAIN" "/welcome"   "200 301 302 307 308" html "welcome page"
+check_tls "www.$DOMAIN"
 
 # tail is Tailscale-only: a non-tailnet source (this host's 127.0.0.1) must
 # get 403.
-check tail "tail.fxmq.net" "/" "403" "" "non-tailnet sources get 403"
+check tail "tail.$DOMAIN" "/" "403" "" "non-tailnet sources get 403"
 # From the tailnet side (the host's own Tailscale IP passes the @not_tailnet
 # matcher): the terminal serves unauthenticated, /ttyd challenges without
 # credentials. A cached credential never short-circuits these — Caddy decides.
 ts_ip="$(tailscale ip -4 2>/dev/null | head -1)"
 if [ -n "$ts_ip" ]; then
-  ta=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 --resolve "tail.fxmq.net:443:$ts_ip" "https://tail.fxmq.net/" 2>/dev/null)
+  ta=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 --resolve "tail.$DOMAIN:443:$ts_ip" "https://tail.$DOMAIN/" 2>/dev/null)
   if [ "$ta" != 200 ] && [ "$ta" != 301 ] && [ "$ta" != 308 ]; then
     echo "FAIL tail-terminal: from a tailnet source got $ta (want 200)"; fails=$((fails+1))
   else
     echo "ok   tail-terminal: $ta — terminal serves tailnet devices"
   fi
-  tt=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 --resolve "tail.fxmq.net:443:$ts_ip" "https://tail.fxmq.net/ttyd" 2>/dev/null)
+  tt=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 --resolve "tail.$DOMAIN:443:$ts_ip" "https://tail.$DOMAIN/ttyd" 2>/dev/null)
   if [ "$tt" != "401" ]; then
     echo "FAIL tail-ttyd-auth: /ttyd without credentials got $tt (want 401 — basic auth must challenge)"; fails=$((fails+1))
   else
@@ -165,30 +167,30 @@ end_sec
 # Module: cloud — Nextcloud (FPM app + PostgreSQL + Redis) + Talk HPB/TURN.
 # ─────────────────────────────────────────────────────────────────────────────
 hdr cloud "Cloud — Nextcloud + Talk (module: cloud)"
-check cloud "cloud.fxmq.net" "/" "200 301 302 307 308" html "Nextcloud answers"
-check_sec_headers cloud "cloud.fxmq.net" "/" "one of each"
-check_tls "cloud.fxmq.net"
+check cloud "cloud.$DOMAIN" "/" "200 301 302 307 308" html "Nextcloud answers"
+check_sec_headers cloud "cloud.$DOMAIN" "/" "one of each"
+check_tls "cloud.$DOMAIN"
 
-# talk.fxmq.net — Talk HPB + TURN. The backend API must answer with the
+# talk.$DOMAIN — Talk HPB + TURN. The backend API must answer with the
 # signaling server's Welcome JSON and the client websocket route must reject
 # an unauthenticated handshake (400/426/101). A bare `respond "ok"` stub
 # returns 200 on both and fails here — the ok-stub guard for Talk.
-check talk-root "talk.fxmq.net" "/" "200" "" "Talk signaling served"
-talk_welcome=$(curl -s --max-time 12 --resolve "talk.fxmq.net:443:127.0.0.1" "https://talk.fxmq.net/signaling/api/v1/welcome" 2>/dev/null)
+check talk-root "talk.$DOMAIN" "/" "200" "" "Talk signaling served"
+talk_welcome=$(curl -s --max-time 12 --resolve "talk.$DOMAIN:443:127.0.0.1" "https://talk.$DOMAIN/signaling/api/v1/welcome" 2>/dev/null)
 if ! echo "$talk_welcome" | grep -q '"Welcome"'; then
   echo "FAIL talk-signaling: /signaling/api/v1/welcome is not the signaling server: $(echo "$talk_welcome" | head -c 80)"; fails=$((fails+1))
 else
   echo "ok   talk-signaling — HPB backend API answers"
 fi
-talk_ws=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 --resolve "talk.fxmq.net:443:127.0.0.1" \
+talk_ws=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 --resolve "talk.$DOMAIN:443:127.0.0.1" \
   -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
-  "https://talk.fxmq.net/signaling/spreed" 2>/dev/null)
+  "https://talk.$DOMAIN/signaling/spreed" 2>/dev/null)
 if [ "$talk_ws" != "400" ] && [ "$talk_ws" != "426" ] && [ "$talk_ws" != "101" ]; then
   echo "FAIL talk-signaling: websocket handshake got HTTP $talk_ws (want 400/426/101 — signaling server must answer)"; fails=$((fails+1))
 else
   echo "ok   talk-signaling — websocket endpoint answers ($talk_ws)"
 fi
-check_tls "talk.fxmq.net"
+check_tls "talk.$DOMAIN"
 
 # coturn listeners: TURN (udp 3478) + TURNS (tcp 5349) must be bound.
 if ss -lun 2>/dev/null | grep -q ':3478 ' && ss -ltn 2>/dev/null | grep -q ':5349 '; then
@@ -211,9 +213,9 @@ end_sec
 # Module: vault — Vaultwarden.
 # ─────────────────────────────────────────────────────────────────────────────
 hdr vault "Vault — Vaultwarden (module: vault)"
-check vault "vault.fxmq.net" "/" "200 301 302 307 308" html "Vaultwarden answers"
-check_sec_headers vault "vault.fxmq.net" "/" "one of each"
-check_tls "vault.fxmq.net"
+check vault "vault.$DOMAIN" "/" "200 301 302 307 308" html "Vaultwarden answers"
+check_sec_headers vault "vault.$DOMAIN" "/" "one of each"
+check_tls "vault.$DOMAIN"
 check_ctns vault vaultwarden
 end_sec
 
@@ -221,9 +223,9 @@ end_sec
 # Module: monitor — Uptime Kuma.
 # ─────────────────────────────────────────────────────────────────────────────
 hdr monitor "Monitor — Uptime Kuma (module: monitor)"
-check kuma "kuma.fxmq.net" "/" "200 301 302 307 308" html "Uptime Kuma answers"
-check_sec_headers kuma "kuma.fxmq.net" "/" "one of each"
-check_tls "kuma.fxmq.net"
+check kuma "kuma.$DOMAIN" "/" "200 301 302 307 308" html "Uptime Kuma answers"
+check_sec_headers kuma "kuma.$DOMAIN" "/" "one of each"
+check_tls "kuma.$DOMAIN"
 check_ctns monitor uptimekuma
 end_sec
 
@@ -234,9 +236,9 @@ end_sec
 # Module: mail — Docker Mailserver + Roundcube webmail.
 # ─────────────────────────────────────────────────────────────────────────────
 hdr mail "Mail — Docker Mailserver + Roundcube (module: mail)"
-check mail "mail.fxmq.net" "/" "200 301 302 307 308" html "Roundcube webmail"
-check_sec_headers mail "mail.fxmq.net" "/" "one of each"
-check_tls "mail.fxmq.net"
+check mail "mail.$DOMAIN" "/" "200 301 302 307 308" html "Roundcube webmail"
+check_sec_headers mail "mail.$DOMAIN" "/" "one of each"
+check_tls "mail.$DOMAIN"
 
 # SMTP 25/587 + IMAPS 993 must answer.
 for port in 25 587; do
@@ -281,7 +283,7 @@ fi
 # NFS datadirectory: only asserted when fstab expects the mount (no fstab
 # entry = storage not onboarded; the check then passes vacuously).
 if grep -q 'cloud/users' /etc/fstab 2>/dev/null; then
-  if ! findmnt -n /root/github/kefoserver/data/cloud/users >/dev/null 2>&1; then
+  if ! findmnt -n $ROOT/data/cloud/users >/dev/null 2>&1; then
     echo "FAIL nfs-datadir: fstab expects cloud/users but it is not mounted"; fails=$((fails+1))
   else
     echo "ok   nfs-datadir — datadirectory mounted"
