@@ -4,9 +4,12 @@ __pycache__/
 services/nextcloud/.env
 services/mailserver/.env
 services/vaultwarden/.env
-# Runtime data dirs — canonical home is /var/www/custom/projects/homelab/
-# (siblings of repo/), never inside the repo. Ignored so a stray copy can't
-# be committed (2026-08-29 cleanup removed strays that were created in repo/).
+# Runtime data dirs — canonical home is /root/github/kefoserver/data/: the
+# single external tree (containers, databases, uploads, installed-module
+# reports). Everything untracked lives there; the repo tree stays clean.
+/data/
+
+# Defensive: never commit these even if a stray copy lands in the repo root.
 /backups/
 /caddy_data/
 /cloud/
