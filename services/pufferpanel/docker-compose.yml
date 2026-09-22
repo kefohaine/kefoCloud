@@ -31,8 +31,8 @@ services:
       start_period: 30s
 
     volumes:
-      - /var/www/custom/projects/homelab/puffer/data:/var/lib/pufferpanel
-      - /var/www/custom/projects/homelab/puffer/config:/etc/pufferpanel
+      - /root/github/kefoserver/data/puffer/data:/var/lib/pufferpanel
+      - /root/github/kefoserver/data/puffer/config:/etc/pufferpanel
       # PufferPanel's daemon needs the Docker socket to run game servers, so a
       # compromised panel is host root — the same accepted trade-off as
       # uptimekuma's read-only socket mount. It cannot be dropped without
