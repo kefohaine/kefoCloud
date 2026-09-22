@@ -6,7 +6,7 @@ instructions: |
   print secrets or operator data. Follow docs/AGENTS.md. Report gaps and a
   prioritized remediation list; do not apply fixes.
 author:
-  contact: "kefohaine"
+  contact: "{{GITHUB_USER}}"
 extensions:
   - type: builtin
     name: developer
