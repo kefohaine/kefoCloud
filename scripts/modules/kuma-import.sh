@@ -68,10 +68,10 @@ docker exec uptimekuma sqlite3 /app/data/kuma.db <<'SQL'
 UPDATE monitor SET url = replace(url, '$DOMAIN', '$DOMAIN') WHERE url LIKE '%$DOMAIN%';
 -- caddy container renamed vhosts -> $DOMAIN
 UPDATE monitor SET name = 'docker: caddy', docker_container = 'caddy' WHERE name = 'docker: vhosts';
--- retired services (mc, share, homer, api, www): keep history, stop checking
+-- retired services (share, homer, api, www): keep history, stop checking
 UPDATE monitor SET active = 0 WHERE name IN
-  ('docker: mc','docker: mc-flask','docker: share-flask','docker: homer',
-   'http: mc','http: share','http: www','http: api');
+  ('docker: share-flask','docker: homer',
+   'http: share','http: www','http: api');
 -- docker host entry points at the local socket
 UPDATE docker_host SET docker_type = 'socket', docker_daemon = '/var/run/docker.sock' WHERE name = 'local';
 SQL
