@@ -1,7 +1,7 @@
-# /etc/logrotate.d/kefohaine — installed by `make install-config` from
-# config/logrotate/kefohaine.
+# /etc/logrotate.d/{{GITHUB_USER}} — installed by `make install-config` from
+# config/logrotate/{{GITHUB_USER}}.
 #
-# Every log this project writes lives in /var/log/kefohaine (install.log,
+# Every log this project writes lives in {{LOG_DIR}} (install.log,
 # uninstall.log, and any log an installed module writes). This single rule is
 # what keeps that namespace bounded: 8 weeks, compressed, so the namespace can
 # never grow without limit. Nothing else in the project logs per-event (no
@@ -10,7 +10,7 @@
 #
 # The directory is created here too (`create` needs it to exist, and a fresh
 # host runs logrotate before `make install-config` ever has).
-/var/log/kefohaine/*.log {
+{{LOG_DIR}}/*.log {
     weekly
     rotate 8
     compress
