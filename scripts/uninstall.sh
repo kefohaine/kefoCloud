@@ -2,7 +2,7 @@
 # homelab uninstall.sh — the exact opposite of install.sh, in the same style.
 #
 # Reverse-onboarding: takes the deployment apart module by module (cloud,
-# vault, mail, games, monitor — all default OFF, opt in per module, the
+# vault, mail, monitor — all default OFF, opt in per module, the
 # mirror of the installer's default-ON opt-out), then optionally the edge
 # (Caddy + caddy_data), the host services (goose, ttyd, dnsmasq, cron,
 # fail2ban, the stack's ufw rules), the installed packages (docker, …),
@@ -72,7 +72,7 @@ cat <<'EOF'
  ╚══╝╚══╝  ╚═════╝ ╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝
 
   One-shot teardown for the homelab stack: reverses scripts/install.sh
-  step by step — modules first (cloud, vault, mail, games, monitor; all
+  step by step — modules first (cloud, vault, mail, monitor; all
   default OFF, opt in one by one), then the edge, the host services, the
   installed packages, the operator user, and the tailnet membership
   (last). Destructive by design: every prompt defaults to the safe
@@ -153,7 +153,7 @@ ask_modules() {
   # removing a module destroys its containers and (on data-confirm) its
   # data; the operator opts in per module.
   local k answer
-  for k in cloud vault mail games monitor; do
+  for k in cloud vault mail monitor; do
     local var="RM_MOD_${k^^}" def=n
     eval "def=\${DEF_RM_MOD_${k^^}:-n}"
     if [ -z "${!var:-}" ]; then
@@ -193,7 +193,7 @@ ask_mode() {
       # to keep — the operator confirms the scope once, then per-category
       # data confirms below decide what user data dies
       local k
-      for k in cloud vault mail games monitor; do
+      for k in cloud vault mail monitor; do
         eval "RM_MOD_${k^^}=true"
       done
       RM_EDGE=true; RM_HOST=true; RM_PKGS=true; RM_USER=true; RM_TAILNET=true
@@ -218,12 +218,12 @@ ask_inputs() {
   # operator account root is never deleted (sole entry point) — no prompt
   [ "${RM_TAILNET:-false}" = true ] || ask RM_TAILNET "Remove this host from the tailnet (last step)?" "${DEF_RM_TAILNET:-n}"
   # data (all default KEEP; the storage VPS export is never touched)
-  ask RM_MOD_DATA "Delete the data dirs of the modules being removed (vault/, kuma/, mailserver/, puffer/, cloud/ local files)?" "${DEF_RM_DATA:-n}"
+  ask RM_MOD_DATA "Delete the data dirs of the modules being removed (vault/, kuma/, mailserver/, cloud/ local files)?" "${DEF_RM_DATA:-n}"
   ask RM_NCLOCAL  "Delete the Nextcloud local rollback copy (cloud/users.local-backup)?" n
   ask RM_BACKUPS  "Delete $PROJECT_DIR/backups/ (snapshots + secrets bundles)?" n
   ask RM_REPO     "Delete the repo clone at $REPO (scheduled after this script exits)?" n
   local ml=""
-  for k in cloud vault mail games monitor; do
+  for k in cloud vault mail monitor; do
     mod_rm "$k" && ml+="$k "
   done
   echo "Teardown summary — modules: ${ml:-none}· edge: ${RM_EDGE:-false} · host: ${RM_HOST:-false} · pkgs: ${RM_PKGS:-false} · user: ${RM_USER:-false} · tailnet: ${RM_TAILNET:-false}"
@@ -242,7 +242,7 @@ mod_installed() { [ -f "$CONF" ] && grep -qx "$1" "$CONF" 2>/dev/null; }
 # snapshot of the modules recorded as installed BEFORE any removal (the
 # conf is rewritten after each module removal, so the original set is
 # captured once — no conf = every module was expected)
-MODS_ORIGINAL="cloud vault mail games monitor"
+MODS_ORIGINAL="cloud vault mail monitor"
 [ -f "$CONF" ] && MODS_ORIGINAL=$(grep -vE '^[[:space:]]*(#|$)' "$CONF" | tr '\n' ' ')
 
 # GENERATED — the same file install.sh writes, kept accurate: the original
@@ -268,7 +268,6 @@ compose_file_of() { # module -> its compose file (repo layout)
     cloud)   echo "$REPO/services/nextcloud/docker-compose.yml";;
     vault)   echo "$REPO/services/vaultwarden/docker-compose.yml";;
     mail)    echo "$REPO/services/mailserver/docker-compose.yml";;
-    games)   echo "$REPO/services/pufferpanel/docker-compose.yml";;
     monitor) echo "$REPO/services/uptimekuma/docker-compose.yml";;
   esac
 }
@@ -280,7 +279,6 @@ module_data_dirs() { # module -> its host data dirs (never the storage export)
     cloud)   echo "$PROJECT_DIR/cloud $PROJECT_DIR/talk $PROJECT_DIR/pgdata";;
     vault)   echo "$PROJECT_DIR/vault";;
     mail)    echo "$PROJECT_DIR/mailserver";;
-    games)   echo "$PROJECT_DIR/puffer $PROJECT_DIR/eaglercraft $PROJECT_DIR/download";;
     monitor) echo "$PROJECT_DIR/kuma";;
   esac
 }
@@ -372,6 +370,7 @@ remove_edge() {
   fi
   if [ "${RM_CADDY_DATA:-false}" = true ] && [ -d "$PROJECT_DIR/caddy_data" ]; then
     rm -rf "$PROJECT_DIR/caddy_data" >>"$LOG" 2>&1 || fail edge "caddy_data not deleted"
+    rm -rf "$PROJECT_DIR/download" >>"$LOG" 2>&1 || true
   fi
   # the shared bridge network goes only when nothing is attached anymore
   docker network rm net >>"$LOG" 2>&1 || true
@@ -553,7 +552,7 @@ success_block() {
   echo "=============================================================="
   echo " SUCCESS — the stack is down:"
   local m
-  for m in cloud vault mail games monitor; do
+  for m in cloud vault mail monitor; do
     if mod_rm "$m"; then
       echo "   removed    $m"
     fi
@@ -622,7 +621,7 @@ main() {
   ask_inputs
   # nothing selected = nothing to do (all defaults are safe/keep)
   local any=false k
-  for k in cloud vault mail games monitor; do
+  for k in cloud vault mail monitor; do
     mod_rm "$k" && any=true
   done
   for v in RM_EDGE RM_HOST RM_PKGS RM_USER RM_TAILNET; do
@@ -632,7 +631,7 @@ main() {
     log "nothing selected — every prompt answered keep. Nothing was removed."
     exit 0
   fi
-  for k in cloud vault mail games monitor; do
+  for k in cloud vault mail monitor; do
     if mod_rm "$k"; then
       remove_module "$k"
     fi
