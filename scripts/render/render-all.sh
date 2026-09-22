@@ -30,6 +30,7 @@ RENDER="$ROOT/scripts/render/render.sh"
 [ -f "$CONF" ] || { echo "render-all: missing $CONF (see config/instance.defaults)" >&2; exit 1; }
 
 val() { sed -n "s/^$1=//p" "$CONF" | head -1; }
+DATA_DIR="$(val DATA_DIR)"; [ -n "$DATA_DIR" ] || DATA_DIR="$ROOT/data"
 
 # NEVER rm -rf $OUT: data/rendered/caddy is bind-mounted into the running edge,
 # and deleting the directory deletes the inode the container holds. Caddy keeps
@@ -51,7 +52,9 @@ render_tree() {   # render_tree <src-dir> <dest-dir> [exclude-name]
 }
 
 render_tree "$ROOT/modules/caddy" "$TMP/caddy" Dockerfile
-render_tree "$ROOT/config" "$TMP/config" instance.defaults   # docs, not a template to install
+render_tree "$ROOT/config" "$TMP/config" instance.defaults www
+# (skip www: config/www holds TEMPLATE web pages, not host config — they belong
+#  in the web root, rendered below, not under /etc)
 
 # Swap in place (keeps the mounted inode alive), then drop the scratch tree.
 mkdir -p "$OUT/caddy" "$OUT/config"
@@ -67,6 +70,13 @@ else
     done
 fi
 rm -rf "$TMP"
+
+# Web root ($DATA/www): the TEMPLATE pages from config/www are rendered
+# straight into it. Operator pages in there are never touched (nothing is
+# deleted) — only the template files are (re)written, because they are part of
+# the access layer, not content. Today that is the tail door list.
+mkdir -p "$DATA_DIR/www"
+render_tree "$ROOT/config/www" "$DATA_DIR/www"
 
 # ── instance block for compose ──────────────────────────────────────────────
 block() {
