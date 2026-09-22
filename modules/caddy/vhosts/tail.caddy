@@ -1,18 +1,18 @@
-# tail.{{DOMAIN}} — tailnet entry point: the door list at / and the ttyd
-# host shell at /ttyd.
+# tail.{{DOMAIN}} — tailnet entry point: the tailnet door list at / and the
+# ttyd host shell at /ttyd.
 #
-# Access model:
-#   * every path — non-tailnet sources get 403 (Tailscale membership required)
-#   * /            — the door list (unauthenticated: any tailnet device can
-#                    open it; it renders every webpage of the domain — public
-#                    and tailnet-only — fetched live from /targets.json on
-#                    every visit, no login, no session, no commands)
-#   * /targets.json — GENERATED navigation catalogue (scripts/access/tail-targets.sh):
-#                    the vhosts and their pages, so nothing is hardcoded
-#   * /ttyd*      — the shell: HTTP basic auth (user `root`). Each visit
-#                    prompts unless the browser holds a valid cached credential.
-# `make tail-auth` sets/rotates the credential and prints it once (only the
-# bcrypt hash is committed — never put the password in the repo).
+# Access model — Tailscale MEMBERSHIP is the only gate, by operator choice:
+#   * every path — non-tailnet sources get 403 (@not_tailnet)
+#   * /            — the tailnet door list: every TAILNET-only route of this
+#                    domain (the shell, one card per registered device
+#                    session) fetched live from /targets.json on every visit.
+#                    No login, no session, no commands.
+#   * /targets.json — GENERATED catalogue (scripts/access/tail-targets.sh)
+#   * /ttyd*      — the shell. Deliberately UNAUTHENTICATED: a tailnet device
+#                    that can reach the vhost gets a root shell, no second
+#                    credential (HTTP basic auth was removed 2026-09-22 by
+#                    operator request — membership IS the auth). Reaching it
+#                    non-tailnet is impossible: the 403 above runs first.
 #
 # Caching: NOTHING on this vhost may be cached — not the door list, not the
 # catalogue, not ttyd responses. `no-store` (forbids storing), the ETag /
@@ -44,14 +44,10 @@ https://tail.{{DOMAIN}} {
             file_server
         }
 
-        # ttyd host terminal — gated. Base path is /ttyd (ttyd -b /ttyd), so
-        # the full path is proxied as-is — do not strip the prefix. The
-        # terminal page authenticates against this with an explicit header,
-        # never relying on the browser's cached credential.
+        # ttyd host terminal — no second credential (see the header). Base
+        # path is /ttyd (ttyd -b /ttyd), so the full path is proxied as-is —
+        # do not strip the prefix.
         handle /ttyd* {
-            basic_auth {
-                root $2a$14$SbolWVoI8etI0M368qB.VujAdZg33b0IeUwzrXrAgKyiOpZfBOVoa
-            }
             reverse_proxy 172.22.0.1:7681 {
                 transport http {
                     versions 1.1

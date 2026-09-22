@@ -30,17 +30,18 @@ services:
       # homelab/download — the www.${DOMAIN}/download file browser's root
       # (drop files here; Caddy serves them read-only).
       - ${DATA_DIR}/download:/download:ro
-      # homelab/eaglercraft — the mc.${DOMAIN}/play in-browser Minecraft
-      # client (official EaglercraftX 1.8.8 multi-file build: index.html,
-      # classes.js, assets.epk, lang/ — our server pre-seeded in its list).
-      - ${DATA_DIR}/eaglercraft:/eaglercraft:ro
-      # Top-level Caddyfile + per-vhost snippets + the static pages, as
-      # RENDERED by `make render` from the tracked skeleton. Mount the tracked
-      # dir by mistake and Caddy happily loads site blocks for a literal
-      # 'www.{{DOMAIN}}' — it starts, listens, and serves nothing (2026-09-22).
-      # The dir is mounted so the `import` directives resolve relative paths
-      # (Caddy treats imports as relative to the importing file).
+      # Top-level Caddyfile + per-vhost snippets, as RENDERED by `make render`
+      # from the tracked skeleton. Mount the tracked dir by mistake and Caddy
+      # happily loads site blocks for a literal 'www.{{DOMAIN}}' — it starts,
+      # listens, and serves nothing (2026-09-22). The dir is mounted so the
+      # `import` directives resolve relative paths (Caddy treats imports as
+      # relative to the importing file).
       - ${DATA_DIR}/rendered/caddy:/etc/caddy:ro
+      # The web root is INSTANCE DATA, not repo content: every page served by
+      # www.${DOMAIN} and tail.${DOMAIN} lives in ${DATA_DIR}/www (operator-
+      # edited; targets.json is generated there). Nested inside the mount
+      # above on purpose — the skeleton ships no pages at all.
+      - ${DATA_DIR}/www:/etc/caddy/www:ro
       # Persistent Caddy data: ACME certs, account keys, OCSP staples.
       # Bound at /data, which is the caddy:2.x default base directory —
       # the built-in ACME issuer writes under /data/caddy and renewal
