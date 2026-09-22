@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=simple
 User=root
 Group=root
-WorkingDirectory=/root/github/kefoserver
+WorkingDirectory={{REPO_DIR}}
 ExecStart=/usr/local/bin/goose serve
 # Server secret lives OUTSIDE the repo (root:root 0640) — never in a tracked file.
 # Created by scripts/install.sh; live path /etc/goose/goose.env.
