@@ -182,10 +182,6 @@ make mail-card|one address card — exists, quota, webmail URL (MAIL=<addr>)
 EOF
 
   rows <<'EOF'
-make panel-list-users|list users — id/username/email, passwords never shown
-make panel-add-user|add a user — USER=<email> NAME=<name> [PASS=…] [ADMIN=1]
-make panel-del-user|delete a user + their permissions (USER=<email>)
-make panel-passwd|reset a password (USER=<email> [PASS=…]) — restarts the panel, stopping a running game server
 EOF
 
   sec "kuma accounts (Uptime Kuma)"
