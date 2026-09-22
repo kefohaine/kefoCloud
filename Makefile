@@ -8,7 +8,7 @@ SHELL := /bin/bash
 
 REPO     := /root/github/kefoserver
 COMPOSE  := docker compose -f
-CONTAINERS := fxmq.net uptimekuma nextcloud vaultwarden pufferpanel mailserver roundcube
+CONTAINERS := caddy uptimekuma nextcloud vaultwarden pufferpanel mailserver roundcube
 HOST     := ttyd dnsmasq goose
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -43,13 +43,13 @@ compose-file-of = $(REPO)/$(COMPOSE_FILE_$1)
 # fxmq.net needs a local image build; compose v5.5.0 on Debian trixie ships
 # buildx 0.13.1, which is too old for `compose ... --build` (needs >= 0.17).
 # Try the compose build first and fall back to plain `docker build` + compose
-# up (the install.sh pattern) so `make dok-recreate-fxmq.net` works everywhere.
+# up (the install.sh pattern) so `make dok-recreate-caddy` works everywhere.
 define dok_recreate_rule
 dok-recreate-$1:
->@if [ "$1" = "fxmq.net" ]; then \
+>@if [ "$1" = "caddy" ]; then \
     if ! $(COMPOSE) $(call compose-file-of,$1) up -d --force-recreate --build; then \
       scripts/mklog warn "compose build unavailable (buildx < 0.17 on trixie) — falling back to docker build + compose up"; \
-      docker build -t fxmq.net:local $(REPO)/services/fxmq.net \
+      docker build -t caddy:local $(REPO)/services/caddy \
         && $(COMPOSE) $(call compose-file-of,$1) up -d --force-recreate; \
     fi; \
   else \
@@ -83,10 +83,10 @@ $(foreach s,$(CONTAINERS),$(eval $(call dok_logs_rule,$s)))
 # update — each keeps a self-contained recipe (no chained make targets).
 define dok_recreate_all_cmds
 @for f in $(REPO)/services/*/docker-compose.yml; do \
-    if [ "$$f" = "$(REPO)/services/fxmq.net/docker-compose.yml" ]; then \
+    if [ "$$f" = "$(REPO)/services/caddy/docker-compose.yml" ]; then \
       if ! $(COMPOSE) "$$f" up -d --force-recreate --build; then \
         scripts/mklog warn "compose build unavailable (buildx < 0.17 on trixie) — falling back to docker build + compose up"; \
-        docker build -t fxmq.net:local $(REPO)/services/fxmq.net \
+        docker build -t caddy:local $(REPO)/services/caddy \
           && $(COMPOSE) "$$f" up -d --force-recreate; \
       fi; \
     else \
@@ -115,7 +115,7 @@ dok-logs-all:
 
 TARGET ?=
 
-# Container actions, TARGET= style: make dok-recreate TARGET=fxmq.net
+# Container actions, TARGET= style: make dok-recreate TARGET=caddy
 # (the -<ctn> suffixed targets stay as thin aliases).
 .PHONY: dok-action
 dok-action:
@@ -250,8 +250,8 @@ update:
 >@bash scripts/smoke-vhosts.sh || scripts/mklog warn "smoke reported failures — see above"
 
 # Live edge smoke test — every vhost must serve its real app (see
-# scripts/smoke-vhosts.sh). Run after any services/fxmq.net/ change or
-# `docker restart fxmq.net`. The pre-push hook runs this automatically.
+# scripts/smoke-vhosts.sh). Run after any services/caddy/ change or
+# `docker restart caddy`. The pre-push hook runs this automatically.
 smoke:
 >@bash scripts/smoke-vhosts.sh
 
