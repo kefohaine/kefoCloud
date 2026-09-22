@@ -418,15 +418,25 @@ prep_dirs() {
                $ROOT/data/mailserver/roundcube \
                $ROOT/data/pgdata \
                $ROOT/data/talk \
-               $ROOT/data/download
+               $ROOT/data/download \
+               $ROOT/data/www
+  # The web root is INSTANCE DATA (the repo ships no pages): seed a minimal
+  # placeholder homepage ONCE so www.$DOMAIN never falls through to the bare
+  # "ok" stub. Existing pages are never touched — the operator owns this dir.
+  if [ ! -f "$ROOT/data/www/index.html" ]; then
+    printf '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1">\n<title>%s</title></head><body>\n<h1>%s</h1>\n<p>This is the placeholder homepage. Drop your pages in <code>%s/www</code> — they are served at the vhost roots (<code>www.%s</code>, <code>tail.%s</code>) and are never overwritten by a render.</p>\n</body></html>\n' \
+      "$DOMAIN" "$DOMAIN" "$DATA" "$DOMAIN" "$DOMAIN" > "$ROOT/data/www/index.html"
+  fi
   sudo chown -R 33:33 $ROOT/data/cloud/html $ROOT/data/cloud/users
   sudo chown -R 1000:1000 $ROOT/data/vault/data
   sudo chown -R 5000:5000 $ROOT/data/mailserver/data $ROOT/data/mailserver/state $ROOT/data/mailserver/logs
   sudo chown -R 33:33 $ROOT/data/mailserver/roundcube
-  # root-owned: talk configs (talk-gen) and the public drop folder.
+  # root-owned: talk configs (talk-gen), the public drop folder and the
+  # instance web root (read-only from the edge container).
   # pgdata stays root-owned — the postgres entrypoint chowns it on first boot.
   sudo chown -R root:root $ROOT/data/talk \
-    $ROOT/data/download
+    $ROOT/data/download \
+    $ROOT/data/www
 }
 
 write_instance_conf() {
