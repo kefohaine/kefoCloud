@@ -35,7 +35,7 @@ DATA_DIR="$(val DATA_DIR)"; [ -n "$DATA_DIR" ] || DATA_DIR="$ROOT/data"
 # NEVER rm -rf $OUT: data/rendered/caddy is bind-mounted into the running edge,
 # and deleting the directory deletes the inode the container holds. Caddy keeps
 # serving its already-loaded config but every static file 404s (/welcome,
-# /download, /play) until the container is recreated — which is exactly what
+# /download, the operator's pages) until the container is recreated — which is exactly what
 # happened on 2026-09-22. Render into a scratch tree and rsync it in place:
 # rsync writes files into the EXISTING directory and deletes only stale files.
 TMP="$(dirname "$OUT")/.render-tmp.$$"
@@ -100,13 +100,6 @@ for d in "$ROOT"/modules/*/; do
   block >> "$envf"
   chmod 600 "$envf"
 done
-# the kefoMC unit lives in another repo, but it also joins `net`: give it the
-# values too so nothing has to be hand-edited there after a rename.
-if [ -d /root/github/kefoMC ]; then
-  : >> /root/github/kefoMC/.env
-  sed -i '/^# >>> instance values/,/^# <<< instance values/d' /root/github/kefoMC/.env 2>/dev/null || true
-  { block; } >> /root/github/kefoMC/.env 2>/dev/null || true
-fi
 
 echo "info:  rendered $(find "$OUT" -type f | wc -l) file(s) into $OUT"
 echo "info:  refreshed the instance block in $(ls -d "$ROOT"/modules/*/.env 2>/dev/null | wc -l) service .env file(s)"
