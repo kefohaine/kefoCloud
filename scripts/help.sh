@@ -40,7 +40,7 @@ core() {
   rows <<'EOF'
 make fetch|AIO dashboard — host perf, modules, git, units, docker, tmux, backups, mail, tailnet
 make fetch-more|deep dive — per-core cpu, mem breakdown, processes, sockets, all units+timers+cron, docker caps/stats/log sizes, disk+inodes, data/ growth, tailnet prefs, DNS probes, TLS expiry
-make smoke|live edge test — every vhost, tailnet edge, tls, mail, panel lockdown (pre-push hook runs it)
+make smoke|live edge test — every vhost, tailnet edge, tls, mail (pre-push hook runs it)
 EOF
 
   sec "maintain"
@@ -156,7 +156,7 @@ EOF
   rows <<'EOF'
 make goose-recipes|list the reusable agent recipes
 make goose-audit [FOCUS=<area>]|read-only audit — security, backups, mail, docker, networking, docs
-make goose-review MODULE=<m>|read-only module review (cloud|vault|mail|games|monitor|edge)
+make goose-review MODULE=<m>|read-only module review (cloud|vault|mail|monitor|edge)
 make goose-troubleshoot SERVICE=<s>|triage a failure via docs/DEBUG.md
 make goose-check-backups [FOCUS=<area>]|audit the backup/restore posture
 make goose-check-network [FOCUS=<area>]|review DNS/TLS/mail/reverse-proxy
@@ -176,7 +176,6 @@ make mail-password|rotate a mailbox password (MAIL=<addr>; empty PWD = new one p
 make mail-card|one address card — exists, quota, webmail URL (MAIL=<addr>)
 EOF
 
-  sec "panel accounts (PufferPanel)"
   rows <<'EOF'
 make panel-list-users|list users — id/username/email, passwords never shown
 make panel-add-user|add a user — USER=<email> NAME=<name> [PASS=…] [ADMIN=1]
