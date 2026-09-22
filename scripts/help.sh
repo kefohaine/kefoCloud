@@ -14,6 +14,8 @@
 # Rows are `command|description` heredocs — keep one row per line, no `|`
 # inside a description.
 
+. "$(dirname "$(readlink -f "$0")")/instance.sh" 2>/dev/null || true
+
 set -uo pipefail
 export LC_ALL=C
 
@@ -39,6 +41,7 @@ core() {
   sec "dashboard & health"
   rows <<'EOF'
 make fetch|AIO dashboard — host perf, modules, git, units, docker, tmux, backups, mail, tailnet
+make render|skeleton → live: render data/rendered/ + refresh each service .env
 make fetch-more|deep dive — per-core cpu, mem breakdown, processes, sockets, all units+timers+cron, docker caps/stats/log sizes, disk+inodes, data/ growth, tailnet prefs, DNS probes, TLS expiry
 make smoke|live edge test — every vhost, tailnet edge, tls, mail (pre-push hook runs it)
 EOF
@@ -104,7 +107,7 @@ make install-ssh|50-cloud-init.conf → sshd_config.d (validates with sshd -t, t
 make install-dnsmasq-conf|10-tailnet.conf → /etc/dnsmasq.d
 make install-dnsmasq-override|dnsmasq drop-in override → /etc/systemd/system/dnsmasq.service.d
 make install-docker|daemon.json → /etc/docker (docker daemon restart needed to apply)
-make install-sysctl|99-kefoserver.conf → /etc/sysctl.d
+make install-sysctl|99-kefo.conf → /etc/sysctl.d
 make install-cron|nextcloud → /etc/cron.d (occ cron every 5 min)
 make install-hooks|git hooks — pre-commit edge guard, pre-push smoke + history-rewrite warning
 EOF
