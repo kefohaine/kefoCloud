@@ -235,7 +235,7 @@ define clean_apt_cmds
 endef
 
 define clean_backups_cmds
-@for pattern in cloud-backup-* share-backup-*.db vault-backup-*.tar.gz secrets-bundle-*.tar.gz 'mc-backup-*.tar.gz minecraft-backup-*.tar.gz'; do \
+@for pattern in cloud-backup-* share-backup-*.db vault-backup-*.tar.gz secrets-bundle-*.tar.gz; do \
     sudo ls -1dt $(REPO)/data/backups/$$pattern 2>/dev/null | tail -n +4 | sudo xargs -r rm -rf; \
   done
 @scripts/lib/mklog info "pruned backups older than the 3 most recent per pattern"
@@ -367,7 +367,6 @@ mail-card:
     scripts/lib/mklog info "address $(MAIL) — exists, quota $${q:-unlimited}, webmail https://mail.$(DOMAIN) (login with '$$local')"; \
     scripts/lib/mklog warn "password is hashed — rotate with make mail-password MAIL=$(MAIL)"; \
   else scripts/lib/mklog error "$(MAIL) not found — create with make mail-gen [MAIL=…]"; exit 1; fi
-
 
 # Regenerate the tail terminal's navigation catalogue from the Caddy vhost
 # files ($DATA_DIR/www/targets.json — GENERATED, do not hand-edit). Run after
@@ -762,7 +761,7 @@ bkp-list:
 # Without -d, `ls -1 <dir>` returns the directory itself as a single entry
 # (and `wc -l` then counts 0), so cloud backups silently disappear from the
 # count even though the directory is sitting on disk.
->@for p in cloud-backup-* share-backup-*.db vault-backup-*.tar.gz secrets-bundle-*.tar.gz config-bundle-*.tar.gz 'mc-backup-*.tar.gz minecraft-backup-*.tar.gz'; do \
+>@for p in cloud-backup-* share-backup-*.db vault-backup-*.tar.gz secrets-bundle-*.tar.gz config-bundle-*.tar.gz; do \
     n="$$(ls -1d $(BKP_DIR)/$$p 2>/dev/null | wc -l)"; \
     printf "  %-45s %d\n" "$$p" "$$n"; \
   done
