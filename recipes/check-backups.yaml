@@ -29,7 +29,7 @@ prompt: |
   docs/ISSUES.md (the open "No automated backup script" item).
 
   Inspect:
-  - the Makefile backup / bkp-* / clean-backups recipes and scripts/datadir-nfs.sh
+  - the Makefile backup / bkp-* / clean-backups recipes and scripts/ops/datadir-nfs.sh
   - the nightly pg_dump cron (/etc/cron.d/nc-storage) and its 7-day retention
   - what is and is not covered: Nextcloud /data, PostgreSQL, vaultwarden data,
     kuma db, mailserver Maildirs/config, secrets
