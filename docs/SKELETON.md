@@ -45,8 +45,10 @@ scripts/render/render.sh --tokens
 ## The one file with real values
 
 `data/instance.conf` (untracked, mode 0600) is the only place an instance value
-lives. `scripts/install/install.sh` writes it when it prompts; it is plain
-`KEY=VALUE` and safe to edit by hand (`make render` afterwards).
+lives. `scripts/install/install.sh` writes it from what it prompts and detects
+(the domain is prompted, `{{GITHUB_USER}}` is read from the checkout's `origin`
+remote, paths come from its own location); it is plain `KEY=VALUE` and safe to
+edit by hand (`make render` afterwards).
 
 ## Rendering
 

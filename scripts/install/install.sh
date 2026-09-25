@@ -43,7 +43,24 @@ set -uo pipefail
 # hardcoded — so the repo can live anywhere and be renamed
 # ($NODE_NAME -> kefoServer) without editing any script.
 REPO="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
+# Every other part of the repo (Makefile, scripts/*) calls the checkout root
+# $ROOT; this installer is the one place that names it $REPO. Both must exist:
+# the $ROOT/data paths below aborted the run under `set -u`.
+ROOT="$REPO"
 DATA="$REPO/data"
+
+# GITHUB_USER owns the repos. instance.conf wins (scripts/lib/instance.sh loaded
+# it above); otherwise the checkout's own origin remote is the truth. The
+# lib's placeholder fallback must never stand in for it — an install that used
+# it wrote GITHUB_USER= into instance.conf (leaving {{GITHUB_USER}} unresolved in
+# the rendered vhosts/logrotate rule) AND rewrote origin to
+# https://github.com/exampleuser/$REPO_NAME.git, clobbering the real remote.
+if [ -z "${GITHUB_USER:-}" ] || [ "$GITHUB_USER" = "exampleuser" ]; then
+  _owner="$(git -C "$REPO" remote get-url origin 2>/dev/null \
+            | sed -nE 's#^(git@github\.com:|https?://github\.com/)([^/]+)/.*#\2#p')"
+  [ -n "$_owner" ] && GITHUB_USER="$_owner"
+  unset _owner
+fi
 
 # Canonical node name for this project: the repo is kefoServer, the tailnet node
 # and the sole login are root@kefoserver. The installer owns this decision — it
@@ -125,6 +142,17 @@ EOF
   chmod 600 "$tmp"
   mv -f "$tmp" "$STATE" 2>/dev/null || sudo mv -f "$tmp" "$STATE" || rm -f "$tmp"
   chown root:root "$STATE" 2>/dev/null || true
+}
+
+# $LOG and $STATE live outside the repo and must exist before ANYTHING redirects
+# into them. A `>>"$LOG"` whose directory is missing fails the redirection, the
+# command behind it is never run, and `|| fail ...` then reports the step as
+# broken: that is how a healthy run got tagged `render` (the renderer had nowhere
+# to write) while two log lines ("Phase 1 (host)", "instance.conf written") were
+# silently swallowed by tee.
+ensure_runtime_dirs() {
+  install -d -m 0755 "$LOG_DIR"
+  install -d -m 0700 "$STATE_DIR"
 }
 
 # Module prompts are ALWAYS asked — there is no answer-sheet defaults file any
@@ -227,10 +255,9 @@ write_modules_conf() {
 # ───────────────────────────── Phase 1 (root) ─────────────────────────────
 
 phase_host() {
+  ensure_runtime_dirs
   log "Phase 1 (host): packages, ssh, docker, tailscale, firewall"
   # Log may contain host/secret-adjacent output — root-readable only, never 666.
-  install -d -m 0755 "$LOG_DIR"
-  install -d -m 0700 "$STATE_DIR"
   # One-time relocation off the pre-$GITHUB_USER paths (never drop the old log).
   if [ ! -f "$LOG" ]; then
     for old in /var/log/$NODE_NAME-install.log /var/log/homelab-install.log; do
@@ -452,12 +479,11 @@ prep_dirs() {
 write_instance_conf() {
   # data/instance.conf is the ONE place this instance's values live: templates
   # are rendered from it (make render) and scripts read it (scripts/lib/instance.sh).
-  # Values we do not own here (GITHUB_USER, SERVER_IP, EMAIL,
-  # TIMEZONE) are PRESERVED from an existing file — re-running install.sh must
-  # never wipe them.
+  # Values we do not own here (SERVER_IP, EMAIL, TIMEZONE) are PRESERVED from an
+  # existing file — re-running install.sh must never wipe them.
   local f="$DATA/instance.conf" keep=""
   mkdir -p "$DATA"
-  [ -f "$f" ] && keep=$(grep -E '^(GITHUB_USER|SERVER_IP|EMAIL|TIMEZONE)=' "$f" || true)
+  [ -f "$f" ] && keep=$(grep -E '^(SERVER_IP|EMAIL|TIMEZONE)=' "$f" || true)
   {
     echo "# data/instance.conf — the values for THIS host (untracked, mode 0600)."
     echo "# Written by scripts/install/install.sh; see config/instance.defaults for what"
@@ -465,6 +491,10 @@ write_instance_conf() {
     printf 'DOMAIN=%s\n' "$DOMAIN"
     printf 'HOSTNAME=%s\n' "${NODE_NAME:-$(hostname -s)}"
     printf 'OPERATOR=%s\n' "root"
+    # Written only when it is real: a placeholder here would render
+    # {{GITHUB_USER}} into vhosts as 'exampleuser' instead of staying loud.
+    [ -n "${GITHUB_USER:-}" ] && [ "$GITHUB_USER" != "exampleuser" ] \
+      && printf 'GITHUB_USER=%s\n' "$GITHUB_USER"
     printf 'REPO_NAME=%s\n' "${REPO_NAME:-$(basename "$REPO")}"
     printf 'REPO_DIR=%s\n' "$REPO"
     printf 'DATA_DIR=%s\n' "$DATA"
@@ -1258,6 +1288,7 @@ main() {
   ask_inputs
   save_state
 
+  ensure_runtime_dirs
   write_instance_conf
   phase_host
   phase_stack
