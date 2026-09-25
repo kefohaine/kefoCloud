@@ -1300,6 +1300,32 @@ resolve_errors() {
   write_modules_conf
   finalize_hardening
   success_block
+  ask_optimize
+}
+
+# ── Optional follow-up — only ever reached after a FULLY green run ────────
+# optimize.sh is a separate tool (the VPS performance pass), so it is offered,
+# never assumed. It is idempotent — re-running it is a no-op — which is why a
+# re-run of install.sh may offer it again.
+ask_optimize() {
+  local answer rc
+  [ -f "$REPO/scripts/ops/optimize.sh" ] || return 0
+  while :; do
+    read -rp "Also run the VPS performance pass (kernel, swap, disk tuning) now? (yes/no): " answer || return 0
+    case "${answer,,}" in
+      yes|y|true)  break ;;
+      no|n|false)  log "  optimize.sh skipped — run it later: bash $REPO/scripts/ops/optimize.sh"; return 0 ;;
+      *)           echo "   answer yes or no." ;;
+    esac
+  done
+  log "  running scripts/ops/optimize.sh --yes (its output goes to $LOG)"
+  bash "$REPO/scripts/ops/optimize.sh" --yes 2>&1 | tee -a "$LOG"
+  rc=${PIPESTATUS[0]}
+  if [ "$rc" = 0 ]; then
+    log "  optimize.sh done"
+  else
+    log "  optimize.sh exited $rc — it is optional and can be re-run any time: bash $REPO/scripts/ops/optimize.sh"
+  fi
 }
 
 finalize_hardening() {
