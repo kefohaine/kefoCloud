@@ -1,8 +1,8 @@
-# {{GITHUB_USER}}/{{REPO_NAME}}
+# kefoServer
 
 One repo that turns any Debian system into your own self-hosted server stack — cloud, mail, monitoring and more — with one command and a few prompts.
 
-**[www.{{DOMAIN}}](https://www.{{DOMAIN}}/welcome) is the live demo**: the installed modules running on one box, built entirely from this repo. Fork it, run the installer, and the same board is yours — under your own domain, with no server but yours.
+**[www.fxmq.net](https://www.fxmq.net/welcome) is the live demo**: the installed modules running on one box, built entirely from this repo. Fork it, run the installer, and the same board is yours — under your own domain, with no server but yours.
 
 ## Why
 
@@ -15,20 +15,16 @@ The upsides:
 - Streamlined Automation
 - Modular Setup
 
-Perfect either for homelab hobbyists looking for a great learning tool to experiment with, or for critical production stacks overseen by advanced developers.
-I emphasise on the quality of the framework's configuration, which comes close to entreprise-grade stacks while staying surprisingly lightweight and easy to setup.
-This comes from daily use of this project as my personal stack, so put all my heart to deliver the most secure, healthy and functional framework.
-Minimum RAM required: 3GB
+Minimum RAM required: 4GB
 
 ## Install
 
 ```bash
-scp scripts/install/install.sh root@{{HOSTNAME}}:      # or clone on the box:
-ssh root@{{HOSTNAME}}
-bash install.sh
+git clone https://github.com/kefohaine/kefoServer.git && cd kefoServer
+bash scripts/install/install.sh
 ```
 
-On a fresh box the repo is cloned for you over **HTTPS** (the repo is public — no GitHub SSH key ever needs to be added). Everything lives under the checkout (`~/github/<repo>/`); every external, untracked artefact (containers' data, databases, uploads, the web root, module reports) lives under its `data/`, which `.gitignore` excludes. `root@{{HOSTNAME}}` is the **only** entry point (key-only SSH over the tailnet). The installer asks a few questions, then hardens the host, creates the DNS records, issues certificates and builds the selected stack unattended. Default is everything ON; opt out per module for a lean install.
+On a fresh box the repo is cloned for you over **HTTPS** (the repo is public — no GitHub SSH key ever needs to be added). Everything lives under the checkout (`~/github/<repo>/`); every external, untracked artefact (containers' data, databases, uploads, the web root, module reports) lives under its `data/`, which `.gitignore` excludes. `root@kefoserver` is the **only** entry point (key-only SSH over the tailnet). The installer asks a few questions, then hardens the host, creates the DNS records, issues certificates and builds the selected stack unattended. Default is everything ON; opt out per module for a lean install.
 
 `scripts/install/uninstall.sh` reverses it in the same style — every prompt defaults to keep, operator data and the tailscale-only SSH path are never touched without an explicit confirm, and the tailnet membership goes last.
 
