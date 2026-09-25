@@ -339,3 +339,4 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Installer aborted mid-run (`ROOT: unbound variable`)** — its `$ROOT/data/...` paths used a name only the rest of the repo defines (`$REPO` was the checkout root here); `$ROOT` is now an alias.
 - **False `render` error tag on a healthy run (2026-09-25)** — `write_instance_conf` logged and rendered into `$LOG` before the installer created `$LOG_DIR`, so the redirect failed and the renderer never ran.
 - **`GITHUB_USER` resolved to the placeholder and rewrote `origin` to it (2026-09-25)** — the installer now derives the owner from the checkout's `origin` remote and writes it into `instance.conf`.
+- **Opt-in GitHub remote access (2026-09-25)** — the installer's last prompt asks (explicit `true`/`false`) whether to configure access to the operator's own repos; `true` mints `/root/.ssh/github_key`, prints the public key with its GitHub location, waits until GitHub accepts it, then pushes.
