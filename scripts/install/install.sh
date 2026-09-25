@@ -1,8 +1,10 @@
 #!/bin/bash
 # $NODE_NAME install.sh — root-only, plug-and-play new-VPS installer.
 #
-# Prompts for three values (domain, Cloudflare API token, Tailscale auth
-# key), then runs unattended: host services, docker, tailscale, the full
+# Prompts for what it cannot detect (domain, Cloudflare API token, Tailscale
+# auth key), one explicit `true`/`false` per module, and — LAST, opt-in — remote
+# access to the operator's own GitHub repos. Then it runs unattended: host
+# services, docker, tailscale, the full
 # stack — Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Caddy,
 # Vaultwarden, Uptime Kuma, Docker Mailserver + Roundcube —
 # Cloudflare DNS records, and LE cert issuance. The repo already carries
@@ -13,8 +15,11 @@
 # automatically (the admin passwords are printed once in the final summary —
 # nothing is written to disk), and no manual confirmation steps block success —
 # the only follow-ups are printed in the summary (Tailscale split-DNS, mailboxes).
+# The one step that does wait is the opt-in GitHub remote access: the operator
+# asked for it, so the installer holds until the key it minted is authorized.
 # Prerequisites checked up front: the Cloudflare zone must exist. The repo is
-# PUBLIC and is cloned over HTTPS — no GitHub SSH key is ever needed.
+# PUBLIC and is cloned over HTTPS — the clone needs no GitHub key; the key the
+# opt-in step mints is for PUSHING to the operator's own repos.
 #
 # Errors are collected with tags, each shown as a "problem" plus a separate
 # "hint". Manual dashboard steps are grouped as expected; real failures as
@@ -158,20 +163,27 @@ ensure_runtime_dirs() {
 # Module prompts are ALWAYS asked — there is no answer-sheet defaults file any
 # more. A pre-filled default is exactly how a stale value (e.g. DOMAIN left over
 # from a previous run) silently skipped a prompt the operator needed to see.
+# Every boolean prompt takes an EXPLICIT true or false: no Enter-accepts-default,
+# and never a default of true — a pre-selected answer is how a stale choice
+# survives a re-run. Anything else re-asks.
+ask_boolean() {   # ask_boolean <question> <variable>
+  local q="$1" var="$2" answer
+  while :; do
+    read -rp "$q (true/false): " answer || return 1
+    case "${answer,,}" in
+      true)  printf -v "$var" '%s' true;  return 0 ;;
+      false) printf -v "$var" '%s' false; return 0 ;;
+      *)     echo "   type true or false." ;;
+    esac
+  done
+}
+
 ask_modules() {
-  local k answer
+  local k var
   for k in cloud vault mail monitor; do
-    local var="MOD_${k^^}" def
-    eval "def=\${DEF_$k:-true}"
-    if [ -z "${!var:-}" ]; then
-      read -rp "Include the $k module? default=$def — Enter accepts, or type true/false: " answer
-      case "${answer,,}" in
-        "") eval "$var=$def";;
-        true|yes|y) eval "$var=true";;
-        false|no|n) eval "$var=false";;
-        *) eval "$var=$def";;
-      esac
-    fi
+    var="MOD_${k^^}"
+    [ -n "${!var:-}" ] && continue        # already answered (resume)
+    ask_boolean "Set up the $k module?" "$var" || exit 1
   done
 }
 
@@ -190,6 +202,9 @@ ask_inputs() {
   fi
   [ -n "$TS_AUTHKEY" ] || { echo "Auth key required."; exit 1; }
   ask_modules
+  # LAST prompt, opt-in, explicit true/false: mint a GitHub key for pushing to
+  # the operator's OWN repos, print it, wait until it is authorized, push.
+  [ -n "${GH_REMOTE:-}" ] || ask_boolean "Configure remote access to your own GitHub account's repositories?" GH_REMOTE || exit 1
   echo "Installing for $DOMAIN — ~10-15 min. Full log: $LOG"
 }
 
@@ -250,6 +265,86 @@ write_modules_conf() {
   if ! diff -q <(sort "$conf") <(sort "$det") >/dev/null 2>&1; then
     log "  WARNING: declared modules != detected modules — see $rep"
   fi
+}
+
+# ───────────────── GitHub remote access (opt-in, last prompt) ─────────────
+
+# The ONE keypair this installer mints: it has to exist on the box to push to
+# the operator's repos. (The operator's own login key is never minted here —
+# see the ssh_keys step.) The operator authorizes the printed PUBLIC key once.
+GH_KEY=/root/.ssh/github_key
+
+github_keygen() {
+  [ -s "$GH_KEY" ] && return 0                      # never overwrite an existing key
+  ssh-keygen -t ed25519 -N "" -C "$(id -un)@$(hostname -s) github_key" -f "$GH_KEY" >/dev/null 2>&1 || return 1
+  chmod 600 "$GH_KEY"; chmod 644 "$GH_KEY.pub"
+  # ssh does not offer this key by default: name it in the client config.
+  grep -qs "IdentityFile $GH_KEY" /root/.ssh/config 2>/dev/null && return 0
+  printf 'Host github.com\n  IdentityFile %s\n  IdentitiesOnly yes\n' "$GH_KEY" >> /root/.ssh/config
+  chmod 600 /root/.ssh/config
+}
+
+# Pin github.com's host keys, but only ones whose fingerprint api.github.com
+# publishes — a bare ssh-keyscan trusts whoever answered first.
+github_known_hosts() {
+  local scan fps published f n=0
+  grep -qs 'github\.com' /root/.ssh/known_hosts 2>/dev/null && return 0
+  scan="$(ssh-keyscan -t rsa,ecdsa,ed25519 github.com 2>/dev/null)" || return 0
+  [ -n "$scan" ] || return 0
+  fps="$(printf '%s\n' "$scan" | ssh-keygen -lf - 2>/dev/null | awk '{print $2}')"
+  published="$(curl -fsS --max-time 10 https://api.github.com/meta 2>/dev/null \
+    | python3 -c 'import json,sys; print("\n".join(json.load(sys.stdin)["ssh_key_fingerprints"].values()))' 2>/dev/null)"
+  for f in $fps; do
+    n=$((n+1))
+    printf '%s\n' "$published" | grep -qxF "$f" || return 0   # unverified — leave it to ssh
+  done
+  [ "$n" -gt 0 ] && printf '%s\n' "$scan" >> /root/.ssh/known_hosts && chmod 600 /root/.ssh/known_hosts
+}
+
+# GitHub answers a successful key test with exit 1 and a "successfully
+# authenticated" line, so the MESSAGE is the test, not the exit code — and the
+# output has to be captured first: under `set -o pipefail` a `ssh … | grep -q`
+# reports ssh's 1 even when grep matched.
+github_auth_ok() {
+  local out
+  [ -s "$GH_KEY" ] || return 1
+  out="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -T git@github.com 2>&1)" || true
+  printf '%s' "$out" | grep -q "successfully authenticated"
+}
+
+github_push() {
+  git -C "$REPO" remote set-url origin "git@github.com:$GITHUB_USER/$REPO_NAME.git" 2>/dev/null || true
+  # SKIP_SMOKE: the pre-push hook's live vhost test cannot pass this early — the
+  # stack is not up yet, and what is pushed here is the repo's content.
+  SKIP_SMOKE=1 git -C "$REPO" push >>"$LOG" 2>&1 || return 1
+  log "  pushed to git@github.com:$GITHUB_USER/$REPO_NAME.git"
+}
+
+github_access() {
+  [ "${GH_REMOTE:-false}" = "true" ] || { log "  GitHub remote access: not requested — skipped"; return 0; }
+  github_keygen || { fail github_key; return; }
+  github_known_hosts
+  if ! github_auth_ok; then
+    printf '\n ── GitHub key — authorize it once, then the installer continues ───────\n'
+    printf '   GitHub → Settings → SSH and GPG keys → New SSH key → paste this line:\n\n'
+    printf '   %s\n\n' "$(cat "$GH_KEY.pub")"
+    printf '   (Settings is under the avatar menu, top right; "New SSH key" is the\n'
+    printf '    green button in the SSH keys box — name it after this host.)\n'
+    printf ' ───────────────────────────────────────────────────────────────────────\n\n'
+    # Strict: the operator asked for this feature, so there is no skip — the
+    # loop only ends when GitHub accepts the key (Ctrl-C aborts the installer).
+    until github_auth_ok; do
+      read -rp "Add the key at GitHub, then press Enter to test again (Ctrl-C aborts): " _ \
+        || { fail github_auth "no terminal to wait on — authorize $GH_KEY.pub by hand"; return; }
+      echo "   not authorized yet — the whole line above goes into your GitHub ACCOUNT."
+    done
+  fi
+  log "  GitHub key authorized (ssh -T git@github.com)"
+  if [ -z "${GITHUB_USER:-}" ] || [ "$GITHUB_USER" = "exampleuser" ]; then
+    fail github_auth "cannot tell which account to push to — no origin remote and no GITHUB_USER in $DATA/instance.conf"
+    return
+  fi
+  github_push || fail github_auth "push failed — see $LOG"
 }
 
 # ───────────────────────────── Phase 1 (root) ─────────────────────────────
@@ -1041,6 +1136,8 @@ problem() {
     dkim_setup)      echo "DKIM key / mail._domainkey TXT record not published" ;;
     vaultwarden_setup) echo "Vaultwarden SMTP sender mailbox missing (vaultwarden@$DOMAIN)" ;;
     clone)          echo "repo clone failed" ;;
+    github_key)     echo "the GitHub key could not be created" ;;
+    github_auth)    echo "GitHub remote access was requested but the key is not authorized / nothing was pushed" ;;
     *)              echo "$1" ;;
   esac
 }
@@ -1074,7 +1171,9 @@ hint() {
     nextcloud_setup) echo "run the occ steps from docs/GUIDE.md 'Ordering after a fresh deploy' (talk:signaling:add x2, talk:turn:add x2, config:system:set mail_*, background:cron) — see the nextcloud_setup function in this script, then re-check" ;;
     dkim_setup)      echo "run: docker exec mailserver setup config dkim domain $DOMAIN; ensure ENABLE_OPENDKIM=0 in the mailserver compose (Rspamd signs); verify the CF token has Zone > DNS > Edit; then dig @<zone NS> TXT mail._domainkey.$DOMAIN" ;;
     vaultwarden_setup) echo "run: printf '%s\\n%s\\n' <pass> <pass> | docker exec -i mailserver setup email add vaultwarden@$DOMAIN, then re-check" ;;
-    clone)          echo "add the key printed above to GitHub (Settings -> SSH keys), then re-run the script" ;;
+    clone)          echo "the clone is HTTPS (the repo is public) — check network/DNS, then re-check" ;;
+    github_key)     echo "check /root/.ssh is writable (mkdir -p /root/.ssh && chmod 700 /root/.ssh), then re-check" ;;
+    github_auth)    echo "authorize the installer's printed public key at GitHub -> Settings -> SSH and GPG keys -> New SSH key, then re-check" ;;
     *)              echo "" ;;
   esac
 }
@@ -1085,6 +1184,8 @@ recheck() {
     goose) command -v goose >/dev/null 2>&1 || [ -x /usr/local/bin/goose ] ;;
     user) id -u "root" >/dev/null 2>&1 ;;
     ssh_keys) [ -s /root/.ssh/authorized_keys ] ;;
+    github_key) [ -s /root/.ssh/github_key ] ;;
+    github_auth) github_auth_ok && github_push ;;
     render) bash "$REPO/scripts/render/render-all.sh" >/dev/null 2>&1 ;;
     tailscale) command -v tailscale >/dev/null 2>&1 ;;
     tailscale_up) tailscale ip -4 >/dev/null 2>&1 ;;
@@ -1114,7 +1215,7 @@ recheck() {
 
 is_expected() {
   case "$1" in
-    zone|ssh_keys|clone|sslmode) return 0 ;;  # input prerequisites / dashboard steps the script can't do
+    zone|ssh_keys|clone|sslmode|github_auth) return 0 ;;  # input prerequisites / dashboard steps the script can't do
     *) return 1 ;;
   esac
 }
@@ -1227,7 +1328,11 @@ success_block() {
   echo "   1. Tailscale split-DNS: admin console -> DNS -> add $DOMAIN -> ${TS_IP:-<tailscale IP>}"
   echo "      so tail.$DOMAIN resolves for tailnet devices (dnsmasq on the VPS already answers it)"
   echo "   2. (optional) Cloudflare WAF rule skip for cloud.$DOMAIN (desktop sync)"
-  echo "   3. Git remote 'origin' is git@github.com:$GITHUB_USER/$REPO_NAME.git (SSH key on root)"
+  if [ "${GH_REMOTE:-false}" = "true" ]; then
+    echo "   3. GitHub remote access: origin is git@github.com:$GITHUB_USER/$REPO_NAME.git, key /root/.ssh/github_key"
+  else
+    echo "   3. No GitHub remote access (declined at the last prompt) — re-run the installer and answer true to mint the push key"
+  fi
   echo "   4. Mailboxes: make mail-gen MAIL=name@$DOMAIN (or bare make mail-gen for a disposable);"
   echo "      the nextcloud@$DOMAIN SMTP sender mailbox is created automatically"
   echo "=============================================================="
@@ -1281,7 +1386,7 @@ main() {
       n|no)
         echo "Starting fresh — every prompt will be asked again (saved answers dropped)."
         unset DOMAIN CF_API_TOKEN TS_AUTHKEY TS_IP \
-              MOD_CLOUD MOD_VAULT MOD_MAIL MOD_MONITOR
+              MOD_CLOUD MOD_VAULT MOD_MAIL MOD_MONITOR GH_REMOTE
         rm -f "$STATE" "$DATA/instance.conf"
         ;;
       *)
@@ -1297,6 +1402,7 @@ main() {
   save_state
 
   ensure_runtime_dirs
+  github_access
   write_instance_conf
   phase_host
   phase_stack
