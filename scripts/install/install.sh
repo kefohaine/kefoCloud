@@ -150,11 +150,10 @@ EOF
 }
 
 # $LOG and $STATE live outside the repo and must exist before ANYTHING redirects
-# into them. A `>>"$LOG"` whose directory is missing fails the redirection, the
+# into them (a `>>"$LOG"` whose directory is missing fails the redirection, the
 # command behind it is never run, and `|| fail ...` then reports the step as
-# broken: that is how a healthy run got tagged `render` (the renderer had nowhere
-# to write) while two log lines ("Phase 1 (host)", "instance.conf written") were
-# silently swallowed by tee.
+# broken) — and before the first `log()`, or tee swallows that line. Idempotent;
+# main() calls it first thing.
 ensure_runtime_dirs() {
   install -d -m 0755 "$LOG_DIR"
   install -d -m 0700 "$STATE_DIR"
@@ -187,6 +186,43 @@ ask_modules() {
   done
 }
 
+# ── SSH access: STRICT and required ──────────────────────────────────────
+# The box ends up root-key-only with password auth off, so a usable pubkey from
+# a device the operator actually holds is REQUIRED — the installer asks for it
+# here instead of leaving it as a follow-up `ssh_keys` step. Only the PUBLIC
+# half is pasted; the private half never leaves that device. Nothing is ever
+# minted server-side (that is the difference to the opt-in GitHub key below).
+ask_ssh_key() {
+  local line info
+  mkdir -p /root/.ssh && chmod 700 /root/.ssh
+  if [ -s /root/.ssh/authorized_keys ] && grep -q . /root/.ssh/authorized_keys; then
+    log "  SSH: $(grep -c . /root/.ssh/authorized_keys) key(s) already authorized — paste skipped"
+    return 0
+  fi
+  printf '\n SSH is key-only (root, no password). On the device you will connect FROM run\n'
+  printf '   cat ~/.ssh/id_ed25519.pub\n'
+  printf ' and paste that one line here (no ssh-copy-id needs to run yet). Only the\n'
+  printf ' PUBLIC half goes to the server; the private half never leaves your device.\n'
+  printf ' Use a key you can actually use — hardening is key-only, so a wrong or lost\n'
+  printf ' key is a lockout.\n\n'
+  while :; do
+    read -rp "Public SSH key of your device: " line \
+      || { echo "A public key is required — re-run the installer from a terminal."; exit 1; }
+    line="$(printf '%s' "$line" | tr -d '\r' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    case "$line" in
+      "") continue ;;
+      *"PRIVATE KEY"*) echo "   that is the PRIVATE key — never paste it; paste the .pub line."; continue ;;
+    esac
+    info="$(printf '%s\n' "$line" | ssh-keygen -lf - 2>/dev/null)"
+    [ -n "$info" ] || { echo "   not a valid public key — paste the whole .pub line (ssh-ed25519 AAAA… you@device)."; continue; }
+    grep -qxF "$line" /root/.ssh/authorized_keys 2>/dev/null \
+      || printf '%s\n' "$line" >> /root/.ssh/authorized_keys
+    chmod 600 /root/.ssh/authorized_keys
+    log "  SSH key accepted: $info"
+    return 0
+  done
+}
+
 ask_inputs() {
   if [ -z "${DOMAIN:-}" ]; then
     read -rp "Domain (e.g. example.com): " DOMAIN
@@ -202,6 +238,9 @@ ask_inputs() {
   fi
   [ -n "$TS_AUTHKEY" ] || { echo "Auth key required."; exit 1; }
   ask_modules
+  # STRICT: key-only SSH means a usable pubkey is required, asked BEFORE the
+  # GitHub question below (that one is opt-in).
+  ask_ssh_key
   # LAST prompt, opt-in, explicit true/false: mint a GitHub key for pushing to
   # the operator's OWN repos, print it, wait until it is authorized, push.
   [ -n "${GH_REMOTE:-}" ] || ask_boolean "Configure remote access to your own GitHub account's repositories?" GH_REMOTE || exit 1
@@ -270,8 +309,9 @@ write_modules_conf() {
 # ───────────────── GitHub remote access (opt-in, last prompt) ─────────────
 
 # The ONE keypair this installer mints: it has to exist on the box to push to
-# the operator's repos. (The operator's own login key is never minted here —
-# see the ssh_keys step.) The operator authorizes the printed PUBLIC key once.
+# the operator's repos. (The operator's own login key is never minted — it is
+# pasted at the ask_ssh_key prompt.) The operator authorizes the printed PUBLIC
+# key once.
 GH_KEY=/root/.ssh/github_key
 
 github_keygen() {
@@ -350,7 +390,6 @@ github_access() {
 # ───────────────────────────── Phase 1 (root) ─────────────────────────────
 
 phase_host() {
-  ensure_runtime_dirs
   log "Phase 1 (host): packages, ssh, docker, tailscale, firewall"
   # Log may contain host/secret-adjacent output — root-readable only, never 666.
   # One-time relocation off the pre-$GITHUB_USER paths (never drop the old log).
@@ -407,10 +446,11 @@ phase_host() {
     userdel -r "$u" >>"$LOG" 2>&1 || userdel "$u" >>"$LOG" 2>&1 || true
   done < <(getent passwd)
 
-  # SSH: root key-only. The key is the OPERATOR'S OWN and adding it is a MANUAL,
-  # expected step (the `ssh_keys` tag) — the installer never mints a server-side
-  # keypair. Hardening (password auth off, root key-only) is applied ONLY once a
-  # usable key exists; a keyless box keeps password auth and is never locked out.
+  # SSH: root key-only. The operator's pubkey is collected by ask_ssh_key BEFORE
+  # this phase (strict), so a missing key here means the step failed — the
+  # `ssh_keys` guard stays as the safety net, and hardening (password auth off,
+  # root key-only) is applied ONLY once a usable key exists, so the box is never
+  # locked out. The installer never mints a server-side login keypair.
   mkdir -p /root/.ssh
   chmod 700 /root/.ssh
   if [ -s /root/.ssh/authorized_keys ]; then
@@ -422,7 +462,7 @@ phase_host() {
     log "  sshd hardened: key-only root login (AllowUsers root)"
   else
     fail ssh_keys
-    log "no SSH key in /root/.ssh/authorized_keys — add YOUR pubkey, then re-check (sshd stays password-capable until then)"
+    log "no SSH key in /root/.ssh/authorized_keys (ask_ssh_key should have installed one) — add a pubkey, then re-check; sshd stays password-capable until then"
   fi
 
   systemctl enable --now docker >>"$LOG" 2>&1 || log "docker enable/start failed (re-checks will catch it)"
@@ -1110,7 +1150,7 @@ problem() {
     apt)            echo "apt packages not installed" ;;
     goose)          echo "goose binary not installed" ;;
     user)           echo "user 'root' not created" ;;
-    ssh_keys)       echo "no SSH key installed for root (add your own; none is minted for you)" ;;
+    ssh_keys)       echo "no SSH key on the box although the installer asks for one up front" ;;
     render)         echo "template rendering failed (see make render)" ;;
     tailscale)      echo "tailscale binary not installed" ;;
     tailscale_up)   echo "tailscale did not connect" ;;
@@ -1147,7 +1187,7 @@ hint() {
     apt)            echo "install git curl make sudo dnsmasq ufw jq apache2-utils sqlite3 python3-yaml, plus docker with the compose plugin (docker-ce from download.docker.com on trixie), then re-check" ;;
     goose)          echo "install bzip2 first (the release is a .tar.bz2: apt-get install -y bzip2), then: curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | CONFIGURE=false GOOSE_BIN_DIR=/usr/local/bin bash, then re-check" ;;
     user)           echo "run: adduser --disabled-password --gecos '' root && usermod -aG sudo,docker root, then re-check" ;;
-    ssh_keys)       echo "add the operator pubkey to /root/.ssh/authorized_keys, then re-check" ;;
+    ssh_keys)       echo "paste your device's public key into /root/.ssh/authorized_keys (or re-run the installer), then re-check" ;;
     tailscale)      echo "run: curl -fsSL https://tailscale.com/install.sh | sh, then re-check" ;;
     tailscale_up)   echo "check the auth key (admin console -> Settings -> Keys) and run: tailscale up --authkey=<key>, then re-check" ;;
     ts_ip)          echo "wait a few seconds, then run: tailscale ip -4, then re-check" ;;
@@ -1215,7 +1255,7 @@ recheck() {
 
 is_expected() {
   case "$1" in
-    zone|ssh_keys|clone|sslmode|github_auth) return 0 ;;  # input prerequisites / dashboard steps the script can't do
+    zone|clone|sslmode|github_auth) return 0 ;;  # input prerequisites / dashboard steps the script can't do
     *) return 1 ;;
   esac
 }
@@ -1293,35 +1333,14 @@ success_block() {
   echo ""
   echo " SSH: root@$NODE_NAME is the only entry point (key-only, tailnet-only, port 22)."
   echo ""
-  echo " ── SSH ACCESS — READ THIS BEFORE YOU DISCONNECT ──────────────────────────"
+  echo " ── SSH ACCESS ───────────────────────────────────────────────────────────"
   if [ -s /root/.ssh/authorized_keys ]; then
-    echo "  Hardening IS applied (key(s) present, password auth off, root key-only)."
+    echo "  Hardening IS applied: $(grep -c . /root/.ssh/authorized_keys) key(s) authorized,"
+    echo "  password auth off, root key-only. Re-run the installer to add another."
   else
-    echo "  WARNING: NO key is in /root/.ssh/authorized_keys, so hardening is NOT"
-    echo "  applied yet — password auth stays on. Add YOUR key, then re-run installer."
+    echo "  WARNING: no key in /root/.ssh/authorized_keys, so hardening is NOT applied"
+    echo "  (password auth stays on). Re-run the installer and paste your device's pubkey."
   fi
-  echo ""
-  echo "  A keypair is TWO files:"
-  echo "    · PRIVATE key (~/.ssh/id_ed25519) — stays on YOUR computer. Never copy it"
-  echo "      to the server, never paste it anywhere. It is your identity."
-  echo "    · PUBLIC key (~/.ssh/id_ed25519.pub) — the one file that goes INTO"
-  echo "      /root/.ssh/authorized_keys on the server. Safe to share."
-  echo ""
-  echo "  1) on your computer, create the pair (Enter three times; empty passphrase is"
-  echo "     fine if the private key is protected by your OS login / disk encryption):"
-  echo "        ssh-keygen -t ed25519 -C \"you@yourmachine\""
-  echo "  2) put ONLY the public key on the server (easiest — it does the file, the"
-  echo "     permissions and the directory for you):"
-  echo "        ssh-copy-id -i ~/.ssh/id_ed25519.pub root@<server>"
-  echo "     no ssh-copy-id? paste the public key by hand:"
-  echo "        cat ~/.ssh/id_ed25519.pub | ssh root@<server> \\"
-  echo "          'mkdir -p /root/.ssh && chmod 700 /root/.ssh && cat >> /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys'"
-  echo "  3) prove it works, then re-apply hardening:"
-  echo "        ssh -i ~/.ssh/id_ed25519 root@<server>      # must log in, must NOT ask for a password"
-  echo "        make install-config                         # writes sshd config + restarts sshd"
-  echo "        sshd -T | grep -E 'passwordauthentication|permitrootlogin'   # expect no / prohibit-password"
-  echo "  Only add a key you can actually use: hardening is key-only, so a lost or"
-  echo "  wrong private key is a permanent lockout (that is how the old box was lost)."
   echo " ─────────────────────────────────────────────────────────────────────────"
   echo ""
   echo " Follow-ups (none block the install):"
@@ -1376,6 +1395,7 @@ main() {
   if [ "$(id -u)" -ne 0 ]; then
     echo "Run as root: root@$NODE_NAME is the only entry point (no sudo hand-off)."; exit 1
   fi
+  ensure_runtime_dirs       # first: the prompts below log (see the helper)
   banner
   load_state
   if previous_install; then
@@ -1401,7 +1421,6 @@ main() {
   ask_inputs
   save_state
 
-  ensure_runtime_dirs
   github_access
   write_instance_conf
   phase_host
