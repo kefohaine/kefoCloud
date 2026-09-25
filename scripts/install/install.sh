@@ -342,6 +342,20 @@ EOF
   if ! command -v tailscale >/dev/null 2>&1; then
     curl -fsSL https://tailscale.com/install.sh | sh || fail tailscale
   fi
+  # Encrypt the tailscaled state file at rest (the console's tsStateEncrypted).
+  # On Linux the flag NEEDS a TPM (/dev/tpmrm0): on a box without one, forcing
+  # `--encrypt-state` makes tailscaled fail to start and takes the node offline,
+  # so enable it only when the device exists — and start tailscaled fresh with
+  # it before joining, so the state is encrypted from the first write.
+  if [ -e /dev/tpmrm0 ] && [ -f /etc/default/tailscaled ]; then
+    if ! grep -q -- '--encrypt-state' /etc/default/tailscaled; then
+      sed -i -E 's|^FLAGS=.*|FLAGS="--encrypt-state"|' /etc/default/tailscaled
+      systemctl restart tailscaled >>"$LOG" 2>&1 || log "tailscaled restart failed after enabling --encrypt-state"
+      log "  tailscale state encryption enabled (FLAGS=--encrypt-state, TPM present)"
+    fi
+  elif [ ! -e /dev/tpmrm0 ]; then
+    log "  no TPM (/dev/tpmrm0): tailscale state encryption unsupported here — left off"
+  fi
   if ! tailscale ip -4 >/dev/null 2>&1; then
     # --hostname makes the tailnet node '$NODE_NAME', so the sole entry point
     # is root@$NODE_NAME (MagicDNS) regardless of the local machine hostname.
