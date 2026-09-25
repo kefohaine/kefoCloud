@@ -101,10 +101,10 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Fix**: keep secrets in dedicated files outside the copied set (as goose now does); optionally add a secret-scan guard to the pre-commit hook.
 - **Note (2026-09-12)**: the pull also resurrects *scrubbed* content — a stale live `/etc/sysctl.d/99-{{HOSTNAME}}.conf` re-imported a banned-assistant name the repo had deliberately removed (commit 070d35f), landing uncommitted in the working tree. After `make backup`, `git diff config/` before any `git add`; re-apply `make install-config` when the live copies are behind the repo.
 
-#### Mail platform: no PTR record (operator will set at AlphaVPS)  **[needs human approval]**
+#### Mail platform: PTR record does not resolve to mail.$DOMAIN (operator must set it provider-side)  **[needs human approval]**
 - **File**: `modules/mailserver/docker-compose.yml` (installed); DNS + UFW configured
-- **Problem**: inbound TCP 25 is now open (verified 2026-08-28: external nodes connect, postfix serves `220 mail.$DOMAIN ESMTP` with the LE cert). The remaining blocker: $SERVER_IP has **no PTR** — outbound mail to Gmail/Outlook will be rejected or spam-foldered until reverse DNS exists. The reverse zone is provider-hosted, not delegated to us, so only the operator can set it.
-- **Fix** (operator, ~2 min): provider is **AlphaVPS** (netname `DAGroup`, RIPE `AA29428-RIPE`, block `82.118.230.0/24`). In the AlphaVPS client area (VPS → rDNS/Reverse DNS) set `$SERVER_IP` → `mail.$DOMAIN`, or ticket `support@alphavps.bg` / `abuse@alphavps.bg` with: *"Please set reverse DNS for $SERVER_IP to `mail.$DOMAIN`."* Must match postfix HELO + the `mail.$DOMAIN` A record (both already `mail.$DOMAIN`). Verify with `dig -x $SERVER_IP`, then send a test to an external inbox.
+- **Problem**: inbound TCP 25 is open (external nodes connect, postfix serves `220 mail.$DOMAIN ESMTP` with the LE cert). A reverse record for `$SERVER_IP` exists but points at the hosting provider's own hostname, not `mail.$DOMAIN` — outbound mail to Gmail/Outlook is rejected or spam-foldered until it matches. The reverse zone belongs to the provider, not us, so only the operator can change it.
+- **Fix** (operator, ~2 min): in the VPS provider's control panel (rDNS / Reverse DNS) set the PTR for `$SERVER_IP` → `mail.$DOMAIN`, or open a support ticket asking for it. It must match the postfix HELO and the `mail.$DOMAIN` A record (both already `mail.$DOMAIN`). Verify with `dig -x $SERVER_IP`, then send a test to an external inbox.
 
 #### Tailscale tailnet has 2 stale devices  **[needs human approval]**
 - **File**: Tailscale admin console (outside repo)
