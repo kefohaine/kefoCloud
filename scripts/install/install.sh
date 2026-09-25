@@ -426,8 +426,16 @@ EOF
 
 ensure_repo() {
   if [ -d "$REPO/.git" ]; then
-    # Repo already present (re-run or pre-cloned): make sure the remote is wired.
-    git -C "$REPO" remote set-url origin https://github.com/$GITHUB_USER/$REPO_NAME.git 2>/dev/null || true
+    # Repo already present (re-run or pre-cloned): leave alone an origin that
+    # already points at this repo, whatever its protocol — rewriting it to HTTPS
+    # on every run clobbers an SSH origin, and `make git-push` needs the key
+    # that goes with it.
+    local cur
+    cur="$(git -C "$REPO" remote get-url origin 2>/dev/null || true)"
+    case "$cur" in
+      *github.com[:/]"$GITHUB_USER/$REPO_NAME".git) ;;
+      *) git -C "$REPO" remote set-url origin "https://github.com/$GITHUB_USER/$REPO_NAME.git" 2>/dev/null || true ;;
+    esac
     log "repo present at $REPO"
     return
   fi
