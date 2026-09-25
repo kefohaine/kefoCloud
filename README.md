@@ -53,7 +53,7 @@ On a fresh box the repo is cloned for you over **HTTPS** (the repo is public —
 - `docs/AGENTS.md` — agent operating rules (how this repo is worked on)
 - `docs/ISSUES.md` — open problems, planned ideas, and resolved history
 - `docs/DEBUG.md` — deep-scan / debugging runbook (read-only first, layer ladder, verification probes)
-- `scripts/install/defaults/` — per-script prompt answer sheets
+- `scripts/install/` — `install.sh` (prompts every value, never a pre-filled default) and `uninstall.sh`
 
 ## Risks & Considerations
 - Single Point of Failure: Running your cloud, your passwords, your email and your monitoring on one operating system means that if the host crashes, goes offline, or gets compromised, your entire digital footprint goes dark simultaneously.

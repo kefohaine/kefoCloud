@@ -129,5 +129,5 @@ The block is replaced, never duplicated, and the secrets already in those files
   `make smoke` and `make fetch` read the declared file.
 - Secrets never belong in git; `data/instance.conf` is 0600, and rendered
   output (`data/rendered/`) is where live config actually comes from.
-- `scripts/install/defaults/*.conf` hold *prompt defaults* — a different purpose
-  from the token list.
+- The installer asks every prompt on every run — there is no prompt-defaults
+  file (a pre-filled value is how a stale one silently skipped a question).

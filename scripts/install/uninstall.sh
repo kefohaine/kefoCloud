@@ -103,55 +103,8 @@ ask() { # ask <var> <question> <default: y|n>  (bare Enter takes the default)
   esac
 }
 
-# read scripts/install/defaults/uninstall.conf (same dir as this script) — the
-# non-interactive answer sheet, syntax mirrors install.conf:
-#   'uninstall <key> = true|false'   (host|edge|pkgs|user|tailnet|data)
-#   'uninstall <module> module = true|false'
-# Everything defaults OFF (safe): a bare Enter never uninstalls anything.
-defaults_uninstall() {
-  local f dir line key val
-  dir=$(cd "$(dirname "$0")" && pwd)
-  for f in "$dir/defaults/uninstall.conf" "scripts/install/defaults/uninstall.conf"; do
-    [ -f "$f" ] || continue
-    while IFS= read -r line || [ -n "$line" ]; do
-      line=$(printf '%s' "$line" | sed -E 's/#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//')
-      [ -n "$line" ] || continue
-      case "$line" in
-        uninstall\ mode\ =*|uninstall\ mode=*)
-          key="mode"
-          val=$(echo "$line" | sed -E 's/.*=(modules|all|cancel|1|2|3)$/\1/')
-          case "$val" in
-            1|modules) UNINSTALL_MODE=modules;;
-            2|all)    UNINSTALL_MODE=all;;
-            3|cancel) UNINSTALL_MODE=cancel;;
-          esac
-          ;;
-        uninstall\ *=true|uninstall\ *=false)
-          # 'uninstall = true' = remove the module set listed below + edge
-          val="${line##*=}"
-          [ "$val" = true ] && DEF_RM_EDGE=true
-          ;;
-        uninstall\ module\ =*|uninstall\ *module*)
-          key=$(echo "$line" | sed -E 's/^uninstall *([a-z-]+) *module *=.*/\1/')
-          val=$(echo "$line" | sed -E 's/.*=(true|false)$/\1/')
-          [ "$val" = true ] && eval "DEF_RM_MOD_${key^^}=true"
-          ;;
-        uninstall\ *)
-          key=$(echo "$line" | sed -E 's/^uninstall *([a-z-]+) *=.*/\1/')
-          val=$(echo "$line" | sed -E 's/.*=(true|false)$/\1/')
-          case "$key" in
-            host|edge|pkgs|user|tailnet|data)
-              [ "$val" = true ] && eval "DEF_RM_${key^^}=true";;
-          esac
-          ;;
-      esac
-    done < "$f"
-  done
-  # safe fallbacks: everything OFF unless the conf says otherwise
-  for k in host edge pkgs user tailnet data; do
-    eval "[ -z \"\${DEF_RM_$k:-}\" ] && DEF_RM_$k=false"
-  done
-}
+# There is no answer-sheet defaults file any more: every prompt is ALWAYS asked
+# and every phase defaults OFF (safe) unless the operator opts in.
 
 ask_modules() {
   # Reverse of the installer's ask_modules: default OFF for everything —
@@ -174,8 +127,8 @@ ask_modules() {
 
 ask_mode() {
   # the scope selector: specific modules, the whole framework, or cancel.
-  # UNINSTALL_MODE=modules|all|cancel skips the prompt (defaults file or
-  # env); an invalid value re-prompts.
+  # UNINSTALL_MODE=modules|all|cancel (env) skips the prompt; an invalid
+  # value re-prompts.
   if [ -z "${UNINSTALL_MODE:-}" ]; then
     while :; do
       read -rp "Teardown scope: [1] specific modules  [2] the whole framework  [3] cancel: " m
@@ -212,7 +165,6 @@ ask_mode() {
 }
 
 ask_inputs() {
-  defaults_uninstall
   ask_mode
   ask_modules
   # phase prompts only when NOT preselected by the whole-framework mode
@@ -394,11 +346,11 @@ remove_host() {
     systemctl disable --now "$u" >>"$LOG" 2>&1 || true
     rm -f "/etc/systemd/system/$u.service"
   done
-  rm -f /etc/goose/goose.env /etc/$NODE_NAME-banner.sh
+  rm -f /etc/goose/goose.env /etc/kefo-banner.sh
   rm -f /etc/dnsmasq.d/10-tailnet.conf
   rm -f /etc/systemd/system/dnsmasq.service.d/override.conf
   rmdir /etc/systemd/system/dnsmasq.service.d 2>/dev/null || true
-  rm -f /etc/sysctl.d/99-$NODE_NAME.conf
+  rm -f /etc/sysctl.d/99-kefo.conf
   rm -f /etc/cron.d/nextcloud
   rm -f /etc/fail2ban/jail.d/sshd.conf
   # the binaries install.sh dropped into /usr/local/bin

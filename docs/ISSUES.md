@@ -101,11 +101,6 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Fix**: keep secrets in dedicated files outside the copied set (as goose now does); optionally add a secret-scan guard to the pre-commit hook.
 - **Note (2026-09-12)**: the pull also resurrects *scrubbed* content — a stale live `/etc/sysctl.d/99-{{HOSTNAME}}.conf` re-imported a banned-assistant name the repo had deliberately removed (commit 070d35f), landing uncommitted in the working tree. After `make backup`, `git diff config/` before any `git add`; re-apply `make install-config` when the live copies are behind the repo.
 
-#### `install.sh` `eval`s values from `scripts/install/defaults/install.conf`
-- **File**: `scripts/install/install.sh` (`defaults_install` / `ask_modules`)
-- **Problem**: module defaults are applied with `eval "DEF_${canon}=$val"` and `eval "$var=$def"` — arbitrary content in that file executes. It is repo-tracked (low risk today), but it is an injection surface if the file is ever untrusted.
-- **Fix**: parse `key=value` with `read`/`case` instead of `eval`.
-
 #### Mail platform: no PTR record (operator will set at AlphaVPS)  **[needs human approval]**
 - **File**: `modules/mailserver/docker-compose.yml` (installed); DNS + UFW configured
 - **Problem**: inbound TCP 25 is now open (verified 2026-08-28: external nodes connect, postfix serves `220 mail.$DOMAIN ESMTP` with the LE cert). The remaining blocker: $SERVER_IP has **no PTR** — outbound mail to Gmail/Outlook will be rejected or spam-foldered until reverse DNS exists. The reverse zone is provider-hosted, not delegated to us, so only the operator can set it.
@@ -338,3 +333,6 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **False alarm: the "undocumented host process" was the uptimekuma container** — host `ps` lists container processes (`node server/server.js` → `docker-<id>.scope` = uptimekuma; `supervisord` = mailserver), not stray host daemons.
 - **optimize.sh live-run bugs fixed (2026-09-10)** — `append_lines()` doubled `/etc/fstab` and `/etc/security/limits.conf` (which broke the noatime step) and re-checks false-failed on a box without docker; it now appends only missing lines, skips absent software, and installs only the performance helpers (tuned/irqbalance/earlyoom).
 - **Fresh-install installer bugs (2026-09-22)** — fixed in `install.sh`/`goose-tokens.sh`: missing `python3-yaml`, an untraversable `caddy_data` dir, `talk:turn:add` flags instead of positional protocols, non-idempotent DKIM keygen + a truncated publish source, a stuck ACME order, `trusted_domains` clobbered with the bare domain, and the `sweep`/recheck scope mismatch.
+- **Installer no longer ships prompt defaults (2026-09-25)** — `scripts/install/defaults/` deleted; every prompt is always asked and a re-run asks whether to resume (no re-asks all).
+- **Installer hostname + accounts (2026-09-25)** — hostname set to `kefoserver` (the tailnet node name) and every non-root login account removed.
+- **Installer goose dependency (2026-09-25)** — `bzip2` added to the apt set so goose's `.tar.bz2` release extracts (its absence surfaced as a phantom unexpected error).
