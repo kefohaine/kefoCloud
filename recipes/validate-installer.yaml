@@ -32,7 +32,7 @@ prompt: |
   - bash -n <script> (syntax)
   - review quoting, set -u/-e safety, eval usage, and hardcoded instance values
     (flag any hardcoded domain/user/port that should derive from the live system)
-  - check scripts/install/defaults/*.conf for injection surfaces (e.g. eval of values)
+  - check the resume/state path (setup.state, instance.conf) for injection surfaces (e.g. eval of values)
   - confirm idempotency and --dry-run/--verify/--yes coverage where it mutates the host
   - confirm every fact the docs claim about the script matches the code (drift)
 
