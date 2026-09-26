@@ -31,7 +31,7 @@ https://www.{{DOMAIN}} {
     # ok stub.
     @welcome path /welcome /welcome/
     handle @welcome {
-        root * /etc/caddy/www
+        root * /srv/www
         rewrite /welcome.html
         file_server
     }
@@ -43,32 +43,32 @@ https://www.{{DOMAIN}} {
     # generator reads, so the pages auto-appear in the tail door list.
     @w5 path /welcome-5 /welcome-5/
     handle @w5 {
-        root * /etc/caddy/www
+        root * /srv/www
         rewrite /welcome-5.html
         file_server
     }
     @w6 path /welcome-6 /welcome-6/
     handle @w6 {
-        root * /etc/caddy/www
+        root * /srv/www
         rewrite /welcome-6.html
         file_server
     }
     @w7 path /welcome-7 /welcome-7/
     handle @w7 {
-        root * /etc/caddy/www
+        root * /srv/www
         rewrite /welcome-7.html
         file_server
     }
     @w9 path /welcome-9 /welcome-9/
     handle @w9 {
-        root * /etc/caddy/www
+        root * /srv/www
         rewrite /welcome-9.html
         file_server
     }
     # Homepage: the index.html placeholder (meta-redirects to /welcome).
     @home path /
     handle @home {
-        root * /etc/caddy/www
+        root * /srv/www
         file_server
     }
     handle {

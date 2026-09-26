@@ -40,7 +40,7 @@ https://tail.{{DOMAIN}} {
 
         # Generated navigation catalogue for the terminal.
         handle /targets.json {
-            root * /etc/caddy/www
+            root * /srv/www
             file_server
         }
 
@@ -56,9 +56,9 @@ https://tail.{{DOMAIN}} {
         }
 
         # The door list (static; modules/$DOMAIN/www is mounted read-only
-        # at /etc/caddy/www in the caddy container).
+        # at /srv/www in the caddy container).
         handle / {
-            root * /etc/caddy/www
+            root * /srv/www
             rewrite /tail.html
             file_server
         }

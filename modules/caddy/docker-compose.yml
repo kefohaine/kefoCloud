@@ -39,9 +39,18 @@ services:
       - ${DATA_DIR}/rendered/caddy:/etc/caddy:ro
       # The web root is INSTANCE DATA, not repo content: every page served by
       # www.${DOMAIN} and tail.${DOMAIN} lives in ${DATA_DIR}/www (operator-
-      # edited; targets.json is generated there). Nested inside the mount
-      # above on purpose — the skeleton ships no pages at all.
-      - ${DATA_DIR}/www:/etc/caddy/www:ro
+      # edited; targets.json is generated there). The skeleton ships no pages.
+      #
+      # It must NOT be mounted at /etc/caddy/www (nested inside the read-only
+      # /etc/caddy bind above): runc has to mkdir the nested mountpoint inside
+      # an already-mounted read-only filesystem and dies with
+      #   failed to create task ... create mountpoint for /etc/caddy/www ...
+      #   mkdirat .../merged/etc/caddy/www: read-only file system
+      # so the container never leaves "Created", Caddy never starts and every
+      # ACME cert stays unissued (2026-09-25 fresh install: 1 caddy + 6 cert_*
+      # errors, one cause). Pre-creating the dir in the image does not help;
+      # /srv/www is a plain sibling path (the vhosts' `root *` uses it too).
+      - ${DATA_DIR}/www:/srv/www:ro
       # Persistent Caddy data: ACME certs, account keys, OCSP staples.
       # Bound at /data, which is the caddy:2.x default base directory —
       # the built-in ACME issuer writes under /data/caddy and renewal
