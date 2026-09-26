@@ -15,7 +15,9 @@ The upsides:
 - Streamlined Automation
 - Modular Setup
 
-Minimum RAM required: 4GB
+Performance advisories:
+- Minimum/Recommended RAM: 4/8 GB
+- Minimum/Recommended Disk: 15/30 GB
 
 ## Install
 
@@ -23,8 +25,6 @@ Minimum RAM required: 4GB
 git clone https://github.com/kefohaine/kefoServer.git && cd kefoServer
 bash scripts/install/install.sh
 ```
-
-On a fresh box the repo is cloned for you over **HTTPS** (the repo is public — no GitHub SSH key has to be added to clone it). Everything lives under the checkout (`~/github/<repo>/`); every external, untracked artefact (containers' data, databases, uploads, the web root, module reports) lives under its `data/`, which `.gitignore` excludes. `root@kefoserver` is the **only** entry point (key-only SSH over the tailnet). The installer asks a few questions — each module gets an explicit `true`/`false`, then it requires the public SSH key of a device you control (SSH is key-only, so this is what makes the box reachable), and the last question offers opt-in remote access to your own GitHub account: say `true` and it mints an SSH key, prints the public half for you to add to GitHub, waits until GitHub accepts it and pushes. Then it hardens the host, creates the DNS records, issues certificates and builds the selected stack unattended — and once everything is green it offers, yes/no, to run the VPS performance pass (`scripts/ops/optimize.sh`).
 
 `scripts/install/uninstall.sh` reverses it in the same style — every prompt defaults to keep, operator data and the tailscale-only SSH path are never touched without an explicit confirm, and the tailnet membership goes last.
 
