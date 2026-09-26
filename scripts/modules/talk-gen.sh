@@ -43,15 +43,30 @@ set_env POSTGRES_USER nextcloud
 set_env POSTGRES_HOST 172.22.0.15
 set_env REDIS_HOST redis
 
-# Render the Talk configs from the committed templates.
+# Render the Talk configs from the committed templates. The templates live in
+# the CHECKOUT ($REPO_DIR), not under the data dir — $REPO is $DATA_DIR here
+# (historical name), and the old "$REPO/repo/..." path never existed, so the
+# render aborted (set -e) AFTER the secrets were written and left a 0-byte
+# server.conf behind (2026-09-25 fresh install: talk-hpb then crash-looped on
+# "open /config/server.conf: permission denied").
 . "$ENV"
+TPL="$REPO_DIR/modules/nextcloud/talk"
+for f in "$TPL/server.conf.example" "$TPL/turnserver.conf.example"; do
+  [ -r "$f" ] || { echo "missing template: $f" >&2; exit 1; }
+done
+# docker compose creates a DIRECTORY as the bind-mount source when the source
+# file does not exist yet (seen 2026-09-25: data/talk/turnserver.conf was a
+# dir, which then breaks the render). Clear that placeholder first.
+for f in "$TALK/server.conf" "$TALK/turnserver.conf"; do
+  [ -d "$f" ] && rmdir "$f" 2>/dev/null || true
+done
 sed -e "s/__SIGNALING_HASH_KEY__/$SIGNALING_HASH_KEY/g" \
     -e "s/__SIGNALING_BLOCK_KEY__/$SIGNALING_BLOCK_KEY/g" \
     -e "s/__SIGNALING_INTERNAL_SECRET__/$SIGNALING_INTERNAL_SECRET/g" \
     -e "s/__SIGNALING_SECRET__/$SIGNALING_SECRET/g" \
-    "$REPO/repo/modules/nextcloud/talk/server.conf.example" > "$TALK/server.conf"
+    "$TPL/server.conf.example" > "$TALK/server.conf"
 sed -e "s/__TURN_SECRET__/$TURN_SECRET/g" \
-    "$REPO/repo/modules/nextcloud/talk/turnserver.conf.example" > "$TALK/turnserver.conf"
+    "$TPL/turnserver.conf.example" > "$TALK/turnserver.conf"
 chmod 600 "$TALK/turnserver.conf"
 # 644 not 600: the signaling container drops to uid 850 (spreedbackend) via
 # su-exec and must be able to read this file through the :ro bind mount.
