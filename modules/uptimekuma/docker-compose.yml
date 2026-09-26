@@ -8,6 +8,16 @@ services:
     mem_limit: 512m
     memswap_limit: 512m
 
+    # Kuma 2.5+ boots into a "Setup Database" web wizard unless it can read
+    # db-config.json OR find an existing kuma.db, and it does NOT touch the
+    # SQLite file until that resolves: the container serves its port and looks
+    # healthy while kuma.db stays 0 bytes with no tables. This env var sets
+    # needSetup=false at boot, so Kuma creates db-config.json + the schema by
+    # itself and the installer's seed has tables to insert into (2026-09-25:
+    # kuma_seed failed with "no such table: docker_host/monitor/group").
+    environment:
+      UPTIME_KUMA_DB_TYPE: sqlite
+
     expose:
       - "3001"
 
