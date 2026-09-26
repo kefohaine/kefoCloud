@@ -4,21 +4,6 @@ One repo that turns any Debian system into your own self-hosted server stack —
 
 **[www.fxmq.net](https://www.fxmq.net/welcome) is the live demo**: the installed modules running on one box, built entirely from this repo. Fork it, run the installer, and the same board is yours — under your own domain, with no server but yours.
 
-## Why
-
-The point of the repo is that none of those doors needs a rented product: your files instead of Google/Dropbox, your mail instead of Gmail, your vault instead of a hosted password manager, your calls instead of Zoom.
-You become the admin — which is the honest price of owning the server.
-
-The upsides:
-- High efficiency & density
-- Maximum privacy & ownership
-- Streamlined Automation
-- Modular Setup
-
-Performance advisories:
-- Minimum/Recommended RAM: 4/8 GB
-- Minimum/Recommended Disk: 15/30 GB
-
 ## Install
 
 ```bash
@@ -52,6 +37,7 @@ bash scripts/install/install.sh
 - `scripts/install/` — `install.sh` (prompts every value, never a pre-filled default) and `uninstall.sh`
 
 ## Risks & Considerations
+- System requirements: minimum RAM is 4GB; minimum storage is 15GB; i recommend double the minimum for both specs to avoid bottleneck.
 - Single Point of Failure: Running your cloud, your passwords, your email and your monitoring on one operating system means that if the host crashes, goes offline, or gets compromised, your entire digital footprint goes dark simultaneously.
-- The "Mail Server" Headache: Operating a self-hosted mail server is notoriously difficult. Even if the project configures your DKIM and SPF records perfectly, large providers like Gmail, Yahoo, and Outlook frequently block or flag IP addresses originating from residential connections or cheap cloud VPS networks.
+- The Mail Server Headache: Operating a self-hosted mail server is notoriously difficult. Even if the project configures your DKIM and SPF records perfectly, large providers like Gmail, Yahoo, and Outlook frequently block or flag IP addresses originating from residential connections or cheap cloud VPS networks.
 - Maintenance: If anything breaks when you install as intended, report it here as an issue; Please don't open an issue if it was caused from manual tweaks on your end.
