@@ -1,4 +1,12 @@
 #!/bin/bash
+# This script performs the reverse of install.sh:
+# • Stops and removes all Docker containers started by install.sh
+# • Deletes generated data directories (data/, rendered/, cloud/recovery/)
+# • Removes Cloudflare DNS records (A, CNAME, TXT for domain and services)
+# • Revokes Let's Encrypt certificates via certbot cleanup
+# • Clears instance state and logs
+# • Disables modules (cloud, vault, mail, monitor) and cleans up configs
+# • Optionally removes GitHub remote authentication keys
 # homelab uninstall.sh — the exact opposite of install.sh, in the same style.
 #
 # Reverse-onboarding: takes the deployment apart module by module (cloud,

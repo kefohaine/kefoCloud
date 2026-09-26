@@ -66,7 +66,7 @@ make render          # rebuild data/rendered/ + refresh the .env instance blocks
 - `data/rendered/config/` — every file under `config/`, rendered. `make
   install-config` installs from here.
 - `$DATA_DIR/www/` — the instance web root, rendered from the tracked
-  `config/www/` templates and mounted read-only by the edge at `/etc/caddy/www`.
+  `config/www/` templates and mounted read-only by the edge at `/srv/www`.
   Operator pages live there and are never overwritten.
 
 `scripts/stack/stack-up.sh` renders first, in every mode, so a fresh clone, a
