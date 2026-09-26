@@ -1,3 +1,3 @@
 #!/bin/bash
-# Core modules deployment – docker containers for Nextcloud, Vaultwarden, Uptime Kuma, Docker Mailserver, etc.
-# TODO: extract corresponding logic from install.sh
+# Core modules deployment (Docker containers for Nextcloud, Vaultwarden, Uptime Kuma, Mailserver).
+# TODO: extract logic from install.sh

@@ -1,3 +1,4 @@
+# This script performs the reverse of install.sh.
 #!/bin/bash
 # This script performs the reverse of install.sh:
 # • Stops and removes all Docker containers started by install.sh
@@ -620,3 +621,11 @@ main() {
 }
 
 main "$@"
+# Prompt for phases to uninstall
+for p in scripts/install/phases/phase_*.sh; do
+  read -p "Undo $p? (y/N) " ans
+  if [[ $ans == y* ]]; then
+    . $p && echo "Reversed $p"
+  fi
+ done
+
