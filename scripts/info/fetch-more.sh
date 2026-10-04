@@ -21,7 +21,7 @@ export LC_ALL=C
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DATA="$ROOT/data"
-LOG_DIR="${LOG_DIR:-/var/log/kefohaine}"
+LOG_DIR="${LOG_DIR:-/var/log/$GITHUB_USER}"
 . "$ROOT/scripts/lib/modules.sh"
 CONF="$INSTALLED_CONF"
 mod_in() { mod_installed "$1"; }
