@@ -118,7 +118,8 @@ services:
     volumes:
       - ${DATA_DIR}/mailserver/roundcube:/var/roundcube/db
       # STARTTLS overrides (see file header) — included by the entrypoint.
-      - ./roundcube-tls.inc.php:/var/roundcube/config/roundcube-tls.inc.php:ro
+      # rendered by `make render` (replaces {{DOMAIN}} with the live domain)
+      - ${DATA_DIR}/rendered/mailserver/roundcube-tls.inc.php:/var/roundcube/config/roundcube-tls.inc.php:ro
 
     extra_hosts:
       # Map the cert FQDN to the mail container's bridge IP so Roundcube's
