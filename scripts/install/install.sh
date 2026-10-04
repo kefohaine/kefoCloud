@@ -269,7 +269,8 @@ write_modules_conf() {
     echo; } > "$rep"
 
   for m in cloud vault mail monitor; do
-    [ "${MOD_${m^^}:-true}" = "true" ] && echo "$m" >> "$conf"
+    local _mod="MOD_${m^^}"
+    [ "${!_mod:-true}" = "true" ] && echo "$m" >> "$conf"
   done
 
   for m in cloud vault mail monitor; do
@@ -294,8 +295,9 @@ write_modules_conf() {
     esac
     ev=$((ct+cf+dd+vh))
     [ "$ev" -gt 0 ] && echo "$m" >> "$det"
+    local _mod="MOD_${m^^}"
     printf '%-8s declared=%s running=%s compose=%s data=%s vhost=%s -> %s\n' \
-      "$m" "$([ "${MOD_${m^^}:-true}" = true ] && echo 1 || echo 0)" \
+      "$m" "$([ "${!_mod:-true}" = true ] && echo 1 || echo 0)" \
       "$ct" "$cf" "$dd" "$vh" "$([ "$ev" -gt 0 ] && echo PRESENT || echo absent)" >> "$rep"
   done
 
@@ -461,6 +463,11 @@ phase_host() {
     printf 'PasswordAuthentication no\nPermitRootLogin prohibit-password\nAllowUsers root\n' \
       > /etc/ssh/sshd_config.d/50-cloud-init.conf
     chmod 600 /etc/ssh/sshd_config.d/50-cloud-init.conf
+    sed -i -e 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' \
+           -e 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' \
+           -e 's/^#\?X11Forwarding.*/X11Forwarding no/' /etc/ssh/sshd_config
+    grep -q '^PubkeyAuthentication' /etc/ssh/sshd_config || echo 'PubkeyAuthentication yes' >> /etc/ssh/sshd_config
+    grep -q '^AllowUsers' /etc/ssh/sshd_config || echo 'AllowUsers root' >> /etc/ssh/sshd_config
     systemctl restart sshd
     log "  sshd hardened: key-only root login (AllowUsers root)"
   else
@@ -530,6 +537,11 @@ EOF
   [ -n "$TS_IP" ] && log "tailscale IP: $TS_IP" || fail ts_ip
 
   ufw allow from 100.64.0.0/10 to any port 22 proto tcp >/dev/null 2>&1
+  # Remove stale installer-session SSH rules from prior runs (tailnet rule is kept).
+  while IFS= read -r _ip; do
+    [ "$_ip" = "100.64.0.0/10" ] && continue
+    ufw --force delete allow from "$_ip" to any port 22 proto tcp >/dev/null 2>&1 || true
+  done < <(ufw status numbered 2>/dev/null | grep '22/tcp' | awk '{print $NF}')
   # Keep the current SSH client reachable even before it joins the tailnet, so
   # enabling ufw never locks the operator out mid-install. This is a TEMPORARY
   # rule for the installer session only: the IP is remembered and the rule is
@@ -1454,6 +1466,11 @@ finalize_hardening() {
     ufw delete allow from "$ip" to any port 22 proto tcp >/dev/null 2>&1 || true
     log "  removed the temporary installer SSH allow for $ip (root@$NODE_NAME over the tailnet remains the entry point)"
   fi
+  # Also remove any remaining stale SSH rules from prior installs.
+  while IFS= read -r _ip; do
+    [ "$_ip" = "100.64.0.0/10" ] && continue
+    ufw --force delete allow from "$_ip" to any port 22 proto tcp >/dev/null 2>&1 || true
+  done < <(ufw status numbered 2>/dev/null | grep '22/tcp' | awk '{print $NF}')
 }
 
 success_block() {
