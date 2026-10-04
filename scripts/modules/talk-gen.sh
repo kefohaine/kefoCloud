@@ -60,7 +60,10 @@ done
 for f in "$TALK/server.conf" "$TALK/turnserver.conf"; do
   [ -d "$f" ] && rmdir "$f" 2>/dev/null || true
 done
-sed -e "s/__SIGNALING_HASH_KEY__/$SIGNALING_HASH_KEY/g" \
+# Token substitution ({{TOKENS}}) for the backend URL + placeholder secret
+# replacement for secrets.
+sed -e "s/{{DOMAIN}}/$DOMAIN/g" \
+    -e "s/__SIGNALING_HASH_KEY__/$SIGNALING_HASH_KEY/g" \
     -e "s/__SIGNALING_BLOCK_KEY__/$SIGNALING_BLOCK_KEY/g" \
     -e "s/__SIGNALING_INTERNAL_SECRET__/$SIGNALING_INTERNAL_SECRET/g" \
     -e "s/__SIGNALING_SECRET__/$SIGNALING_SECRET/g" \
