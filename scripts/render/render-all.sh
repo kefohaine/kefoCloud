@@ -52,6 +52,7 @@ render_tree() {   # render_tree <src-dir> <dest-dir> [exclude-name]
 }
 
 render_tree "$ROOT/modules/caddy" "$TMP/caddy" Dockerfile
+render_tree "$ROOT/modules/mailserver" "$TMP/mailserver" docker-compose.yml
 render_tree "$ROOT/config" "$TMP/config" instance.defaults www
 # (skip www: config/www holds TEMPLATE web pages, not host config — they belong
 #  in the web root, rendered below, not under /etc)
