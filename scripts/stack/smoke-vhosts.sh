@@ -199,9 +199,9 @@ if ! echo "$talk_welcome" | grep -q '"Welcome"'; then
 else
   echo "ok   talk-signaling — HPB backend API answers"
 fi
-talk_ws=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 --resolve "talk.$DOMAIN:443:127.0.0.1" \
+talk_ws=$(curl -s -o /dev/null -w '%{http_code}' --http1.1 --max-time 12 --resolve "talk.$DOMAIN:443:127.0.0.1" \
   -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
-  "https://talk.$DOMAIN/signaling/spreed" 2>/dev/null)
+  "https://talk.$DOMAIN/signaling" 2>/dev/null)
 if [ "$talk_ws" != "400" ] && [ "$talk_ws" != "426" ] && [ "$talk_ws" != "101" ]; then
   echo "FAIL talk-signaling: websocket handshake got HTTP $talk_ws (want 400/426/101 — signaling server must answer)"; fails=$((fails+1))
 else
