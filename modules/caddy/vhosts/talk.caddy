@@ -20,11 +20,26 @@ https://talk.{{DOMAIN}} {
         import security_headers
     }
 
-    # The signaling server serves its websocket + API at the root of its own
-    # listener, so the /signaling prefix is stripped before proxying (the
-    # official nginx template does the same with `proxy_pass .../`). Clients
-    # still connect to wss://talk.{{DOMAIN}}/signaling.
-    handle_path /signaling* {
+    # The Go signaling server serves the websocket at /spreed and the REST
+    # API at /api/v1/*. Nextcloud registers the signaling URL as
+    # https://talk.{{DOMAIN}}/signaling (see `occ talk:signaling:list`), and
+    # Nextcloud Talk's REST calls use https://talk.{{DOMAIN}}/signaling/api/v1/*,
+    # so Caddy rewrites both: /signaling -> /spreed and /signaling/api* -> /api*.
+
+    # Websocket: exact /signaling -> /spreed on the signaling backend.
+    # Non-regex literal-path rewrite: /signaling -> /spreed (Caddy's `rewrite`
+    # preserves the websocket upgrade; the Go signaling server speaks plain
+    # HTTP/1.1, and real clients use the H1.1 upgrade handshake which
+    # `reverse_proxy` bridges).
+    handle /signaling {
+        rewrite /spreed
+        reverse_proxy 172.22.0.12:8080
+    }
+
+    # REST API: /signaling/api* -> /api* on the backend (strip the /signaling
+    # prefix). /signaling/api/v1/welcome must return the signaling Welcome JSON.
+    handle /signaling/api/* {
+        uri replace /signaling ""
         reverse_proxy 172.22.0.12:8080
     }
 
