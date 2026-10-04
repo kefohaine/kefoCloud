@@ -239,7 +239,8 @@ When you need to know "what does X do / where do I edit Y", read the file at the
 ### Talk stack (Nextcloud Talk HPB + TURN)
 
 **What it is, in plain language.** Nextcloud Talk = chat + audio/video calls. Calls are WebRTC: two browsers try to talk directly (peer-to-peer). Three helpers make that reliable:
-1. **Signaling** (`talk-hpb`, the official Go server) — the "switchboard". Every Talk client keeps a websocket open to it (`wss://talk.$DOMAIN/signaling/spreed`); the signaling server tells participants who else is in the call and relays small control messages. Nothing about the call *media* flows through it.
+1. **Signaling** (`talk-hpb`, the official Go server) — the "switchboard". Every Talk client keeps a websocket open to it (`wss://talk.$DOMAIN/signaling`); the signaling server tells participants who else is in the call and relays small control messages. Nothing about the call *media* flows through it.
+**Gotcha: verifying the Talk websocket with curl.** A `curl --http2` probe sending `Upgrade: websocket` gets HTTP 400 because Caddy's H2 layer drops the `Connection`/`Upgrade` headers (connection-specific headers are forbidden in HTTP/2) — a curl artifact, not a failure. Real Talk clients do the upgrade over **HTTP/1.1** (the browser's WebSocket API downgrades to H1.1 for the upgrade), which `reverse_proxy` bridges to 101. Probe with `--http1.1` and expect 101; do not read a raw H2 `Upgrade` response as broken.
 2. **STUN** — "what's my public IP?" so two devices behind home NATs can find each other. coturn answers this on `talk.$DOMAIN:3478`.
 3. **TURN** — when direct P2P fails (mobile CGNAT, hotel/corporate WiFi, firewalled networks), coturn *relays* the media between the two sides. Credentials are minted per-session by Nextcloud from a shared secret, so it is not an open relay. Both STUN and TURN live in the same coturn container (~9 MB RAM actual).
 

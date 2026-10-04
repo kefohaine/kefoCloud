@@ -368,6 +368,13 @@ mail-card:
     scripts/lib/mklog warn "password is hashed — rotate with make mail-password MAIL=$(MAIL)"; \
   else scripts/lib/mklog error "$(MAIL) not found — create with make mail-gen [MAIL=…]"; exit 1; fi
 
+mail-list:
+>@scripts/lib/mklog info "mailboxes for $(DOMAIN):"
+>@docker exec mailserver setup email list 2>/dev/null | sed -n 's/^[* ]*//p' | grep '@' | sed 's/ .*//' | while IFS= read -r addr; do \
+    q=$$(grep -F "$$addr:" "$(REPO)/data/mailserver/config/dovecot-quotas.cf" 2>/dev/null | cut -d: -f2 | tr -d ' '); \
+    scripts/lib/mklog info "$$addr — $${q:-unlimited}"; \
+  done
+
 # Regenerate the tail terminal's navigation catalogue from the Caddy vhost
 # files ($DATA_DIR/www/targets.json — GENERATED, do not hand-edit). Run after
 # adding a vhost or a public path; `make install-config` runs it too.
@@ -830,7 +837,10 @@ NC_OCC := docker exec -u www-data nextcloud php occ
 	nc-config-get nc-config-set nc-users nc-user-add nc-user-del nc-user-password \
 	nc-user-setting nc-scan nc-groups nc-jobs nc-talk-signaling nc-talk-signaling-add \
 	nc-talk-signaling-del nc-talk-turn nc-talk-turn-add nc-talk-turn-del \
-	nc-2fa-enforce nc-logs
+	nc-2fa-enforce nc-logs nc-add-user mail-list
+
+nc-add-user:
+>@$(MAKE) --no-print-directory -f "$(firstword $(MAKEFILE_LIST))" nc-user-add
 
 nc-occ:
 >@if [ -z "$(CMD)" ]; then \
@@ -917,7 +927,7 @@ nc-users:
 nc-user-add:
 >@if [ -z "$(USER)" ]; then scripts/lib/mklog error "Usage: make nc-user-add USER=<uid> [PASS=<password>]"; exit 1; fi
 >@if [ -n "$(PASS)" ]; then \
-    OC_PASS="$(PASS)" $(NC_OCC) user:add --password-from-env "$(USER)"; \
+    docker exec -u www-data -e OC_PASS="$(PASS)" nextcloud php occ user:add --password-from-env "$(USER)"; \
   else \
     $(NC_OCC) user:add "$(USER)"; \
   fi
@@ -929,7 +939,7 @@ nc-user-del:
 nc-user-password:
 >@if [ -z "$(USER)" ]; then scripts/lib/mklog error "Usage: make nc-user-password USER=<uid> [PASS=<password>]"; exit 1; fi
 >@if [ -n "$(PASS)" ]; then \
-    OC_PASS="$(PASS)" $(NC_OCC) user:resetpassword --password-from-env "$(USER)"; \
+    docker exec -u www-data -e OC_PASS="$(PASS)" nextcloud php occ user:resetpassword --password-from-env "$(USER)"; \
   else \
     $(NC_OCC) user:resetpassword "$(USER)"; \
   fi
