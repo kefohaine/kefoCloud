@@ -44,8 +44,8 @@ fi
 : "${NODE_NAME:=$(hostname -s 2>/dev/null || echo server)}"
 : "${GITHUB_USER:=exampleuser}"
 : "${REPO_NAME:=kefoServer}"
-: "${LOG_DIR:=/var/log/kefohaine}"
-: "${STATE_DIR:=/var/lib/kefohaine}"
+: "${LOG_DIR:=/var/log/$GITHUB_USER}"
+: "${STATE_DIR:=/var/lib/$GITHUB_USER}"
 : "${SERVER_IP:=}"
 : "${EMAIL:=admin@$DOMAIN}"
 
