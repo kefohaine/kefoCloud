@@ -79,6 +79,16 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Fix**: operator decision — delete the DB-migration steps from GUIDE (Setup A won) or re-document them as an option if the DB ever outgrows the app host.
 
 ### Security
+#### Caddy edge lacks rate + connection limiting (all public vhosts)
+- **File**: `modules/caddy/Caddyfile` + per-vhost vhosts (`cloud.caddy`, `talk.caddy`, `vault.caddy`, `kuma.caddy`, `mail.caddy`, `tail.caddy`)
+- **Problem**: every public vhost reverse-proxies an upstream at `172.22.0.x:PORT` with no `ratelimit` or `connlimit` guard — a single client (or botnet) can exhaust any upstream's resources (`talk-hpb` 128m RAM, Nextcloud PHP-FPM children, Postgres) via `wss://`, `occ` sync or repeated API calls. Not recorded anywhere.
+- **Fix**: add site-level `connlimit` or global `ratelimit` guards per vhost; consider rate-limiting `/signaling` and Kuma's admin routes.
+
+#### Fail2ban covers sshd only — no web-app login jails
+- **File**: `config/fail2ban/jail.d/` (only `sshd.conf`)
+- **Problem**: brute-force protection exists only for SSH; Nextcloud/Talk/Roundcube/Vaultwarden/Kuma login pages have no jail — an attacker or scanner can hammer app password endpoints from one IP.
+- **Fix**: add per-app jails under `config/fail2ban/jail.d/` (nextcloud, vaultwarden, roundcube, kuma) pointing to each app's login route.
+
 
 #### docker.sock holders = host root (Uptime Kuma)
 - **File**: `modules/uptimekuma/docker-compose.yml` (ro socket).
