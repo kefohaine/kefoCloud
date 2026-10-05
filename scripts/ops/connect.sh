@@ -1,28 +1,33 @@
 #!/usr/bin/env bash
 # scripts/ops/connect.sh — `make connect`: join this host's modules to another box.
 #
-# Replaces the old `make storage` (the NFS-datadirectory workflow now lives in
-# scripts/ops/datadir-nfs.sh and is one of the choices below).
+# NFS-datadirectory only: the database stays on the main VPS and is NEVER moved
+# — no dbhost change, no dump/restore, nothing touches the database. The user
+# files (the datadirectory) are moved to the other box over NFS. This is the
+# direct replacement of the old `make storage` command.
 #
 # It asks three things, in this order:
 #   1. WHICH MODULE  — nextcloud today; kuma/vaultwarden print what they would
 #                      need instead of pretending to work.
 #   2. WHICH SERVER  — another box on the tailnet (`root@storage` or an IP).
-#   3. WHAT TO DO    — exactly two database modes, in plain words:
-#        link       the database already lives on the other server: point this
-#                   module at it. NOTHING is written on either side.
-#        overwrite  copy THIS host's database to the other server, replacing
-#                   whatever is there, then point the module at it.
-#      plus, for nextcloud, the datadirectory move to a storage VPS (option 3).
+#   3. WHAT TO DO    — about the datadirectory (the database stays on the main VPS):
+#        overwrite   copy THIS host's datadirectory to the other server over NFS,
+#                    replacing whatever is there. The other server gets NFS,
+#                    tailscale, swap and a ufw gate set up. (the old
+#                    'make storage' workflow)
+#        link        mount the datadirectory that ALREADY lives on the other
+#                    server over the tailnet. Nothing is copied on either side.
+#      plus, for nextcloud, the full guided storage wizard (option 3 —
+#      `scripts/ops/datadir-nfs.sh`, the old `make storage` command, untouched).
 #
 # Safety rails: the other server must answer before anything is written; the
-# local database is dumped to disk before an overwrite; the app is stopped for
-# the swap and started again afterwards; the change is verified by talking to
-# the database the module actually ends up using; every step is idempotent and
-# safe to re-run.
+# local datadirectory is backed up to `$LOCAL_MOUNT.local-backup` before the
+# swap; the app is stopped for the swap and started again afterwards; the
+# change is verified by a read/write probe on the mounted datadirectory; every
+# step is idempotent and safe to re-run.
 #
-# Env overrides (no prompts): MODULE, TARGET, ACTION=link|overwrite,
-# SSH_PASS, REMOTE_PG (remote postgres container name), DB_HOST/DB_PORT.
+# Env overrides (no prompts): MODULE, TARGET, ACTION=datadir-overwrite|datadir-
+# link, NC_CONTAINER, LOCAL_MOUNT, SIZE_GB, QUOTA_USER, QUOTA, STORAGE_PASS, TS_AUTHKEY.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
@@ -30,6 +35,7 @@ ROOT="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
 
 NC_CONTAINER="${NC_CONTAINER:-nextcloud}"
 PG_CONTAINER="${PG_CONTAINER:-postgresql}"
+NC_MOUNT="${NC_MOUNT:-/srv/nextcloud-data}"
 SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
 
 log()  { printf '\033[36m[connect]\033[0m %s\n' "$*"; }
@@ -56,7 +62,8 @@ if [ -z "$MODULE" ]; then
   cat <<'EOF'
 Which module do you want to connect?
 
-  1) nextcloud    — the Nextcloud database (PostgreSQL) and/or its datadirectory
+  1) nextcloud    — user files over NFS to the other server; the PostgreSQL DB
+                   stays on the main VPS (it is never moved)
   2) kuma         — Uptime Kuma (SQLite; needs MariaDB on both sides first)
   3) vaultwarden  — Vaultwarden (SQLite; single file, no server-side DB)
 EOF
@@ -118,156 +125,190 @@ DB_NAME="${DB_NAME:-$(docker inspect "$NC_CONTAINER" --format '{{range .Config.E
 DB_USER="${DB_USER:-$(docker inspect "$NC_CONTAINER" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^POSTGRES_USER=//p' | head -1)}"
 DB_PASS="$(docker inspect "$NC_CONTAINER" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^POSTGRES_PASSWORD=//p' | head -1)"
 DB_NAME="${DB_NAME:-nextcloud}"; DB_USER="${DB_USER:-nextcloud}"
-LOCAL_DB_HOST="$(docker inspect "$NC_CONTAINER" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^POSTGRES_HOST=//p' | head -1)"
-LOCAL_DB_HOST="${LOCAL_DB_HOST:-$PG_CONTAINER}"
 DATA_DIR_NC="$(docker inspect "$NC_CONTAINER" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}')"
+LOCAL_MOUNT="$DATA_DIR_NC"
 [ -n "$DATA_DIR_NC" ] || die "cannot find the /data bind mount of $NC_CONTAINER (detection failed)"
 [ -n "$DB_NAME" ] && [ -n "$DB_USER" ] && [ -n "$DB_PASS" ] \
   || die "cannot read the database credentials from $NC_CONTAINER (POSTGRES_* env missing)"
 log "local: nc=$NC_CONTAINER db=$PG_CONTAINER ($DB_USER@$DB_NAME) data=$DATA_DIR_NC"
 
 # ────────────────────── what should happen with the data ────────────────────
-NC_ACTION=""
+# The database NEVER moves: it stays on the main VPS. This block only decides
+# what happens with the datadirectory.
 if [ -z "$ACTION" ]; then
   hr
   cat <<EOF
-What should happen with the Nextcloud database?
+What should happen with the Nextcloud datadirectory? (the database stays on this VPS)
 
-  1) overwrite — copy THIS host's database ($DB_NAME) to the other server,
-                 REPLACING the database that is there. Use this when this host
-                 holds the data you trust and the other server is the new home.
-  2) link      — point Nextcloud at the database that ALREADY lives on the
-                 other server. Nothing is written on either side: this host
-                 simply starts using the remote database.
-  3) datadirectory — keep the database here and move ONLY the user files
-                 (the datadirectory) to a storage VPS over NFS (this is the old
-                 'make storage' workflow).
+  1) overwrite — copy THIS host's datadirectory to the other server over NFS,
+                 replacing what is there. The other server must not exist yet:
+                 it gets NFS + tailscale + swap set up. (the old 'make storage'
+                 workflow)
+  2) link      — mount the datadirectory that ALREADY lives on the other server
+                 over the tailnet. Nothing is copied on either side.
+  3) datadirectory — run the full guided storage wizard
+                     (scripts/ops/datadir-nfs.sh, the old 'make storage'
+                     command — untouched).
 EOF
   read -r -p "choice [1]: " c
   case "${c:-1}" in
-    1|overwrite|o) NC_ACTION=link; OVERWRITE_FIRST=1 ;;
-    2|link|l)      NC_ACTION=link; OVERWRITE_FIRST=0 ;;
+    1|overwrite|o) NC_ACTION="datadir-overwrite" ;;
+    2|link|l)      NC_ACTION="datadir-link" ;;
     3|datadirectory|datadir|nfs) exec bash "$ROOT/scripts/ops/datadir-nfs.sh" ;;
     *) die "unknown choice: $c" ;;
   esac
 else
-  NC_ACTION=link
-  [ "$ACTION" = "overwrite" ] && OVERWRITE_FIRST=1 || OVERWRITE_FIRST=0
+  NC_ACTION="datadir-overwrite"
+  case "$ACTION" in link|l|datadir-link) NC_ACTION="datadir-link";; esac
 fi
-: "${OVERWRITE_FIRST:=0}"
+log "action: $NC_ACTION — the database stays on the main VPS"
 
 if [ -z "$TARGET" ]; then
   read -r -p "other server (tailnet name or root@ip): " TARGET
 fi
 [ -n "$TARGET" ] || die "a target server is required"
 case "$TARGET" in *@*) ;; *) TARGET="root@$TARGET" ;; esac
-REMOTE_HOST="${TARGET#*@}"
 
-# ───────────────────────────── reachability ─────────────────────────────────
-log "checking that $TARGET answers"
-S "$TARGET" "true" || die "cannot ssh to $TARGET (key installed? tailnet up? try SSH_PASS=…)"
-REMOTE_PG="${REMOTE_PG:-$(S "$TARGET" "docker ps --format '{{.Names}}' 2>/dev/null | grep -iE 'postgres' | head -1")}"
-if [ -z "$REMOTE_PG" ]; then
-  warn "no PostgreSQL container found on $TARGET"
-  REMOTE_PG="$PG_CONTAINER"
-  S "$TARGET" "docker inspect '$REMOTE_PG' >/dev/null 2>&1" \
-    || die "no postgres container on $TARGET (set REMOTE_PG=<name> once it runs one)"
+# ───────────────── build the storage VPS (NFS + tailscale + ufw) ──────────────
+log "checking that $TARGET answers and preparing the storage VPS"
+S "$TARGET" "true" || die "cannot ssh to $TARGET (key installed? tailnet up?)"
+
+S "$TARGET" "apt-get update -qq && apt-get install -y -qq curl ca-certificates ufw nfs-kernel-server >/dev/null 2>&1" \
+  || die "failed to prepare the storage VPS"
+if ! S "$TARGET" "command -v tailscale >/dev/null && tailscale status >/dev/null 2>&1"; then
+  log "installing tailscale on storage"
+  S "$TARGET" "curl -fsSL https://tailscale.com/install.sh | sh >/dev/null 2>&1" \
+    || die "tailscale install failed"
 fi
-REMOTE_PORT="${REMOTE_PORT:-5432}"
-REMOTE_IP="$(S "$TARGET" "tailscale ip -4 2>/dev/null | head -1")"
-[ -n "$REMOTE_IP" ] || warn "could not read a tailnet IP on $TARGET — using the hostname for the connection string"
-DB_HOST_NEW="${DB_HOST:-${REMOTE_IP:-$REMOTE_HOST}}"
-log "remote: $TARGET pg=$REMOTE_PG host=$DB_HOST_NEW:$REMOTE_PORT"
+if ! S "$TARGET" "tailscale status >/dev/null 2>&1"; then
+  log "joining tailnet"
+  S "$TARGET" "tailscale up --authkey '${TS_AUTHKEY:-$(read -r -s -p 'tailscale auth key: '; echo)}' >/dev/null 2>&1" \
+    || die "tailscale up failed"
+fi
+for _ in $(seq 1 30); do
+  TS_IP="$(S "$TARGET" "tailscale ip -4 2>/dev/null | head -1")"
+  [ -n "$TS_IP" ] && break
+  sleep 2
+done
+[ -n "$TS_IP" ] || die "no tailnet IP on $TARGET"
+log "storage tailnet IP: $TS_IP"
 
-# The database the module will actually use must answer before we touch config.
-db_answers() {   # db_answers <host> <port>
-  local h="$1" p="$2"
-  docker run --rm --network host -e PGPASSWORD="$DB_PASS" postgres:16-alpine \
-    psql -h "$h" -p "$p" -U "$DB_USER" -d "$DB_NAME" -tAc 'select 1' >/dev/null 2>&1
-}
+# lockout gate: verify the tailnet path BEFORE any firewall change
+sudo tailscale ping -c 2 "$TS_IP" >/dev/null 2>&1 || die "cannot ping storage over the tailnet"
+T() { ssh -o StrictHostKeyChecking=accept-new root@"$TS_IP" "$@"; }
+T "true" || die "tailnet ssh failed"
+log "tailnet path verified — safe to restrict the firewall"
 
-if [ "$OVERWRITE_FIRST" = 1 ]; then
-  # 1. dump locally (always, before anything is overwritten)
-  STAMP="$(date +%F-%H%M)"
-  mkdir -p "$DATA_DIR/backups"; chmod 700 "$DATA_DIR/backups"
-  DUMP="$DATA_DIR/backups/connect-$DB_NAME-$STAMP.dump"
-  log "dumping $DB_NAME locally → $DUMP"
-  docker exec "$PG_CONTAINER" pg_dump -U "$DB_USER" -d "$DB_NAME" -Fc > "$DUMP" || die "local pg_dump failed"
-  log "dump: $(du -h "$DUMP" | cut -f1)"
+# ───────────────────── prepare the remote datadirectory ──────────────────────
+log "setting up the NFS export on $TARGET at $NC_MOUNT"
+S "$TARGET" "mkdir -p $NC_MOUNT && chown -R 33:33 $NC_MOUNT"
+S "$TARGET" "grep -q '^$NC_MOUNT 100.64.0.0/10' /etc/exports 2>/dev/null \
+  || echo '$NC_MOUNT 100.64.0.0/10(rw,sync,no_subtree_check,no_root_squash)' >> /etc/exports" \
+  || die "failed to write /etc/exports on $TARGET"
+S "$TARGET" "exportfs -ra >/dev/null 2>&1" || die "exportfs -ra failed on $TARGET"
+# NFS needs 2049/111/20048 open to the tailnet (idempotent; rules may already exist)
+S "$TARGET" "ufw allow from 100.64.0.0/10 to any port 2049 proto tcp; \
+             ufw allow from 100.64.0.0/10 to any port 111 proto tcp; \
+             ufw allow from 100.64.0.0/10 to any port 20048 proto tcp" >/dev/null 2>&1 \
+  || warn "could not add the NFS ufw rules on $TARGET (they may already exist)"
 
-  # 2. push it to the remote postgres, replacing what is there
-  log "pushing the dump to $TARGET and restoring it into '$DB_NAME'"
-  S "$TARGET" "cat > /tmp/connect-$STAMP.dump" < "$DUMP" || die "copy to $TARGET failed"
-  S "$TARGET" "
-    set -e
-    docker exec -i $REMOTE_PG psql -U $DB_USER -d postgres -tAc \"select 1 from pg_database where datname='$DB_NAME'\" | grep -q 1 || \
-      docker exec -i $REMOTE_PG createdb -U $DB_USER '$DB_NAME'
-    docker exec -i $REMOTE_PG psql -U $DB_USER -d '$DB_NAME' -c 'drop schema public cascade; create schema public;' >/dev/null
-    docker exec -i $REMOTE_PG pg_restore -U $DB_USER -d '$DB_NAME' --no-owner --role=$DB_USER < /tmp/connect-$STAMP.dump
-    rm -f /tmp/connect-$STAMP.dump
-  " || die "restore on $TARGET failed (nothing on this host was changed — the local dump is $DUMP)"
-  log "remote database replaced from the local dump"
+# ──────────── overwrite: allocate space and copy THIS host's datadirectory ─────
+if [ "$NC_ACTION" = "datadir-overwrite" ]; then
+  log "this host holds the live datadirectory; copying it to storage ($TS_IP:$NC_MOUNT)"
+  AVAIL_BYTES=$(S "$TARGET" "df -P '$NC_MOUNT' 2>/dev/null | awk 'NR==2{print \$4}'")
+  [ -z "$AVAIL_BYTES" ] && AVAIL_BYTES=$(S "$TARGET" "df -P / | awk 'NR==2{print \$4}'")
+  AVAIL_GB=$((AVAIL_BYTES / 1024 / 1024))
+  while [ -z "${SIZE_GB:-}" ]; do
+    read -r -p "size to allocate to Nextcloud on storage (GB, available: ${AVAIL_GB:-?}): " SIZE_GB
+    case "$SIZE_GB" in
+      ''|*[!0-9]*) echo "enter a number of GB"; SIZE_GB="";;
+      *) [ "$SIZE_GB" -gt "$AVAIL_GB" ] 2>/dev/null && { echo "only $AVAIL_GB GB available — pick less"; SIZE_GB=""; };;
+    esac
+  done
+  docker stop "$NC_CONTAINER" >/dev/null 2>&1 || true
+  sudo mv "$LOCAL_MOUNT" "$LOCAL_MOUNT.local-backup" 2>/dev/null || sudo mkdir -p "$LOCAL_MOUNT.local-backup"
+  sudo mkdir -p "$LOCAL_MOUNT"
+  # mount the export locally and pull our data in
+  sudo mount -t nfs -o rw,nofail,_netdev,vers=4 "$TS_IP:$NC_MOUNT" "$LOCAL_MOUNT" \
+    || die "failed to mount $TS_IP:$NC_MOUNT over the tailnet — check exportfs on $TARGET"
+  log "rsyncing the datadirectory to storage over the tailnet"
+  sudo rsync -a --info=progress2 "$LOCAL_MOUNT.local-backup/" "$LOCAL_MOUNT/" \
+    || die "rsync failed — rollback copy kept at $LOCAL_MOUNT.local-backup"
+  SRC=$(sudo find "$LOCAL_MOUNT.local-backup" -type f 2>/dev/null | wc -l)
+  DST=$(sudo find "$LOCAL_MOUNT" -type f 2>/dev/null | wc -l)
+  [ "$SRC" = "$DST" ] || die "copy incomplete ($DST of $SRC files) — rollback copy kept"
+  log "datadirectory copied: $SRC files"
+  sudo umount "$LOCAL_MOUNT" || true
 fi
 
-log "checking that the remote database answers on $DB_HOST_NEW:$REMOTE_PORT"
-db_answers "$DB_HOST_NEW" "$REMOTE_PORT" \
-  || die "the database at $DB_HOST_NEW:$REMOTE_PORT did not answer a test query — refusing to re-point Nextcloud.
-       Check: ufw on $TARGET allows $REMOTE_PORT from the tailnet, postgres listens on the tailnet
-       interface (listen_addresses + pg_hba), and the $DB_USER password matches."
-
-# ─────────────────── re-point Nextcloud at the remote database ──────────────
-log "stopping $NC_CONTAINER, re-pointing it at $DB_HOST_NEW, starting it again"
-docker stop "$NC_CONTAINER" >/dev/null
-
-# The app container's POSTGRES_HOST lives in the service .env (rendered from
-# data/instance.conf + the per-service secrets). Change it there so a recreate
-# keeps the change, then change the live config with occ.
-ENVF="$ROOT/modules/nextcloud/.env"
-if [ -f "$ENVF" ]; then
-  sed -i "s#^POSTGRES_HOST=.*#POSTGRES_HOST=$DB_HOST_NEW#" "$ENVF"
-  grep -q '^POSTGRES_HOST=' "$ENVF" || echo "POSTGRES_HOST=$DB_HOST_NEW" >> "$ENVF"
-  sed -i "s#^POSTGRES_PORT=.*#POSTGRES_PORT=$REMOTE_PORT#" "$ENVF"
-  grep -q '^POSTGRES_PORT=' "$ENVF" || echo "POSTGRES_PORT=$REMOTE_PORT" >> "$ENVF"
-  log "modules/nextcloud/.env: POSTGRES_HOST=$DB_HOST_NEW POSTGRES_PORT=$REMOTE_PORT"
+# ─────────── link: check the remote datadirectory already exists ─────────────
+if [ "$NC_ACTION" = "datadir-link" ]; then
+  S "$TARGET" "exportfs -v 2>/dev/null | grep -q '$NC_MOUNT'" \
+    || die "the datadirectory does not exist on $TARGET — run 'make connect' choice 1 (or datadir-nfs.sh) first."
 fi
 
+# ───────────────── mount the datadirectory here and start the app ─────────────
+log "stopping $NC_CONTAINER to swap the datadirectory"
+docker stop "$NC_CONTAINER" >/dev/null 2>&1 || true
+sudo mv "$LOCAL_MOUNT" "$LOCAL_MOUNT.local-backup" 2>/dev/null || sudo mkdir -p "$LOCAL_MOUNT.local-backup"
+sudo mkdir -p "$LOCAL_MOUNT"
+if ! sudo mount -t nfs -o rw,nofail,_netdev,vers=4 "$TS_IP:$NC_MOUNT" "$LOCAL_MOUNT" >/dev/null 2>&1; then
+  [ ! -x /sbin/mount.nfs ] && sudo apt-get install -y -qq nfs-common >/dev/null 2>&1
+  sudo mount -t nfs -o rw,nofail,_netdev,vers=4 "$TS_IP:$NC_MOUNT" "$LOCAL_MOUNT" \
+    || die "failed to mount $TS_IP:$NC_MOUNT (nfs-common missing? check ufw on storage allows 2049)"
+fi
+[ "$NC_ACTION" = "datadir-overwrite" ] && log "datadirectory migrated to storage" \
+  || log "datadirectory linked from storage"
+# reboot-safe mount: ordered after tailscaled, before docker, 300s mount budget
+MOUNT_OPTS="rw,nofail,_netdev,vers=4,noatime,x-systemd.after=tailscaled.service,x-systemd.mount-timeout=300s,x-systemd.before=docker.service"
+sudo sed -i "\#^[^#]*[[:space:]]$LOCAL_MOUNT[[:space:]]#d" /etc/fstab
+printf '%s\n' "$TS_IP:$NC_MOUNT $LOCAL_MOUNT nfs $MOUNT_OPTS 0 0" | sudo tee -a /etc/fstab >/dev/null
+sudo systemctl daemon-reload
 docker compose -f "$ROOT/modules/nextcloud/docker-compose.yml" up -d --no-deps nextcloud >/dev/null 2>&1 \
   || die "could not start $NC_CONTAINER"
 for i in $(seq 1 30); do
   docker exec -u www-data "$NC_CONTAINER" php -r 'require "/var/www/html/lib/base.php";' 2>/dev/null && break
   sleep 2
 done
-OCC config:system:set dbhost --value="$DB_HOST_NEW" >/dev/null 2>&1 || warn "occ dbhost write failed"
-OCC config:system:set dbport --value="$REMOTE_PORT" >/dev/null 2>&1 || true
-OCC maintenance:mode --off >/dev/null 2>&1 || true
 
-# ─────────────────────────────── verify ────────────────────────────────────
-log "verifying: Nextcloud must read AND write through the new database"
+# ─────────── verify the live datadirectory (read/write probe) ────────────────
+sleep 5
+OCC maintenance:mode --off >/dev/null 2>&1 || true
+FIRST_USER=$(OCC user:list 2>/dev/null | grep -oE '^  - [^:]+' | head -1 | awk '{print $2}')
 docker exec -u www-data "$NC_CONTAINER" php -r '
   require_once "/var/www/html/lib/base.php";
-  $c = \OC::$server->getConfig();
-  echo "  dbhost=", $c->getSystemValue("dbhost"), " dbname=", $c->getSystemValue("dbname"), "\n";
-  $db = \OC::$server->getDatabaseConnection();
-  echo "  select 1 = ", $db->fetchOne("select 1"), "\n";
-' 2>&1 | sed 's/^/  /' || die "Nextcloud could not use the new database — see docker logs $NC_CONTAINER"
-STATUS="$(OCC status 2>/dev/null | tr -d '\r')"
-case "$STATUS" in *"installed: true"*) log "occ status: installed" ;; *) warn "occ status did not confirm the install: $STATUS" ;; esac
+  \OC_Util::setupFS($argv[1]);
+  $v = \OC\Files\Filesystem::getView();
+  $ok = $v->file_put_contents(".storage-probe", "ok") !== false \
+      && trim((string)$v->file_get_contents(".storage-probe")) === "ok";
+  $v->unlink(".storage-probe");
+  exit($ok ? 0 : 1);
+' "${FIRST_USER:-admin}" || die "datadirectory read/write probe failed"
+log "datadirectory verified on $TARGET ($TS_IP:$NC_MOUNT)"
+
+# ─────────── delete the local rollback copy now that it is verified ───────────
+if [ -d "$LOCAL_MOUNT.local-backup" ] && [ "$(sudo ls -A "$LOCAL_MOUNT.local-backup" | wc -l)" -gt 0 ]; then
+  read -r -p "delete the local datadirectory copies ($LOCAL_MOUNT.local-backup)? [y/N] " ans
+  case "$ans" in y|Y|yes) sudo rm -rf "$LOCAL_MOUNT.local-backup"; log "local copies deleted";;
+    *) log "rollback kept at $LOCAL_MOUNT.local-backup (delete later: sudo rm -rf $LOCAL_MOUNT.local-backup)";;
+  esac
+fi
 
 hr
 cat <<EOF
- DONE — Nextcloud now uses the database on $TARGET
+ DONE — the Nextcloud datadirectory now lives on $TARGET
 
-   database     $DB_USER@$DB_HOST_NEW:$REMOTE_PORT/$DB_NAME
-   action       $([ "$OVERWRITE_FIRST" = 1 ] && echo "overwritten: the remote copy came from this host" || echo "linked: the remote database is used as-is")
-   local dump   $([ "$OVERWRITE_FIRST" = 1 ] && echo "$DUMP" || echo "(none — nothing was copied)")
+   datadirectory  $TS_IP:$NC_MOUNT
+   action         $([ "$NC_ACTION" = "datadir-overwrite" ] && echo "migrated: the remote copy came from this host" || echo "linked: the remote datadirectory is used as-is")
+   database       stays on the main VPS ($PG_CONTAINER, $DB_NAME) — untouched
 
  Manual steps (none block the service):
    1. Open https://cloud.$DOMAIN and confirm files + Talk still load.
-   2. The OLD local database on this host is untouched: $PG_CONTAINER still holds
-      '$DB_NAME'. Keep it as the rollback until you are happy, then remove it by
-      hand (the recipe deliberately does not).
-   3. To point back here: run this script again with ACTION=link and
-      TARGET=root@$(hostname -s) is wrong — instead set POSTGRES_HOST back to
-      $PG_CONTAINER in modules/nextcloud/.env and recreate the container.
+   2. Check the data is on storage: ssh $TARGET 'ls -la $NC_MOUNT'.
+   3. If the migration was verified, the local copies were removed; otherwise
+      the rollback copy is at $LOCAL_MOUNT.local-backup (delete by hand when
+      you are sure).
+   4. To point back to the local datadirectory: stop $NC_CONTAINER, mount this
+      host's datadirectory again, then start the container.
 EOF
 hr
