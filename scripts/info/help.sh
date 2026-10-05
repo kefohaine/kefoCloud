@@ -7,7 +7,7 @@
 #   core (make help)      the common daily surface — dashboard, maintain,
 #                         git, container/unit/tmux basics
 #   more (make help-more) the granular / technical recipes — per-file
-#                         installs, bundles, granular backup & clean
+#                         installs, backup (tailnet device only) & clean
 #                         primitives, account registries, the occ wrappers
 #
 # Usage: help.sh [core|more]   (default core)
@@ -50,8 +50,9 @@ EOF
   rows <<'EOF'
 make update|pull + recreate every deployed unit via stack-up.sh — edge last, gated, auto-rollback
 make apt-upgrade|apt-get update + upgrade (deliberately separate from the container work)
-make backup|pull live host config into repo/config/ (reverse-rendered as {{TOKENS}}); with MODULE=<cloud|vault|mail|monitor> TAILDROP=<device> ship one module's DB+datadir to a tailnet device (no config pull)
-make cleanup|apt autoremove/clean, docker prune, keep latest 3 backups per pattern
+make backup|ship ALL modules as two bundles (nextcloud-backup-*.tar.gz DB+datadir, other-backup-*.tar.gz datadirs) to a tailnet device (TAILDROP= required; data/ untouched, repo/config never touched); see import-data to restore
+make import-data|interactive restore of module bundles from a tailnet device's backups/ (TAILDROP= required; DRYRUN=1 preview — stops all non-caddy containers); never stops caddy
+make cleanup|apt autoremove/clean + docker prune (no backup prunes — all backups ship to a tailnet device)
 EOF
 
   sec "migrate / restore"
@@ -115,19 +116,11 @@ make install-cron|nextcloud → /etc/cron.d (occ cron every 5 min)
 make install-hooks|git hooks — pre-commit edge guard, pre-push smoke + history-rewrite warning
 EOF
 
-  sec "bundles (live ↔ tarball)"
-  rows <<'EOF'
-make bundle-secrets|live secrets → data/backups/secrets-bundle-<date>.tar.gz
-make install-secrets|newest secrets bundle → live paths (BUNDLE=<path> to override)
-make bundle-config|repo/config/ → data/backups/config-bundle-<date>.tar.gz
-make install-config-bundle|newest config bundle → repo/config/ (BUNDLE=<path> to override)
-EOF
 
   sec "clean"
   rows <<'EOF'
 make clean-docker|prune builder, images, containers
 make clean-apt|apt autoremove + clean
-make clean-backups|keep latest 3 bundle tarballs per pattern, delete older
 EOF
 
   sec "onboarding & stack tools"
