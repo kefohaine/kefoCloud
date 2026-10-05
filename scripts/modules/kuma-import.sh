@@ -1,8 +1,8 @@
 #!/bin/bash
 # kuma-import.sh — import a Uptime Kuma DB from another host (e.g. the old
-# $GITHUB_USER VPS) into uptimekuma, adapting it to the current stack.
+# $GITHUB_USER machine) into uptimekuma, adapting it to the current stack.
 #
-# The old host is not reachable from this VPS (SSH keys denied, Tailscale
+# The old host is not reachable from this machine (SSH keys denied, Tailscale
 # SSH off, no taildrop inbox), so the operator must deliver the DB:
 #   on the sending box:  tailscale file cp kuma.db $NODE_NAME:
 #   here:                tailscale file get $ROOT/data/kuma/import
