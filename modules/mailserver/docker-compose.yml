@@ -52,7 +52,7 @@ services:
       ENABLE_OPENDMARC: 1
       # Lightweight: no ClamAV.
       ENABLE_CLAMAV: 0
-      # No IPv6 on this VPS.
+      # No IPv6 on this machine.
       POSTFIX_INET_PROTOCOLS: ipv4
 
     ports:
