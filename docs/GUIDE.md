@@ -268,17 +268,6 @@ Nextcloud tells clients about the public endpoint (`https://talk.$DOMAIN/signali
 4. On the app host: `make talk-gen` again is NOT enough — set `POSTGRES_HOST` in `modules/nextcloud/.env` to the new tailnet IP, then `make dok-recreate-nextcloud`.
 5. Update this section's pointers + `docs/ISSUES.md`.
 
-**Two storage-VPS choices, performance & security:**
-
-| | `make connect` → datadirectory (A) | Move both DB + files to storage VPS (B) |
-|---|---|---|
-| DB | stays on app VPS, local fast queries | traverses tailnet on every query — Nextcloud is DB-heavy, RTT hits every page |
-| User files | over NFS to storage VPS (cold path, offloads 1 TB disk) | co-located with DB on storage VPS |
-| Security | DB (mail/contacts/sessions/Talk metadata) stays on app VPS — same blast radius as today; files isolated on separate VPS | app VPS holds nothing sensitive (good); but ALL data concentrates on one VPS — higher-value single target |
-| Caveat | — | never put the Postgres data dir on NFS under fsync/crash — keep DB on local disk of the storage VPS |
-
-Takeaway: A is the default — offloads the disk without putting the hot DB on the tailnet. B makes sense only if the app VPS itself must be retired; then keep the DB on local disk of the storage VPS, never NFS.
-
 ## File ownership
 
 The repo is owned by `root:root` (the SSH/login user). Edit directly when signed in as `root`; use `sudo` only if acting as another user. Do not `chown` the repo to a different user.
