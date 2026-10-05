@@ -180,8 +180,8 @@ systemd-log:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: fetch fetch-more render ttyd-devices ttyd-add ttyd-rm smoke gh-web-health install-hooks clean-docker clean-apt clean-backups update apt-upgrade install-config kuma-import help talk-gen
-.PHONY: deploy backup cleanup nc-data nc-datadir-nfs
+.PHONY: fetch fetch-more render ttyd-devices ttyd-add ttyd-rm smoke gh-web-health install-hooks clean-docker clean-apt update apt-upgrade install-config kuma-import help talk-gen
+.PHONY: deploy backup nc-data nc-datadir-nfs import-data
 
 # Per-tailnet-device web-terminal sessions: one named tmux session each, served
 # by the SINGLE ttyd listener as /ttyd?arg=<name> and listed on the tail page.
@@ -233,29 +233,6 @@ define clean_apt_cmds
 @sudo apt-get -qq autoremove -y
 @sudo apt-get clean
 endef
-
-define clean_backups_cmds
-@for pattern in secrets-bundle-*.tar.gz config-bundle-*.tar.gz; do \
-    sudo ls -1dt $(REPO)/data/backups/$$pattern 2>/dev/null | tail -n +4 | sudo xargs -r rm -rf; \
-  done
-@scripts/lib/mklog info "pruned backups older than the 3 most recent per pattern"
-endef
-
-clean-docker:
->$(clean_docker_cmds)
-
-clean-apt:
->$(clean_apt_cmds)
-
-clean-backups:
->$(clean_backups_cmds)
-
-# Help-line umbrella: apt autoremove+clean; docker prune builder/images/
-# containers; backups keep latest 3 per pattern. Self-contained recipe.
-cleanup:
->$(clean_docker_cmds)
->$(clean_apt_cmds)
->$(clean_backups_cmds)
 
 # apt is its own recipe, on purpose. A full `apt-get upgrade` is the
 # riskiest line in the toolbox — a debconf/postinst/needrestart hiccup exits
@@ -598,93 +575,6 @@ dok-stop-nextcloud-db:
 dok-logs-nextcloud-db:
 >docker logs postgresql --tail 50 -f
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Bundles (live <-> tarball)
-# bundle-secrets collects live secrets into a tar.gz; install-secrets
-# extracts one back over the live paths. bundle-config snapshots the
-# whole config/ tree into a tarball — useful as an offline copy when
-# moving to a fresh host that doesn't have the repo cloned yet (the
-# git-tracked copy is the canonical one when the repo is present).
-# The bodies are shared defines: `make backup` and `make deploy` inline
-# them so the umbrella recipes never chain another make target.
-# ─────────────────────────────────────────────────────────────────────────────
-
-.PHONY: bundle-secrets install-secrets bundle-config install-config-bundle
-
-define bundle_secrets_cmds
-@dest=$(BKP_DIR)/secrets-bundle-$$(date +%Y%m%d).tar.gz; \
-  sudo mkdir -p "$(BKP_DIR)"; \
-  sudo tar czf "$$dest" \
-    /root/.ssh/github_key \
-    /root/.ssh/github_key.pub \
-    /root/.ssh/config \
-    /root/.ssh/authorized_keys \
-    /etc/systemd/system/goose.service \
-    /etc/goose/goose.env \
-    /etc/systemd/system/ttyd.service \
-    /etc/ssh/sshd_config.d/50-cloud-init.conf \
-    /etc/dnsmasq.d/10-tailnet.conf \
-    /etc/systemd/system/dnsmasq.service.d/override.conf \
-    /var/lib/tailscale; \
-  echo "Secrets bundle at $$dest"
-endef
-
-bundle-secrets:
->$(bundle_secrets_cmds)
-
-# Extract a secrets bundle tar.gz to the live paths. Defaults to the
-# newest secrets-bundle-*.tar.gz under $(BKP_DIR); override with BUNDLE=<path>.
-define install_secrets_cmds
-@if [ -z "$(BUNDLE)" ]; then \
-    BUNDLE="$$(ls -1t $(BKP_DIR)/secrets-bundle-*.tar.gz 2>/dev/null | head -1)"; \
-    if [ -z "$$BUNDLE" ]; then \
-      scripts/lib/mklog error "no secrets-bundle-*.tar.gz found in $(BKP_DIR)"; \
-      exit 1; \
-    fi; \
-    scripts/lib/mklog info "using latest bundle: $$BUNDLE"; \
-  else \
-    BUNDLE="$(BUNDLE)"; \
-  fi; \
-  sudo tar xzf "$$BUNDLE" -C /; \
-  scripts/lib/mklog info "installed $$BUNDLE to live paths"
-endef
-
-install-secrets:
->$(install_secrets_cmds)
-
-# Snapshot the whole config/ tree into a single tarball under backups/.
-# The git-tracked copy is canonical when the repo is present; this
-# exists for offline handoff (cold machine, no clone yet). Symmetric to
-# bundle-secrets: collect → tarball; install-config-bundle → extract.
-bundle-config:
->@dest=$(BKP_DIR)/config-bundle-$$(date +%Y%m%d).tar.gz; \
-  sudo mkdir -p "$(BKP_DIR)"; \
-  sudo tar czf "$$dest" -C $(REPO) config; \
-  sudo chown root:root "$$dest"; \
-  scripts/lib/mklog info "config bundle at $$dest"
-
-# Extract a config bundle tarball over $(REPO)/config/. Defaults
-# to the newest config-bundle-*.tar.gz under $(BKP_DIR); override with
-# BUNDLE=<path>. Use when bootstrapping a fresh host: clone the repo
-# (or just create the dir), then `make install-config-bundle` to
-# populate config/ before running `make install-config`.
-install-config-bundle:
->@if [ ! -d "$(REPO)" ]; then \
-    scripts/lib/mklog error "$(REPO) does not exist — clone the repo first"; \
-    exit 1; \
-  fi; \
-  if [ -z "$(BUNDLE)" ]; then \
-    BUNDLE="$$(ls -1t $(BKP_DIR)/config-bundle-*.tar.gz 2>/dev/null | head -1)"; \
-    if [ -z "$$BUNDLE" ]; then \
-      scripts/lib/mklog error "no config-bundle-*.tar.gz found in $(BKP_DIR)"; \
-      exit 1; \
-    fi; \
-    scripts/lib/mklog info "using latest bundle: $$BUNDLE"; \
-  else \
-    BUNDLE="$(BUNDLE)"; \
-  fi; \
-  tar xzf "$$BUNDLE" -C $(REPO); \
-  scripts/lib/mklog info "installed $$BUNDLE into $(REPO)/config/"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Backups
@@ -692,43 +582,25 @@ install-config-bundle:
 
 .PHONY: backup
 
-# Pull live host config into repo/config/ (reverse-rendered — it lands as
-# {{TOKENS}}, never this instance's real values). No module data, no
-# data/backups. Module DB+datadir bundles ship one at a time to a tailnet
-# device with `make backup MODULE=<cloud|vault|mail|monitor>
-# TAILDROP=<tailnet-device>` — no config pull in that mode.
+# Ships ALL installed modules as two bundles to a tailnet device (taildrop).
+# Bundles: nextcloud-backup-<date>.tar.gz (PostgreSQL DB + Nextcloud datadir),
+#          other-backup-<date>.tar.gz (vault / mailserver / kuma datadirs).
+# Built in a temp dir, taildropped to the device's ~/backups/, sha256-verified,
+# then deleted locally. No local copies; repo/config is never read or written.
 backup:
 ifeq ($(TAILDROP),)
-ifneq ($(MODULE),)
->@scripts/lib/mklog error "usage: make backup MODULE=<cloud|vault|mail|monitor> TAILDROP=<tailnet-device> to ship one module to a tailnet device"
->@scripts/lib/mklog error "'make backup' with no args pulls the live config back into repo/config/ (no module data, no data/backups)"
+>@scripts/lib/mklog error "usage: make backup requires TAILDROP=<tailnet-device> — ships all modules as two bundles (nextcloud, other) to a tailnet device; data/ is untouched and repo/config is never read or written"
 >@exit 1
 endif
->@scripts/lib/mklog info "pulling live config into repo/config/ — reverse-rendered, so it lands as {{TOKENS}} not as this instance's values"
->@sudo mkdir -p $(REPO)/config
->@bash $(REPO)/scripts/render/render.sh --reverse /etc/systemd/system/goose.service $(REPO)/config/goose/goose.service
->@bash $(REPO)/scripts/render/render.sh --reverse /etc/systemd/system/ttyd.service $(REPO)/config/ttyd/ttyd.service
->@bash $(REPO)/scripts/render/render.sh --reverse /etc/ssh/sshd_config.d/50-cloud-init.conf $(REPO)/config/ssh/50-cloud-init.conf
->@TS_IP=$$(tailscale ip -4 2>/dev/null | head -n1); \
-    sed "s/$${TS_IP:-__none__}/100.64.0.1/g" /etc/dnsmasq.d/10-tailnet.conf | sudo tee $(REPO)/config/dnsmasq/10-tailnet.conf >/dev/null; \
-    scripts/lib/mklog info "10-tailnet.conf pulled back with the placeholder restored (never the live IP)"
->@bash $(REPO)/scripts/render/render.sh --reverse /etc/systemd/system/dnsmasq.service.d/override.conf $(REPO)/config/dnsmasq/dnmasq.service.conf
->@bash $(REPO)/scripts/render/render.sh --reverse /etc/sysctl.d/99-kefo.conf $(REPO)/config/sysctl/99-kefo.conf
->@sudo cp /etc/docker/daemon.json $(REPO)/config/docker/daemon.json
->@bash $(REPO)/scripts/render/render.sh --reverse /etc/fail2ban/jail.d/sshd.conf $(REPO)/config/fail2ban/jail.d/sshd.conf
->@bash $(REPO)/scripts/render/render.sh --reverse /etc/cron.d/nextcloud $(REPO)/config/cron/nextcloud
->@sudo chown -R root:root $(REPO)/config
->@scripts/lib/mklog info "live config pulled into $(REPO)/config/ — git add/commit to sync the repo"
-else
-ifneq ($(MODULE),)
->@echo "shipped backup: MODULE=$(MODULE)  TAILDROP=$(TAILDROP)"
->@bash scripts/ops/backup-ship.sh MODULE="$(MODULE)" TAILDROP="$(TAILDROP)"
-else
->@scripts/lib/mklog error "usage: make backup MODULE=<cloud|vault|mail|monitor> TAILDROP=<tailnet-device> to ship one module to a tailnet device"
->@scripts/lib/mklog error "'make backup' with no TAILDROP pulls the live config back into repo/config/ — module bundles ship only with MODULE + TAILDROP"
+>DRYRUN="$(DRYRUN)" bash scripts/ops/backup-bundles.sh TAILDROP="$(TAILDROP)"
+
+import-data:
+ifeq ($(TAILDROP),)
+>@scripts/lib/mklog error "usage: make import-data requires TAILDROP=<tailnet-device> — restores module bundles from the tailnet device's ~/backups/ into the live data/; run with DRYRUN=1 first to preview what would be restored and which containers stop"
 >@exit 1
 endif
-endif
+>DRYRUN="$(DRYRUN)" bash scripts/ops/restore-data.sh TAILDROP="$(TAILDROP)"
+
 # Tmux sessions
 # Persistent terminal sessions on the host — detach (Ctrl-b d) and the
 # shell + whatever's running inside it stays alive; reattach from any
