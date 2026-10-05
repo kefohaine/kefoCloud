@@ -50,7 +50,7 @@ EOF
   rows <<'EOF'
 make update|pull + recreate every deployed unit via stack-up.sh — edge last, gated, auto-rollback
 make apt-upgrade|apt-get update + upgrade (deliberately separate from the container work)
-make backup|container databases & secrets → backups/; live server config → repo/config/ (git add/commit after)
+make backup|all-module snapshot → data/backups/ + repo/config/; with TAILDROP=<device> ship a DB+datadir bundle to a tailnet device (MODULE= optional)
 make cleanup|apt autoremove/clean, docker prune, keep latest 3 backups per pattern
 EOF
 
@@ -135,7 +135,8 @@ EOF
 
   sec "onboarding & stack tools"
   rows <<'EOF'
-make connect|join a module to another server — move the user files (datadirectory) over NFS; the database stays on this VPS
+make nc-data|move the Nextcloud datadirectory to/from an external machine (export/import); the database stays on this machine
+make storage|guided wizard: make another machine the live Nextcloud datadirectory host via NFS (datadirectory is a live mount; DB stays local)
 make talk-gen|generate NC-stack secrets + Talk/TURN configs (idempotent)
 make nc-capture|snapshot live NC users/groups/quotas → recovery manifests (outside the repo)
 make kuma-import|import an adapted Uptime Kuma db (KUMA_DB=<path>)

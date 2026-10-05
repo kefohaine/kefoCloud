@@ -184,7 +184,7 @@ if have dig; then
   lans="$(dig +short +time=2 +tries=1 "cloud.${DOMAIN:-example.com}" @"${TSIP:-127.0.0.1}" 2>/dev/null | grep -v '^;' | head -1)"
   pun="$(dig +short +time=2 +tries=1 "cloud.${DOMAIN:-example.com}" @1.1.1.1 2>/dev/null | grep -v '^;' | head -1)"
   row dns "dnsmasq $(systemctl is-active dnsmasq 2>/dev/null) · listen $(grep -h '^listen-address' /etc/dnsmasq.d/*.conf 2>/dev/null | cut -d= -f2 | tr '\n' ' ') → cloud.${DOMAIN:-?}: ${lans:-NO ANSWER}"
-  row dns-public "via 1.1.1.1 → ${pun:-NO ANSWER} (must be the public VPS A record)"
+  row dns-public "via 1.1.1.1 → ${pun:-NO ANSWER} (must be the public machine A record)"
 fi
 
 # ───────────────────────────── project / git ────────────────────────────────
