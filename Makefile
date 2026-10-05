@@ -181,7 +181,7 @@ systemd-log:
 # ─────────────────────────────────────────────────────────────────────────────
 
 .PHONY: fetch fetch-more render ttyd-devices ttyd-add ttyd-rm smoke gh-web-health install-hooks clean-docker clean-apt clean-backups update apt-upgrade install-config kuma-import help talk-gen
-.PHONY: deploy backup cleanup nc-data storage
+.PHONY: deploy backup cleanup nc-data nc-datadir-nfs
 
 # Per-tailnet-device web-terminal sessions: one named tmux session each, served
 # by the SINGLE ttyd listener as /ttyd?arg=<name> and listed on the tail page.
@@ -416,22 +416,14 @@ talk-gen:
 nc-capture:
 >@bash scripts/modules/nc-capture.sh
 
-# `make nc-data`: move the Nextcloud datadirectory to and from an external
-# machine over the tailnet. The database stays on the main machine and is
-# NEVER moved — nothing touches the database. `export` copies this host's
-# datadirectory to the external machine for live use (replacing what was
-# there); `import` brings back THIS host's previously-exported datadir from
-# the external machine it was exported to (never a foreign datadir).
+# `make nc-datadir-nfs`: make an external machine the PERMANENT live
+# datadir host for THIS Nextcloud over the tailnet. export: this host's
+# datadirectory moves over NFS to the external machine (database stays here);
+# import restores THIS host's own previously-exported datadir (marker-driven:
+# import only accepts the datadir exported by this host, never a foreign one).
 # The external machine gets tailscale + ufw + the NFS stack set up.
-nc-data:
->@bash scripts/ops/nc-data.sh
-
-# `make storage`: the full guided wizard — make another machine the LIVE
-# Nextcloud datadirectory host via NFS (export, mount, rsync, persistent
-# fstab, nightly pg_dump cron + ufw gate). PostgreSQL stays on the main
-# machine. Idempotent — safe to re-run; the datadirectory is a live NFS mount.
-storage:
->@bash scripts/ops/datadir-nfs.sh
+nc-datadir-nfs:
+>@bash scripts/ops/nc-datadir-nfs.sh
 
 # ─────────────────────────────────────────────────────────────────────────────
 # config/ (live <-> repo)
