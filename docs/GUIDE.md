@@ -214,7 +214,7 @@ The compose files are the source of truth. This table is the one-line reference 
 | terminal | n/a (host systemd; see Protected host resources) | n/a | `make systemd-restart-ttyd` | `make install-config` (reinstall) |
 | dnsmasq | n/a (host systemd) | n/a | `make systemd-restart-dnsmasq` | n/a |
 | goose   | n/a (host systemd; see Protected host resources) | n/a | `make systemd-restart-goose` | n/a |
-| connect (storage) | n/a (1 TB / 2 GB VPS, tailnet-only) | NFS export (live NC datadirectory) on the storage host | n/a | `make connect` → menu choice 3 (datadirectory), idempotent |
+| connect (storage) | n/a (1 TB / 2 GB VPS, tailnet-only) | NFS export (live NC datadirectory) on the storage host | n/a | `make connect` → choice 1 (overwrite) / 2 (link) move the datadirectory over NFS; choice 3 runs the full wizard (`scripts/ops/datadir-nfs.sh`); the database stays on the main VPS, idempotent |
 
 The `net` Docker network is `external: true` — create once on a fresh host with `docker network create net --subnet=172.22.0.0/16` (the compose files pin `172.22.0.x` bridge IPs; a default-subnet network rejects them). All inter-container services use `expose`, not `ports`. The exception is `caddy`: it runs with `network_mode: host` so Caddy sees the real client source IP — without host networking, Docker DNAT rewrites every packet to `172.22.0.1` (the bridge gateway) before Caddy sees it, which breaks the `@not_tailnet` remote_ip matcher on `https://tail.$DOMAIN`. The host network namespace is on the `net` bridge at `172.22.0.0/16`, so Caddy still dials upstream containers by their bridge IP (see Caddyfile). dnsmasq binds to the Tailscale IP only, not `0.0.0.0`.
 

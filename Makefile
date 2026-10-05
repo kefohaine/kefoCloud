@@ -416,12 +416,12 @@ talk-gen:
 nc-capture:
 >@bash scripts/modules/nc-capture.sh
 
-# Connect this host's modules to another server. Prompts: which module, which
-# server, and what to do with the data — 'link' (use the database that already
-# lives there) or 'overwrite' (copy this host's database there, replacing it),
-# plus the NFS datadirectory move (the old `make storage`). It refuses to
-# re-point a module until the target database answers a test query, and it
-# always dumps locally before an overwrite.
+# Connect this host's modules to another server. The database stays on the main
+# VPS and is NEVER moved; this moves only the user files (the datadirectory) to
+# the other server over NFS — 'overwrite' copies THIS host's datadirectory there
+# (replacing it, the old `make storage` workflow) or 'link' mounts the
+# datadirectory that already lives there. Choice 3 runs the full guided storage
+# wizard (`scripts/ops/datadir-nfs.sh`).
 connect:
 >@bash scripts/ops/connect.sh
 
