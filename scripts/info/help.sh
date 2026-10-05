@@ -135,7 +135,7 @@ EOF
 
   sec "onboarding & stack tools"
   rows <<'EOF'
-make connect|join a module to another server — link an existing database there, or overwrite it with this host's data
+make connect|join a module to another server — move the user files (datadirectory) over NFS; the database stays on this VPS
 make talk-gen|generate NC-stack secrets + Talk/TURN configs (idempotent)
 make nc-capture|snapshot live NC users/groups/quotas → recovery manifests (outside the repo)
 make kuma-import|import an adapted Uptime Kuma db (KUMA_DB=<path>)
