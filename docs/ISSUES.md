@@ -27,7 +27,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 #### Destructive make recipes run with no confirmation guard
 - **File**: `Makefile`
-- **Problem**: several recipes destroy data or overwrite live state with no prompt and no automatic backup. Data-destroying: `clean-docker` / `cleanup` (docker prune -af + apt autoremove), `clean-backups` (deletes older backups), `nc-user-del` / `mail-del` / `kuma-del-user` (user + data), `connect` → datadirectory (moves the datadirectory and can delete the local copy). Live-state overwriting: `install-config` (overwrites host config, restarts sshd/dnsmasq), `deploy` / `install-secrets` (extract a bundle over `/etc`, `~/.ssh`, `/var/lib/tailscale`), `update` (pull/recreate; the apt half is now the separate `apt-upgrade`), `dok-recreate-all` / `dok-stop-all` / `dok-recreate-nextcloud-db`. Interrupting: `install-config`/`update` (recreate or restart units) and `connect` (datadirectory). `backup` also pulls live config into the repo (a secret-leak path — tracked separately).
+- **Problem**: several recipes destroy data or overwrite live state with no prompt and no automatic backup. Data-destroying: `clean-docker` (docker prune -af + apt autoremove), `nc-user-del` / `mail-del` / `kuma-del-user` (user + data), `connect` → datadirectory (moves the datadirectory and can delete the local copy). Live-state overwriting: `install-config` (overwrites host config, restarts sshd/dnsmasq), `deploy` / `install-secrets` (extract a bundle over `/etc`, `~/.ssh`, `/var/lib/tailscale`), `update` (pull/recreate; the apt half is now the separate `apt-upgrade`), `dok-recreate-all` / `dok-stop-all` / `dok-recreate-nextcloud-db`. Interrupting: `install-config`/`update` (recreate or restart units) and `connect` (datadirectory).
 - **Fix**: pick a policy — a `CONFIRM=1` gate on the destructive recipes, or keep them unguarded and list them explicitly in `make help-more`. Today they are not in one obvious list.
 - **Why approval**: changing recipe UX affects every documented workflow (GUIDE/README).
 
@@ -62,12 +62,9 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Done (2026-09-01)**: fresh NC 34.0.3 on the local PG; `trusted_domains` + `cloud.$DOMAIN` (occ install only trusts localhost — added to `install.sh`); users `admin`/`sunny`/`niyaz25` recreated from `cloud/recovery/users.txt` (new generated passwords for sunny/niyaz25 — printed once; share them with the users); apps `spreed`/`calendar`/`contacts`/`mail`/`notes` re-enabled, `app_api` disabled; occ config re-applied (trusted_proxies array, mail SMTP, serverid, maintenance window 4, cron mode, Talk signaling + TURN); quota admin 300 GB. Smoke passes. The recovery path is now scripted — a fresh install reproduces the exact setup (users, apps, config) without the data.
 - **Residual**: sunny/niyaz25 passwords are new (reset); nothing else lost (data was skeleton-only).
 
-#### No automated backup script (partial — DB side solved)
-- **File**: (missing) `scripts/backup.sh`
-- **Problem**: `make backup` tars Nextcloud `/data` in maintenance mode; there was no consistent PostgreSQL snapshot and no off-site copy target. Since 2026-08-31 the DB side is covered: `scripts/ops/backup-ship.sh` ships per-module DB+datadir bundles over the tailnet to a target device (TAILDROP required). The FILE side: user files live on the external machine (`cloud/users/` NFS export — the live datadirectory after the datadirectory move), so the only copy sits on the same box as the DB dumps; there is no off-site/DR copy.
-- **Fix**: add `scripts/backup.sh` (or extend the cron): `occ maintenance:mode --on` → `pg_dump` (already nightly) + rsync the external machine's `/srv/nextcloud-data` to a second target (plus a copy of the DB dumps) → `--off`.
-- **Why approval**: operator picks the file-backup target (second disk / another provider / off-site).
-
+#### No automated backup script (partial — DB side solved) — resolved
+- **File**: `Makefile` (`make backup` ships all modules as two bundles; `make import-data` restores); `scripts/ops/backup-bundles.sh` (built by `make backup`), `scripts/ops/restore-data.sh` (used by `make import-data`)
+- **Status**: resolved — `make backup TAILDROP=<device>` ships every module (DB + datadir) as `nextcloud-backup-*.tar.gz` and `other-backup-*.tar.gz` to a tailnet device, and `make import-data` restores them; `DRYRUN=1` previews before touching anything. Nightly/cron automation is a separate planned item.
 #### GUIDE "Nextcloud DB" section still documents moving PostgreSQL to the 1 TB machine
 - **File**: `docs/GUIDE.md` ("Nextcloud DB" section) + `modules/nextcloud/docker-compose.db.yml` comments
 - **Problem**: Setup A keeps PostgreSQL on the app host and puts only Nextcloud's user files on the 1 TB machine (which has already joined the tailnet — the nightly `pg_dump` lands on it), but GUIDE still gives step-by-step instructions to move the whole DB there and the db compose comments are tuned for "the 2 GB future DB host". One of the two is the plan.
@@ -239,13 +236,13 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Backup + migrate recipes fixed** — sudo destinations, tar-stream cloud backup, migrate recipe restored.
 - **Makefile `set -u` foot-gun fixed** — `SHELL := /bin/bash` set explicitly.
 - **`bkp-cloud` maintenance trap** — `occ maintenance:mode --off` on EXIT.
-- **`clean` split into `clean-docker` / `clean-apt` / `clean-backups` / `clean-all`.**
+- **`clean` split into `clean-docker` / `clean-apt` (no backup prunes — all backups ship to a tailnet device).**
 - **`bkp-all`** — chains the backup recipes in order.
 - **Migrate runbook extracted to `docs/MIGRATE.md`.**
 - **Makefile** — up/restart/logs/status/push/backup/clean recipes.
 - **Nextcloud overrides env-driven** — `TRUSTED_PROXIES` + `OVERWRITECLIURL` moved from `config.php` to compose.
 - **Deploy/ops helper scripts** — covered by the Makefile recipes.
-- **System made fully recoverable** — `bundle-secrets` + `migrate` recipes.
+- **Backup/restore path in place** — `make backup` ships all modules to a tailnet device, `make import-data` restores; `bundle-secrets`/`bundle-config` local tarballs were removed (see docs/GUIDE.md 'Backup & restore').
 - **Reference configs in repo** — Ollama unit + SSH hardening under `config/`.
 - **Static landing page** — FR/Spotify/countdown page served before Homer replaced it.
 - **Nextcloud bind mount split** — `cloud/html` + `cloud/users` (datadirectory).
@@ -359,3 +356,6 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Stale installer SSH rules lingered** — prior installs left `22/tcp` allow rules for old IPs (old machine IP + retired tailnet device); phase-1 and `finalize_hardening` now sweep any non-tailnet 22 rule.
 
 - **Hostname + login account + tailnet node renamed kefoserver → kefomachine** — `data/instance.conf` HOSTNAME, all module `.env` instance blocks, the installer's `NODE_NAME`, `/etc/hostname`/`kefo-banner.sh`, the boot unit, and the Tailscale node (`tailscale up --hostname=kefomachine`) updated; `make render` re-derives every service `.env` and `data/rendered` so no hardcoded value remains, `git diff -- data/` stays empty, smoke still green.
+- **`make backup` no longer touches the repo** — `make backup` no longer pulls live host config into repo/config/; it ships only module bundles to a tailnet device, data/ is untouched and repo/config/ is never read or written.
+- **All modules ship in one `make backup`** — `MODULE=` selection removed; `make backup TAILDROP=<device>` builds `nextcloud-backup-*.tar.gz` (DB + datadir) and `other-backup-*.tar.gz` (vault/mail/monitor datadirs), taildrops both, verifies by sha256, then deletes local copies; `make import-data TAILDROP=<device>` restores with prompts and a `DRYRUN=1` preview.
+
