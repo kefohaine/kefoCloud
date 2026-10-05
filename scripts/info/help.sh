@@ -50,7 +50,7 @@ EOF
   rows <<'EOF'
 make update|pull + recreate every deployed unit via stack-up.sh — edge last, gated, auto-rollback
 make apt-upgrade|apt-get update + upgrade (deliberately separate from the container work)
-make backup|all-module snapshot → data/backups/ + repo/config/; with TAILDROP=<device> ship a DB+datadir bundle to a tailnet device (MODULE= optional)
+make backup|pull live host config into repo/config/ (reverse-rendered as {{TOKENS}}); with MODULE=<cloud|vault|mail|monitor> TAILDROP=<device> ship one module's DB+datadir to a tailnet device (no config pull)
 make cleanup|apt autoremove/clean, docker prune, keep latest 3 backups per pattern
 EOF
 
@@ -117,20 +117,17 @@ EOF
 
   sec "bundles (live ↔ tarball)"
   rows <<'EOF'
-make bundle-secrets|live secrets → backups/secrets-bundle-<date>.tar.gz
+make bundle-secrets|live secrets → data/backups/secrets-bundle-<date>.tar.gz
 make install-secrets|newest secrets bundle → live paths (BUNDLE=<path> to override)
-make bundle-config|config/ → backups/config-bundle-<date>.tar.gz
+make bundle-config|repo/config/ → data/backups/config-bundle-<date>.tar.gz
 make install-config-bundle|newest config bundle → repo/config/ (BUNDLE=<path> to override)
 EOF
 
-  sec "granular backup & clean (behind make backup / make cleanup)"
+  sec "clean"
   rows <<'EOF'
-make bkp-cloud|Nextcloud snapshot — maintenance mode during the copy
-make bkp-vault|Vaultwarden data tar
-make bkp-list|list backup artifacts + count per pattern
 make clean-docker|prune builder, images, containers
 make clean-apt|apt autoremove + clean
-make clean-backups|keep latest 3 per pattern, delete older
+make clean-backups|keep latest 3 bundle tarballs per pattern, delete older
 EOF
 
   sec "onboarding & stack tools"
