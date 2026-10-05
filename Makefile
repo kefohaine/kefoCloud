@@ -235,7 +235,7 @@ define clean_apt_cmds
 endef
 
 define clean_backups_cmds
-@for pattern in cloud-backup-* share-backup-*.db vault-backup-*.tar.gz secrets-bundle-*.tar.gz; do \
+@for pattern in secrets-bundle-*.tar.gz config-bundle-*.tar.gz; do \
     sudo ls -1dt $(REPO)/data/backups/$$pattern 2>/dev/null | tail -n +4 | sudo xargs -r rm -rf; \
   done
 @scripts/lib/mklog info "pruned backups older than the 3 most recent per pattern"
@@ -686,59 +686,24 @@ install-config-bundle:
   tar xzf "$$BUNDLE" -C $(REPO); \
   scripts/lib/mklog info "installed $$BUNDLE into $(REPO)/config/"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Backups (rename: backup-* → bkp-*)
-# bkp-cloud/bkp-vault stay granular; `make backup` (help-line umbrella)
-# inlines them plus the secrets bundle and the live-config pull into
-# repo/config/.
-# ─────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────────
+# Backups
+# ──────────────────────────────────────────────────────────────────────────────
 
-.PHONY: bkp-cloud bkp-vault bkp-list backup
+.PHONY: backup
 
-# All bkp-* recipes write under $(REPO)/data/backups/. bkp-list enumerates that
-# dir so the operator has one place to see what's been snapshotted.
-BKP_DIR := $(REPO)/data/backups
-
-# Shared bodies: `make backup` inlines them so it stays one self-contained
-# recipe (no chained make targets).
-define bkp_cloud_cmds
-@dest=$(BKP_DIR)/cloud-backup-$$(date +%Y%m%d); \
-  sudo mkdir -p "$(BKP_DIR)" "$$dest"; \
-  sudo chown root:root "$$dest"; \
-  docker exec -w /var/www/html nextcloud php occ maintenance:mode --on; \
-  trap 'docker exec -w /var/www/html nextcloud php occ maintenance:mode --off' EXIT; \
-  docker exec -i nextcloud tar cf - -C /data . | sudo tar xf - -C "$$dest"; \
-  sudo chown -R 33:33 "$$dest"; \
-  trap - EXIT; \
-  docker exec -w /var/www/html nextcloud php occ maintenance:mode --off; \
-  scripts/lib/mklog info "backup at $$dest"
-endef
-
-define bkp_vault_cmds
-@dest=$(BKP_DIR)/vault-backup-$$(date +%Y%m%d).tar.gz; \
-  sudo mkdir -p "$(BKP_DIR)"; \
-  sudo tar czf "$$dest" -C $(REPO)/data/vault data; \
-  scripts/lib/mklog info "backup at $$dest"
-endef
-
-bkp-cloud:
->$(bkp_cloud_cmds)
-
-bkp-vault:
->$(bkp_vault_cmds)
-
-# Help-line name for the full snapshot — one self-contained recipe:
-# every container database + live secrets land compressed in $(REPO)/data/backups/,
-# and the live server config is pulled into $(REPO)/config/ subdirectories
-# (the one non-compressed exception). The config-pull mirrors the file list
-# install-config pushes, reversed; git add/commit the config/ changes. These files
-# must never carry secrets — the goose unit reads its key from /etc/goose/goose.env
-# (outside the repo) for exactly that reason.
+# Pull live host config into repo/config/ (reverse-rendered — it lands as
+# {{TOKENS}}, never this instance's real values). No module data, no
+# data/backups. Module DB+datadir bundles ship one at a time to a tailnet
+# device with `make backup MODULE=<cloud|vault|mail|monitor>
+# TAILDROP=<tailnet-device>` — no config pull in that mode.
 backup:
 ifeq ($(TAILDROP),)
->$(bkp_cloud_cmds)
->$(bkp_vault_cmds)
->$(bundle_secrets_cmds)
+ifneq ($(MODULE),)
+>@scripts/lib/mklog error "usage: make backup MODULE=<cloud|vault|mail|monitor> TAILDROP=<tailnet-device> to ship one module to a tailnet device"
+>@scripts/lib/mklog error "'make backup' with no args pulls the live config back into repo/config/ (no module data, no data/backups)"
+>@exit 1
+endif
 >@scripts/lib/mklog info "pulling live config into repo/config/ — reverse-rendered, so it lands as {{TOKENS}} not as this instance's values"
 >@sudo mkdir -p $(REPO)/config
 >@bash $(REPO)/scripts/render/render.sh --reverse /etc/systemd/system/goose.service $(REPO)/config/goose/goose.service
@@ -747,7 +712,7 @@ ifeq ($(TAILDROP),)
 >@TS_IP=$$(tailscale ip -4 2>/dev/null | head -n1); \
     sed "s/$${TS_IP:-__none__}/100.64.0.1/g" /etc/dnsmasq.d/10-tailnet.conf | sudo tee $(REPO)/config/dnsmasq/10-tailnet.conf >/dev/null; \
     scripts/lib/mklog info "10-tailnet.conf pulled back with the placeholder restored (never the live IP)"
->@bash $(REPO)/scripts/render/render.sh --reverse /etc/systemd/system/dnsmasq.service.d/override.conf $(REPO)/config/dnsmasq/dnsmasq.service.conf
+>@bash $(REPO)/scripts/render/render.sh --reverse /etc/systemd/system/dnsmasq.service.d/override.conf $(REPO)/config/dnsmasq/dnmasq.service.conf
 >@bash $(REPO)/scripts/render/render.sh --reverse /etc/sysctl.d/99-kefo.conf $(REPO)/config/sysctl/99-kefo.conf
 >@sudo cp /etc/docker/daemon.json $(REPO)/config/docker/daemon.json
 >@bash $(REPO)/scripts/render/render.sh --reverse /etc/fail2ban/jail.d/sshd.conf $(REPO)/config/fail2ban/jail.d/sshd.conf
@@ -755,30 +720,15 @@ ifeq ($(TAILDROP),)
 >@sudo chown -R root:root $(REPO)/config
 >@scripts/lib/mklog info "live config pulled into $(REPO)/config/ — git add/commit to sync the repo"
 else
+ifneq ($(MODULE),)
 >@echo "shipped backup: MODULE=$(MODULE)  TAILDROP=$(TAILDROP)"
 >@bash scripts/ops/backup-ship.sh MODULE="$(MODULE)" TAILDROP="$(TAILDROP)"
+else
+>@scripts/lib/mklog error "usage: make backup MODULE=<cloud|vault|mail|monitor> TAILDROP=<tailnet-device> to ship one module to a tailnet device"
+>@scripts/lib/mklog error "'make backup' with no TAILDROP pulls the live config back into repo/config/ — module bundles ship only with MODULE + TAILDROP"
+>@exit 1
 endif
-
-# Show every backup artifact currently on disk, newest first. Includes
-# secrets bundles — the names/contents are not enumerated, just listed.
-bkp-list:
->@if [ ! -d "$(BKP_DIR)" ]; then \
-    echo "$(BKP_DIR) does not exist yet. Run any bkp-* recipe first."; \
-    exit 0; \
-  fi
->@ls -lht "$(BKP_DIR)" 2>&1
->@echo ""
->@echo "Counts per pattern:"
-# Use -1d so directory matches (cloud-backup-*) are counted alongside files.
-# Without -d, `ls -1 <dir>` returns the directory itself as a single entry
-# (and `wc -l` then counts 0), so cloud backups silently disappear from the
-# count even though the directory is sitting on disk.
->@for p in cloud-backup-* share-backup-*.db vault-backup-*.tar.gz secrets-bundle-*.tar.gz config-bundle-*.tar.gz; do \
-    n="$$(ls -1d $(BKP_DIR)/$$p 2>/dev/null | wc -l)"; \
-    printf "  %-45s %d\n" "$$p" "$$n"; \
-  done
-
-# ─────────────────────────────────────────────────────────────────────────────
+endif
 # Tmux sessions
 # Persistent terminal sessions on the host — detach (Ctrl-b d) and the
 # shell + whatever's running inside it stays alive; reattach from any
