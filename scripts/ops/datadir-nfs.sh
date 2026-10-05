@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 #
-# scripts/ops/datadir-nfs.sh — (was scripts/ops/datadir-nfs.sh) make a storage VPS (e.g. 1 TB / 2 GB) the LIVE
+# scripts/ops/datadir-nfs.sh — make an external machine (e.g. 1 TB / 2 GB) the LIVE
 # Nextcloud datadirectory, mounted over the tailnet via NFS. PostgreSQL stays
 # on the Nextcloud host; the datadirectory (user files + appdata) physically
-# lives on the storage VPS. The nightly pg_dump is pushed there too (backups
+# lives on the external machine. The nightly pg_dump is pushed there too (backups
 # coexist, but the box's role is live storage).
 #
 # Fully autonomous after a few prompts, like install.sh — adapts to ANY host
 # that runs the Nextcloud docker image (container name, datadirectory and DB
 # credentials are auto-detected), so friends can run it against their own
-# VPSes.
+# machines.
 #
 # Prompts (beginning):
 #   1. storage ssh target (root@<ip>) + root password      (password: read -s)
@@ -36,7 +36,7 @@ ROOT="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
 
 NC_CONTAINER="${NC_CONTAINER:-nextcloud}"
 QUOTA="${QUOTA:-}"
-NC_MOUNT="${NC_MOUNT:-/srv/nextcloud-data}"          # dir on the storage VPS
+NC_MOUNT="${NC_MOUNT:-/srv/nextcloud-data}"          # dir on the external machine
 LOCAL_MOUNT=$ROOT/data/cloud/users   # NC datadirectory (host path)
 
 log() { echo "[datadir] $*"; }
@@ -63,7 +63,7 @@ log "detected: nc=$NC_CONTAINER data=$DATA_DIR pg=$PG_CONTAINER ($PG_USER/$PG_DB
 
 # ---------- prompts ----------
 STORAGE_SSH="${STORAGE_SSH:-}"
-[ -n "$STORAGE_SSH" ] || read -r -p "storage VPS ssh target (root@<ip>): " STORAGE_SSH
+[ -n "$STORAGE_SSH" ] || read -r -p "external machine ssh target (root@<ip>): " STORAGE_SSH
 [ -n "$STORAGE_SSH" ] || die "storage ssh target required"
 [ -n "${STORAGE_PASS:-}" ] || read -r -s -p "storage root password: " STORAGE_PASS; echo
 [ -n "${TS_AUTHKEY:-}" ] || read -r -s -p "tailscale auth key: " TS_AUTHKEY; echo
@@ -85,7 +85,7 @@ T() { S "root@$TS_IP" "$@"; }                                # storage over the 
 ERR=""
 fail() { ERR="${ERR} $1"; echo "[storage] FAIL: $1 — ${2:-see hint}"; }
 problem() { case "$1" in
-  ssh)          echo "PROBLEM: cannot ssh to the storage VPS" ;;
+  ssh)          echo "PROBLEM: cannot ssh to the external machine" ;;
   tailscale)    echo "PROBLEM: storage not on the tailnet (or the auth key was rejected)" ;;
   ufw)          echo "PROBLEM: firewall/swap setup on storage failed" ;;
   nfs)          echo "PROBLEM: the NFS export on storage is not serving" ;;
@@ -262,7 +262,7 @@ docker exec -u www-data "$NC_CONTAINER" php -r '
   $v->unlink(".storage-probe");
   exit($ok ? 0 : 1);
 ' "$QUOTA_USER" || fail verify "read/write probe failed"
-log "datadirectory verified on the storage VPS ($TS_IP:$NC_MOUNT, ${SIZE_GB} GB allocated)"
+log "datadirectory verified on the external machine ($TS_IP:$NC_MOUNT, ${SIZE_GB} GB allocated)"
 
 # ---------- delete the local copies? (ONLY after a fully verified migration) ----------
 if [ -n "$ERR" ] && [ -d "$LOCAL_MOUNT.local-backup" ]; then
@@ -321,7 +321,7 @@ fi
 # ---------- success block (manual steps, same style as install.sh) ----------
 echo ""
 echo "=============================================================="
-echo " SUCCESS — Nextcloud's live datadirectory is now on the storage VPS:"
+echo " SUCCESS — Nextcloud's live datadirectory is now on the external machine:"
 echo "   datadirectory  $TS_IP:$NC_MOUNT (${SIZE_GB} GB allocated) mounted at $LOCAL_MOUNT"
 echo "   PostgreSQL     stays on this host ($PG_CONTAINER, bridge-only)"
 echo "   backups        nightly pg_dump -> storage:/backups/nc (keeps 7)"

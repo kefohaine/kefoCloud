@@ -25,7 +25,9 @@ bash scripts/install/install.sh
 ### Secondary helpers
 
 - `bash scripts/ops/optimize.sh` — automated performance optimization after install
-- `make connect` — join a module to another server (link an existing database there, or overwrite it with this host's data)
+- `make nc-data` — move the Nextcloud datadirectory to/from an external machine over the tailnet (`export` / `import`); the database stays on this machine
+- `make storage` — guided wizard: make another machine the live Nextcloud datadirectory host via NFS
+- `make backup MODULE=cloud TAILDROP=<device>` — ship a module's DB+datadir bundle to a tailnet device (or run `make backup` with no args for the local all-module snapshot)
 
 ## Documentation
 
@@ -39,5 +41,5 @@ bash scripts/install/install.sh
 ## Risks & Considerations
 - System requirements: minimum RAM is 4GB; minimum storage is 15GB; i recommend double the minimum for both specs to avoid bottleneck.
 - Single Point of Failure: Running your cloud, your passwords, your email and your monitoring on one operating system means that if the host crashes, goes offline, or gets compromised, your entire digital footprint goes dark simultaneously.
-- The Mail Server Headache: Operating a self-hosted mail server is notoriously difficult. Even if the project configures your DKIM and SPF records perfectly, large providers like Gmail, Yahoo, and Outlook frequently block or flag IP addresses originating from residential connections or cheap cloud VPS networks.
+- The Mail Server Headache: Operating a self-hosted mail server is notoriously difficult. Even if the project configures your DKIM and SPF records perfectly, large providers like Gmail, Yahoo, and Outlook frequently block or flag IP addresses originating from residential connections or cheap cloud host networks.
 - Maintenance: If anything breaks when you install as intended, report it here as an issue; Please don't open an issue if it was caused from manual tweaks on your end.
