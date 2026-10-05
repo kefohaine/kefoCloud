@@ -4,9 +4,9 @@
 #
 #   make backup MODULE=cloud TAILDROP=<tailnet-device>
 #
-# - MODULE is optional: empty = every installed module; a value must be one of
-#   the installed modules (cloud / vault / mail / monitor). TAILDROP is
-#   always required for the shipped workflow.
+# - MODULE is required: the one module to ship (cloud / vault / mail / monitor).
+#   One at a time — the all-modules local snapshot no longer exists.
+#   TAILDROP is always required for the shipped workflow.
 # - A bundle always contains the module's DB and its datadir together —
 #   it never ships one without the other.
 # - The taildrop device must be on the tailnet and reachable before ANY data
@@ -45,26 +45,24 @@ LAND_DIR="${BACKUP_LAND_DIR:-backups}"
 
 [ -n "$TAILDROP" ] || {
   echo "shipped backup requires TAILDROP=<tailnet device>."
-  echo "For the local all-modules snapshot (no taildrop): run 'make backup' with no TAILDROP."
+  echo "For the live config pull instead (no device): run 'make backup' with no args."
   exit 1
 }
 
-# ---------- which modules ----------
+[ -z "$MODULE" ] && die "shipped backup requires MODULE=<cloud|vault|mail|monitor> — no all-modules snapshot exists anymore"
+
+# ---------- which module ----------
 [ -f "$DATA/installed-modules.conf" ] || die "installed-modules.conf not found"
 INSTALLED="$(tr -d '\r' < "$DATA/installed-modules.conf" | sed '/^$/d')"
-if [ -z "$MODULE" ]; then
-  SCOPE="$INSTALLED"
-else
-  case "$MODULE" in
-    nextcloud|cloud) M=cloud ;;
-    vaultwarden|vault) M=vault ;;
-    mailserver|mail) M=mail ;;
-    uptimekuma|kuma|monitor) M=monitor ;;
-    *) die "unknown module: $MODULE (valid: cloud, vault, mail, monitor)" ;;
-  esac
-  echo "$INSTALLED" | grep -qx "$M" || die "module '$M' is not installed on this host"
-  SCOPE="$M"
-fi
+case "$MODULE" in
+  nextcloud|cloud) M=cloud ;;
+  vaultwarden|vault) M=vault ;;
+  mailserver|mail) M=mail ;;
+  uptimekuma|kuma|monitor) M=monitor ;;
+  *) die "unknown module: $MODULE (valid: cloud, vault, mail, monitor)" ;;
+esac
+echo "$INSTALLED" | grep -qx "$M" || die "module '$M' is not installed on this host"
+SCOPE="$M"
 
 # ---------- resolve + verify the taildrop device on the tailnet ----------
 case "$TAILDROP" in *@*) DEV="${TAILDROP#*@}"; DEV_USER="${TAILDROP%@*}";; *) DEV="$TAILDROP"; DEV_USER="root";; esac
