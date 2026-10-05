@@ -1,5 +1,5 @@
 #!/bin/bash
-# $NODE_NAME install.sh — root-only, plug-and-play new-VPS installer.
+# $NODE_NAME install.sh — root-only, plug-and-play new-machine installer.
 #
 # Prompts for what it cannot detect (domain, Cloudflare API token, Tailscale
 # auth key), one explicit `true`/`false` per module, and — LAST, opt-in — remote
@@ -108,7 +108,7 @@ cat <<'EOF'
 ██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗███████╗██║  ██║██████╔╝
 ╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝╚═════╝
 
-  One-shot setup for a fresh Debian VPS: Nextcloud (app + PostgreSQL +
+  One-shot setup for a fresh Debian machine: Nextcloud (app + PostgreSQL +
   Redis + Talk HPB/TURN), Caddy, Vaultwarden, Uptime Kuma
   and the Docker Mailserver + Roundcube platform (named after your
   domain) behind Cloudflare, with tailscale, ttyd, dnsmasq and goose
@@ -555,7 +555,7 @@ EOF
   ufw allow 80/tcp >/dev/null 2>&1
   ufw allow 443/tcp >/dev/null 2>&1
   # Self-hosted mail (Docker Mailserver): SMTP + submission + IMAPS. Inbound 25
-  # can be provider-blocked on some VPSes — these are open so mail works the
+  # can be provider-blocked on some machines — these are open so mail works the
   # moment the provider allows it.
   ufw allow 25/tcp >/dev/null 2>&1
   ufw allow 465/tcp >/dev/null 2>&1
@@ -1136,7 +1136,7 @@ ssl_mode_full() {
 }
 
   cf_dns() {
-  VPS_IP=$(curl -s4 ifconfig.me)
+  HOST_IP=$(curl -s4 ifconfig.me)
   ZONE_ID=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
     "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" | jq -r '.result[0].id // empty')
   if [ -z "$ZONE_ID" ]; then
@@ -1150,7 +1150,7 @@ ssl_mode_full() {
     if [ -z "$rid" ]; then
       curl -s -X POST -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
         "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
-        -d "{\"type\":\"A\",\"name\":\"$1.$DOMAIN\",\"content\":\"$VPS_IP\",\"ttl\":1,\"proxied\":$2}" \
+        -d "{\"type\":\"A\",\"name\":\"$1.$DOMAIN\",\"content\":\"$HOST_IP\",\"ttl\":1,\"proxied\":$2}" \
         >>"$LOG" 2>&1 || fail "dns_$1"
     fi
   }
@@ -1327,7 +1327,7 @@ hint() {
     kuma_admin)     echo "create the admin account at https://kuma.$DOMAIN in the UI, then re-check" ;;
     kuma_seed)      echo "run: make dok-recreate-uptimekuma (UPTIME_KUMA_DB_TYPE=sqlite makes Kuma create its schema), wait for /app/data/kuma.db to have tables, then: docker exec -i uptimekuma sqlite3 /app/data/kuma.db < modules/uptimekuma/seed-monitors.sql" ;;
     zone)           echo "add $DOMAIN as a zone in the Cloudflare dashboard, then re-check" ;;
-    dns_*)          echo "create an A record ${1#dns_}.$DOMAIN -> ${VPS_IP:-<VPS IP>} in Cloudflare (turn must be DNS-only/grey-cloud — TURN bypasses the proxy; the rest proxied), then re-check" ;;
+    dns_*)          echo "create an A record ${1#dns_}.$DOMAIN -> ${HOST_IP:-<machine IP>} in Cloudflare (turn must be DNS-only/grey-cloud — TURN bypasses the proxy; the rest proxied), then re-check" ;;
     cert_*)         echo "hit https://${1#cert_}.$DOMAIN once to trigger ACME, wait a few seconds, then re-check" ;;
     sweep)          echo "rename or remove the files listed by: grep -rlI $GITHUB_USER $REPO --exclude-dir=.git --exclude-dir=docs --exclude-dir=archives --exclude-dir=scripts, then re-check" ;;
     sslmode)        echo "Cloudflare dashboard -> SSL/TLS -> Overview -> set mode to Full (or Full strict), then re-check" ;;
@@ -1427,14 +1427,14 @@ resolve_errors() {
 }
 
 # ── Optional follow-up — only ever reached after a FULLY green run ────────
-# optimize.sh is a separate tool (the VPS performance pass), so it is offered,
+# optimize.sh is a separate tool (the machine performance pass), so it is offered,
 # never assumed. It is idempotent — re-running it is a no-op — which is why a
 # re-run of install.sh may offer it again.
 ask_optimize() {
   local answer rc
   [ -f "$REPO/scripts/ops/optimize.sh" ] || return 0
   while :; do
-    read -rp "Also run the VPS performance pass (kernel, swap, disk tuning) now? (yes/no): " answer || return 0
+    read -rp "Also run the machine performance pass (kernel, swap, disk tuning) now? (yes/no): " answer || return 0
     case "${answer,,}" in
       yes|y|true)  break ;;
       no|n|false)  log "  optimize.sh skipped — run it later: bash $REPO/scripts/ops/optimize.sh"; return 0 ;;
@@ -1483,7 +1483,7 @@ success_block() {
   echo "   Uptime Kuma  https://kuma.$DOMAIN       admin / ${KUMA_PASS:-(already set — rotate with: make kuma-passwd USER=admin PASS=…)}"
   echo "   Webmail      https://mail.$DOMAIN       (mailboxes via make mail-gen)"
   echo "   Shell        https://tail.$DOMAIN      (tailnet-only)"
-  echo "   VPS IP ${VPS_IP:-?}   Tailscale IP ${TS_IP:-?}"
+  echo "   machine IP ${HOST_IP:-?}   Tailscale IP ${TS_IP:-?}"
   echo ""
   echo " SSH: root@$NODE_NAME is the only entry point (key-only, tailnet-only, port 22)."
   echo ""
@@ -1499,7 +1499,7 @@ success_block() {
   echo ""
   echo " Follow-ups (none block the install):"
   echo "   1. Tailscale split-DNS: admin console -> DNS -> add $DOMAIN -> ${TS_IP:-<tailscale IP>}"
-  echo "      so tail.$DOMAIN resolves for tailnet devices (dnsmasq on the VPS already answers it)"
+  echo "      so tail.$DOMAIN resolves for tailnet devices (dnsmasq on the machine already answers it)"
   echo "   2. (optional) Cloudflare WAF rule skip for cloud.$DOMAIN (desktop sync)"
   if [ "${GH_REMOTE:-false}" = "true" ]; then
     echo "   3. GitHub remote access: origin is git@github.com:$GITHUB_USER/$REPO_NAME.git, key /root/.ssh/github_key"

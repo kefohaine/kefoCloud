@@ -30,7 +30,7 @@
 # box — auto-detected from the live system (compose files, systemctl, dpkg
 # — no hardcoded rosters) — and NEVER deletes operator data without an
 # explicit per-category prompt (every default is the safe answer):
-#   - the storage VPS NFS export (user files) — untouched, period
+#   - the external machine NFS export (user files) — untouched, period
 #   - the Nextcloud local rollback copy, module data dirs, backups/ —
 #     per-category prompts, default KEEP
 #   - the repo clone — prompt, default KEEP
@@ -183,7 +183,7 @@ ask_inputs() {
   [ "${RM_PKGS:-false}" = true ] || ask RM_PKGS "Purge the installed packages (docker, dnsmasq, fail2ban, …)?" "${DEF_RM_PKGS:-n}"
   # operator account root is never deleted (sole entry point) — no prompt
   [ "${RM_TAILNET:-false}" = true ] || ask RM_TAILNET "Remove this host from the tailnet (last step)?" "${DEF_RM_TAILNET:-n}"
-  # data (all default KEEP; the storage VPS export is never touched)
+  # data (all default KEEP; the external machine export is never touched)
   ask RM_MOD_DATA "Delete the data dirs of the modules being removed (vault/, kuma/, mailserver/, cloud/ local files)?" "${DEF_RM_DATA:-n}"
   ask RM_NCLOCAL  "Delete the Nextcloud local rollback copy (cloud/users.local-backup)?" n
   ask RM_BACKUPS  "Delete $PROJECT_DIR/backups/ (snapshots + secrets bundles)?" n
@@ -267,7 +267,7 @@ remove_module() { # $1=module
   done
   case "$m" in
     cloud)
-      # the live datadirectory is the NFS mount of the storage VPS export:
+      # the live datadirectory is the NFS mount of the external machine export:
       # unmount locally and drop the fstab line — the export itself is
       # NEVER touched (user files live there)
       if findmnt -n "$PROJECT_DIR/cloud/users" >/dev/null 2>&1; then
@@ -291,7 +291,7 @@ remove_module() { # $1=module
       [ -d "$d" ] || continue
       # cloud/users may be the NFS mountpoint: if the unmount above failed,
       # an rm -rf here would propagate INTO the live storage export —
-      # refuse rather than risk deleting user files on the VPS
+      # refuse rather than risk deleting user files on the machine
       if [ "$d" = "$PROJECT_DIR/cloud" ] && findmnt -n "$d/users" >/dev/null 2>&1; then
         fail "rmmod_$m" "data dir $d still holds the mounted datadirectory — not deleting"
         continue
@@ -531,7 +531,7 @@ success_block() {
   [ "${RM_TAILNET:-false}" = true ] && echo "   removed    tailnet membership"
   echo ""
   echo " Kept (unless explicitly confirmed otherwise):"
-  echo "   - the storage VPS NFS export (user files) — untouched"
+  echo "   - the external machine NFS export (user files) — untouched"
   echo "   - sshd hardening (removing it would re-enable password auth)"
   echo "   - $PROJECT_DIR/backups/"
   echo "   - $REPO"
@@ -543,7 +543,7 @@ success_block() {
   echo ""
   echo " Follow-ups (manual, none block):"
   echo "   1. Cloudflare: the DNS records for this host remain — delete them in"
-  echo "      the dashboard if this VPS is being decommissioned"
+  echo "      the dashboard if this machine is being decommissioned"
   echo "   2. Re-join the tailnet after a re-install: tailscale up"
   echo "   3. Re-install any time with: bash scripts/install/install.sh"
   echo "=============================================================="
