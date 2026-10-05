@@ -181,7 +181,7 @@ systemd-log:
 # ─────────────────────────────────────────────────────────────────────────────
 
 .PHONY: fetch fetch-more render ttyd-devices ttyd-add ttyd-rm smoke gh-web-health install-hooks clean-docker clean-apt clean-backups update apt-upgrade install-config kuma-import help talk-gen
-.PHONY: deploy backup cleanup connect
+.PHONY: deploy backup cleanup nc-data storage
 
 # Per-tailnet-device web-terminal sessions: one named tmux session each, served
 # by the SINGLE ttyd listener as /ttyd?arg=<name> and listed on the tail page.
@@ -416,14 +416,22 @@ talk-gen:
 nc-capture:
 >@bash scripts/modules/nc-capture.sh
 
-# Connect this host's modules to another server. The database stays on the main
-# VPS and is NEVER moved; this moves only the user files (the datadirectory) to
-# the other server over NFS — 'overwrite' copies THIS host's datadirectory there
-# (replacing it, the old `make storage` workflow) or 'link' mounts the
-# datadirectory that already lives there. Choice 3 runs the full guided storage
-# wizard (`scripts/ops/datadir-nfs.sh`).
-connect:
->@bash scripts/ops/connect.sh
+# `make nc-data`: move the Nextcloud datadirectory to and from an external
+# machine over the tailnet. The database stays on the main machine and is
+# NEVER moved — nothing touches the database. `export` copies this host's
+# datadirectory to the external machine for live use (replacing what was
+# there); `import` brings back THIS host's previously-exported datadir from
+# the external machine it was exported to (never a foreign datadir).
+# The external machine gets tailscale + ufw + the NFS stack set up.
+nc-data:
+>@bash scripts/ops/nc-data.sh
+
+# `make storage`: the full guided wizard — make another machine the LIVE
+# Nextcloud datadirectory host via NFS (export, mount, rsync, persistent
+# fstab, nightly pg_dump cron + ufw gate). PostgreSQL stays on the main
+# machine. Idempotent — safe to re-run; the datadirectory is a live NFS mount.
+storage:
+>@bash scripts/ops/datadir-nfs.sh
 
 # ─────────────────────────────────────────────────────────────────────────────
 # config/ (live <-> repo)
@@ -580,7 +588,7 @@ install-cron:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Nextcloud database (modules/nextcloud/docker-compose.db.yml)
-# Runs on this host for now; migrates to the operator's 1 TB VPS later
+# Runs on this host for now; migrates to the operator's 1 TB machine later
 # (see docs/GUIDE.md "Nextcloud DB"). Deliberately NOT in $(CONTAINERS) —
 # the -all loops glob modules/*/docker-compose.yml only, and this file is
 # named docker-compose.db.yml so they never see it.
@@ -654,7 +662,7 @@ install-secrets:
 
 # Snapshot the whole config/ tree into a single tarball under backups/.
 # The git-tracked copy is canonical when the repo is present; this
-# exists for offline handoff (cold VPS, no clone yet). Symmetric to
+# exists for offline handoff (cold machine, no clone yet). Symmetric to
 # bundle-secrets: collect → tarball; install-config-bundle → extract.
 bundle-config:
 >@dest=$(BKP_DIR)/config-bundle-$$(date +%Y%m%d).tar.gz; \
@@ -735,6 +743,7 @@ bkp-vault:
 # must never carry secrets — the goose unit reads its key from /etc/goose/goose.env
 # (outside the repo) for exactly that reason.
 backup:
+ifeq ($(TAILDROP),)
 >$(bkp_cloud_cmds)
 >$(bkp_vault_cmds)
 >$(bundle_secrets_cmds)
@@ -753,6 +762,10 @@ backup:
 >@bash $(REPO)/scripts/render/render.sh --reverse /etc/cron.d/nextcloud $(REPO)/config/cron/nextcloud
 >@sudo chown -R root:root $(REPO)/config
 >@scripts/lib/mklog info "live config pulled into $(REPO)/config/ — git add/commit to sync the repo"
+else
+>@echo "shipped backup: MODULE=$(MODULE)  TAILDROP=$(TAILDROP)"
+>@bash scripts/ops/backup-ship.sh MODULE="$(MODULE)" TAILDROP="$(TAILDROP)"
+endif
 
 # Show every backup artifact currently on disk, newest first. Includes
 # secrets bundles — the names/contents are not enumerated, just listed.
