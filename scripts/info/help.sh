@@ -135,8 +135,7 @@ EOF
 
   sec "onboarding & stack tools"
   rows <<'EOF'
-make nc-data|move the Nextcloud datadirectory to/from an external machine (export/import); the database stays on this machine
-make storage|guided wizard: make another machine the live Nextcloud datadirectory host via NFS (datadirectory is a live mount; DB stays local)
+make nc-datadir-nfs|make an external machine the permanent live Nextcloud datadir host over the tailnet (export moves THIS datadir remotely; import restores THIS host's own previously-exported datadir); the database stays local
 make talk-gen|generate NC-stack secrets + Talk/TURN configs (idempotent)
 make nc-capture|snapshot live NC users/groups/quotas → recovery manifests (outside the repo)
 make kuma-import|import an adapted Uptime Kuma db (KUMA_DB=<path>)
