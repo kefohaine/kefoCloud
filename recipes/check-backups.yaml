@@ -13,7 +13,7 @@ extensions:
 activities:
   - "Enumerate backup artifacts and schedules"
   - "Check the nightly Nextcloud pg_dump and the NFS datadirectory copies"
-  - "Check make backup / make bkp-* recipes and retention"
+  - "Check make backup / make import-data recipes and taildrop device coverage"
   - "Assess restore procedures and off-site/DR coverage"
   - "Report gaps and a prioritized remediation list"
 parameters:
@@ -26,14 +26,16 @@ prompt: |
   Audit the backup and restore posture, scope: {{ focus }}.
 
   Read docs/GUIDE.md (backup gotchas, storage row, protected resources) and
-  docs/ISSUES.md (the open "No automated backup script" item).
+  docs/ISSUES.md (open backup/restore items).
 
   Inspect:
-  - the Makefile backup / bkp-* / clean-backups recipes and scripts/ops/datadir-nfs.sh
+  - the Makefile `backup` and `import-data` recipes and scripts/ops/backup-bundles.sh, scripts/ops/restore-data.sh
+  - scripts/ops/nc-datadir-nfs.sh (external datadir marker and NFS mount)
   - the nightly pg_dump cron (/etc/cron.d/nc-storage) and its 7-day retention
+  - the taildrop device's ~/backups/ contents (ssh TAILDROP=<device> 'ls -la ~/backups/')
   - what is and is not covered: Nextcloud /data, PostgreSQL, vaultwarden data,
     kuma db, mailserver Maildirs/config, secrets
-  - whether there is an off-site/DR copy beyond the external machine
+  - whether there is an off-site/DR copy beyond the tailnet device
 
   Return:
   - an inventory of what is backed up, where, and how often
