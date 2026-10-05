@@ -19,7 +19,7 @@ parameters:
   - key: change
     input_type: string
     requirement: required
-    description: "The change to plan (e.g. 'upgrade the Nextcloud image tag', 'migrate to a new VPS', 'add a vhost', 'rotate the goose secret')"
+    description: "The change to plan (e.g. 'upgrade the Nextcloud image tag', 'migrate to a new machine', 'add a vhost', 'rotate the goose secret')"
 prompt: |
   Produce a deployment/upgrade/migration plan for this change: {{ change }}.
 
