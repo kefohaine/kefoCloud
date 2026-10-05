@@ -33,7 +33,7 @@ prompt: |
   - the nightly pg_dump cron (/etc/cron.d/nc-storage) and its 7-day retention
   - what is and is not covered: Nextcloud /data, PostgreSQL, vaultwarden data,
     kuma db, mailserver Maildirs/config, secrets
-  - whether there is an off-site/DR copy beyond the storage VPS
+  - whether there is an off-site/DR copy beyond the external machine
 
   Return:
   - an inventory of what is backed up, where, and how often
