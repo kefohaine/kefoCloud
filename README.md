@@ -25,8 +25,7 @@ bash scripts/install/install.sh
 ### Secondary helpers
 
 - `bash scripts/ops/optimize.sh` — automated performance optimization after install
-- `make nc-data` — move the Nextcloud datadirectory to/from an external machine over the tailnet (`export` / `import`); the database stays on this machine
-- `make storage` — guided wizard: make another machine the live Nextcloud datadirectory host via NFS
+- `make nc-datadir-nfs` — make an external machine the PERMANENT live Nextcloud datadir host over the tailnet (`export` moves this host's datadir remotely; `import` restores this host's own previously-exported datadir); the database stays on this machine
 - `make backup MODULE=cloud TAILDROP=<device>` — ship a module's DB+datadir bundle to a tailnet device (or run `make backup` with no args for the local all-module snapshot)
 
 ## Documentation

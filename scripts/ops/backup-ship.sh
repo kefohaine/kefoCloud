@@ -120,11 +120,11 @@ for M in $SCOPE; do
 
   # the bundle on the taildrop device always lands at:
   DEST="~/$LAND_DIR/$M-backup-$TODAY.tar.gz"
-  if [ "$M" = "cloud" ] && [ -f "$DATA/.nc-export-target" ]; then
+  if [ "$M" = "cloud" ] && [ -f "$DATA/.nc-import-source" ]; then
     # datadir is EXTERNAL: copy the DB to it, bundle there, taildrop from there
-    EX_HOST="${EXTERNAL_HOST:-$(sed -n '1p' "$DATA/.nc-export-target")}"
+    EX_HOST="${EXTERNAL_HOST:-$(sed -n '1p' "$DATA/.nc-import-source")}"
     EX_HOST="${EX_HOST#*@}"
-    EX_MOUNT="$(sed -n '2p' "$DATA/.nc-export-target")"
+    EX_MOUNT="$(sed -n '2p' "$DATA/.nc-import-source")"
     case "$EX_HOST" in
       *[!0-9.]* ) EX_IP="$(peer_ip "$EX_HOST")" ;;
       * ) EX_IP="$EX_HOST" ;;

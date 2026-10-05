@@ -35,7 +35,7 @@ sudo journalctl -p err --since "-3 days" | tail -30
 git status
 make nc-check                                     # Nextcloud setup checks
 bash scripts/ops/optimize.sh --verify                  # host tuning converged
-bash scripts/ops/datadir-nfs.sh                            # NFS datadirectory re-check (prompts)
+bash scripts/ops/nc-datadir-nfs.sh                            # NFS datadirectory export/import
 bash scripts/info/gh-web-health.sh                      # after any history rewrite
 ```
 

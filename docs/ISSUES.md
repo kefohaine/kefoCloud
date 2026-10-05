@@ -64,7 +64,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 #### No automated backup script (partial — DB side solved)
 - **File**: (missing) `scripts/backup.sh`
-- **Problem**: `make backup` tars Nextcloud `/data` in maintenance mode; there was no consistent PostgreSQL snapshot and no off-site copy target. Since 2026-08-31 the DB side is covered: `scripts/ops/datadir-nfs.sh` installs a nightly cron that `pg_dump`s the `postgresql` container and pushes it to `storage:/backups/nc` (key auth, keeps 7). The FILE side: user files live on the external machine (`cloud/users/` NFS export — the live datadirectory after the datadirectory move), so the only copy sits on the same box as the DB dumps; there is no off-site/DR copy.
+- **Problem**: `make backup` tars Nextcloud `/data` in maintenance mode; there was no consistent PostgreSQL snapshot and no off-site copy target. Since 2026-08-31 the DB side is covered: `scripts/ops/backup-ship.sh` ships per-module DB+datadir bundles over the tailnet to a target device (TAILDROP required). The FILE side: user files live on the external machine (`cloud/users/` NFS export — the live datadirectory after the datadirectory move), so the only copy sits on the same box as the DB dumps; there is no off-site/DR copy.
 - **Fix**: add `scripts/backup.sh` (or extend the cron): `occ maintenance:mode --on` → `pg_dump` (already nightly) + rsync the external machine's `/srv/nextcloud-data` to a second target (plus a copy of the DB dumps) → `--off`.
 - **Why approval**: operator picks the file-backup target (second disk / another provider / off-site).
 
@@ -96,7 +96,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Why approval**: rotation restarts the agent service; a history purge needs a force-push.
 
 #### `curl … | sh` in the installers
-- **File**: `scripts/install/install.sh` (tailscale, goose), `scripts/ops/datadir-nfs.sh` (tailscale)
+- **File**: `scripts/install/install.sh` (tailscale, goose), `scripts/ops/nc-datadir-nfs.sh` (tailscale)
 - **Problem**: piping a remote script into a shell is supply-chain exposure.
 - **Fix**: use the official Tailscale apt repo (keyring + sources.list + `apt-get install`); keep the vendor's goose installer (or verify a released binary) and note the exception.
 
@@ -159,10 +159,9 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Fix**: `systemctl stop goose` when not in use; `systemctl start goose` before use.
 - **Why approval**: operator convenience trade-off (cold start latency vs. idle RAM).
 
-#### `datadir-nfs.sh` (was storage.sh) re-prompts for the storage root password on every run
-- **File**: `scripts/ops/datadir-nfs.sh`
-- **Problem**: even when the operator's SSH key is already on the external machine (the script installs it) and the tailnet path works, a re-run still demands `STORAGE_PASS` + `TS_AUTHKEY`.
-- **Fix**: after the tailnet check, if `ssh -o BatchMode=yes root@$TS_IP true` succeeds, skip the password/key prompts and go straight to the re-check.
+#### `datadir-nfs.sh` re-prompts for the external root password on every run
+- **File**: `scripts/ops/datadir-nfs.sh` (deleted — the datadir-mover is now `scripts/ops/nc-datadir-nfs.sh`)
+- **Status**: no longer applicable — `make nc-datadir-nfs` authenticates the external machine with keys (`accept-new`; `SSH_PASS` opt-in only) and no longer prompts for a root password or auth key on the re-check path.
 
 #### Nextcloud Talk: no Client Push proxy
 - **File**: `modules/nextcloud/docker-compose.yml` (Talk stack: `talk-hpb` HPB + `talk-relay` already deployed)
@@ -286,7 +285,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Setup-specific values removed before the installer can rename them** — the tracked dnsmasq placeholder is a literal (was the instance's own Tailscale IP), `TAILNET_SUBNET` is gone, and the `kefoserver-stack` retirement step was deleted.
 - **Web root is instance data** — `$DATA_DIR/www` (operator pages + generated `targets.json`); the repo keeps only the tail template in `config/www/`.
 - **`make backup` path bug fixed + reverse-rendered** — it pointed at `$(REPO)/backups` and `$(REPO)/vault`, both of which moved under `data/` in the layout migration (the vault tar was failing with "Error is not recoverable"); it now reverse-renders every file it pulls back, so live config lands in the skeleton as `{{TOKENS}}` — verified with a zero-diff round trip against all seven tracked config files.
-- **`make nc-data`** — interactive datadirectory mover (replaces `make storage`): nextcloud → `export` (live datadir to an external machine) or `import` (brings back this host's own previously-exported datadir); the database stays on this machine. Choice 3 is the full guided wizard (`make storage`, `scripts/ops/datadir-nfs.sh`).
+- **`make nc-datadir-nfs`** — interactive datadirectory mover (replaces `make storage`): nextcloud → `export` (live datadir to an external machine) or `import` (brings back this host's own previously-exported datadir); the database stays on this machine.
 - **Per-device web-terminal sessions** — `make ttyd-add/ttyd-rm/ttyd-devices`: one named tmux session per tailnet device served by the single ttyd listener (`/ttyd?arg=<name>`), listed as a card on the tail page; no new listener and no edge edit.
 - **`make render` + `docs/SKELETON.md`** — the skeleton is documented end to end: tokens, compose substitution, script variables, domain-free filenames and the rename procedure.
 - **Logs consolidated under one namespace** — every project log moved to `{{LOG_DIR}}` with one logrotate rule; the stale `/var/log/homelab-install.log` was relocated, not deleted, and the old uninstall log mode 660→640.
@@ -302,7 +301,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **`{{HOSTNAME}}-stack.service`** — enabled boot unit that brings every deployed compose unit up via `scripts/stack/stack-up.sh`, edge last.
 - **`config/dnsmasq/10-tailnet.conf` rendered at deploy time** — the tracked file keeps a placeholder address; install-config writes the live Tailscale IP and `make backup` restores the placeholder.
 - **`scripts/install/uninstall.sh`** — the installer's exact opposite in the same house style: per-module prompts (all default keep), the edge/host-modules/packages/user/tailnet phases in install-reverse order (tailscale last), tagged errors with problem/hint, Enter-refresh re-checks, a success block, and `installed-modules.conf` refreshed after every module removal (empty conf = nothing expected; the file is emptied, never deleted — a missing conf means "all expected" to smoke). Data is never touched without explicit confirms; the storage NFS export is untouchable, sshd hardening deliberately kept. Prompt defaults file: `scripts/install/defaults/uninstall.conf`.
-- **Boot-race NFS datadir mount outage (2026-09-12)** — reboot raced the datadir mount against tailscaled (unit started 1 s in, 0 peers) and the default 90 s mount timeout killed it; `nofail` boot continued, docker bound the empty placeholder dir as NC's `/data` → "data directory is invalid" 503s + kuma `cloud.$DOMAIN` HTTP-down alert. Fixed live (systemctl start mount + `make dok-restart-nextcloud`); fstab line now `x-systemd.after=tailscaled.service,x-systemd.mount-timeout=300s,x-systemd.before=docker.service` (written by datadir-nfs.sh `ensure_mount`, applied to the live fstab) so ordering is deterministic and containers never bind the placeholder; GUIDE gotcha has the full lesson.
+- **Boot-race NFS datadir mount outage (2026-09-12)** — reboot raced the datadir mount against tailscaled (unit started 1 s in, 0 peers) and the default 90 s mount timeout killed it; `nofail` boot continued, docker bound the empty placeholder dir as NC's `/data` → "data directory is invalid" 503s + kuma `cloud.$DOMAIN` HTTP-down alert. Fixed live (systemctl start mount + `make dok-restart-nextcloud`); fstab line now `x-systemd.after=tailscaled.service,x-systemd.mount-timeout=300s,x-systemd.before=docker.service` (written by nc-datadir-nfs.sh, applied to the live fstab) so ordering is deterministic and containers never bind the placeholder; GUIDE gotcha has the full lesson.
 - **`scripts/install/uninstall.sh` scope selector (2026-09-12)** — the first prompt picks between specific modules (per-module prompts, default keep) and the whole framework (every phase preselected — modules + edge + host services + packages + user + tailnet; data prompts still default keep), plus cancel; preselectable via `uninstall mode` in `scripts/install/defaults/uninstall.conf` or `UNINSTALL_MODE`.
 - **Mem limits reviewed + tightened (2026-09-12)** — caddy edge 256m→128m, vaultwarden 512m→384m, roundcube 512m→384m (idle→limit headroom vs realistic spike for every container; caps are ceilings not allocations); live after `make dok-recreate` of the three; smoke green.
 - **Welcome-1..3 (2026-09-12)** — three alternate tellings of the repo pitch live at `/welcome-1` (proof: everything is running from one repo), `/welcome-2` (terminal-native tour), `/welcome-3` (the numbers: constraints over screenshots); the original `/welcome` untouched; all four auto-appear in the tail door list and the smoke passes.
@@ -330,8 +329,8 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **`modules/nextcloud/.env` purged from all GitHub history** — removed from every commit via `scripts/ops/drop-path.sh` plumbing rebuild (661 commits / 2 roots / 9 merges preserved, tip tree byte-identical); the exposed NC admin password is moot — the account no longer exists.
 - **Local backup tags destroyed** — `history-backup-20260902` / `history-20260902-noreply` / `history-developer-email-20260903` deleted + objects pruned (`gc --prune=now`); the $GITHUB_USER-era record lives on only inside `main` under the noreply identity, per operator choice.
 - **NC recovery manifests moved out of the repo** — `users/groups/default-quota/apps.txt` now live at `homelab/cloud/recovery/` (root-owned, outside the repo like pgdata), generated by `make nc-capture`, consumed by install.sh; paths scrubbed from all history (664 commits preserved, personal doc addresses censored via `scripts/ops/replace-string.sh`).
-- **Storage machine onboarded (Setup A)** — `scripts/ops/datadir-nfs.sh` migrated Nextcloud's datadirectory to the 1 TB machine (`/srv/nextcloud-data` NFS export at `cloud/users`); PostgreSQL stays on the app host and the nightly `pg_dump` → `/backups/nc` runs alongside.
-- **datadir-nfs.sh live-run fixes (2026-09-10)** — the first live run exposed a missing NFS client (`nfs-common`) and an unverified rollback delete that lost the datadirectory files; the script now installs the client, verifies the copy before the delete prompt, and installs the operator's ssh key — files were restored from `backups/cloud-backup-20260906`.
+- **Storage machine onboarded (Setup A)** — `scripts/ops/datadir-nfs.sh` (now `scripts/ops/nc-datadir-nfs.sh`) migrated Nextcloud's datadirectory to the 1 TB machine (`/srv/nextcloud-data` NFS export at `cloud/users`); PostgreSQL stays on the app host.
+- **datadir-nfs.sh live-run fixes (2026-09-10)** — the first live run exposed a missing NFS client (`nfs-common`) and an unverified rollback delete that lost the datadirectory files; the script (now `nc-datadir-nfs.sh`) installs the client, verifies the copy before the delete prompt, and installs the operator's ssh key — files were restored from `backups/cloud-backup-20260906`.
 - **goose secret moved out of the repo** — the unit reads `EnvironmentFile=/etc/goose/goose.env` (root:root 0640); `install.sh` generates it there instead of `sed`ing it into a tracked file.
 - **NFS datadirectory mount tightened** — `/etc/fstab` options are now `rw,nofail,_netdev,noatime,vers=4`.
 - **Nextcloud password policy hardened** — the app is re-enabled with `minLength=16`, upper/lower/special/numeric requirements and the common/compromised-password lists on.

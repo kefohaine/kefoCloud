@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# scripts/ops/nc-data.sh — `make nc-data`: move the Nextcloud datadirectory
-# to and from an external machine over the tailnet. The database stays local —
-# nothing touches the database, ever. Import is the exact mirror of export:
-# this host's previously-exported datadir is brought back, nothing else.
+# scripts/ops/nc-datadir-nfs.sh — `make nc-datadir-nfs`: make an external machine
+# the PERMANENT live datadir host for THIS Nextcloud over the tailnet. PostgreSQL
+# stays local — nothing touches the database, ever. Import is the exact mirror of
+# export: this host's previously-exported datadir is brought back, nothing else.
 #
 # Prompts:
 #   1. WHICH ACTION  — export / import
@@ -11,9 +11,9 @@
 #   3. EXTERNAL      — root@external-machine (tailnet name or IP)
 #
 # Safety rails: the external machine answers before anything is written; the
-# tailnet path is probed before any firewall change; the datadir is copied
-# (never truncated) and verified with an occ R/W probe before local copies
-# are deleted; root only; yes/no choices. Idempotent — safe to re-run.
+# tailnet path is probed before any firewall change; the datadirectory is copied
+# (never truncated) and verified with an occ R/W probe before local copies are
+# deleted; root only; yes/no choices. Idempotent — safe to re-run.
 #
 # Vars (overridable): NC_CONTAINER NC_MOUNT TS_AUTHKEY SSH_PASS TARGET
 # Env overrides: ACTION, TARGET
@@ -24,12 +24,12 @@ ROOT="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
 
 NC_CONTAINER="${NC_CONTAINER:-nextcloud}"
 NC_MOUNT="${NC_MOUNT:-/srv/nextcloud-data}"
-MARKER="$ROOT/data/.nc-export-target"
+MARKER="$ROOT/data/.nc-import-source"
 SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
 
-log()  { printf '\033[36m[nc-data]\033[0m %s\n' "$*"; }
-warn() { printf '\033[33m[nc-data] WARN:\033[0m %s\n' "$*" >&2; }
-die()  { printf '\033[31m[nc-data] FATAL:\033[0m %s\n' "$*" >&2; exit 1; }
+log()  { printf '\033[36m[nc-datadir-nfs]\033[0m %s\n' "$*"; }
+warn() { printf '\033[33m[nc-datadir-nfs] WARN:\033[0m %s\n' "$*" >&2; }
+die()  { printf '\033[31m[nc-datadir-nfs] FATAL:\033[0m %s\n' "$*" >&2; exit 1; }
 hr()   { printf '%s\n' "────────────────────────────────────────────────────────────────"; }
 
 [ "$(id -u)" = 0 ] || die "run as root (this stops containers and edits fstab)"
@@ -51,12 +51,13 @@ LOCAL_MOUNT="$DATA_DIR_NC"
 log "local: nc=$NC_CONTAINER data=$DATA_DIR_NC"
 
 # ---------- banner ----------
-cat <<EOF
+cat <<'EOF'
 ┌────────────────────────────────────────────────────────────────────┐
-│  nc-data — Nextcloud datadirectory <-> external machine            │
-│  export: move THIS datadir out to the external machine (live use)  │
-│  import: bring THIS datadir back from the external machine it was  │
-│          exported to (nothing else - never a foreign datadir)      │
+│  nc-datadir-nfs — Nextcloud datadirectory <-> external machine     │
+│  export: make the external machine the PERMANENT live datadir host │
+│          (this host's datadir moves over NFS; database stays here) │
+│  import: bring THIS host's previously-exported datadir back;       │
+│          nothing else - never a foreign datadir                    │
 │  The database stays on this machine - nothing touches it.          │
 └────────────────────────────────────────────────────────────────────┘
 EOF
@@ -68,8 +69,9 @@ if [ -z "$ACTION" ]; then
   cat <<'EOF'
 What should happen with the datadirectory?
 
-  1) export  - move THIS host's datadirectory to an external machine
-               for live use. The database stays here.
+  1) export  - make the external machine the PERMANENT live datadir host
+               for THIS Nextcloud (the datadirectory moves over NFS;
+               the database stays here).
   2) import  - bring back THIS host's previously-exported datadirectory
                from the external machine it was exported to.
 EOF
@@ -103,7 +105,7 @@ fi
 # ---------- determine the external machine ----------
 TARGET="${TARGET:-}"
 if [ "$ACTION" = "import" ]; then
-  [ -f "$MARKER" ] || die "no export found on this host - run 'make nc-data' export first"
+  [ -f "$MARKER" ] || die "no previous export found on this host - run 'make nc-datadir-nfs' export first"
   EXTERNAL_HOST="$(sed -n '1p' "$MARKER")"
   EXTERNAL_MOUNT="$(sed -n '2p' "$MARKER")"
   TARGET="$EXTERNAL_HOST"
@@ -164,20 +166,28 @@ if [ "$ACTION" = "export" ]; then
                ufw allow from 100.64.0.0/10 to any port 20048 proto tcp" >/dev/null 2>&1 \
     || warn "could not add the NFS ufw rules on $TARGET (they may already exist)"
 
+  # NFS client helper: without /sbin/mount.nfs the kernel refuses the
+  # mount with "NFS: mount program didn't pass remote address"
+  if [ ! -x /sbin/mount.nfs ] && [ ! -x /usr/sbin/mount.nfs ]; then
+    sudo apt-get install -y -qq nfs-common >/dev/null 2>&1
+  fi
+  [ -x /sbin/mount.nfs ] || [ -x /usr/sbin/mount.nfs ] \
+    || die "NFS client missing (nfs-common install failed on this host)"
+
   # stop app, stage, rsync, verify
   docker stop "$NC_CONTAINER" >/dev/null 2>&1 || true
   sudo mv "$LOCAL_MOUNT" "$LOCAL_MOUNT.local-backup" 2>/dev/null || sudo mkdir -p "$LOCAL_MOUNT.local-backup"
   sudo mkdir -p "$LOCAL_MOUNT"
   sudo mount -t nfs -o rw,nofail,_netdev,vers=4 "$TS_IP:$NC_MOUNT" "$LOCAL_MOUNT" \
     || die "failed to mount $TS_IP:$NC_MOUNT over the tailnet - check exportfs on $TARGET"
-  log "rsyncing the datadirectory to $TS_IP:$NC_MOUNT over the tailnet"
+  log "migrating the datadirectory to the external machine ($TS_IP:$NC_MOUNT)"
   sudo rsync -a --info=progress2 "$LOCAL_MOUNT.local-backup/" "$LOCAL_MOUNT/" \
     || die "rsync failed - rollback copy kept at $LOCAL_MOUNT.local-backup"
+  sudo chown -R 33:33 "$LOCAL_MOUNT" || true
   SRC=$(sudo find "$LOCAL_MOUNT.local-backup" -type f 2>/dev/null | wc -l)
   DST=$(sudo find "$LOCAL_MOUNT" -type f 2>/dev/null | wc -l)
   [ "$SRC" = "$DST" ] || die "copy incomplete ($DST of $SRC files) - rollback copy kept"
   log "datadirectory copied: $SRC files"
-  sudo umount "$LOCAL_MOUNT" || true
 fi
 
 # ---------- import ----------
@@ -191,7 +201,7 @@ if [ "$ACTION" = "import" ]; then
   docker stop "$NC_CONTAINER" >/dev/null 2>&1 || true
   sudo umount "$LOCAL_MOUNT" 2>/dev/null || true
   sudo mkdir -p "$LOCAL_MOUNT"
-  log "rsyncing the datadirectory back from $TS_IP:$EXTERNAL_MOUNT"
+  log "restoring the datadirectory from $TS_IP:$EXTERNAL_MOUNT"
   sudo rsync -a --info=progress2 "root@$TS_IP:$EXTERNAL_MOUNT/" "$LOCAL_MOUNT/" \
     || die "rsync failed"
   SRC="$(S "$TARGET" "find '$EXTERNAL_MOUNT' -type f 2>/dev/null | wc -l")"
@@ -239,40 +249,41 @@ if [ "$ACTION" = "export" ]; then
   log "export marker written: $MARKER (import will only ever use this source)"
   if [ -d "$LOCAL_MOUNT.local-backup" ] && [ "$(sudo ls -A "$LOCAL_MOUNT.local-backup" | wc -l)" -gt 0 ]; then
     sudo rm -rf "$LOCAL_MOUNT.local-backup"
-    log "local datadirectory copies deleted - the external machine now owns them"
+    log "local datadirectory copies deleted - the external machine is now the permanent datadir host"
   fi
 else
   rm -f "$MARKER"
   log "marker deleted; removing the external export"
   S "$TARGET" "exportfs -u; sed -i '/^$EXTERNAL_MOUNT /d' /etc/exports; exportfs -ra >/dev/null 2>&1; rm -rf \"$EXTERNAL_MOUNT\"" \
     || warn "could not fully clean up the export on $TARGET - review /etc/exports manually"
-  log "local datadirectory restored - the external copy is gone"
+  log "datadirectory restored locally - the remote copy is gone"
 fi
 
 hr
 if [ "$ACTION" = "export" ]; then
-  cat <<EOF
- DONE - the Nextcloud datadirectory now lives on $TARGET
+  cat <<'EOF'
+ DONE - the Nextcloud datadirectory now lives PERMANENTLY on the external machine
 
-    datadirectory  $TS_IP:$NC_MOUNT
-    action         exported: this host's datadirectory was moved over NFS
-    database       stays on this machine (nextcloud's PostgreSQL) - untouched
-    marker         $MARKER (import will only ever use this host's own export)
+    datadirectory   $TS_IP:$NC_MOUNT
+    action          exported: this host's datadir was moved to $TARGET as its
+                   permanent live datadir host (mounted over the tailnet)
+    database        stays on this machine (nextcloud's PostgreSQL) - untouched
+    marker          $MARKER (import will only ever use this host's own export)
 
     Manual steps (none block the service):
       1. Open https://cloud.$DOMAIN and confirm files + Talk still load.
       2. Check the data is on $TARGET: ssh $TARGET "ls -la $NC_MOUNT".
-      3. To point back to the local datadirectory: stop $NC_CONTAINER, run
-         'make nc-data' import, and the datadir is moved back.
+      3. To point back to the local datadir: stop $NC_CONTAINER, run
+         'make nc-datadir-nfs' import, and the datadir is moved back.
 EOF
 else
-  cat <<EOF
- DONE - the datadirectory was restored to $LOCAL_MOUNT from $TARGET
+  cat <<'EOF'
+ DONE - the datadirectory was restored to $LOCAL_MOUNT from the external machine
 
-    datadirectory  $LOCAL_MOUNT (local again)
-    action         imported: the datadir was moved back from $TS_IP:$EXTERNAL_MOUNT
-    database       stays on this machine (nextcloud's PostgreSQL) - untouched
-    remote         export removed from $TARGET - the datadir lives here only
+    datadirectory   $LOCAL_MOUNT (local again)
+    action          imported: the datadir was moved back from $TS_IP:$EXTERNAL_MOUNT
+    database        stays on this machine (nextcloud's PostgreSQL) - untouched
+    remote          export removed from $TARGET - the datadir lives here only
 
     Manual steps (none block the service):
       1. Open https://cloud.$DOMAIN and confirm files + Talk still load.
