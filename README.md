@@ -17,7 +17,7 @@ bash scripts/install/install.sh
 
 | module | runs | notes |
 |---|---|---|
-| **Cloud** | Nextcloud | files, calendar, contacts, photos, Talk chat & video calls |
+| **Cloud** | Nextcloud | files, calendar, contacts, photos, Talk chat & video calls — app choices configured in `config/cloud/apps.conf` |
 | **Mail** | Docker Mailserver + Roundcube | SMTP/IMAPS, DKIM/SPF/DMARC on your own domain |
 | **Vault** | Vaultwarden | any Bitwarden client, server included |
 | **Monitor** | Uptime Kuma | watches public *and* tailnet-only doors |
