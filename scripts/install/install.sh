@@ -855,6 +855,251 @@ mailbox_add() {
   return 1
 }
 
+# nextcloud_setup()'s app-selection entry: a config-driven app set for the
+# cloud module, driven by config/cloud/apps.conf (shipped with sane defaults:
+# spreed install&enable, app_api disable). The config is the *intent*; this
+# reads the live instance once (occ app:list) and applies actions against real
+# state — nothing is silently skipped unless the action is already satisfied
+# (idempotent, unattended runs). Unknown app ids, the same app with two verbs,
+# or state that blocks an action → warned with full details, prompted for a
+# choice (proceed / drop / resolve), and aborted only if you do not confirm.
+# Runs only when cloud is selected; on a resumed install (cloud already in
+# installed-modules.conf) the prompt is skipped but the configured actions
+# still apply, and the resulting enabled set is written to
+# $DATA/cloud/recovery/apps.txt (GENERATED, outside the repo).
+ask_nc_apps() {
+  local conf="$REPO/config/cloud/apps.conf"
+
+  # Cloud must be desired; skip the prompt on resume (cloud already installed)
+  # but still apply the configured actions.
+  [ "${MOD_CLOUD:-true}" = "true" ] || return 0
+  local resume=0
+  if [ -f "$DATA/installed-modules.conf" ] && grep -qx "cloud" "$DATA/installed-modules.conf" 2>/dev/null; then
+    resume=1
+  fi
+
+  # No config → nothing to do (fresh installs get image defaults only).
+  [ -f "$conf" ] || return 0
+
+  # ---------- parse the config ----------
+  # Valid verbs: install&enable=, disable=, remove=. Multi-action lines are
+  # supported (split on whitespace); bare verbs / comments are ignored; an
+  # unknown verb is warned to stderr and ignored.
+  declare -A install=() disable=() remove=() seen=() conflict=()
+  local line tok verb key
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%%#*}"                          # strip inline comments
+    line="${line//[[:space:]]/}"                # collapse whitespace for blank check
+    [ -z "$line" ] && continue
+    for tok in $line; do
+      [[ "$tok" == *"="* ]] || continue         # bare verb → ignore
+      verb="${tok%%=*}"; key="${tok#*=}"
+      case "$verb" in
+        install\&enable) install["$key"]=1; seen["$key"]=1 ;;
+        disable)        disable["$key"]=1; seen["$key"]=1 ;;
+        remove)         remove["$key"]=1; seen["$key"]=1 ;;
+        *) echo "  WARN: config/cloud/apps.conf: unknown verb '$verb' in '$tok' — ignored" >&2 ;;
+      esac
+    done
+  done < "$conf"
+
+  # ---------- conflicts: same app with two different verbs ----------
+  # Fatal unless you explicitly drop them: warn with full details, prompt,
+  # abort only if unconfirmed.
+  local key cnt
+  for key in "${!seen[@]}"; do
+    cnt=$(( ${install["$key"]:-0} + ${disable["$key"]:-0} + ${remove["$key"]:-0} ))
+    [ "$cnt" -gt 1 ] && conflict["$key"]=1
+  done
+  local conflicted="${!conflict[*]}"
+  if [ -n "$conflicted" ]; then
+    echo "  ERROR: same app has two different verbs:" >&2
+    for key in $conflicted; do
+      [ "${install["$key"]:-}" = "1" ] && echo "    $key: install&enable" >&2
+      [ "${disable["$key"]:-}" = "1" ] && echo "    $key: disable" >&2
+      [ "${remove["$key"]:-}" = "1" ] && echo "    $key: remove" >&2
+    done
+    echo -n "  abort the install? (true/false): " >&2
+    read -r answer || { echo "  no terminal input — aborting"; exit 1; }
+    [ "${answer,,}" = "true" ] && exit 1
+    echo "  dropping conflicting actions and continuing" >&2
+  fi
+
+  # ---------- print the plan ----------
+  local ipl dis rem
+  ipl=$(printf '%s\n' "${!install[@]}" | paste -sd', ' -)
+  dis=$(printf '%s\n' "${!disable[@]}" | paste -sd', ' -)
+  rem=$(printf '%s\n' "${!remove[@]}" | paste -sd', ' -)
+  echo ""
+  echo "  Nextcloud apps (config/cloud/apps.conf):"
+  [ -n "$ipl" ] && echo "    will install/enable: $ipl"
+  [ -n "$dis" ] && echo "    will disable:        $dis"
+  [ -n "$rem" ] && echo "    will remove:         $rem"
+  # An empty plan means the config has no actionable lines → nothing to do.
+
+  if [ "$resume" = "0" ]; then
+    local _confirm
+    if ! ask_boolean "Apply configured app actions? (true/false)" _confirm; then
+      echo "  app actions skipped (not confirmed)"
+      return 0
+    fi
+  else
+    echo "  prompt skipped (cloud already installed); applying configured actions anyway"
+  fi
+
+  # ---------- pre-flight: read the live app state exactly once ----------
+  local occ_out enabled_ids disabled_ids
+  occ_out=$(docker exec -u www-data nextcloud php occ app:list --output=plain 2>/dev/null) || {
+    fail ask_nc_apps "occ app:list failed — see $LOG"
+    return 1
+  }
+  # occ app:list: "Enabled:" / "Disabled:" sections, lines "  - id: version"
+  enabled_ids=$(printf '%s' "$occ_out" | awk 'BEGIN{f=0} /^Enabled:/{f=1;next} /^Disabled:/{f=0} f && /^  - [^:]+:/{gsub(/^  - /,""); gsub(/:.*/,""); print}')
+  disabled_ids=$(printf '%s' "$occ_out" | awk 'BEGIN{f=0} /^Disabled:/{f=1} f && /^  - [^:]+:/{gsub(/^  - /,""); gsub(/:.*/,""); print}')
+  # $1 = needle, $2.. = space-separated list
+  in_list() { local needle="$1"; shift; local item; for item in $1; do [ "$item" = "$needle" ] && return 0; done; return 1; }
+
+  # ---------- apply install&enable ----------
+  for app in "${!install[@]}"; do
+    [ "${conflict["$app"]:-}" = "1" ] && continue
+    if in_list "$app" $enabled_ids; then
+      continue                    # already installed+enabled → skip silently
+    elif in_list "$app" $disabled_ids; then
+      if ! docker exec -u www-data nextcloud php occ app:enable "$app" >/dev/null 2>&1; then
+        echo "  ERROR: occ app:enable $app failed — see $LOG" >&2
+        fail ask_nc_apps "occ app:enable $app failed"
+        continue
+      fi
+      continue                    # done
+    fi
+    # Not installed at all → decision required.
+    echo "  WARN: install&enable='$app' is not installed (occ app:list shows no such app)"
+    echo "    live state:  not installed"
+    echo "    action would do: install then enable $app (via the appstore or a local app dir)"
+    echo "    choice: proceed  drop  resolve"
+    local choice
+    while true; do
+      read -r choice || { echo "  no terminal input — aborting"; exit 1; }
+      case "${choice,,}" in
+        proceed) break ;;
+        drop) install_drop["$app"]=1; break ;;
+        resolve)
+          echo "    resolve: make $app available (appstore or a /apps/$app folder), then re-run the installer; or edit config/cloud/apps.conf"
+          continue
+          ;;
+        *) echo "    unknown choice: $choice" ;;
+      esac
+    done
+    case "${choice,,}" in
+      proceed)
+        if ! docker exec -u www-data nextcloud php occ app:install "$app" >/dev/null 2>&1; then
+          echo "  ERROR: occ app:install $app failed — app is not available (not in the appstore and no local app dir)" >&2
+          fail ask_nc_apps "occ app:install $app failed"
+          continue
+        fi
+        if ! docker exec -u www-data nextcloud php occ app:enable "$app" >/dev/null 2>&1; then
+          echo "  ERROR: occ app:enable $app failed after install — see $LOG" >&2
+          fail ask_nc_apps "occ app:enable $app failed"
+          continue
+        fi
+        ;;
+      drop) : ;;
+      resolve) : ;;
+    esac
+  done
+
+  # ---------- apply disable ----------
+  for app in "${!disable[@]}"; do
+    [ "${conflict["$app"]:-}" = "1" ] && continue
+    if in_list "$app" $disabled_ids; then
+      continue                    # already disabled → skip silently
+    elif in_list "$app" $enabled_ids; then
+      # An enabled app is a real state change → decision required.
+      echo "  WARN: disable='$app' is currently enabled"
+      echo "    live state:  enabled"
+      echo "    action would do: disable $app"
+      echo "    choice: proceed  drop  resolve"
+      local choice
+      while true; do
+        read -r choice || { echo "  no terminal input — aborting"; exit 1; }
+        case "${choice,,}" in
+          proceed) break ;;
+          drop) disable_drop["$app"]=1; break ;;
+          resolve)
+            echo "    resolve: run 'make nc-app-disable APP=$app' in the UI-free path, or edit config/cloud/apps.conf"
+            continue
+            ;;
+          *) echo "    unknown choice: $choice" ;;
+        esac
+      done
+      case "${choice,,}" in
+        proceed)
+          if ! docker exec -u www-data nextcloud php occ app:disable "$app" >/dev/null 2>&1; then
+            echo "  ERROR: occ app:disable $app failed — see $LOG" >&2
+            fail ask_nc_apps "occ app:disable $app failed"
+            continue
+          fi
+          ;;
+        drop) : ;;
+        resolve) : ;;
+      esac
+    fi
+    # Not installed: harmless no-op → skip silently.
+  done
+
+  # ---------- apply remove ----------
+  for app in "${!remove[@]}"; do
+    [ "${conflict["$app"]:-}" = "1" ] && continue
+    if in_list "$app" $disabled_ids; then
+      continue                    # disabled → skip silently
+    elif ! in_list "$app" $enabled_ids; then
+      continue                    # not installed → skip silently (occ app:remove is a no-op)
+    fi
+    # Installed+enabled: removal is destructive → decision required.
+    echo "  WARN: remove='$app' is installed and enabled"
+    echo "    live state:  enabled"
+    echo "    action would do: remove $app (deletes app data)"
+    echo "    choice: proceed  drop  resolve"
+    local choice
+    while true; do
+      read -r choice || { echo "  no terminal input — aborting"; exit 1; }
+      case "${choice,,}" in
+        proceed) break ;;
+        drop) remove_drop["$app"]=1; break ;;
+        resolve)
+          echo "    resolve: run 'make nc-app-disable APP=$app' then 'make nc-app-remove APP=$app', or edit config/cloud/apps.conf"
+          continue
+          ;;
+        *) echo "    unknown choice: $choice" ;;
+      esac
+    done
+    case "${choice,,}" in
+      proceed)
+        if ! docker exec -u www-data nextcloud php occ app:remove "$app" >/dev/null 2>&1; then
+          echo "  ERROR: occ app:remove $app failed — see $LOG" >&2
+          fail ask_nc_apps "occ app:remove $app failed"
+          continue
+        fi
+        ;;
+      drop) : ;;
+      resolve) : ;;
+    esac
+  done
+
+  # ---------- record the resulting enabled set ----------
+  # The installer is the source of truth: write the enabled snapshot so a fresh
+  # DB can reproduce exactly what the operator configured; make nc-capture keeps
+  # a read-only mirror for diffs against config/cloud/apps.conf.
+  {
+    echo "# GENERATED by install.sh from config/cloud/apps.conf ($(date -Is)) — do not edit; re-run install to refresh."
+    echo "# Format: one app id per line (occ app:list --enabled)."
+    docker exec -u www-data nextcloud php occ app:list --enabled 2>/dev/null \
+      | grep -oE '^  - [^:]+' | sed -E 's/^  - ([^:]+).*/\1/'
+  } > "$MANIFEST_DIR/apps.txt"
+  echo "  recorded enabled apps ($MANIFEST_DIR/apps.txt): $(wc -l < "$MANIFEST_DIR/apps.txt" | tr -d ' ')"
+  return 0
+}
+
 # Post-boot Nextcloud occ wiring: Talk signaling + TURN registration, NC
 # outbound SMTP (nextcloud@$DOMAIN sender mailbox), background cron. All
 # steps are idempotent (safe to re-run; never clobbers operator settings).
@@ -903,8 +1148,8 @@ nextcloud_setup() {
     return
   fi
 
-  # Talk app (spreed) — bundled in the image; enable if disabled.
-  docker exec -u www-data nextcloud php occ app:enable spreed >/dev/null 2>&1 || true
+  # Config-driven app selection for the cloud module (config/cloud/apps.conf).
+  ask_nc_apps
 
   # NC outbound SMTP sender mailbox — create if missing (secrets from .env).
   . modules/nextcloud/.env
@@ -947,8 +1192,6 @@ nextcloud_setup() {
   if [ -z "$(docker exec -u www-data nextcloud php occ config:system:get serverid 2>/dev/null | tr -d '\n')" ]; then
     docker exec -u www-data nextcloud php occ config:system:set serverid --value 1 --type integer >/dev/null 2>&1 || true
   fi
-  docker exec -u www-data nextcloud php occ app:disable app_api >/dev/null 2>&1 || true
-
   # Talk signaling — ONE entry (the public URL): NC 34 deprecates multiple
   # high-performance backends. Clients get wss://talk.$DOMAIN/signaling; the
   # signaling server reaches NC back via its own [backend1] urls (extra_hosts),
