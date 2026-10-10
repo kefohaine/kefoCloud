@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 #
-# scripts/ops/restore-data.sh — `make import-data TAILDROP=<device>`:
+# scripts/ops/restore-data.sh — `make import-backups TAILDROP=<device>`:
 # restore module data from bundles taildropped to the device's ~/backups/.
 #
-#   make import-data TAILDROP=<tailnet-device>   [DRYRUN=1]
+#   make import-backups TAILDROP=<tailnet-device>
 #
 # - Queries the device for nextcloud-backup-*.tar.gz and other-backup-*.tar.gz.
-# - DRYRUN=1 prints what's available, which modules they cover, and what
-#   would be restored/overridden, then exits without touching anything.
-# - Otherwise: interactive prompts (which bundles to import), a destructive
-#   data override warning, stops all non-caddy containers, extracts,
-#   then restarts containers (ownership comes from the live system).
+# - Always previews what's available, which modules they cover, and what would
+#   be restored/overridden, then requires a typed yes before touching anything.
+# - Stops all non-caddy containers, extracts, then restarts containers (ownership
+#   comes from the live system). No DRYRUN flag: the preview + confirmation IS
+#   the dry run.
 # - Caddy is NEVER touched (stop or restart) — it is explicitly excluded.
 #
-# Vars: TAILDROP (required), DRYRUN (1 = preview only).
+# Vars: TAILDROP (required).
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
@@ -31,12 +31,10 @@ peer_ip() {
   tailscale status 2>/dev/null | awk -v d="$dev" '{ if (index($2,d)>0) { print $1; exit } }'
 }
 
-[ -n "${DRYRUN:-}" ] && log "DRYRUN mode — nothing will be modified"
-
 TAILDROP="${TAILDROP:-}"
 [ -n "$TAILDROP" ] || {
-  echo "make import-data requires TAILDROP=<tailnet device>:"
-  echo "  make import-data TAILDROP=<device> [DRYRUN=1]  restore module bundles from that device"
+  echo "make import-backups requires TAILDROP=<tailnet device>:"
+  echo "  make import-backups TAILDROP=<device>  preview + restore module bundles from that device"
   exit 1
 }
 
@@ -82,14 +80,8 @@ show_plan() {
   echo "containers that will be stopped (caddy is NEVER touched): $(docker ps --format '{{.Names}}' | grep -v '^caddy' | tr '\n' ' ')"
 }
 
-if [ -n "${DRYRUN:-}" ]; then
-  show_plan
-  echo
-  echo "DRYRUN — no data was modified; no bundles were downloaded or extracted."
-  exit 0
-fi
+show_plan
 
-hr
 printf 'select bundles to import (comma-separated names; leave empty to import all listed):\n> '
 read -r -p "" -e sel || die "selection cancelled"
 

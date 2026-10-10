@@ -8,6 +8,8 @@
 # - All installed modules ship. No MODULE selection; every module is bundled.
 # - Two bundles per run (one each, never combined, never kept locally):
 #     nextcloud-backup-YYYYMMDD.tar.gz — pgdata + cloud datadir (db + files)
+#     (the cloud datadir includes data/cloud/recovery/apps.txt — the occ app:list --enabled
+#      app-state manifest — so it is backed up too)
 #     other-backup-YYYYMMDD.tar.gz       — vault, mailserver, kuma datadirs
 # - Built in a temp dir, taildropped to the device's BACKUP_LAND_DIR
 #   (default ~/backups/), checksum-verified, then every local copy is deleted.
@@ -46,8 +48,7 @@ TAILDROP="${TAILDROP:-}"
 [ -n "$TAILDROP" ] || {
   echo "make backup requires TAILDROP=<tailnet device>:"
   echo "  make backup TAILDROP=<device>     ships all modules as two bundles"
-  echo "  make import-data TAILDROP=<device>  restores from that device"
-  echo "  make import-data TAILDROP=<device> DRYRUN=1   preview only"
+  echo "  make import-backups TAILDROP=<device>  preview + restore from that device"
   exit 1
 }
 
