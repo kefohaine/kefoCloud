@@ -27,7 +27,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 #### Destructive make recipes run with no confirmation guard
 - **File**: `Makefile`
-- **Problem**: several recipes destroy data or overwrite live state with no prompt and no automatic backup. Data-destroying: `clean-docker` (docker prune -af + apt autoremove), `nc-user-del` / `mail-del` / `kuma-del-user` (user + data), `connect` → datadirectory (moves the datadirectory and can delete the local copy). Live-state overwriting: `install-config` (overwrites host config, restarts sshd/dnsmasq), `deploy` / `install-secrets` (extract a bundle over `/etc`, `~/.ssh`, `/var/lib/tailscale`), `update` (pull/recreate; the apt half is now the separate `apt-upgrade`), `dok-recreate-all` / `dok-stop-all` / `dok-recreate-nextcloud-db`. Interrupting: `install-config`/`update` (recreate or restart units) and `connect` (datadirectory).
+- **Problem**: several recipes destroy data or overwrite live state with no prompt and no automatic backup. Data-destroying: `clean-docker` (docker prune -af + apt autoremove), `nc-user-del` / `mail-del` / `kuma-del-user` (user + data), `connect` → datadirectory (moves the datadirectory and can delete the local copy). Live-state overwriting: `install-config` (overwrites host config, restarts sshd/dnsmasq), `update` (pull/recreate; the apt half is now the separate `apt-upgrade`), `dok-recreate-all` / `dok-stop-all` / `dok-recreate-nextcloud-db`. Data restore is taildrop-only via `make backup TAILDROP=<device>` + `make import-backups`. Interrupting: `install-config`/`update` (recreate or restart units) and `connect` (datadirectory).
 - **Fix**: pick a policy — a `CONFIRM=1` gate on the destructive recipes, or keep them unguarded and list them explicitly in `make help-more`. Today they are not in one obvious list.
 - **Why approval**: changing recipe UX affects every documented workflow (GUIDE/README).
 
@@ -63,8 +63,8 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Residual**: sunny/niyaz25 passwords are new (reset); nothing else lost (data was skeleton-only).
 
 #### No automated backup script (partial — DB side solved) — resolved
-- **File**: `Makefile` (`make backup` ships all modules as two bundles; `make import-data` restores); `scripts/ops/backup-bundles.sh` (built by `make backup`), `scripts/ops/restore-data.sh` (used by `make import-data`)
-- **Status**: resolved — `make backup TAILDROP=<device>` ships every module (DB + datadir) as `nextcloud-backup-*.tar.gz` and `other-backup-*.tar.gz` to a tailnet device, and `make import-data` restores them; `DRYRUN=1` previews before touching anything. Nightly/cron automation is a separate planned item.
+- **File**: `Makefile` (`make backup` ships all modules as two bundles; `make import-backups` restores); `scripts/ops/backup-bundles.sh` (built by `make backup`), `scripts/ops/restore-data.sh` (used by `make import-backups`)
+- **Status**: resolved — `make backup TAILDROP=<device>` ships every module (DB + datadir) as `nextcloud-backup-*.tar.gz` and `other-backup-*.tar.gz` to a tailnet device, and `make import-backups` restores them; a typed `yes` is required before any data moves. Nightly/cron automation is a separate planned item.
 #### GUIDE "Nextcloud DB" section still documents moving PostgreSQL to the 1 TB machine
 - **File**: `docs/GUIDE.md` ("Nextcloud DB" section) + `modules/nextcloud/docker-compose.db.yml` comments
 - **Problem**: Setup A keeps PostgreSQL on the app host and puts only Nextcloud's user files on the 1 TB machine (which has already joined the tailnet — the nightly `pg_dump` lands on it), but GUIDE still gives step-by-step instructions to move the whole DB there and the db compose comments are tuned for "the 2 GB future DB host". One of the two is the plan.
@@ -242,7 +242,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Makefile** — up/restart/logs/status/push/backup/clean recipes.
 - **Nextcloud overrides env-driven** — `TRUSTED_PROXIES` + `OVERWRITECLIURL` moved from `config.php` to compose.
 - **Deploy/ops helper scripts** — covered by the Makefile recipes.
-- **Backup/restore path in place** — `make backup` ships all modules to a tailnet device, `make import-data` restores; `bundle-secrets`/`bundle-config` local tarballs were removed (see docs/GUIDE.md 'Backup & restore').
+- **Backup/restore path in place** — `make backup` ships all modules to a tailnet device, `make import-backups` restores; `bundle-secrets`/`bundle-config` local tarballs were removed (see docs/GUIDE.md 'Backup & restore').
 - **Reference configs in repo** — Ollama unit + SSH hardening under `config/`.
 - **Static landing page** — FR/Spotify/countdown page served before Homer replaced it.
 - **Nextcloud bind mount split** — `cloud/html` + `cloud/users` (datadirectory).
@@ -357,5 +357,5 @@ Resolved items grouped by month. One line per item, one sentence per record.
 
 - **Hostname + login account + tailnet node renamed kefoserver → kefomachine** — `data/instance.conf` HOSTNAME, all module `.env` instance blocks, the installer's `NODE_NAME`, `/etc/hostname`/`kefo-banner.sh`, the boot unit, and the Tailscale node (`tailscale up --hostname=kefomachine`) updated; `make render` re-derives every service `.env` and `data/rendered` so no hardcoded value remains, `git diff -- data/` stays empty, smoke still green.
 - **`make backup` no longer touches the repo** — `make backup` no longer pulls live host config into repo/config/; it ships only module bundles to a tailnet device, data/ is untouched and repo/config/ is never read or written.
-- **All modules ship in one `make backup`** — `MODULE=` selection removed; `make backup TAILDROP=<device>` builds `nextcloud-backup-*.tar.gz` (DB + datadir) and `other-backup-*.tar.gz` (vault/mail/monitor datadirs), taildrops both, verifies by sha256, then deletes local copies; `make import-data TAILDROP=<device>` restores with prompts and a `DRYRUN=1` preview.
+- **All modules ship in one `make backup`** — `MODULE=` selection removed; `make backup TAILDROP=<device>` builds `nextcloud-backup-*.tar.gz` (DB + datadir) and `other-backup-*.tar.gz` (vault/mail/monitor datadirs), taildrops both, verifies by sha256, then deletes local copies; `make import-backups TAILDROP=<device>` previews bundles and asks for a typed `yes` before restoring.
 

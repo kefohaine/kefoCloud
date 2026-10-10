@@ -181,7 +181,7 @@ systemd-log:
 # ─────────────────────────────────────────────────────────────────────────────
 
 .PHONY: fetch fetch-more render ttyd-devices ttyd-add ttyd-rm smoke gh-web-health install-hooks clean-docker clean-apt update apt-upgrade install-config kuma-import help talk-gen
-.PHONY: deploy backup nc-data nc-datadir-nfs import-data
+.PHONY: deploy backup nc-data nc-datadir-nfs import-backups
 
 # Per-tailnet-device web-terminal sessions: one named tmux session each, served
 # by the SINGLE ttyd listener as /ttyd?arg=<name> and listed on the tail page.
@@ -458,7 +458,7 @@ sudo cp $(RENDER_DIR)/config/cron/nextcloud /etc/cron.d/nextcloud
 sudo chmod 0644 /etc/cron.d/nextcloud
 # Logging: ONE namespace ({{LOG_DIR}}) for every log this project writes,
 # bounded by ONE logrotate rule. Docker output is capped globally in
-# config/docker/daemon.json (10m x3) and journald in config/systemd/journald
+# config/docker/daemon.json (10m x3); no journald drop-in exists —
 # caps — nothing here logs unboundedly, and nothing uses chronicle-style
 # per-event logging.
 sudo install -d -m 0755 {{LOG_DIR}}
@@ -594,12 +594,12 @@ ifeq ($(TAILDROP),)
 endif
 >DRYRUN="$(DRYRUN)" bash scripts/ops/backup-bundles.sh TAILDROP="$(TAILDROP)"
 
-import-data:
+import-backups:
 ifeq ($(TAILDROP),)
->@scripts/lib/mklog error "usage: make import-data requires TAILDROP=<tailnet-device> — restores module bundles from the tailnet device's ~/backups/ into the live data/; run with DRYRUN=1 first to preview what would be restored and which containers stop"
+>@scripts/lib/mklog error "usage: make import-backups requires TAILDROP=<tailnet-device> — previews what would be restored and asks for a typed yes before touching anything; no DRYRUN flag needed (preview is built in)"
 >@exit 1
 endif
->DRYRUN="$(DRYRUN)" bash scripts/ops/restore-data.sh TAILDROP="$(TAILDROP)"
+>@bash scripts/ops/restore-data.sh TAILDROP="$(TAILDROP)"
 
 # Tmux sessions
 # Persistent terminal sessions on the host — detach (Ctrl-b d) and the

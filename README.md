@@ -26,7 +26,7 @@ bash scripts/install/install.sh
 
 - `bash scripts/ops/optimize.sh` — automated performance optimization after install
 - `make nc-datadir-nfs` — make an external machine the PERMANENT live Nextcloud datadir host over the tailnet (`export` moves this host's datadir remotely; `import` restores this host's own previously-exported datadir); the database stays on this machine
-- `make backup` with no args — pull the live host config back into repo/config/ (reverse-rendered as {{TOKENS}}); with `MODULE=<cloud|vault|mail|monitor> TAILDROP=<device>` ship one module's DB+datadir bundle to a tailnet device
+- `make backup TAILDROP=<device>` ships all modules as two sha256-verified bundles to a Tailscale device (no MODULE= selection, no local retention, no repo writes); restore with `make import-backups` (preview, then type `yes`).
 
 ## Documentation
 
