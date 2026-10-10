@@ -51,7 +51,7 @@ EOF
 make update|pull + recreate every deployed unit via stack-up.sh — edge last, gated, auto-rollback
 make apt-upgrade|apt-get update + upgrade (deliberately separate from the container work)
 make backup|ship ALL modules as two bundles (nextcloud-backup-*.tar.gz DB+datadir, other-backup-*.tar.gz datadirs) to a tailnet device (TAILDROP= required; data/ untouched, repo/config never touched); see import-data to restore
-make import-data|interactive restore of module bundles from a tailnet device's backups/ (TAILDROP= required; DRYRUN=1 preview — stops all non-caddy containers); never stops caddy
+make import-backups|preview + interactive restore of module bundles from a tailnet device's backups/ (TAILDROP= required; preview + typed yes are built in — no DRYRUN flag; stops all non-caddy containers); never stops caddy
 make cleanup|apt autoremove/clean + docker prune (no backup prunes — all backups ship to a tailnet device)
 EOF
 
