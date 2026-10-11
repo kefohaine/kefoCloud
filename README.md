@@ -1,8 +1,7 @@
 # kefoCloud
 
 One repo that turns any Debian system into your own self-hosted server stack — cloud, mail, monitoring and more — with one command and a few prompts.
-
-**[www.fxmq.net](https://www.fxmq.net/welcome) is the live demo**: the installed modules running on one box, built entirely from this repo. Fork it, run the installer, and the same board is yours — under your own domain, with no server but yours.
+Fork it, run the installer, and the same board is yours — under your own domain, with no server but yours.
 
 ## Install
 
