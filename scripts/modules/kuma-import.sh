@@ -28,7 +28,7 @@ set -euo pipefail
 
 # The checkout path is DERIVED from this script's location — never
 # hardcoded — so the repo can live anywhere and be renamed
-# ($NODE_NAME -> kefoCloud) without editing any script.
+# ($NODE_NAME -> kefoServer) without editing any script.
 REPO="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
 KUMA_DATA=$ROOT/data/kuma/data
 IMPORT_DIR=$ROOT/data/kuma/import
