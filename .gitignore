@@ -12,3 +12,6 @@ modules/*/.env
 
 # Secrets — never commit (goose reads this via EnvironmentFile=; live path is /etc/goose/goose.env)
 config/goose/goose.env
+.env
+. alpaca.env
+__pycache__
