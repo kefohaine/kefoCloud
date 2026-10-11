@@ -59,7 +59,7 @@ set -uo pipefail
 OP_USER=root
 # The checkout path is DERIVED from this script's location — never
 # hardcoded — so the repo can live anywhere and be renamed
-# ($NODE_NAME -> kefoServer) without editing any script.
+# ($NODE_NAME -> kefoCloud) without editing any script.
 REPO="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
 PROJECT_DIR="$REPO/data"
 CONF="$PROJECT_DIR/installed-modules.conf"
