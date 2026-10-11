@@ -43,7 +43,7 @@ fi
 : "${DOMAIN:=example.com}"
 : "${NODE_NAME:=$(hostname -s 2>/dev/null || echo server)}"
 : "${GITHUB_USER:=exampleuser}"
-: "${REPO_NAME:=kefoServer}"
+: "${REPO_NAME:=kefoCloud}"
 : "${LOG_DIR:=/var/log/$GITHUB_USER}"
 : "${STATE_DIR:=/var/lib/$GITHUB_USER}"
 : "${SERVER_IP:=}"
