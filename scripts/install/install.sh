@@ -46,7 +46,7 @@ set -uo pipefail
 
 # The checkout path is DERIVED from this script's location — never
 # hardcoded — so the repo can live anywhere and be renamed
-# ($NODE_NAME -> kefoCloud) without editing any script.
+# ($NODE_NAME -> kefoServer) without editing any script.
 REPO="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
 # Every other part of the repo (Makefile, scripts/*) calls the checkout root
 # $ROOT; this installer is the one place that names it $REPO. Both must exist:
@@ -67,7 +67,7 @@ if [ -z "${GITHUB_USER:-}" ] || [ "$GITHUB_USER" = "exampleuser" ]; then
   unset _owner
 fi
 
-# Canonical node name for this project: the repo is kefoCloud and the sole login
+# Canonical node name for this project: the repo is kefoServer and the sole login
 # is root@<the machine name>. This installer is the ONLY place the machine is
 # renamed — it sets the static hostname to $NODE_NAME (phase_host) and writes
 # HOSTNAME=$NODE_NAME into data/instance.conf, so every other script derives the

@@ -7,38 +7,36 @@ One repo that turns any Debian system into your own self-hosted server stack —
 ## Install
 
 ```bash
-git clone https://github.com/kefohaine/kefoCloud.git && cd kefoCloud
+git clone https://github.com/kefohaine/kefoServer.git && cd kefoServer
 bash scripts/install/install.sh
 ```
 
 `scripts/install/uninstall.sh` reverses it in the same style — every prompt defaults to keep, operator data and the tailscale-only SSH path are never touched without an explicit confirm, and the tailnet membership goes last.
 
-### Modules (pick at install time)
+### Modules
 
-| module | runs | notes |
+| name | app | note |
 |---|---|---|
-| **Cloud** | Nextcloud | files, calendar, contacts, photos, Talk chat & video calls — app choices configured in `config/cloud/apps.conf` |
+| **Cloud** | Nextcloud | app choices in `config/cloud/apps.conf` |
 | **Mail** | Docker Mailserver + Roundcube | SMTP/IMAPS, DKIM/SPF/DMARC on your own domain |
 | **Vault** | Vaultwarden | any Bitwarden client, server included |
 | **Monitor** | Uptime Kuma | watches public *and* tailnet-only doors |
 
-### Secondary helpers
+### Tips
 
-- `bash scripts/ops/optimize.sh` — automated performance optimization after install
-- `make nc-datadir-nfs` — make an external machine the PERMANENT live Nextcloud datadir host over the tailnet (`export` moves this host's datadir remotely; `import` restores this host's own previously-exported datadir); the database stays on this machine
-- `make backup TAILDROP=<device>` ships all modules as two sha256-verified bundles to a Tailscale device (no MODULE= selection, no local retention, no repo writes); restore with `make import-backups` (preview, then type `yes`).
+- `bash scripts/ops/optimize.sh` — automated performance optimization after install; useful for resource management
+- `make nc-datadir-nfs` — make an external machine the PERMANENT live Nextcloud datadir host over the tailnet; the database stays on this machine; useful for bulky external storage
+- `make backup TAILDROP=<device>` ships all modules as two sha256-verified bundles to a Tailscale device; restore with `make import-backups`; useful for safety & migration
 
 ## Documentation
 
-- `docs/SKELETON.md` — the skeleton: tokens, values and rendering (what each placeholder means, where the real values live)
+- `docs/SKELETON.md` — the skeleton: placeholder tokens, values and rendering
 - `docs/GUIDE.md` — the operator manual: layout, recipes, per-service facts, gotchas
-- `docs/AGENTS.md` — agent operating rules (how this repo is worked on)
+- `docs/AGENTS.md` — agent operating rules
 - `docs/ISSUES.md` — open problems, planned ideas, and resolved history
-- `docs/DEBUG.md` — deep-scan / debugging runbook (read-only first, layer ladder, verification probes)
-- `scripts/install/` — `install.sh` (prompts every value, never a pre-filled default) and `uninstall.sh`
+- `docs/DEBUG.md` — deep-scan diagnostics runbook
 
 ## Risks & Considerations
-- System requirements: minimum RAM is 4GB; minimum storage is 15GB; i recommend double the minimum for both specs to avoid bottleneck.
-- Single Point of Failure: Running your cloud, your passwords, your email and your monitoring on one operating system means that if the host crashes, goes offline, or gets compromised, your entire digital footprint goes dark simultaneously.
+- System Requirements: minimum RAM is 4GB; minimum storage is 15GB; kefohaine recommends double the minimum for both specifications to avoid bottleneck.
+- Single Point of Failure: Running your cloud, your passwords, your email and your monitoring on one operating system means that if the host crashes, goes offline, or gets compromised, your entire digital footprint goes dark simultaneously. If anything breaks when you install as intended, report it here as an issue; Please don't open an issue if it was caused from manual tweaks on your end.
 - The Mail Server Headache: Operating a self-hosted mail server is notoriously difficult. Even if the project configures your DKIM and SPF records perfectly, large providers like Gmail, Yahoo, and Outlook frequently block or flag IP addresses originating from residential connections or cheap cloud host networks.
-- Maintenance: If anything breaks when you install as intended, report it here as an issue; Please don't open an issue if it was caused from manual tweaks on your end.
