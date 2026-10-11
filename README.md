@@ -1,4 +1,4 @@
-# kefoServer
+# kefoCloud
 
 One repo that turns any Debian system into your own self-hosted server stack — cloud, mail, monitoring and more — with one command and a few prompts.
 
@@ -7,7 +7,7 @@ One repo that turns any Debian system into your own self-hosted server stack —
 ## Install
 
 ```bash
-git clone https://github.com/kefohaine/kefoServer.git && cd kefoServer
+git clone https://github.com/kefohaine/kefoCloud.git && cd kefoCloud
 bash scripts/install/install.sh
 ```
 
