@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-echo "$(date) SCRIPT EXECUTED args=\$@ >> /var/log/ttyd-session-exec.log 2>&1"
 # scripts/access/ttyd-session.sh — what the web terminal (ttyd) actually runs.
 #
 # ttyd is started with `-a`, so a URL argument reaches this script:
