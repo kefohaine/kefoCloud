@@ -1,5 +1,7 @@
 # kefoCloud
 
+![KefoCloud banner](banner.png)
+
 One repo that turns any Debian system into your own self-hosted server stack — cloud, mail, monitoring and more — with one command and a few prompts.
 Fork it, run the installer, and the same board is yours — under your own domain, with no server but yours.
 
