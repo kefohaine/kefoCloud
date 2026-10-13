@@ -369,21 +369,6 @@ github_auth_ok() {
 }
 
 github_push() {
-  # Ask for commit identity once; a repo already committed with bad/missing
-  # identity (e.g. from an earlier install on another host) is easy to fix by
-  # running the installer and entering the real name + email here.
-  if [ -z "${GITHUB_COMMIT_NAME:-}" ]; then
-    printf '\n ── Commit identity ──────────────────────────────────────────────────────\n'
-    printf '   Git commits for this repo will be attributed to the operator.\n\n'
-    read -rp "   Enter your Git name for commits: " GITHUB_COMMIT_NAME \
-      || { echo "   no input — skipping commit identity"; GITHUB_COMMIT_NAME="root"; }
-    read -rp "   Enter your Git email for commits: " GITHUB_COMMIT_EMAIL \
-      || { echo "   no input — skipping commit identity"; GITHUB_COMMIT_EMAIL=""; }
-    printf '\n ──────────────────────────────────────────────────────────────────────────\n\n'
-  fi
-  [ -n "$GITHUB_COMMIT_EMAIL" ] && export GIT_COMMITTER_NAME="$GITHUB_COMMIT_NAME" GIT_COMMITTER_EMAIL="$GITHUB_COMMIT_EMAIL" GIT_AUTHOR_NAME="$GITHUB_COMMIT_NAME" GIT_AUTHOR_EMAIL="$GITHUB_COMMIT_EMAIL"
-  git -C "$REPO" config user.name "${GITHUB_COMMIT_NAME:-root}" 2>/dev/null || true
-  [ -n "$GITHUB_COMMIT_EMAIL" ] && git -C "$REPO" config user.email "$GITHUB_COMMIT_EMAIL" 2>/dev/null || true
   git -C "$REPO" remote set-url origin "git@github.com:$GITHUB_USER/$REPO_NAME.git" 2>/dev/null || true
   # SKIP_SMOKE: the pre-push hook's live vhost test cannot pass this early — the
   # stack is not up yet, and what is pushed here is the repo's content.
@@ -406,17 +391,18 @@ github_access() {
   github_known_hosts
   # Resume shortcut: a key exists, was verified against GitHub in a previous
   # run (GH_AUTH_OK=1), and still checks out now — skip the prompt entirely
-  # (stay logged in). github_push warns internally on any failure.
+  # and auto-push (stay logged in). github_push warns internally on any failure.
   if [ "${GH_AUTH_OK:-0}" = "1" ] && [ -s "$GH_KEY" ] && github_auth_ok; then
-    log "  GitHub key already authorized from a previous run; push now"
+    log "  GitHub key already authorized from a previous run; auto-push now"
     github_push || true
     return
   fi
-  # A verified-but-unrecorded key still avoids re-prompting (authorizing once
+  # Even on a fresh run: the key file survives across reboots/reinstalls, so
+  # a verified-but-unrecorded key still avoids re-prompting (authorizing once
   # keeps us logged in for the life of the key pair).
   if [ -s "$GH_KEY" ] && github_auth_ok; then
     GH_AUTH_OK=1
-    log "  GitHub key authorized (ssh -T git@github.com)"
+    log "  GitHub key authorized (ssh -T git@github.com); auto-push now"
     github_push || true
     return
   fi
@@ -434,7 +420,11 @@ github_access() {
     echo "   not authorized yet — the whole line above goes into your GitHub ACCOUNT."
   done
   GH_AUTH_OK=1
-  log "  GitHub key authorized (ssh -T git@github.com)"
+  log "  GitHub key authorized (ssh -T git@github.com); auto-push now"
+  if [ -z "${GITHUB_USER:-}" || "${GITHUB_USER:-}" = "exampleuser" ]; then
+    fail github_auth "cannot tell which account to push to — no origin remote and no GITHUB_USER in $DATA/instance.conf"
+    return
+  fi
   github_push || true
 }
 
