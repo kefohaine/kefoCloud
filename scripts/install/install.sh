@@ -406,18 +406,17 @@ github_access() {
   github_known_hosts
   # Resume shortcut: a key exists, was verified against GitHub in a previous
   # run (GH_AUTH_OK=1), and still checks out now — skip the prompt entirely
-  # and auto-push (stay logged in). github_push warns internally on any failure.
+  # (stay logged in). github_push warns internally on any failure.
   if [ "${GH_AUTH_OK:-0}" = "1" ] && [ -s "$GH_KEY" ] && github_auth_ok; then
-    log "  GitHub key already authorized from a previous run; auto-push now"
+    log "  GitHub key already authorized from a previous run; push now"
     github_push || true
     return
   fi
-  # Even on a fresh run: the key file survives across reboots/reinstalls, so
-  # a verified-but-unrecorded key still avoids re-prompting (authorizing once
+  # A verified-but-unrecorded key still avoids re-prompting (authorizing once
   # keeps us logged in for the life of the key pair).
   if [ -s "$GH_KEY" ] && github_auth_ok; then
     GH_AUTH_OK=1
-    log "  GitHub key authorized (ssh -T git@github.com); auto-push now"
+    log "  GitHub key authorized (ssh -T git@github.com)"
     github_push || true
     return
   fi
@@ -435,11 +434,7 @@ github_access() {
     echo "   not authorized yet — the whole line above goes into your GitHub ACCOUNT."
   done
   GH_AUTH_OK=1
-  log "  GitHub key authorized (ssh -T git@github.com); auto-push now"
-  if [ -z "${GITHUB_USER:-}" || "${GITHUB_USER:-}" = "exampleuser" ]; then
-    fail github_auth "cannot tell which account to push to — no origin remote and no GITHUB_USER in $DATA/instance.conf"
-    return
-  fi
+  log "  GitHub key authorized (ssh -T git@github.com)"
   github_push || true
 }
 

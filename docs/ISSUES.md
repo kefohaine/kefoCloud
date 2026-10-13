@@ -17,9 +17,9 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Fix** (operator, in the Kuma UI — an agent must not write to a user service): install the vault module, or pause/delete the monitor. Nothing in the repo needs to change.
 
 ### install.sh GitHub / app / sweep / timeout fixes (Oct 2026)
-- **Short title**: GitHub resume keeps key authorized; horizontal % bar; apps auto-install; sweep whitelists kefoCloud; NC timeouts; app prompt order
+- **Short title**: GitHub resume keeps key authorized; horiz % bar; apps auto-install; sweep whitelist; NC timeouts; commit identity; push right after auth
 - **File**: `scripts/install/install.sh` + `config/cloud/apps.conf`
-- **Summary**: GitHub prompt skipped on resume when key still verifies (`github_access`); Caddy build bar now a green `█`/grey `░` horizontal bar with % (containers_up); install&enable auto-installs+enables missing apps incl. spreed (ask_nc_apps); sweep excludes `kefoCloud` lines; occ timeouts raised to 20s/call / 24min total (nextcloud_setup); ask_nc_apps moved after the install-ready check so configured apps are installed against the real shipped list.
+- **Summary**: github_access skips the prompt on resume when the key still verifies and stores GH_AUTH_OK in setup.state; github_push (commit name + email prompt) runs right after authentication, before any other action; Caddy build bar is a green█/grey░ horizontal bar with %; install&enable auto-installs+enables missing apps incl. spreed; sweep excludes kefoCloud lines; occ waits 20s/call up to 24min; ask_nc_apps runs after the install-ready check so configured apps install against the shipped list.
 
 ### Pending (Aug 2026)
 
