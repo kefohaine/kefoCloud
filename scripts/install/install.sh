@@ -369,6 +369,21 @@ github_auth_ok() {
 }
 
 github_push() {
+  # Ask for commit identity once; a repo already committed with bad/missing
+  # identity (e.g. from an earlier install on another host) is easy to fix by
+  # running the installer and entering the real name + email here.
+  if [ -z "${GITHUB_COMMIT_NAME:-}" ]; then
+    printf '\n ── Commit identity ──────────────────────────────────────────────────────\n'
+    printf '   Git commits for this repo will be attributed to the operator.\n\n'
+    read -rp "   Enter your Git name for commits: " GITHUB_COMMIT_NAME \
+      || { echo "   no input — skipping commit identity"; GITHUB_COMMIT_NAME="root"; }
+    read -rp "   Enter your Git email for commits: " GITHUB_COMMIT_EMAIL \
+      || { echo "   no input — skipping commit identity"; GITHUB_COMMIT_EMAIL=""; }
+    printf '\n ──────────────────────────────────────────────────────────────────────────\n\n'
+  fi
+  [ -n "$GITHUB_COMMIT_EMAIL" ] && export GIT_COMMITTER_NAME="$GITHUB_COMMIT_NAME" GIT_COMMITTER_EMAIL="$GITHUB_COMMIT_EMAIL" GIT_AUTHOR_NAME="$GITHUB_COMMIT_NAME" GIT_AUTHOR_EMAIL="$GITHUB_COMMIT_EMAIL"
+  git -C "$REPO" config user.name "${GITHUB_COMMIT_NAME:-root}" 2>/dev/null || true
+  [ -n "$GITHUB_COMMIT_EMAIL" ] && git -C "$REPO" config user.email "$GITHUB_COMMIT_EMAIL" 2>/dev/null || true
   git -C "$REPO" remote set-url origin "git@github.com:$GITHUB_USER/$REPO_NAME.git" 2>/dev/null || true
   # SKIP_SMOKE: the pre-push hook's live vhost test cannot pass this early — the
   # stack is not up yet, and what is pushed here is the repo's content.
