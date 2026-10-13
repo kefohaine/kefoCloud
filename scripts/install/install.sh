@@ -94,19 +94,10 @@ declare -A ERR_DETAIL=()
 log()  { echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG"; }
 fail() {
   local t
-  for t in "${ERR_TAGS[@]:-}"; do [ "$t" = "$1" ] && return 0; done  # no duplicates across runs
+  for t in "${ERR_TAGS[@]}"; do [ "$t" = "$1" ] && return 0; done  # no duplicates across runs
   ERR_TAGS+=("$1"); ERR_DETAIL[$1]="${2:-}"
   echo "  ERROR: $(problem "$1")${2:+ ($2)}" >>"$LOG"
 }
-
-# A logged note surfaced in the post-install summary but NOT a success blocker
-# (used for non-fatal GitHub-push failures and similar soft warnings).
-warn() {
-  echo "  WARN: $(problem "$1")${2:+ ($2)}" >>"$LOG"
-  ERR_WARN_TAGS+=("$1")
-}
-
-ERR_WARN_TAGS=()
 
 banner() {
 cat <<'EOF'
@@ -152,8 +143,6 @@ MOD_CLOUD='${MOD_CLOUD:-true}'
 MOD_VAULT='${MOD_VAULT:-true}'
 MOD_MAIL='${MOD_MAIL:-true}'
 MOD_MONITOR='${MOD_MONITOR:-true}'
-GH_REMOTE='${GH_REMOTE:-false}'
-GH_AUTH_OK='${GH_AUTH_OK:-0}'
 ERR_TAGS=($(printf '%q ' "${ERR_TAGS[@]}"))
 EOF
   chmod 600 "$tmp"
@@ -362,85 +351,42 @@ github_known_hosts() {
 github_auth_ok() {
   local out
   [ -s "$GH_KEY" ] || return 1
-  # BatchMode prevents any dialog; a rejected key returns 255, a good one 1 —
-  # we therefore never check the exit code, only the verified message.
   out="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -T git@github.com 2>&1)" || true
   printf '%s' "$out" | grep -q "successfully authenticated"
 }
 
 github_push() {
-  # Ask for commit identity once; a repo already committed with bad/missing
-  # identity (e.g. from an earlier install on another host) is easy to fix by
-  # running the installer and entering the real name + email here.
-  if [ -z "${GITHUB_COMMIT_NAME:-}" ]; then
-    printf '\n ── Commit identity ──────────────────────────────────────────────────────\n'
-    printf '   Git commits for this repo will be attributed to the operator.\n\n'
-    read -rp "   Enter your Git name for commits: " GITHUB_COMMIT_NAME \
-      || { echo "   no input — skipping commit identity"; GITHUB_COMMIT_NAME="root"; }
-    read -rp "   Enter your Git email for commits: " GITHUB_COMMIT_EMAIL \
-      || { echo "   no input — skipping commit identity"; GITHUB_COMMIT_EMAIL=""; }
-    printf '\n ──────────────────────────────────────────────────────────────────────────\n\n'
-  fi
-  [ -n "$GITHUB_COMMIT_EMAIL" ] && export GIT_COMMITTER_NAME="$GITHUB_COMMIT_NAME" GIT_COMMITTER_EMAIL="$GITHUB_COMMIT_EMAIL" GIT_AUTHOR_NAME="$GITHUB_COMMIT_NAME" GIT_AUTHOR_EMAIL="$GITHUB_COMMIT_EMAIL"
-  git -C "$REPO" config user.name "${GITHUB_COMMIT_NAME:-root}" 2>/dev/null || true
-  [ -n "$GITHUB_COMMIT_EMAIL" ] && git -C "$REPO" config user.email "$GITHUB_COMMIT_EMAIL" 2>/dev/null || true
   git -C "$REPO" remote set-url origin "git@github.com:$GITHUB_USER/$REPO_NAME.git" 2>/dev/null || true
   # SKIP_SMOKE: the pre-push hook's live vhost test cannot pass this early — the
   # stack is not up yet, and what is pushed here is the repo's content.
-  SKIP_SMOKE=1 push_out="$(git -C "$REPO" push 2>&1)"
-  local rc=$?
-  printf '%s
-' "$push_out" >>"$LOG"
-  [ $rc -eq 0 ] && return 0
-  if printf '%s' "$push_out" | grep -q 'fetch first'; then
-    warn github_push "push rejected — local history diverged from the remote (fetch first); run 'make fetch' or 'git pull --rebase' and re-run the installer"
-  else
-    warn github_push "push failed — see $LOG"
-  fi
-  return 1
+  SKIP_SMOKE=1 git -C "$REPO" push >>"$LOG" 2>&1 || return 1
 }
 
 github_access() {
   [ "${GH_REMOTE:-false}" = "true" ] || { log "  GitHub remote access: not requested — skipped"; return 0; }
   github_keygen || { fail github_key; return; }
   github_known_hosts
-  # Resume shortcut: a key exists, was verified against GitHub in a previous
-  # run (GH_AUTH_OK=1), and still checks out now — skip the prompt entirely
-  # and auto-push (stay logged in). github_push warns internally on any failure.
-  if [ "${GH_AUTH_OK:-0}" = "1" ] && [ -s "$GH_KEY" ] && github_auth_ok; then
-    log "  GitHub key already authorized from a previous run; auto-push now"
-    github_push || true
-    return
+  if ! github_auth_ok; then
+    printf '\n ── GitHub key — authorize it once, then the installer continues ───────\n'
+    printf '   GitHub → Settings → SSH and GPG keys → New SSH key → paste this line:\n\n'
+    printf '   %s\n\n' "$(cat "$GH_KEY.pub")"
+    printf '   (Settings is under the avatar menu, top right; "New SSH key" is the\n'
+    printf '    green button in the SSH keys box — name it after this host.)\n'
+    printf ' ───────────────────────────────────────────────────────────────────────\n\n'
+    # Strict: the operator asked for this feature, so there is no skip — the
+    # loop only ends when GitHub accepts the key (Ctrl-C aborts the installer).
+    until github_auth_ok; do
+      read -rp "Add the key at GitHub, then press Enter to test again (Ctrl-C aborts): " _ \
+        || { fail github_auth "no terminal to wait on — authorize $GH_KEY.pub by hand"; return; }
+      echo "   not authorized yet — the whole line above goes into your GitHub ACCOUNT."
+    done
   fi
-  # Even on a fresh run: the key file survives across reboots/reinstalls, so
-  # a verified-but-unrecorded key still avoids re-prompting (authorizing once
-  # keeps us logged in for the life of the key pair).
-  if [ -s "$GH_KEY" ] && github_auth_ok; then
-    GH_AUTH_OK=1
-    log "  GitHub key authorized (ssh -T git@github.com); auto-push now"
-    github_push || true
-    return
-  fi
-  printf '\n ── GitHub key — authorize it once, then the installer continues ───────\n'
-  printf '   GitHub → Settings → SSH and GPG keys → New SSH key → paste this line:\n\n'
-  printf '   %s\n\n' "$(cat "$GH_KEY.pub")"
-  printf '   (Settings is under the avatar menu, top right; "New SSH key" is the\n'
-  printf '    green button in the SSH keys box — name it after this host.)\n'
-  printf ' ───────────────────────────────────────────────────────────────────────\n\n'
-  # Strict: the operator asked for this feature, so there is no skip — the
-  # loop only ends when GitHub accepts the key (Ctrl-C aborts the installer).
-  until github_auth_ok; do
-    read -rp "Add the key at GitHub, then press Enter to test again (Ctrl-C aborts): " _ \
-      || { fail github_auth "no terminal to wait on — authorize $GH_KEY.pub by hand"; return; }
-    echo "   not authorized yet — the whole line above goes into your GitHub ACCOUNT."
-  done
-  GH_AUTH_OK=1
-  log "  GitHub key authorized (ssh -T git@github.com); auto-push now"
-  if [ -z "${GITHUB_USER:-}" || "${GITHUB_USER:-}" = "exampleuser" ]; then
+  log "  GitHub key authorized (ssh -T git@github.com)"
+  if [ -z "${GITHUB_USER:-}" ] || [ "$GITHUB_USER" = "exampleuser" ]; then
     fail github_auth "cannot tell which account to push to — no origin remote and no GITHUB_USER in $DATA/instance.conf"
     return
   fi
-  github_push || true
+  github_push || fail github_auth "push failed — see $LOG"
 }
 
 # ───────────────────────────── Phase 1 (root) ─────────────────────────────
@@ -829,32 +775,10 @@ host_services() {
 
 containers_up() {
   log "  building Caddy image (caddy:local) — ~3 min on a cold cache"
-  # Live loading bar (TTY only) below the log line while the build runs; the
-  # full verbose build output goes to $LOG in parallel.
-  export BUILD_START="$(date +%s)"
-  {
-    while true; do
-      local b=$(( ($(date +%s) - BUILD_START) % 4 ))
-      printf '\r  ⠋⠙⠹⠸' | cut -c$((b + 1))
-      printf '  %02ds' "$(($(date +%s) - BUILD_START))"
-      sleep 0.1
-    done
-  } >/dev/tty 2>/dev/tty &
-  local spinner_pid=$!
   # The dok-recreate recipe already falls back to docker build + compose up
   # when compose's buildx is too old (Debian trixie), so no manual fallback
   # is needed here.
   make dok-recreate-caddy >>"$LOG" 2>&1 || fail caddy
-  local took=$(($(date +%s) - BUILD_START))
-  kill "$spinner_pid" >/dev/tty 2>&1; wait "$spinner_pid" >/dev/null 2>&1
-  # Horizontal progress bar with green blocks, not a wheel.
-  local percent=$(( took * 100 / 180 ))
-  [ "$percent" -gt 100 ] && percent=100
-  local filled=$(( percent / 5 )); local empty=$(( 20 - filled ))
-  local bar
-  bar=$(printf '%*s' "$filled" '' | tr ' ' '█')$(printf '%*s' "$empty" '' | tr ' ' '░')
-  printf '\r  [ \033[32m%s\033[0m ] %3d%%  %s\n' "$bar" "$percent" "$took" >/dev/tty 2>/dev/null
-  log "  Caddy image built in ${took}s ($percent%)"
   # PostgreSQL first — the nextcloud entrypoint's fresh install needs the DB
   # reachable (POSTGRES_HOST from .env, set by talk-gen above). Caddy's
   # DNS-01 issuance runs at startup, so the mail/turn certs the talk stack
@@ -1024,27 +948,16 @@ ask_nc_apps() {
   fi
 
   # ---------- pre-flight: read the live app state exactly once ----------
-  # occ app:list: "Enabled:" / "Disabled:" sections, lines "  - id: version";
-  # strip everything after the first colon so "spreed: 24.0.5" matches.
-  local ncpid
-  ncpid=$(docker ps --format '{{.Names}}' | grep -x nextcloud)
-  [ -n "$ncpid" ] || { fail ask_nc_apps "nextcloud container is not running"; return 1; }
-  # Timeout a hanging occ; the list is small so 120s is ample.
-  occ_out=$(timeout 120 docker exec -u www-data nextcloud php occ app:list --output=plain 2>/dev/null) || {
-    fail ask_nc_apps "occ app:list failed (container may still be booting) — see $LOG"
+  local occ_out enabled_ids disabled_ids
+  occ_out=$(docker exec -u www-data nextcloud php occ app:list --output=plain 2>/dev/null) || {
+    fail ask_nc_apps "occ app:list failed — see $LOG"
     return 1
   }
-  enabled_ids=$(printf '%s' "$occ_out" | awk 'BEGIN{f=0} /^Enabled:/{f=1;next} /^Disabled:/{f=0} f && /^  -/{sub(/^  - /,""); sub(/:.*/, ""); print}')
-  disabled_ids=$(printf '%s' "$occ_out" | awk 'BEGIN{f=0} /^Disabled:/{f=1} f && /^  -/{sub(/^  - /,""); sub(/:.*/, ""); print}')
-  # $1 = needle, $2.. = app ids (exact match, no word-split corruption)
-  in_list() {
-    local needle="$1"; shift
-    local item
-    for item in "$@"; do
-      [ "$item" = "$needle" ] && return 0
-    done
-    return 1
-  }
+  # occ app:list: "Enabled:" / "Disabled:" sections, lines "  - id: version"
+  enabled_ids=$(printf '%s' "$occ_out" | awk 'BEGIN{f=0} /^Enabled:/{f=1;next} /^Disabled:/{f=0} f && /^  - [^:]+:/{gsub(/^  - /,""); gsub(/:.*/,""); print}')
+  disabled_ids=$(printf '%s' "$occ_out" | awk 'BEGIN{f=0} /^Disabled:/{f=1} f && /^  - [^:]+:/{gsub(/^  - /,""); gsub(/:.*/,""); print}')
+  # $1 = needle, $2.. = space-separated list
+  in_list() { local needle="$1"; shift; local item; for item in $1; do [ "$item" = "$needle" ] && return 0; done; return 1; }
 
   # ---------- apply install&enable ----------
   for app in "${!install[@]}"; do
@@ -1052,7 +965,6 @@ ask_nc_apps() {
     if in_list "$app" $enabled_ids; then
       continue                    # already installed+enabled → skip silently
     elif in_list "$app" $disabled_ids; then
-      # Enabled already in the image but reported disabled → operator request wins.
       if ! docker exec -u www-data nextcloud php occ app:enable "$app" >/dev/null 2>&1; then
         echo "  ERROR: occ app:enable $app failed — see $LOG" >&2
         fail ask_nc_apps "occ app:enable $app failed"
@@ -1060,27 +972,40 @@ ask_nc_apps() {
       fi
       continue                    # done
     fi
-    # Not installed at all → auto-install + auto-enable per operator request
-    # (config/cloud/apps.conf): no prompt, never stall a resumed install.
-    # Failures are logged and dropped silently; the plan above is authoritative.
-    log "  install&enable='$app' — not present in occ; installing then enabling"
-    if ! timeout 120 docker exec -u www-data nextcloud php occ app:install "$app" >>"$LOG" 2>&1; then
-      echo "  WARN: occ app:install $app failed — app not in the appstore and no local app dir; action dropped" >&2
-      continue
-    fi
-    if ! timeout 120 docker exec -u www-data nextcloud php occ app:enable "$app" >>"$LOG" 2>&1; then
-      echo "  WARN: occ app:enable $app failed after install; action dropped" >&2
-      continue
-    fi
-    # If still not in the enabled list after install/enable, retry once (occ
-    # can be slow on a cold cache); spreed ships in the image so this handles
-    # the case where it appears in occ list only after first boot.
-    if ! in_list "$app" $enabled_ids; then
-      sleep 15
-      occ_out=$(timeout 120 docker exec -u www-data nextcloud php occ app:list --output=plain 2>/dev/null) || true
-      enabled_ids=$(printf '%s' "$occ_out" | awk 'BEGIN{f=0} /^Enabled:/{f=1;next} /^Disabled:/{f=0} f && /^  -/{sub(/^  - /,""); sub(/:.*/, ""); print}')
-    fi
-    log "  installed + enabled $app"
+    # Not installed at all → decision required.
+    echo "  WARN: install&enable='$app' is not installed (occ app:list shows no such app)"
+    echo "    live state:  not installed"
+    echo "    action would do: install then enable $app (via the appstore or a local app dir)"
+    echo "    choice: proceed  drop  resolve"
+    local choice
+    while true; do
+      read -r choice || { echo "  no terminal input — aborting"; exit 1; }
+      case "${choice,,}" in
+        proceed) break ;;
+        drop) install_drop["$app"]=1; break ;;
+        resolve)
+          echo "    resolve: make $app available (appstore or a /apps/$app folder), then re-run the installer; or edit config/cloud/apps.conf"
+          continue
+          ;;
+        *) echo "    unknown choice: $choice" ;;
+      esac
+    done
+    case "${choice,,}" in
+      proceed)
+        if ! docker exec -u www-data nextcloud php occ app:install "$app" >/dev/null 2>&1; then
+          echo "  ERROR: occ app:install $app failed — app is not available (not in the appstore and no local app dir)" >&2
+          fail ask_nc_apps "occ app:install $app failed"
+          continue
+        fi
+        if ! docker exec -u www-data nextcloud php occ app:enable "$app" >/dev/null 2>&1; then
+          echo "  ERROR: occ app:enable $app failed after install — see $LOG" >&2
+          fail ask_nc_apps "occ app:enable $app failed"
+          continue
+        fi
+        ;;
+      drop) : ;;
+      resolve) : ;;
+    esac
   done
 
   # ---------- apply disable ----------
@@ -1096,7 +1021,7 @@ ask_nc_apps() {
       echo "    choice: proceed  drop  resolve"
       local choice
       while true; do
-        read -r choice || { echo "  no terminal input — dropping action"; break; }
+        read -r choice || { echo "  no terminal input — aborting"; exit 1; }
         case "${choice,,}" in
           proceed) break ;;
           drop) disable_drop["$app"]=1; break ;;
@@ -1165,7 +1090,6 @@ ask_nc_apps() {
   # The installer is the source of truth: write the enabled snapshot so a fresh
   # DB can reproduce exactly what the operator configured; make nc-capture keeps
   # a read-only mirror for diffs against config/cloud/apps.conf.
-  mkdir -p "$MANIFEST_DIR"
   {
     echo "# GENERATED by install.sh from config/cloud/apps.conf ($(date -Is)) — do not edit; re-run install to refresh."
     echo "# Format: one app id per line (occ app:list --enabled)."
@@ -1175,6 +1099,8 @@ ask_nc_apps() {
   echo "  recorded enabled apps ($MANIFEST_DIR/apps.txt): $(wc -l < "$MANIFEST_DIR/apps.txt" | tr -d ' ')"
   return 0
 }
+
+# Post-boot Nextcloud occ wiring: Talk signaling + TURN registration, NC
 # outbound SMTP (nextcloud@$DOMAIN sender mailbox), background cron. All
 # steps are idempotent (safe to re-run; never clobbers operator settings).
 # Requires the nextcloud + mailserver containers (called after containers_up).
@@ -1210,27 +1136,19 @@ nextcloud_setup() {
   # Then wait for a usable instance: a cold cache (fresh image pull + the
   # ~3 min Caddy build hogging the box) blew the old 3-minute budget, so every
   # occ step below — Talk signaling/TURN, SMTP, cron — silently never ran
-  # (2026-09-25). 24 minutes now, with a secondary HTTP probe to cloud.$DOMAIN
-  # and a per-call occ timeout so a hanging occ never stalls the loop.
+  # (2026-09-25). 8 minutes, and say so in the log while waiting.
   local i=0
-  while [ $i -lt 720 ]; do
-    if timeout 20 docker exec -u www-data nextcloud php occ status 2>/dev/null | grep -q "installed: true"; then
-      break
-    fi
-    if timeout 10 curl -sk "https://cloud.$DOMAIN/" >/dev/null 2>&1; then
-      break     # NC answers HTTPS → ready, even if occ is still warming the cache
-    fi
+  while [ $i -lt 240 ]; do
+    docker exec -u www-data nextcloud php occ status 2>/dev/null | grep -q "installed: true" && break
     [ $((i % 30)) -eq 0 ] && log "  waiting for nextcloud to finish installing (${i}s)"
     sleep 2; i=$((i+2))
   done
-  if ! timeout 20 docker exec -u www-data nextcloud php occ status 2>/dev/null | grep -q "installed: true"; then
-    fail nextcloud_setup "nextcloud not installed/ready after 24 min"
+  if ! docker exec -u www-data nextcloud php occ status 2>/dev/null | grep -q "installed: true"; then
+    fail nextcloud_setup "nextcloud not installed/ready after 8 min"
     return
   fi
 
   # Config-driven app selection for the cloud module (config/cloud/apps.conf).
-  # Now that the instance is confirmed installed, ask the operator which apps to
-  # install/enable/disable/remove based on the shipped occ app list.
   ask_nc_apps
 
   # NC outbound SMTP sender mailbox — create if missing (secrets from .env).
@@ -1369,26 +1287,12 @@ nextcloud_setup() {
     done < "$MANIFEST_DIR/groups.txt"
   fi
 
-  # Verify what the smoke/operational docs assert. `occ` can be flaky for a few
-  # seconds right after a container start (DB warm-up), so retry each check
-  # five times (2 s apart) before treating it as a real failure.
-  occ_check() {
-    local pattern="$1"; shift
-    local attempt=0 rc=1
-    # 5 attempts x 2 s covers the occ DB warm-up window after a container
-    # restart (occ status can return fast while a talk:turn:list hit a transient
-    # lock), so a warm-up race never kills the install.
-    while [ $attempt -lt 5 ]; do
-      if "$@" | grep -q "$pattern"; then rc=0; break; fi
-      attempt=$((attempt+1)); [ $attempt -lt 5 ] && sleep 2
-    done
-    return $rc
-  }
-  occ_check "mail.$DOMAIN" docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null \
+  # Verify what the smoke/operational docs assert.
+  docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN" \
     || fail nextcloud_setup "mail_smtphost not set"
-  occ_check "https://talk.$DOMAIN/signaling" docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null \
+  docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://talk.$DOMAIN/signaling" \
     || fail nextcloud_setup "talk signaling not registered"
-  occ_check "talk.$DOMAIN:3478" docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null \
+  docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "talk.$DOMAIN:3478" \
     || fail nextcloud_setup "talk turn not registered"
 }
 
@@ -1569,16 +1473,8 @@ issue_certs() {
 # (this installer, the rewrite/import tooling) name the old project by nature
 # — counting them made the check unsatisfiable on the repo's own tree.
 sweep_hits() {
-  # Flag only legacy placeholders that cannot legitimately remain after a
-  # rename (the skeleton shipped "exampleuser" as owner and "homelab" as project).
-  # Exclude generated/compiled areas, documentation, and instance .envs, and skip
-  # anything referencing the kefoCloud project name so project records never trip
-  # the sweep. Note: --exclude-dir=docs is needed because docs/GUIDE.md documents
-  # the old homelab rename and must never be flagged.
-  grep -rlI -e homelab -e exampleuser \
-    "$REPO" --exclude-dir=.git --exclude-dir=docs --exclude-dir=archives --exclude-dir=scripts \
-    --exclude='*.md' --exclude='.env' -not -path '*/data/*' 2>/dev/null |
-    grep -v 'kefoCloud' || true
+  grep -rlI '$GITHUB_USER' "$REPO" \
+    --exclude-dir=.git --exclude-dir=docs --exclude-dir=archives --exclude-dir=scripts 2>/dev/null || true
 }
 
 sweep() {
@@ -1882,14 +1778,6 @@ summary() {
         echo "      hint: $(hint "${unexp[$i]}")"
       done
     fi
-  fi
-  if [ ${#ERR_WARN_TAGS[@]} -gt 0 ]; then
-    echo ""
-    echo " WARNINGS (no success block — see $LOG):"
-    for i in "${!ERR_WARN_TAGS[@]}"; do
-      echo "   $((i+1)). ${ERR_WARN_TAGS[$i]}"
-      echo "      hint: $(hint "${ERR_WARN_TAGS[$i]}")"
-    done
   fi
 }
 trap summary EXIT
