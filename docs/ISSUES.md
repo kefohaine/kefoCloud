@@ -16,11 +16,6 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Problem**: the monitor `http: vault` points at `https://vault.$DOMAIN`, but the `vault` module is not in `installed-modules.conf` — no container, no route — so it is permanently down. That is a *not installed* module, NOT a tailnet-only route (the two are distinct: see GUIDE "Module state vs route exposure").
 - **Fix** (operator, in the Kuma UI — an agent must not write to a user service): install the vault module, or pause/delete the monitor. Nothing in the repo needs to change.
 
-### install.sh GitHub / app / sweep / timeout fixes (Oct 2026)
-- **Short title**: GitHub resume keeps key authorized; horizontal % bar; apps auto-install; sweep whitelists kefoCloud; NC timeouts; app prompt order
-- **File**: `scripts/install/install.sh` + `config/cloud/apps.conf`
-- **Summary**: GitHub prompt skipped on resume when key still verifies (`github_access`); Caddy build bar now a green `█`/grey `░` horizontal bar with % (containers_up); install&enable auto-installs+enables missing apps incl. spreed (ask_nc_apps); sweep excludes `kefoCloud` lines; occ timeouts raised to 20s/call / 24min total (nextcloud_setup); ask_nc_apps moved after the install-ready check so configured apps are installed against the real shipped list.
-
 ### Pending (Aug 2026)
 
 #### Kuma config copy from the $GITHUB_USER machine is blocked  **[needs human approval]**
