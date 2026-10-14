@@ -16,10 +16,10 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Problem**: the monitor `http: vault` points at `https://vault.$DOMAIN`, but the `vault` module is not in `installed-modules.conf` — no container, no route — so it is permanently down. That is a *not installed* module, NOT a tailnet-only route (the two are distinct: see GUIDE "Module state vs route exposure").
 - **Fix** (operator, in the Kuma UI — an agent must not write to a user service): install the vault module, or pause/delete the monitor. Nothing in the repo needs to change.
 
-### install.sh GitHub / app / sweep / timeout fixes (Oct 2026)
-- **Short title**: GitHub resume keeps key authorized; horiz % bar; apps auto-install; sweep whitelist; NC timeouts; commit identity; push right after auth
-- **File**: `scripts/install/install.sh` + `config/cloud/apps.conf`
-- **Summary**: github_access skips the prompt on resume when the key still verifies and stores GH_AUTH_OK in setup.state; github_push (commit name + email prompt) runs right after authentication, before any other action; Caddy build bar is a green█/grey░ horizontal bar with %; install&enable auto-installs+enables missing apps incl. spreed; sweep excludes kefoCloud lines; occ waits 20s/call up to 24min; ask_nc_apps runs after the install-ready check so configured apps install against the shipped list.
+### install.sh GitHub push has no authenticated collaborator pre-check
+- **File**: `scripts/install/install.sh` (`github_push`)
+- **Problem**: the installer pushes to a temporary `ghpush` remote and only rewrites `origin` on success, so a non-collaborator's rejected push leaves `origin` untouched — but there is no *pre-flight* permission check; the push itself is the only gate (a real check needs an authenticated token, `/repos/<owner>/<repo>/collaborators/<user>`).
+- **Fix** (candidate, operator decision): if an authenticated GitHub token is ever available to the installer, add the pre-flight check; until then push-first ordering stays.
 
 ### Pending (Aug 2026)
 

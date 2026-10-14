@@ -125,10 +125,11 @@ The block is replaced, never duplicated, and the secrets already in those files
   tokens; nothing in git names a real host, domain, path or user.
 - Live values (public IP, container names, tailnet peers, module list) are still
   **auto-detected** by scripts — never read from a file (AGENTS rule 12).
-- `data/installed-modules.conf` (written by `install.sh`) records which modules
-  this deployment *declared*; `installed-modules.detected.conf` +
+- `data/installed-modules.conf` (written by `install.sh` **only when a run
+  reaches success** — a failed run leaves none) records which modules the
+  deployment installed; `installed-modules.detected.conf` +
   `installed-modules.report.txt` are the independent-probe confirmation.
-  `make smoke` and `make fetch` read the declared file.
+  `make smoke` and `make fetch` read the installed file.
 - Secrets never belong in git; `data/instance.conf` is 0600, and rendered
   output (`data/rendered/`) is where live config actually comes from.
 - The installer asks every prompt on every run — there is no prompt-defaults
