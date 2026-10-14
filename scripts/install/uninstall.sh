@@ -621,11 +621,4 @@ main() {
 }
 
 main "$@"
-# Prompt for phases to uninstall
-for p in scripts/install/phases/phase_*.sh; do
-  read -p "Undo $p? (y/N) " ans
-  if [[ $ans == y* ]]; then
-    . $p && echo "Reversed $p"
-  fi
- done
 

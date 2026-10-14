@@ -384,18 +384,32 @@ github_push() {
   [ -n "$GITHUB_COMMIT_EMAIL" ] && export GIT_COMMITTER_NAME="$GITHUB_COMMIT_NAME" GIT_COMMITTER_EMAIL="$GITHUB_COMMIT_EMAIL" GIT_AUTHOR_NAME="$GITHUB_COMMIT_NAME" GIT_AUTHOR_EMAIL="$GITHUB_COMMIT_EMAIL"
   git -C "$REPO" config user.name "${GITHUB_COMMIT_NAME:-root}" 2>/dev/null || true
   [ -n "$GITHUB_COMMIT_EMAIL" ] && git -C "$REPO" config user.email "$GITHUB_COMMIT_EMAIL" 2>/dev/null || true
-  git -C "$REPO" remote set-url origin "git@github.com:$GITHUB_USER/$REPO_NAME.git" 2>/dev/null || true
+  local url="git@github.com:$GITHUB_USER/$REPO_NAME.git"
+  # Push to a TEMPORARY remote first and only rewrite `origin` once the push
+  # succeeds: a non-collaborator's push is rejected, so their `origin` stays
+  # exactly as it was instead of being force-rewritten to a repo they cannot
+  # write (the old order rewrote origin unconditionally, on the mere opt-in).
+  # A real pre-flight permission check is not done: it needs an authenticated
+  # token (/repos/$GITHUB_USER/$REPO_NAME/collaborators/$user), so push-first
+  # ordering is the honest gate.
+  git -C "$REPO" remote remove ghpush 2>/dev/null || true
+  git -C "$REPO" remote add ghpush "$url" 2>/dev/null || true
   # SKIP_SMOKE: the pre-push hook's live vhost test cannot pass this early — the
   # stack is not up yet, and what is pushed here is the repo's content.
-  SKIP_SMOKE=1 push_out="$(git -C "$REPO" push 2>&1)"
-  local rc=$?
-  printf '%s
-' "$push_out" >>"$LOG"
-  [ $rc -eq 0 ] && return 0
+  local push_out rc
+  SKIP_SMOKE=1 push_out="$(git -C "$REPO" push ghpush HEAD 2>&1)"
+  rc=$?
+  printf '%s\n' "$push_out" >>"$LOG"
+  if [ $rc -eq 0 ]; then
+    git -C "$REPO" remote set-url origin "$url" 2>/dev/null || true
+    git -C "$REPO" remote remove ghpush 2>/dev/null || true
+    return 0
+  fi
+  git -C "$REPO" remote remove ghpush 2>/dev/null || true
   if printf '%s' "$push_out" | grep -q 'fetch first'; then
     warn github_push "push rejected — local history diverged from the remote (fetch first); run 'make fetch' or 'git pull --rebase' and re-run the installer"
   else
-    warn github_push "push failed — see $LOG"
+    warn github_push "push rejected — no write access to $url (not a collaborator, or the key is not yet authorized). origin was left unchanged."
   fi
   return 1
 }
@@ -829,31 +843,40 @@ host_services() {
 
 containers_up() {
   log "  building Caddy image (caddy:local) — ~3 min on a cold cache"
-  # Live loading bar (TTY only) below the log line while the build runs; the
-  # full verbose build output goes to $LOG in parallel.
   export BUILD_START="$(date +%s)"
-  {
-    while true; do
-      local b=$(( ($(date +%s) - BUILD_START) % 4 ))
-      printf '\r  ⠋⠙⠹⠸' | cut -c$((b + 1))
-      printf '  %02ds' "$(($(date +%s) - BUILD_START))"
-      sleep 0.1
-    done
-  } >/dev/tty 2>/dev/tty &
-  local spinner_pid=$!
+  # Live loading bar, TTY only (the full verbose build output goes to $LOG). An
+  # ARRAY of glyphs replaces the old
+  # `printf | cut -c` pipe — printf emitted no newline so cut terminated each
+  # tick on its own line, and `cut -c` (like a bash substring under the C
+  # locale) sliced the UTF-8 braille glyph into '?'. Array elements are whole
+  # strings, so indexing is locale-safe. Skipped entirely when stdout is not a TTY.
+  local spinner_pid=""
+  if [ -t 1 ]; then
+    {
+      local spin=('⠋' '⠙' '⠹' '⠸')
+      while true; do
+        local el=$(( $(date +%s) - BUILD_START ))
+        printf '\r  %s  %02ds' "${spin[$(( el % 4 ))]}" "$el"
+        sleep 0.1
+      done
+    } >/dev/tty 2>/dev/tty &
+    spinner_pid=$!
+  fi
   # The dok-recreate recipe already falls back to docker build + compose up
   # when compose's buildx is too old (Debian trixie), so no manual fallback
   # is needed here.
   make dok-recreate-caddy >>"$LOG" 2>&1 || fail caddy
   local took=$(($(date +%s) - BUILD_START))
-  kill "$spinner_pid" >/dev/tty 2>&1; wait "$spinner_pid" >/dev/null 2>&1
+  [ -n "$spinner_pid" ] && { kill "$spinner_pid" >/dev/tty 2>&1; wait "$spinner_pid" >/dev/null 2>&1; }
+  # A newline clears the last spinner tick before the closing bar is printed.
+  [ -t 1 ] && printf '\n' >/dev/tty 2>/dev/null
   # Horizontal progress bar with green blocks, not a wheel.
   local percent=$(( took * 100 / 180 ))
   [ "$percent" -gt 100 ] && percent=100
   local filled=$(( percent / 5 )); local empty=$(( 20 - filled ))
   local bar
   bar=$(printf '%*s' "$filled" '' | tr ' ' '█')$(printf '%*s' "$empty" '' | tr ' ' '░')
-  printf '\r  [ \033[32m%s\033[0m ] %3d%%  %s\n' "$bar" "$percent" "$took" >/dev/tty 2>/dev/null
+  [ -t 1 ] && printf '\r  [ \033[32m%s\033[0m ] %3d%%  %s\n' "$bar" "$percent" "$took" >/dev/tty 2>/dev/null
   log "  Caddy image built in ${took}s ($percent%)"
   # PostgreSQL first — the nextcloud entrypoint's fresh install needs the DB
   # reachable (POSTGRES_HOST from .env, set by talk-gen above). Caddy's
@@ -946,10 +969,14 @@ mailbox_add() {
 ask_nc_apps() {
   local conf="$REPO/config/cloud/apps.conf"
 
-  # Cloud must be desired; skip the prompt on resume (cloud already installed)
-  # but still apply the configured actions.
+  # Cloud must be desired; skip the prompt on resume but still apply the
+  # configured actions. installed-modules.conf is written ONLY on a successful
+  # run (operator constraint), so it is the "the cloud prompt was already
+  # answered by a COMPLETED run" signal — never a mid-run marker. The mid-run
+  # decision uses $INSTALL_RESUMED (set by main when this run resumed a
+  # previous, incomplete install), not the manifest.
   [ "${MOD_CLOUD:-true}" = "true" ] || return 0
-  local resume=0
+  local resume="${INSTALL_RESUMED:-0}"
   if [ -f "$DATA/installed-modules.conf" ] && grep -qx "cloud" "$DATA/installed-modules.conf" 2>/dev/null; then
     resume=1
   fi
@@ -961,7 +988,7 @@ ask_nc_apps() {
   # Valid verbs: install&enable=, disable=, remove=. Multi-action lines are
   # supported (split on whitespace); bare verbs / comments are ignored; an
   # unknown verb is warned to stderr and ignored.
-  declare -A install=() disable=() remove=() seen=() conflict=()
+  declare -A install=() disable=() remove=() disable_drop=() remove_drop=() seen=() conflict=()
   local line tok verb key
   while IFS= read -r line || [ -n "$line" ]; do
     line="${line%%#*}"                          # strip inline comments
@@ -1015,7 +1042,7 @@ ask_nc_apps() {
 
   if [ "$resume" = "0" ]; then
     local _confirm
-    if ! ask_boolean "Apply configured app actions? (true/false)" _confirm; then
+    if ! ask_boolean "Apply configured app actions?" _confirm; then
       echo "  app actions skipped (not confirmed)"
       return 0
     fi
@@ -1769,8 +1796,29 @@ resolve_errors() {
   ERR_TAGS=()
   write_modules_conf
   finalize_hardening
+  smoke_check
   success_block
   ask_optimize
+}
+
+# End-of-run smoke. write_modules_conf has just run, so the declared set and the
+# manifest agree by construction; run the same entry point the pre-push hook
+# uses (make smoke) so a green install proves the edge actually serves. Honour
+# SKIP_SMOKE=1 (operator opt-out). Fail LOUD but never exit: the run is already
+# green and the operator should still see the success summary.
+smoke_check() {
+  if [ "${SKIP_SMOKE:-}" = "1" ]; then
+    log "  smoke test skipped (SKIP_SMOKE=1)"
+    return 0
+  fi
+  log "  running the live edge smoke test (make smoke) — the last check"
+  if make -C "$REPO" smoke >>"$LOG" 2>&1; then
+    log "  smoke passed — the edge and every installed module answer"
+    return 0
+  fi
+  log "  SMOKE FAILED — the edge is not fully serving every installed module"
+  echo "  SMOKE FAILED — re-run 'make smoke' and fix what it reports (full output: $LOG)"
+  return 0
 }
 
 # ── Optional follow-up — only ever reached after a FULLY green run ────────
@@ -1907,6 +1955,10 @@ main() {
   ensure_runtime_dirs       # first: the prompts below log (see the helper)
   banner
   load_state
+  # Whether this run is a resume of a previous, incomplete install. Consumed by
+  # ask_nc_apps to skip the app prompt on a resumed run (the manifest is
+  # post-success only, so it cannot serve that mid-run purpose).
+  INSTALL_RESUMED=0
   if previous_install; then
     echo ""
     echo "A previous installation was detected."
@@ -1920,6 +1972,7 @@ main() {
         ;;
       *)
         echo "Resuming — only values that are still missing get asked."
+        INSTALL_RESUMED=1
         ;;
     esac
   else
@@ -1938,19 +1991,4 @@ main() {
 }
 
 main "$@"
-# Cloudflare DNS records for fxmq.net
-# CNAME root to www
-cf_dns_create_or_update "@" "CNAME" "www.fxmq.net"
-# SPF
-cf_dns_create_or_update "@" "TXT" "v=spf1 -all"
-# DKIM placeholder
-cf_dns_create_or_update "*._domainkey" "TXT" "v=DKIM1; p="
-# DMARC
-cf_dns_create_or_update "_dmarc" "TXT" "v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s;"
-
-
-# Execute split phase scripts sequentially
-for f in "$(dirname "$0")/phases/phase_*.sh"; do
-  [ -x "$f" ] && . "$f" || { echo "Failed $f"; exit 1; }
-done
 
