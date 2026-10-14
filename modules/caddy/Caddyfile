@@ -9,7 +9,9 @@
 {
     admin off
     log {
-        output file /dev/null
+        # Default logger to stderr: the compose log cap bounds it, and an
+        # edge/ACME failure leaves real evidence in `docker logs caddy`.
+        output stderr
     }
 }
 
@@ -46,7 +48,7 @@ http:// {
 # Each vhost declares its own `tls { dns cloudflare { ... } }` block so the
 # ACME cert is scoped to that vhost's SNI. The wildcard cert that used to
 # back all vhosts is no longer referenced — per-vhost ACME certs are scoped
-# to their own SNI (see ./vhosts/cloud.{{DOMAIN}}.caddy for the rationale).
+# to their own SNI (see ./vhosts/cloud.caddy for the rationale).
 
 # A glob, deliberately: a glob that matches nothing is NOT an error in
 # Caddy, so vhosts/ can be empty and the edge still starts. That is what
