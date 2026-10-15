@@ -18,7 +18,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### GitHub collaborator check needs a read-only token to enforce (operator decision)
 - **File**: `scripts/install/install.sh` (`github_push`, `github_collaborator_check`)
-- **Status**: implemented read-only — `github_push` resolves the minted key's GitHub login via `ssh -T` and, when a read-only `GH_API_TOKEN` is supplied, calls `GET /repos/<owner>/<repo>/collaborators/<login>` (204 = collaborator, 404 = not) and refuses a non-collaborator before configuring any remote. Without a token the check is unavailable (warn), and the push itself remains the gate.
+- **Status**: implemented read-only and automatic — `github_push` starts a background job (no prompt) that resolves the minted key's GitHub login via `ssh -T`; when a read-only `GH_API_TOKEN` is in the environment it calls `GET /repos/<owner>/<repo>/collaborators/<login>` (204 = collaborator, 404 = not) and a non-collaborator is refused before any remote is configured. Without a token the check is unavailable (warn), and the push itself remains the gate.
 - **Fix** (operator decision): choose the token — a GitHub App installation token (short-lived, read-only *Administration*) is preferred over a fine-grained PAT (repo-scoped, read-only, expiring); classic `repo` read also works. The token is never stored; it is passed per run.
 
 ### Pending (Aug 2026)
