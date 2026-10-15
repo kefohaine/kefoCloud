@@ -16,10 +16,10 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Problem**: the monitor `http: vault` points at `https://vault.$DOMAIN`, but the `vault` module is not in `installed-modules.conf` — no container, no route — so it is permanently down. That is a *not installed* module, NOT a tailnet-only route (the two are distinct: see GUIDE "Module state vs route exposure").
 - **Fix** (operator, in the Kuma UI — an agent must not write to a user service): install the vault module, or pause/delete the monitor. Nothing in the repo needs to change.
 
-### install.sh GitHub push has no authenticated collaborator pre-check
-- **File**: `scripts/install/install.sh` (`github_push`)
-- **Problem**: the installer pushes to a temporary `ghpush` remote and only rewrites `origin` on success, so a non-collaborator's rejected push leaves `origin` untouched — but there is no *pre-flight* permission check; the push itself is the only gate (a real check needs an authenticated token, `/repos/<owner>/<repo>/collaborators/<user>`).
-- **Fix** (candidate, operator decision): if an authenticated GitHub token is ever available to the installer, add the pre-flight check; until then push-first ordering stays.
+### GitHub collaborator check needs a read-only token to enforce (operator decision)
+- **File**: `scripts/install/install.sh` (`github_push`, `github_collaborator_check`)
+- **Status**: implemented read-only — `github_push` resolves the minted key's GitHub login via `ssh -T` and, when a read-only `GH_API_TOKEN` is supplied, calls `GET /repos/<owner>/<repo>/collaborators/<login>` (204 = collaborator, 404 = not) and refuses a non-collaborator before configuring any remote. Without a token the check is unavailable (warn), and the push itself remains the gate.
+- **Fix** (operator decision): choose the token — a GitHub App installation token (short-lived, read-only *Administration*) is preferred over a fine-grained PAT (repo-scoped, read-only, expiring); classic `repo` read also works. The token is never stored; it is passed per run.
 
 ### Pending (Aug 2026)
 

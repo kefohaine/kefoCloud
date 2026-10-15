@@ -368,6 +368,41 @@ github_auth_ok() {
   printf '%s' "$out" | grep -q "successfully authenticated"
 }
 
+# The GitHub login that `ssh -T` reports for the minted key ("Hi <login>!").
+# Empty when the key is not authorized or the greeting is unexpected. This is
+# the ONLY trustworthy identity in the flow: the SSH key proves which GitHub
+# account it belongs to — never a self-asserted name.
+github_login() {
+  local out
+  [ -s "$GH_KEY" ] || return 0
+  out="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -T git@github.com 2>&1)" || true
+  printf '%s' "$out" | sed -nE 's/^Hi ([^!]+)!.*/\1/p' | head -1
+}
+
+# Read-only collaborator check: is GitHub login $1 a collaborator on
+# $GITHUB_USER/$REPO_NAME? Returns 0 = collaborator, 1 = not a collaborator,
+# 2 = cannot verify (no token, or an unexpected API answer). Needs a read-only
+# token in $GH_API_TOKEN (fine-grained: Administration read on the repo;
+# classic: `repo` read) — the token is never stored, it is passed per run.
+# 204 = collaborator, 404 = no access, anything else = unknown.
+github_collaborator_check() {
+  local login="$1" code
+  [ -n "${GH_API_TOKEN:-}" ] || return 2
+  [ -n "$login" ] || return 2
+  [ -n "${GITHUB_USER:-}" ] && [ "$GITHUB_USER" != "exampleuser" ] || return 2
+  code=$(curl -s -o /dev/null -w '%{http_code}' \
+    -H "Authorization: Bearer $GH_API_TOKEN" \
+    -H "Accept: application/vnd.github+json" \
+    -H "X-GitHub-Api-Version: 2022-11-28" \
+    "https://api.github.com/repos/$GITHUB_USER/$REPO_NAME/collaborators/$login" 2>/dev/null)
+  case "$code" in
+    204) return 0 ;;
+    404) return 1 ;;
+    *)   printf '  GitHub collaborator check: HTTP %s for %s (token scope too narrow?)\n' "$code" "$login" >>"$LOG"
+         return 2 ;;
+  esac
+}
+
 github_push() {
   # Ask for commit identity once; a repo already committed with bad/missing
   # identity (e.g. from an earlier install on another host) is easy to fix by
@@ -385,13 +420,31 @@ github_push() {
   git -C "$REPO" config user.name "${GITHUB_COMMIT_NAME:-root}" 2>/dev/null || true
   [ -n "$GITHUB_COMMIT_EMAIL" ] && git -C "$REPO" config user.email "$GITHUB_COMMIT_EMAIL" 2>/dev/null || true
   local url="git@github.com:$GITHUB_USER/$REPO_NAME.git"
+
+  # Collaborator gate. The minted SSH key proves WHICH GitHub account it belongs
+  # to, but not that the account may write here. When a read-only token is
+  # supplied ($GH_API_TOKEN), verify membership up front and refuse a
+  # non-collaborator outright. Without a token the check is unavailable — warn
+  # and fall back to the push itself as the gate (GitHub rejects a
+  # non-collaborator), never silently claiming a check that did not run.
+  local _login
+  _login="$(github_login)"
+  if [ -n "$_login" ]; then
+    github_collaborator_check "$_login"
+    case $? in
+      0) log "  GitHub: '$_login' is a collaborator on $GITHUB_USER/$REPO_NAME" ;;
+      1) warn github_push "GitHub login '$_login' is NOT a collaborator on $GITHUB_USER/$REPO_NAME — refusing to configure a remote or push"
+         return 1 ;;
+      2) warn github_push "cannot verify collaborator status of '$_login' (set a read-only GH_API_TOKEN to enforce); the push itself is the gate" ;;
+    esac
+  else
+    warn github_push "could not determine the GitHub login for $GH_KEY — the push itself is the gate"
+  fi
+
   # Push to a TEMPORARY remote first and only rewrite `origin` once the push
   # succeeds: a non-collaborator's push is rejected, so their `origin` stays
   # exactly as it was instead of being force-rewritten to a repo they cannot
   # write (the old order rewrote origin unconditionally, on the mere opt-in).
-  # A real pre-flight permission check is not done: it needs an authenticated
-  # token (/repos/$GITHUB_USER/$REPO_NAME/collaborators/$user), so push-first
-  # ordering is the honest gate.
   git -C "$REPO" remote remove ghpush 2>/dev/null || true
   git -C "$REPO" remote add ghpush "$url" 2>/dev/null || true
   # SKIP_SMOKE: the pre-push hook's live vhost test cannot pass this early — the
