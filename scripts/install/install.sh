@@ -766,6 +766,19 @@ ensure_repo() {
   fi
 }
 
+install_hooks() {
+  # Git hooks live in .git/hooks — untracked, so a fresh clone has none. Install
+  # them here so a new host is guarded (pre-commit edge validation, pre-push
+  # smoke) without a manual `make install-hooks` (docs/GUIDE.md). Idempotent;
+  # the pre-push smoke gate stays shut until this run records finished=true, and
+  # the installer's own push uses --no-verify so the hook never blocks it.
+  if make -C "$REPO" install-hooks >>"$LOG" 2>&1; then
+    log "git hooks installed (pre-commit edge guard, pre-push smoke)"
+  else
+    warn hooks "make install-hooks failed — run it manually to guard the edge"
+  fi
+}
+
 prep_dirs() {
   # All external (untracked) state lives under $DATA = $REPO/data, matching
   # the compose bind mounts; the repo tree itself stays clean (.gitignore has /data/).
@@ -1727,6 +1740,7 @@ phase_stack() {
     exit 1
   fi
   ensure_repo
+  install_hooks
   prep_dirs
   seed_stack
   docker_net
@@ -1778,6 +1792,7 @@ problem() {
     dkim_setup)      echo "DKIM key / mail._domainkey TXT record not published" ;;
     vaultwarden_setup) echo "Vaultwarden SMTP sender mailbox missing (vaultwarden@$DOMAIN)" ;;
     clone)          echo "repo clone failed" ;;
+    hooks)          echo "git hooks are not installed in $REPO/.git/hooks" ;;
     github_key)     echo "the GitHub key could not be created" ;;
     github_auth)    echo "GitHub remote access was requested but the key is not authorized / nothing was pushed" ;;
     *)              echo "$1" ;;
@@ -1814,6 +1829,7 @@ hint() {
     dkim_setup)      echo "run: docker exec mailserver setup config dkim domain $DOMAIN; ensure ENABLE_OPENDKIM=0 in the mailserver compose (Rspamd signs); verify the CF token has Zone > DNS > Edit; then dig @<zone NS> TXT mail._domainkey.$DOMAIN" ;;
     vaultwarden_setup) echo "ensure SMTP_PASSWORD (and the other SMTP_* keys) exist in modules/vaultwarden/.env — make render writes the file but not those keys — then: printf '%s\\n%s\\n' <pass> <pass> | docker exec -i mailserver setup email add vaultwarden@$DOMAIN; re-check" ;;
     clone)          echo "the clone is HTTPS (the repo is public) — check network/DNS, then re-check" ;;
+    hooks)          echo "run: make install-hooks in $REPO (re-run it after editing a hook)" ;;
     github_key)     echo "check /root/.ssh is writable (mkdir -p /root/.ssh && chmod 700 /root/.ssh), then re-check" ;;
     github_auth)    echo "authorize the installer's printed public key at GitHub -> Settings -> SSH and GPG keys -> New SSH key, then re-check" ;;
     *)              echo "" ;;
