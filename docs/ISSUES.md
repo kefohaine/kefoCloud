@@ -18,8 +18,8 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### GitHub collaborator check needs a read-only token to enforce (operator decision)
 - **File**: `scripts/install/install.sh` (`github_push`, `github_collaborator_check`)
-- **Status**: implemented read-only and automatic — `github_push` starts a background job (no prompt) that resolves the minted key's GitHub login via `ssh -T`; when a read-only `GH_API_TOKEN` is in the environment it calls `GET /repos/<owner>/<repo>/collaborators/<login>` (204 = collaborator, 404 = not) and a non-collaborator is refused before any remote is configured. Without a token the check is unavailable (warn), and the push itself remains the gate.
-- **Fix** (operator decision): choose the token — a GitHub App installation token (short-lived, read-only *Administration*) is preferred over a fine-grained PAT (repo-scoped, read-only, expiring); classic `repo` read also works. The token is never stored; it is passed per run.
+- **Status**: implemented read-only and automatic. The opt-in prompt ("Allow GitHub remote access only for this repo's collaborators?") collects the token; `github_push` then starts a background job (no prompt) that resolves the minted key's GitHub login via `ssh -T` and calls `GET /repos/<owner>/<repo>/collaborators/<login>` (204 = collaborator, 404 = not), refusing a non-collaborator before any remote is configured. If the token is missing or the API answers unexpectedly it warns and the push itself remains the gate.
+- **Fix** (operator decision, needs approval): choose the token — a GitHub App installation token (short-lived, read-only *Administration*) is preferred over a fine-grained PAT (repo-scoped, read-only, expiring); classic `repo` read also works. The token is persisted per the "remember every input" rule, in the root-only (0600) state file alongside the Cloudflare token and Tailscale key.
 
 ### Pending (Aug 2026)
 

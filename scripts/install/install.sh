@@ -1,22 +1,26 @@
 #!/bin/bash
 # $NODE_NAME install.sh — root-only, plug-and-play new-machine installer.
 #
-# Prompts for what it cannot detect (domain, Cloudflare API token, Tailscale
-# auth key), one explicit `true`/`false` per module, and — LAST, opt-in — remote
-# access to the operator's own GitHub repos. Then it runs unattended: host
-# services, docker, tailscale, the full
-# stack — Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Caddy,
-# Vaultwarden, Uptime Kuma, Docker Mailserver + Roundcube —
-# Cloudflare DNS records, and LE cert issuance. The repo already carries
-# the canonical <domain> naming (modules/<domain>/, vhosts/<host>.caddy);
-# no legacy renames are applied.
+# ALL inputs are collected up front, in one fixed order, before any install
+# work, and each is persisted immediately (so an abort mid-run leaves the
+# answers for a resume). Order: GitHub collaborator opt-in, GitHub remote-access
+# opt-in (+ commit identity + automatic key verification), device SSH key,
+# Tailscale auth key, Cloudflare API token, domain, modules. Every affirmation
+# takes only the literal words `yes`/`no` (no shortcut, no default); the answer
+# is recorded as the boolean true/false. Then it runs unattended: host services,
+# docker, tailscale, the full stack — Nextcloud (app + PostgreSQL + Redis + Talk
+# HPB/TURN), Caddy, Vaultwarden, Uptime Kuma, Docker Mailserver + Roundcube —
+# Cloudflare DNS records, and LE cert issuance. The repo already carries the
+# canonical <domain> naming (modules/<domain>/, vhosts/<host>.caddy); no legacy
+# renames are applied.
 #
 # Fully autonomous: the Kuma admin account is created
 # automatically (the admin passwords are printed once in the final summary —
 # nothing is written to disk), and no manual confirmation steps block success —
 # the only follow-ups are printed in the summary (Tailscale split-DNS, mailboxes).
-# The one step that does wait is the opt-in GitHub remote access: the operator
-# asked for it, so the installer holds until the key it minted is authorized.
+# The only step that waits is the opt-in GitHub remote access: the installer
+# holds until the key it minted is authorized, verified AUTOMATICALLY (it polls
+# ssh until GitHub accepts the key — no manual "press Enter to re-check").
 # Prerequisites checked up front: the Cloudflare zone must exist. The repo is
 # PUBLIC and is cloned over HTTPS — the clone needs no GitHub key; the key the
 # opt-in step mints is for PUSHING to the operator's own repos.
@@ -143,19 +147,27 @@ save_state() {
   umask 077
   install -d -m 0700 "$(dirname "$STATE")"
   local tmp="$STATE.tmp.$$"
-  cat > "$tmp" <<EOF
-DOMAIN='$DOMAIN'
-CF_API_TOKEN='$CF_API_TOKEN'
-TS_AUTHKEY='$TS_AUTHKEY'
-TS_IP='${TS_IP:-}'
-MOD_CLOUD='${MOD_CLOUD:-true}'
-MOD_VAULT='${MOD_VAULT:-true}'
-MOD_MAIL='${MOD_MAIL:-true}'
-MOD_MONITOR='${MOD_MONITOR:-true}'
-GH_REMOTE='${GH_REMOTE:-false}'
-GH_AUTH_OK='${GH_AUTH_OK:-0}'
-ERR_TAGS=($(printf '%q ' "${ERR_TAGS[@]}"))
-EOF
+  # Every value is written with `printf %q`, never inside literal quotes: the
+  # file is later `source`d by load_state, so a value containing a quote or a
+  # `$(…)` must be escaped, not interpolated raw (a free-form commit name could
+  # otherwise inject on the next run).
+  {
+    printf 'DOMAIN=%q\n'             "${DOMAIN:-}"
+    printf 'CF_API_TOKEN=%q\n'       "${CF_API_TOKEN:-}"
+    printf 'TS_AUTHKEY=%q\n'         "${TS_AUTHKEY:-}"
+    printf 'TS_IP=%q\n'              "${TS_IP:-}"
+    printf 'MOD_CLOUD=%q\n'          "${MOD_CLOUD:-true}"
+    printf 'MOD_VAULT=%q\n'          "${MOD_VAULT:-true}"
+    printf 'MOD_MAIL=%q\n'           "${MOD_MAIL:-true}"
+    printf 'MOD_MONITOR=%q\n'        "${MOD_MONITOR:-true}"
+    printf 'GH_REMOTE=%q\n'          "${GH_REMOTE:-false}"
+    printf 'GH_AUTH_OK=%q\n'         "${GH_AUTH_OK:-0}"
+    printf 'GH_COLLAB_ENFORCE=%q\n'  "${GH_COLLAB_ENFORCE:-false}"
+    printf 'GH_API_TOKEN=%q\n'       "${GH_API_TOKEN:-}"
+    printf 'GITHUB_COMMIT_NAME=%q\n' "${GITHUB_COMMIT_NAME:-}"
+    printf 'GITHUB_COMMIT_EMAIL=%q\n' "${GITHUB_COMMIT_EMAIL:-}"
+    printf 'ERR_TAGS=(%s)\n'         "$(printf '%q ' "${ERR_TAGS[@]}")"
+  } > "$tmp"
   chmod 600 "$tmp"
   mv -f "$tmp" "$STATE" 2>/dev/null || sudo mv -f "$tmp" "$STATE" || rm -f "$tmp"
   chown root:root "$STATE" 2>/dev/null || true
@@ -171,20 +183,19 @@ ensure_runtime_dirs() {
   install -d -m 0700 "$STATE_DIR"
 }
 
-# Module prompts are ALWAYS asked — there is no answer-sheet defaults file any
-# more. A pre-filled default is exactly how a stale value (e.g. DOMAIN left over
-# from a previous run) silently skipped a prompt the operator needed to see.
-# Every boolean prompt takes an EXPLICIT true or false: no Enter-accepts-default,
-# and never a default of true — a pre-selected answer is how a stale choice
-# survives a re-run. Anything else re-asks.
+# Module prompts are ALWAYS asked — there is no answer-sheet defaults file, and
+# every prompt is asked on every run except when a resume supplies the answer.
+# Yes/no affirmation: ONLY the literal words yes / no are accepted — no
+# y/n/Enter shorthand, no default (a typo is re-asked). The answer is RECORDED
+# as the boolean true / false in the named variable, never as what was typed.
 ask_boolean() {   # ask_boolean <question> <variable>
   local q="$1" var="$2" answer
   while :; do
-    read -rp "$q (true/false): " answer || return 1
+    read -rp "$q (yes/no): " answer || return 1
     case "${answer,,}" in
-      true)  printf -v "$var" '%s' true;  return 0 ;;
-      false) printf -v "$var" '%s' false; return 0 ;;
-      *)     echo "   type true or false." ;;
+      yes) printf -v "$var" '%s' true;  return 0 ;;
+      no)  printf -v "$var" '%s' false; return 0 ;;
+      *)   echo "   type yes or no." ;;
     esac
   done
 }
@@ -235,37 +246,87 @@ ask_ssh_key() {
   done
 }
 
+# 2 — collaborator restriction. Read-only: it needs a read-only GitHub token
+# to ask GitHub whether the minted key's login is a collaborator. Opt-in.
+ask_collab() {
+  [ -n "${GH_COLLAB_ENFORCE:-}" ] \
+    || ask_boolean "Allow GitHub remote access only for this repo's collaborators? (needs a read-only token)" GH_COLLAB_ENFORCE || exit 1
+  save_state
+  if [ "${GH_COLLAB_ENFORCE}" = "true" ] && [ -z "${GH_API_TOKEN:-}" ]; then
+    read -rsp "Read-only GitHub API token (repo Administration: read): " GH_API_TOKEN; echo
+    save_state
+  fi
+}
+
+# 3 — GitHub remote-access opt-in with its sub-prompts. The sub-prompts appear
+# ONLY when the opt-in is yes; the minted key's authorization is verified
+# automatically by github_access (no manual "press Enter to re-check" step).
+github_cred_inputs() {
+  [ -n "${GH_REMOTE:-}" ] \
+    || ask_boolean "Configure remote access to your own GitHub account's repositories?" GH_REMOTE || exit 1
+  save_state
+  [ "${GH_REMOTE}" = "true" ] || return 0
+  # One prompt for both halves of the commit identity: "name email".
+  if [ -z "${GITHUB_COMMIT_NAME:-}" ] || [ -z "${GITHUB_COMMIT_EMAIL:-}" ]; then
+    local line
+    read -rp "GitHub commit identity (name email, blank to skip): " line || line=""
+    if [ -n "$line" ]; then
+      # The email is the LAST token, the name is everything before it — so a
+      # multi-word name survives intact.
+      if [[ "$line" == *" "* ]]; then
+        GITHUB_COMMIT_NAME="${line% *}"
+        GITHUB_COMMIT_EMAIL="${line##* }"
+      else
+        GITHUB_COMMIT_NAME="$line"
+        GITHUB_COMMIT_EMAIL=""
+      fi
+    fi
+  fi
+  save_state
+  github_access
+}
+
 ask_inputs() {
+  # Inputs are collected in ONE fixed order, all before any install work, and
+  # each is persisted immediately (save_state) so an abort mid-run leaves the
+  # answers for a resume. Order: github-collab, github-creds-and-check,
+  # device-ssh, tailscale, cloudflare, domain, modules.
+
+  # 2 — collaborator restriction (read-only).
+  ask_collab
+
+  # 3 — GitHub remote access: opt-in, then identity + key authorization.
+  github_cred_inputs
+
+  # 4 — device SSH public key (strict, required).
+  ask_ssh_key
+
+  # 5 — Tailscale auth key.
+  if [ -z "${TS_AUTHKEY:-}" ]; then
+    read -rsp "Tailscale auth key (tskey-...): " TS_AUTHKEY; echo
+  fi
+  [ -n "$TS_AUTHKEY" ] || { echo "Auth key required."; exit 1; }
+  save_state
+
+  # 6 — Cloudflare API token.
+  if [ -z "${CF_API_TOKEN:-}" ]; then
+    read -rsp "Cloudflare API token (Zone > DNS > Edit): " CF_API_TOKEN; echo
+  fi
+  [ -n "$CF_API_TOKEN" ] || { echo "Token required."; exit 1; }
+  save_state
+
+  # 7 — domain.
   if [ -z "${DOMAIN:-}" ]; then
     read -rp "Domain (e.g. example.com): " DOMAIN
   fi
   DOMAIN="${DOMAIN,,}"
   [[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]] || { echo "Invalid domain: $DOMAIN"; exit 1; }
-  if [ -z "${CF_API_TOKEN:-}" ]; then
-    read -rsp "Cloudflare API token (Zone > DNS > Edit): " CF_API_TOKEN; echo
-  fi
-  [ -n "$CF_API_TOKEN" ] || { echo "Token required."; exit 1; }
-  if [ -z "${TS_AUTHKEY:-}" ]; then
-    read -rsp "Tailscale auth key (tskey-...): " TS_AUTHKEY; echo
-  fi
-  [ -n "$TS_AUTHKEY" ] || { echo "Auth key required."; exit 1; }
+  save_state
+
+  # 8 — modules.
   ask_modules
-  # STRICT: key-only SSH means a usable pubkey is required, asked BEFORE the
-  # GitHub question below (that one is opt-in).
-  ask_ssh_key
-  # LAST prompt, opt-in, explicit true/false: mint a GitHub key for pushing to
-  # the operator's OWN repos, print it, wait until it is authorized, push.
-  [ -n "${GH_REMOTE:-}" ] || ask_boolean "Configure remote access to your own GitHub account's repositories?" GH_REMOTE || exit 1
-  # Commit identity, collected up front ONLY when pushing is enabled, so no
-  # further prompt appears mid-run. Blank is allowed (git falls back to its
-  # configured identity); env/state values are honoured (guarded by -z) so a
-  # resume does not re-ask.
-  if [ "${GH_REMOTE:-false}" = "true" ]; then
-    [ -n "${GITHUB_COMMIT_NAME:-}" ] \
-      || read -rp "Git name for commits (blank to skip): " GITHUB_COMMIT_NAME || GITHUB_COMMIT_NAME=""
-    [ -n "${GITHUB_COMMIT_EMAIL:-}" ] \
-      || read -rp "Git email for commits (blank to skip): " GITHUB_COMMIT_EMAIL || GITHUB_COMMIT_EMAIL=""
-  fi
+  save_state
+
   echo "Installing for $DOMAIN — ~10-15 min. Full log: $LOG"
 }
 
@@ -414,19 +475,21 @@ github_collaborator_check() {
 }
 
 github_push() {
-  # Kick the read-only collaborator check off in the BACKGROUND first, so it
-  # overlaps the commit-identity prompt below and adds no foreground latency;
-  # it is awaited before any remote is configured or pushed. Automatic — no
-  # prompt; it uses a read-only $GH_API_TOKEN from the environment when present.
-  local _chk; _chk="$(mktemp -d)"
-  (
-    local _l
-    _l="$(github_login)"
-    printf '%s\n' "$_l" > "$_chk/login"
-    github_collaborator_check "$_l"
-    printf '%s\n' "$?" > "$_chk/rc"
-  ) >"$_chk/out" 2>&1 &
-  local _chk_pid=$!
+  # Collaborator gate (opt-in, read-only). When enabled, kick the check off in
+  # the BACKGROUND so it overlaps the identity work and adds no foreground
+  # latency; it is awaited before any remote is configured or pushed.
+  local _chk="" _chk_pid=""
+  if [ "${GH_COLLAB_ENFORCE:-false}" = "true" ]; then
+    _chk="$(mktemp -d)"
+    (
+      local _l
+      _l="$(github_login)"
+      printf '%s\n' "$_l" > "$_chk/login"
+      github_collaborator_check "$_l"
+      printf '%s\n' "$?" > "$_chk/rc"
+    ) >"$_chk/out" 2>&1 &
+    _chk_pid=$!
+  fi
   # Commit identity was collected with the other inputs (ask_inputs) so the run
   # is prompt-free from here; an empty value falls back to the repo's/global
   # git identity. A repo already committed with a bad identity can be fixed by
@@ -436,27 +499,30 @@ github_push() {
   [ -n "$GITHUB_COMMIT_EMAIL" ] && git -C "$REPO" config user.email "$GITHUB_COMMIT_EMAIL" 2>/dev/null || true
   local url="git@github.com:$GITHUB_USER/$REPO_NAME.git"
 
-  # Await the background check started above. The minted SSH key proves WHICH
-  # GitHub account it belongs to, never that the account may write here: with a
-  # read-only $GH_API_TOKEN the membership is verified and a non-collaborator
-  # refused outright; without one the check is unavailable — warn and fall back
-  # to the push itself as the gate, never claiming a check that did not run.
-  wait "$_chk_pid" 2>/dev/null
-  local _login _rc
-  _login="$(cat "$_chk/login" 2>/dev/null)"
-  _rc="$(cat "$_chk/rc" 2>/dev/null)"
-  cat "$_chk/out" >>"$LOG" 2>/dev/null
-  rm -rf "$_chk"
-  case "${_rc:-2}" in
-    0) log "  GitHub: '$_login' is a collaborator on $GITHUB_USER/$REPO_NAME" ;;
-    1) warn github_push "GitHub login '$_login' is NOT a collaborator on $GITHUB_USER/$REPO_NAME — refusing to configure a remote or push"
-       return 1 ;;
-    2) if [ -n "$_login" ]; then
-         warn github_push "cannot verify collaborator status of '$_login' (export a read-only GH_API_TOKEN to enforce); the push itself is the gate"
-       else
-         warn github_push "could not determine the GitHub login for $GH_KEY — the push itself is the gate"
-       fi ;;
-  esac
+  # Await the background check started above, when enabled. The minted SSH key
+  # proves WHICH GitHub account it belongs to, never that the account may write
+  # here: with a read-only token the membership is verified and a
+  # non-collaborator refused outright; without one the check is unavailable —
+  # warn and fall back to the push itself as the gate, never claiming a check
+  # that did not run.
+  if [ -n "$_chk" ]; then
+    wait "$_chk_pid" 2>/dev/null
+    local _login _rc
+    _login="$(cat "$_chk/login" 2>/dev/null)"
+    _rc="$(cat "$_chk/rc" 2>/dev/null)"
+    cat "$_chk/out" >>"$LOG" 2>/dev/null
+    rm -rf "$_chk"
+    case "${_rc:-2}" in
+      0) log "  GitHub: '$_login' is a collaborator on $GITHUB_USER/$REPO_NAME" ;;
+      1) warn github_push "GitHub login '$_login' is NOT a collaborator on $GITHUB_USER/$REPO_NAME — refusing to configure a remote or push"
+         return 1 ;;
+      2) if [ -n "$_login" ]; then
+           warn github_push "cannot verify collaborator status of '$_login' (set GH_COLLAB_ENFORCE=yes with a read-only token to enforce); the push itself is the gate"
+         else
+           warn github_push "could not determine the GitHub login for $GH_KEY — the push itself is the gate"
+         fi ;;
+    esac
+  fi
 
   # Push to a TEMPORARY remote first and only rewrite `origin` once the push
   # succeeds: a non-collaborator's push is rejected, so their `origin` stays
@@ -486,44 +552,40 @@ github_push() {
 
 github_access() {
   [ "${GH_REMOTE:-false}" = "true" ] || { log "  GitHub remote access: not requested — skipped"; return 0; }
-  github_keygen || { fail github_key; return; }
-  github_known_hosts
-  # Resume shortcut: a key exists, was verified against GitHub in a previous
-  # run (GH_AUTH_OK=1), and still checks out now — skip the prompt entirely
-  # and auto-push (stay logged in). github_push warns internally on any failure.
-  if [ "${GH_AUTH_OK:-0}" = "1" ] && [ -s "$GH_KEY" ] && github_auth_ok; then
-    log "  GitHub key already authorized from a previous run; auto-push now"
-    github_push || true
+  if [ -z "${GITHUB_USER:-}" ] || [ "${GITHUB_USER:-}" = "exampleuser" ]; then
+    fail github_auth "cannot tell which account to push to — no origin remote and no GITHUB_USER in $DATA/instance.conf"
     return
   fi
-  # Even on a fresh run: the key file survives across reboots/reinstalls, so
-  # a verified-but-unrecorded key still avoids re-prompting (authorizing once
-  # keeps us logged in for the life of the key pair).
+  github_keygen || { fail github_key; return; }
+  github_known_hosts
+  # Resume shortcut: the key file survives across reboots/reinstalls, so an
+  # already-authorized key skips the wait entirely (authorizing once keeps us
+  # logged in for the life of the key pair).
   if [ -s "$GH_KEY" ] && github_auth_ok; then
     GH_AUTH_OK=1
     log "  GitHub key authorized (ssh -T git@github.com); auto-push now"
+    save_state
     github_push || true
     return
   fi
-  printf '\n ── GitHub key — authorize it once, then the installer continues ───────\n'
+  # Not authorized yet: print the public key, then verify it AUTOMATICALLY —
+  # poll ssh until GitHub accepts it. No manual "press Enter to re-check" step;
+  # Ctrl-C aborts the installer.
+  printf '\n ── GitHub key — paste this once, the installer verifies it automatically ─\n'
   printf '   GitHub → Settings → SSH and GPG keys → New SSH key → paste this line:\n\n'
   printf '   %s\n\n' "$(cat "$GH_KEY.pub")"
   printf '   (Settings is under the avatar menu, top right; "New SSH key" is the\n'
   printf '    green button in the SSH keys box — name it after this host.)\n'
   printf ' ───────────────────────────────────────────────────────────────────────\n\n'
-  # Strict: the operator asked for this feature, so there is no skip — the
-  # loop only ends when GitHub accepts the key (Ctrl-C aborts the installer).
+  local _waited=0
   until github_auth_ok; do
-    read -rp "Add the key at GitHub, then press Enter to test again (Ctrl-C aborts): " _ \
-      || { fail github_auth "no terminal to wait on — authorize $GH_KEY.pub by hand"; return; }
-    echo "   not authorized yet — the whole line above goes into your GitHub ACCOUNT."
+    sleep 5
+    _waited=$(( _waited + 5 ))
+    [ $(( _waited % 15 )) -eq 0 ] && log "  GitHub: key not authorized yet (${_waited}s) — paste the line above; verification is automatic."
   done
   GH_AUTH_OK=1
+  save_state
   log "  GitHub key authorized (ssh -T git@github.com); auto-push now"
-  if [ -z "${GITHUB_USER:-}" || "${GITHUB_USER:-}" = "exampleuser" ]; then
-    fail github_auth "cannot tell which account to push to — no origin remote and no GITHUB_USER in $DATA/instance.conf"
-    return
-  fi
   github_push || true
 }
 
@@ -1092,9 +1154,11 @@ ask_nc_apps() {
       [ "${disable["$key"]:-}" = "1" ] && echo "    $key: disable" >&2
       [ "${remove["$key"]:-}" = "1" ] && echo "    $key: remove" >&2
     done
-    echo -n "  abort the install? (true/false): " >&2
-    read -r answer || { echo "  no terminal input — aborting"; exit 1; }
-    [ "${answer,,}" = "true" ] && exit 1
+    local _abort
+    if ! ask_boolean "abort the install?" _abort; then
+      echo "  no terminal input — aborting"; exit 1
+    fi
+    [ "$_abort" = "true" ] && exit 1
     echo "  dropping conflicting actions and continuing" >&2
   fi
 
@@ -1190,7 +1254,10 @@ ask_nc_apps() {
       echo "  WARN: disable='$app' is currently enabled"
       echo "    live state:  enabled"
       echo "    action would do: disable $app"
-      echo "    choice: proceed  drop  resolve"
+      echo "    choices:"
+      echo "      proceed — disable $app now (occ app:disable)"
+      echo "      drop    — leave $app enabled; skip this action"
+      echo "      resolve — fix it yourself (make nc-app-disable APP=$app, or edit config/cloud/apps.conf), then re-check"
       local choice
       while true; do
         read -r choice || { echo "  no terminal input — dropping action"; break; }
@@ -1231,7 +1298,10 @@ ask_nc_apps() {
     echo "  WARN: remove='$app' is installed and enabled"
     echo "    live state:  enabled"
     echo "    action would do: remove $app (deletes app data)"
-    echo "    choice: proceed  drop  resolve"
+    echo "    choices:"
+    echo "      proceed — remove $app now (occ app:remove; DELETES its data)"
+    echo "      drop    — leave $app installed; skip this action"
+    echo "      resolve — disable then remove it yourself (make nc-app-disable / nc-app-remove, or edit config/cloud/apps.conf), then re-check"
     local choice
     while true; do
       read -r choice || { echo "  no terminal input — aborting"; exit 1; }
@@ -1901,9 +1971,9 @@ ask_optimize() {
   while :; do
     read -rp "Also run the machine performance pass (kernel, swap, disk tuning) now? (yes/no): " answer || return 0
     case "${answer,,}" in
-      yes|y|true)  break ;;
-      no|n|false)  log "  optimize.sh skipped — run it later: bash $REPO/scripts/ops/optimize.sh"; return 0 ;;
-      *)           echo "   answer yes or no." ;;
+      yes) break ;;
+      no)  log "  optimize.sh skipped — run it later: bash $REPO/scripts/ops/optimize.sh"; return 0 ;;
+      *)   echo "   type yes or no." ;;
     esac
   done
   log "  running scripts/ops/optimize.sh --yes (its output goes to $LOG)"
@@ -2032,19 +2102,20 @@ main() {
   if previous_install; then
     echo ""
     echo "A previous installation was detected."
-    read -rp "Do you want to resume the previous installation? [Y/n]: " _resume || _resume=""
-    case "${_resume,,}" in
-      n|no)
-        echo "Starting fresh — every prompt will be asked again (saved answers dropped)."
-        unset DOMAIN CF_API_TOKEN TS_AUTHKEY TS_IP \
-              MOD_CLOUD MOD_VAULT MOD_MAIL MOD_MONITOR GH_REMOTE
-        rm -f "$STATE" "$DATA/instance.conf"
-        ;;
-      *)
-        echo "Resuming — only values that are still missing get asked."
-        INSTALL_RESUMED=1
-        ;;
-    esac
+    local _res
+    ask_boolean "Resume the previous installation?" _res || _res=false
+    if [ "$_res" = "true" ]; then
+      echo "Resuming — every value already saved is reused; only missing ones are asked."
+      INSTALL_RESUMED=1
+    else
+      # Fresh run: IGNORE the previous answers (never take them as valid) but do
+      # NOT delete them — a later run can still resume. Everything is re-asked.
+      echo "Starting fresh — every value is asked again (saved answers ignored, not deleted)."
+      unset DOMAIN CF_API_TOKEN TS_AUTHKEY TS_IP \
+            MOD_CLOUD MOD_VAULT MOD_MAIL MOD_MONITOR \
+            GH_REMOTE GH_AUTH_OK GH_COLLAB_ENFORCE GH_API_TOKEN \
+            GITHUB_COMMIT_NAME GITHUB_COMMIT_EMAIL
+    fi
   else
     # No previous run: drop whatever instance.sh's fallbacks put in the
     # environment (notably DOMAIN=example.com) so no prompt is silently skipped.
@@ -2053,7 +2124,6 @@ main() {
   ask_inputs
   save_state
 
-  github_access
   write_instance_conf
   phase_host
   phase_stack

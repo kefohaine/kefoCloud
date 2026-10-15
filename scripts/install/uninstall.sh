@@ -11,29 +11,29 @@
 # homelab uninstall.sh — the exact opposite of install.sh, in the same style.
 #
 # Reverse-onboarding: takes the deployment apart module by module (cloud,
-# vault, mail, monitor — all default OFF, opt in per module, the
-# mirror of the installer's default-ON opt-out), then optionally the edge
+# vault, mail, monitor — none removed unless the operator answers yes per
+# module), then optionally the edge
 # (Caddy + caddy_data), the host services (goose, ttyd, dnsmasq, cron,
 # fail2ban, the stack's ufw rules), the installed packages (docker, …),
 # the 'root' user, and the tailscale membership (always LAST, so the session
 # and re-joining stay possible).
 #
 # MODE: the first prompt picks the scope —
-#   1) specific modules    — per-module prompts (default keep), the phase
-#                            prompts below all default no
+#   1) specific modules    — per-module prompts (each requires an explicit
+#                            yes), the scope prompts below likewise
 #   2) the whole framework — every module + edge + host services + packages
 #                            + user + tailnet preselected (the data prompts
-#                            still default keep; one explicit confirm)
+#                            are still asked; one explicit confirm)
 #   3) cancel
 #
 # Installs nothing, creates nothing. It removes what install.sh put on the
 # box — auto-detected from the live system (compose files, systemctl, dpkg
 # — no hardcoded rosters) — and NEVER deletes operator data without an
-# explicit per-category prompt (every default is the safe answer):
+# explicit per-category prompt (no defaults — only an explicit yes removes):
 #   - the external machine NFS export (user files) — untouched, period
 #   - the Nextcloud local rollback copy, module data dirs, backups/ —
-#     per-category prompts, default KEEP
-#   - the repo clone — prompt, default KEEP
+#     per-category prompts, each requiring an explicit yes
+#   - the repo clone — prompt, explicit yes required
 #   - sshd hardening — deliberately KEPT (removing the drop-in would
 #     re-enable password auth; weakening is never the uninstall's job)
 #
@@ -86,13 +86,13 @@ cat <<'EOF'
  ╚══╝╚══╝  ╚═════╝ ╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝
 
   One-shot teardown for the homelab stack: reverses scripts/install/install.sh
-  step by step — modules first (cloud, vault, mail, monitor; all
-  default OFF, opt in one by one), then the edge, the host services, the
+  step by step — modules first (cloud, vault, mail, monitor; nothing removed
+  unless the operator answers yes one by one), then the edge, the host services, the
   installed packages, the operator user, and the tailnet membership
-  (last). Destructive by design: every prompt defaults to the safe
-  answer and data is never touched without an explicit per-category
-  confirm. Errors are listed with a hint each, re-checked on Enter, and
-  SUCCESS prints only when every remaining item is resolved.
+  (last). Destructive by design: no prompt has a default — only the words
+  yes/no are accepted — and data is never touched without an explicit
+  per-category confirm. Errors are listed with a hint each, re-checked on
+  Enter, and SUCCESS prints only when every remaining item is resolved.
 
 WARNING: removes containers, config and (on explicit confirm) operator
          data. SSH stays alive throughout — tailscale goes last.
@@ -101,35 +101,40 @@ EOF
 
 # ───────────────────────────────── input ──────────────────────────────────
 
-ask() { # ask <var> <question> <default: y|n>  (bare Enter takes the default)
-  local __var=$1 __q=$2 __def=$3 __ans
+ask() { # ask <var> <question> [ignored]  (ONLY the words yes/no; recorded as true/false)
+  local __var=$1 __q=$2 __ans
   if [ -n "${!__var:-}" ]; then return 0; fi
-  read -rp "$__q [$( [ "$__def" = y ] && echo Y/n || echo y/N )]: " __ans
-  case "${__ans:-}" in
-    y|Y|yes|YES) eval "$__var=true";;
-    n|N|no|NO)   eval "$__var=false";;
-    *)            eval "$__var=$([ "$__def" = y ] && echo true || echo false)";;
-  esac
+  while :; do
+    read -rp "$__q (yes/no): " __ans || return 1
+    case "${__ans,,}" in
+      yes) eval "$__var=true";  return 0;;
+      no)  eval "$__var=false"; return 0;;
+      *)   echo "   type yes or no.";;
+    esac
+  done
 }
 
-# There is no answer-sheet defaults file any more: every prompt is ALWAYS asked
-# and every phase defaults OFF (safe) unless the operator opts in.
+# There is no answer-sheet defaults file: every prompt is ALWAYS asked, only
+# the literal words yes/no are accepted, and nothing is removed unless the
+# operator answers yes.
 
 ask_modules() {
-  # Reverse of the installer's ask_modules: default OFF for everything —
+  # Reverse of the installer's ask_modules: nothing removed unless explicitly
+  # confirmed —
   # removing a module destroys its containers and (on data-confirm) its
   # data; the operator opts in per module.
   local k answer
   for k in cloud vault mail monitor; do
-    local var="RM_MOD_${k^^}" def=n
-    eval "def=\${DEF_RM_MOD_${k^^}:-n}"
+    local var="RM_MOD_${k^^}"
     if [ -z "${!var:-}" ]; then
-      read -rp "Remove the $k module? [$( [ "$def" = y ] && echo Y/n || echo y/N )]: " answer
-      case "${answer,,}" in
-        y|Y|yes) eval "$var=true";;
-        n|N|no)  eval "$var=false";;
-        *)       eval "$var=$([ "$def" = y ] && echo true || echo false)";;
-      esac
+      while :; do
+        read -rp "Remove the $k module? (yes/no): " answer || return 1
+        case "${answer,,}" in
+          yes) eval "$var=true";  break ;;
+          no)  eval "$var=false"; break ;;
+          *)   echo "   type yes or no." ;;
+        esac
+      done
     fi
   done
 }
@@ -176,18 +181,18 @@ ask_mode() {
 ask_inputs() {
   ask_mode
   ask_modules
-  # phase prompts only when NOT preselected by the whole-framework mode
-  [ "${RM_EDGE:-false}" = true ] || ask RM_EDGE "Remove the edge (Caddy container)?" "${DEF_RM_EDGE:-n}"
-  ask RM_CADDY_DATA "  …and delete caddy_data/ (LE certs + CF token)?" n
-  [ "${RM_HOST:-false}" = true ] || ask RM_HOST "Remove the host services (goose, ttyd, dnsmasq, cron, fail2ban) + the stack's ufw rules?" "${DEF_RM_HOST:-n}"
-  [ "${RM_PKGS:-false}" = true ] || ask RM_PKGS "Purge the installed packages (docker, dnsmasq, fail2ban, …)?" "${DEF_RM_PKGS:-n}"
+  # scope prompts only when NOT preselected by the whole-framework mode
+  [ "${RM_EDGE:-false}" = true ] || ask RM_EDGE "Remove the edge (Caddy container)?"
+  ask RM_CADDY_DATA "  …and delete caddy_data/ (LE certs + CF token)?"
+  [ "${RM_HOST:-false}" = true ] || ask RM_HOST "Remove the host services (goose, ttyd, dnsmasq, cron, fail2ban) + the stack's ufw rules?"
+  [ "${RM_PKGS:-false}" = true ] || ask RM_PKGS "Purge the installed packages (docker, dnsmasq, fail2ban, …)?"
   # operator account root is never deleted (sole entry point) — no prompt
-  [ "${RM_TAILNET:-false}" = true ] || ask RM_TAILNET "Remove this host from the tailnet (last step)?" "${DEF_RM_TAILNET:-n}"
-  # data (all default KEEP; the external machine export is never touched)
-  ask RM_MOD_DATA "Delete the data dirs of the modules being removed (vault/, kuma/, mailserver/, cloud/ local files)?" "${DEF_RM_DATA:-n}"
-  ask RM_NCLOCAL  "Delete the Nextcloud local rollback copy (cloud/users.local-backup)?" n
-  ask RM_BACKUPS  "Delete $PROJECT_DIR/backups/ (snapshots + secrets bundles)?" n
-  ask RM_REPO     "Delete the repo clone at $REPO (scheduled after this script exits)?" n
+  [ "${RM_TAILNET:-false}" = true ] || ask RM_TAILNET "Remove this host from the tailnet (last step)?"
+  # data (each explicitly confirmed; the external machine export is never touched)
+  ask RM_MOD_DATA "Delete the data dirs of the modules being removed (vault/, kuma/, mailserver/, cloud/ local files)?"
+  ask RM_NCLOCAL  "Delete the Nextcloud local rollback copy (cloud/users.local-backup)?"
+  ask RM_BACKUPS  "Delete $PROJECT_DIR/backups/ (snapshots + secrets bundles)?"
+  ask RM_REPO     "Delete the repo clone at $REPO (scheduled after this script exits)?"
   local ml=""
   for k in cloud vault mail monitor; do
     mod_rm "$k" && ml+="$k "

@@ -12,7 +12,7 @@ git clone https://github.com/kefohaine/kefoCloud.git && cd kefoCloud
 bash scripts/install/install.sh
 ```
 
-`scripts/install/uninstall.sh` reverses it in the same style — every prompt defaults to keep, operator data and the tailscale-only SSH path are never touched without an explicit confirm, and the tailnet membership goes last.
+`scripts/install/uninstall.sh` reverses it in the same style — no prompt has a default (only `yes`/`no` are accepted), operator data and the tailscale-only SSH path are never touched without an explicit confirm, and the tailnet membership goes last.
 
 ### Modules
 

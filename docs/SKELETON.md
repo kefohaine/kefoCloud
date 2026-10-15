@@ -133,4 +133,6 @@ The block is replaced, never duplicated, and the secrets already in those files
 - Secrets never belong in git; `data/instance.conf` is 0600, and rendered
   output (`data/rendered/`) is where live config actually comes from.
 - The installer asks every prompt on every run — there is no prompt-defaults
-  file (a pre-filled value is how a stale one silently skipped a question).
+  file, and an affirmation accepts only `yes`/`no` (no default), so a stale or
+  mistyped value can never silently skip a question. A saved answer is reused
+  only when the operator explicitly resumes.
