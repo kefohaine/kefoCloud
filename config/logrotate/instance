@@ -1,5 +1,5 @@
-# /etc/logrotate.d/{{GITHUB_USER}} — installed by `make install-config` from
-# config/logrotate/{{GITHUB_USER}}.
+# /etc/logrotate.d/instance — installed by `make install-config` from
+# config/logrotate/instance.
 #
 # Every log this project writes lives in {{LOG_DIR}} (install.log,
 # uninstall.log, and any log an installed module writes). This single rule is
