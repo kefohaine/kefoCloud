@@ -178,6 +178,13 @@ save_state() {
     printf 'CF_API_TOKEN=%q\n'       "${CF_API_TOKEN:-}"
     printf 'TS_AUTHKEY=%q\n'         "${TS_AUTHKEY:-}"
     printf 'TS_IP=%q\n'              "${TS_IP:-}"
+    # The raw module ANSWERS, so a resume reuses the choice (empty once a module
+    # has not been asked yet — ask_modules re-asks only the empty ones).
+    printf 'MOD_CLOUD=%q\n'          "${MOD_CLOUD:-}"
+    printf 'MOD_VAULT=%q\n'          "${MOD_VAULT:-}"
+    printf 'MOD_MAIL=%q\n'           "${MOD_MAIL:-}"
+    printf 'MOD_MONITOR=%q\n'        "${MOD_MONITOR:-}"
+    # The RECORD (for other scripts) — only real once the install is finished.
     printf 'enabled_modules=%q\n'    "$em"
     printf 'finished=%q\n'           "${FINISHED:-false}"
     printf 'GH_REMOTE=%q\n'          "${GH_REMOTE:-false}"
@@ -191,14 +198,15 @@ save_state() {
   chown root:root "$INSTALL_STATE" 2>/dev/null || true
 }
 
-# One-time import of a legacy installer state ($STATE_DIR/setup.state, or the
-# pre-$GITHUB_USER /var/lib/<host>. setup.state). Only moves the file: the
+# One-time import of a legacy installer state (/var/lib/<GITHUB_USER>/setup.state,
+# or the pre-$GITHUB_USER /var/lib/<host>. setup.state). Only moves the file: the
 # legacy MOD_* keys are not read back, so module answers are re-asked once.
 migrate_state() {
   [ -f "$INSTALL_STATE" ] && return 0
-  local old
-  for old in "$STATE_DIR/setup.state" "/var/lib/${NODE_NAME:-}/setup.state"; do
-    [ -n "$old" ] || continue
+  local old cands=()
+  [ -n "${GITHUB_USER:-}" ] && cands+=("/var/lib/$GITHUB_USER/setup.state")
+  [ -n "${NODE_NAME:-}" ]   && cands+=("/var/lib/$NODE_NAME/setup.state")
+  for old in "${cands[@]}"; do
     [ -f "$old" ] || continue
     install -d -m 0700 "$(dirname "$INSTALL_STATE")"
     mv -f "$old" "$INSTALL_STATE" 2>/dev/null || continue
@@ -816,7 +824,6 @@ write_instance_conf() {
     printf 'REPO_DIR=%s\n' "$REPO"
     printf 'DATA_DIR=%s\n' "$DATA"
     printf 'LOG_DIR=%s\n' "$LOG_DIR"
-    printf 'STATE_DIR=%s\n' "$STATE_DIR"
     [ -n "$keep" ] && printf '%s\n' "$keep"
   } > "$f"
   chmod 600 "$f"
