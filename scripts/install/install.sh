@@ -2207,6 +2207,11 @@ success_block() {
   echo " ─────────────────────────────────────────────────────────────────────────"
   echo ""
   echo " Follow-ups (none block the install):"
+  if [ "${MOD_MAIL:-true}" = "true" ]; then
+    echo "   Additional step — configure a PTR (rDNS) record with your VPS provider:"
+    echo "     ${HOST_IP:-<machine IP>}  ->  mail.$DOMAIN"
+    echo "     (only your provider can create it; SPF/DKIM/DMARC alone won't stop rejects)"
+  fi
   echo "   1. Tailscale split-DNS: admin console -> DNS -> add $DOMAIN -> ${TS_IP:-<tailscale IP>}"
   echo "      so tail.$DOMAIN resolves for tailnet devices (dnsmasq on the machine already answers it)"
   echo "   2. (optional) Cloudflare WAF rule skip for cloud.$DOMAIN (desktop sync)"
@@ -2216,7 +2221,7 @@ success_block() {
     echo "   3. No GitHub remote access (declined at the last prompt) — re-run the installer and answer true to mint the push key"
   fi
   echo "   4. Mailboxes: make mail-gen MAIL=name@$DOMAIN (or bare make mail-gen for a disposable);"
-  echo "      the nextcloud@$DOMAIN SMTP sender mailbox is created automatically"
+  echo "      the nextcloud@$DOMAIN and vaultwarden@$DOMAIN SMTP sender mailboxes are created automatically"
   echo "=============================================================="
 }
 
