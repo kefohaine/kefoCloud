@@ -1,65 +1,91 @@
 #!/usr/bin/env bash
 # Live smoke test for every vhost + the mail platform + the host services —
-# structured per MODULE so a modular install never fails on what was
-# deliberately not installed.
+# run ONLY on a finished install, structured per MODULE.
 #
-# Module awareness: the roster comes from config/modules.conf; the installed
-# set from $PROJECT_DIR/installed-modules.conf (GENERATED — one installed
-# module per line, written by scripts/install/install.sh). Every check still
-# runs factually and every FAIL line still prints — but each section belongs
-# to exactly one module, and a section whose module is absent from the conf
-# ends with ONE "module not installed — intended behaviour" note (per-section,
-# not per-error) and its failures do not fail the run.
+# GATE: data/install.state must record finished=true, else the suite refuses to
+# run (exit 1) before checking anything. smoke is the LAST "is everything done?"
+# source, not a diagnostic for a host mid-install — and there is NO bypass
+# (a pre-push hook on an unfinished host therefore always fails: intentional).
 #
-# VOCABULARY: `not installed` means the module is ABSENT — no container, no
-# route. It is NOT "tailnet-only" (a property of the one route that really is
-# tailnet-only, tail.$DOMAIN, which is checked in the edge section).
-# Sections without a module (edge, host) are core and always expected. A
-# missing conf file means every module is expected (fails loud) — fresh clones
-# without an installer run.
+# Module awareness: the roster comes from config/modules.conf; the enabled set
+# from data/install.state via scripts/lib/modules.sh — the ONE accessor. Every
+# check still runs factually. The CORE sections (edge, host) and every
+# installed (enabled) module section print inline, and only they decide the
+# exit code. A NOT-INSTALLED module's section is buffered and never printed
+# inline: if any of its checks failed, that whole section appears ONCE more, at
+# the end, under one "Not installed / ignored" heading — listed but not
+# counted. No check prints twice.
 #
-# Fails (exit 1) when an installed module stops serving its real app (e.g. a
-# bare `respond "ok"` stub — the 2026-08-28 incident), the edge misbehaves
-# (tail 403), the mail platform or a container is down, or the
-# host units/firewall drift. Run after any change to modules/caddy/ or
-# after `docker restart caddy`. The pre-push hook runs this automatically
-# (override with SKIP_SMOKE=1 — not on a whim).
+# VOCABULARY: an installed module is expected; a not-installed one is ABSENT —
+# no container, no data, no route. It is NOT "tailnet-only" (a property of the
+# one route that really is tailnet-only, tail.$DOMAIN, checked in the edge).
+#
+# Fails (exit 1) when an enabled module stops serving its real app (e.g. a bare
+# `respond "ok"` stub — the 2026-08-28 incident), the edge misbehaves (tail 403),
+# the mail platform or a container is down, or the host units/firewall drift.
+# Run after any change to modules/caddy/ or after `docker restart caddy`. The
+# pre-push hook runs this automatically.
 
 . "$(dirname "$(readlink -f "$0")")/../lib/instance.sh" 2>/dev/null || true
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 . "$ROOT/scripts/lib/modules.sh"
-CONF="$INSTALLED_CONF"
-MODULES="$(mod_all | tr '\n' ' ')"
+mod_in() { mod_installed "$1"; }
+
+FIN="$(mod_finished)"
+if [ "$FIN" != "true" ]; then
+  echo "smoke: install.state is not finished ('${FIN:-absent}') — refusing to run."
+  echo "  make smoke only runs on a finished install (enabled_modules + finished=true in $INSTALL_STATE)."
+  echo "  Finish an install first; there is no bypass."
+  exit 1
+fi
+
 inst=""
 while read -r m; do
   [ -n "$m" ] || continue
   mod_installed "$m" && inst+="$m " || mods_absent="${mods_absent:-}${m} "
 done < <(mod_all)
-mod_in() { mod_installed "$1"; }
-if [ -f "$CONF" ]; then
-  echo "modules installed: ${inst:-none}${mods_absent:+· not installed: ${mods_absent% }} ($(basename "$CONF"))"
-else
-  echo "modules installed: ALL assumed ($CONF missing — every module section is expected)"
-fi
+echo "modules installed: ${inst:-none}${mods_absent:+· not installed: ${mods_absent% }} (install.state)"
 
 fails=0
-intended=0
+IGNORED=""
+ignored_total=0
 sec_mod=core
-sec_base=0
+sec_title=""
+sec_fails=0
+sec_buf=""
+sec_buf_on=""
+sec_disabled=""
 
-# hdr <module|core> <title> — opens a section; end_sec closes it and, when the
-# section failed but its module is not in the conf, reports the whole section
-# as intended (one note) and keeps those failures out of the exit code.
-hdr() { sec_mod="$1"; sec_base=$fails; echo ""; echo "== $2 =="; }
-end_sec() {
-  local d=$((fails - sec_base))
-  if [ "$d" -gt 0 ] && [ "$sec_mod" != core ] && ! mod_in "$sec_mod"; then
-    echo "      · module '$sec_mod' not installed — intended behaviour; the module is ABSENT (no container, no route), it is not tailnet-only ($d failing check(s) above do not fail this run)"
-    intended=$((intended + d))
-    fails=$sec_base
+# say <line> — print now for a core/enabled section, buffer for a not-installed one.
+say() { if [ -n "$sec_buf_on" ]; then sec_buf+="$1"$'\n'; else printf '%s\n' "$1"; fi; }
+bad() { sec_fails=$((sec_fails+1)); }
+
+# hdr <module|core> <title> — core/enabled sections print their heading and
+# every line immediately; a not-installed module's section is buffered instead.
+hdr() {
+  sec_mod="$1"; sec_title="$2"; sec_fails=0; sec_buf=""
+  if [ "$1" != core ] && ! mod_in "$1"; then
+    sec_buf_on=1; sec_disabled=1
+  else
+    sec_buf_on=""; sec_disabled=""
+    echo ""; echo "== $2 =="
   fi
+}
+# end_sec — close the section: enabled/core failures count toward the exit;
+# a not-installed module's failures move (once) into the end-of-report section and
+# never count.
+end_sec() {
+  if [ -n "$sec_disabled" ]; then
+    if [ "$sec_fails" -gt 0 ]; then
+      IGNORED+="== $sec_title — module '$sec_mod' not installed (ignored) =="$'\n'"$sec_buf"$'\n'
+      ignored_total=$((ignored_total + sec_fails))
+    fi
+    sec_buf=""; sec_buf_on=""; sec_disabled=""
+    return
+  fi
+  fails=$((fails + sec_fails))
 }
 
 RUNNING="$(docker ps --format '{{.Names}}' 2>/dev/null)"
@@ -80,13 +106,13 @@ check() {
     [ "$code" = "$c" ] && ok=1
   done
   if [ "$ok" != 1 ]; then
-    echo "FAIL $name: got HTTP $code (want: $codes) — https://$host$path"; fails=$((fails+1))
+    say "FAIL $name: got HTTP $code (want: $codes) — https://$host$path"; bad
   elif [ "$want_html" = html ] && [ "$code" = "200" ] && [[ "$ct" == text/plain* ]]; then
     # The ok-stub signature is a 200 with a text/plain body. A 3xx redirect
     # legitimately carries a text/plain (empty) body — only flag 200s.
-    echo "FAIL $name: 200 text/plain response (stubbed?) — https://$host$path"; fails=$((fails+1))
+    say "FAIL $name: 200 text/plain response (stubbed?) — https://$host$path"; bad
   else
-    echo "ok   $name: $code $ct${desc:+ — }$desc"
+    say "ok   $name: $code $ct${desc:+ — }$desc"
   fi
 }
 
@@ -103,9 +129,9 @@ check_sec_headers() {
   xcto=$(curl "${args[@]}" "https://$host$path" | grep -icE '^x-content-type-options: nosniff')
   hsts=$(curl "${args[@]}" "https://$host$path" | grep -icE '^strict-transport-security: max-age=31536000')
   if [ "$xfo" != 1 ] || [ "$xcto" != 1 ] || [ "$hsts" != 1 ]; then
-    echo "FAIL $name sec-headers: xfo=$xfo xcto=$xcto hsts=$hsts (want exactly 1 each) — https://$host$path"; fails=$((fails+1))
+    say "FAIL $name sec-headers: xfo=$xfo xcto=$xcto hsts=$hsts (want exactly 1 each) — https://$host$path"; bad
   else
-    echo "ok   $name sec-headers${desc:+ — }$desc"
+    say "ok   $name sec-headers${desc:+ — }$desc"
   fi
 }
 
@@ -115,9 +141,9 @@ check_tls() {
   issuer=$(echo | timeout 6 openssl s_client -connect 127.0.0.1:443 -servername "$host" 2>/dev/null \
     | openssl x509 -noout -issuer 2>/dev/null)
   if [[ "$issuer" != *"Let's Encrypt"* ]]; then
-    echo "FAIL tls:$host — issuer is not Let's Encrypt: $issuer"; fails=$((fails+1))
+    say "FAIL tls:$host — issuer is not Let's Encrypt: $issuer"; bad
   else
-    echo "ok   tls:$host — Let's Encrypt"
+    say "ok   tls:$host — Let's Encrypt"
   fi
 }
 
@@ -129,9 +155,9 @@ check_ctns() {
     grep -qx "$c" <<<"$RUNNING" || missing="$missing $c"
   done
   if [ -n "$missing" ]; then
-    echo "FAIL containers($desc): not running:$missing"; fails=$((fails+1))
+    say "FAIL containers($desc): not running:$missing"; bad
   else
-    echo "ok   containers($desc) — all $# up"
+    say "ok   containers($desc) — all $# up"
   fi
 }
 
@@ -164,19 +190,19 @@ ts_ip="$(tailscale ip -4 2>/dev/null | head -1)"
 if [ -n "$ts_ip" ]; then
   ta=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 --resolve "tail.$DOMAIN:443:$ts_ip" "https://tail.$DOMAIN/" 2>/dev/null)
   if [ "$ta" != 200 ] && [ "$ta" != 301 ] && [ "$ta" != 308 ]; then
-    echo "FAIL tail-terminal: from a tailnet source got $ta (want 200)"; fails=$((fails+1))
+    say "FAIL tail-terminal: from a tailnet source got $ta (want 200)"; bad
   else
-    echo "ok   tail-terminal: $ta — terminal serves tailnet devices"
+    say "ok   tail-terminal: $ta — terminal serves tailnet devices"
   fi
   tt=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 --resolve "tail.$DOMAIN:443:$ts_ip" "https://tail.$DOMAIN/ttyd" 2>/dev/null)
   case "$tt" in
     200|301|302|307|308)
-      echo "ok   tail-ttyd: $tt — the shell serves tailnet devices without a second credential" ;;
+      say "ok   tail-ttyd: $tt — the shell serves tailnet devices without a second credential" ;;
     *)
-      echo "FAIL tail-ttyd: /ttyd got $tt (want a 2xx/3xx — the shell must NOT challenge; 401 means a credential crept back in)"; fails=$((fails+1)) ;;
+      say "FAIL tail-ttyd: /ttyd got $tt (want a 2xx/3xx — the shell must NOT challenge; 401 means a credential crept back in)"; bad ;;
   esac
 else
-  echo "FAIL tailnet-edge: no Tailscale IP on this host — tailnet-side checks skipped"; fails=$((fails+1))
+  say "FAIL tailnet-edge: no Tailscale IP on this host — tailnet-side checks skipped"; bad
 fi
 end_sec
 
@@ -195,32 +221,32 @@ check_tls "cloud.$DOMAIN"
 check talk-root "talk.$DOMAIN" "/" "200" "" "Talk signaling served"
 talk_welcome=$(curl -s --max-time 12 --resolve "talk.$DOMAIN:443:127.0.0.1" "https://talk.$DOMAIN/signaling/api/v1/welcome" 2>/dev/null)
 if ! echo "$talk_welcome" | grep -q '"Welcome"'; then
-  echo "FAIL talk-signaling: /signaling/api/v1/welcome is not the signaling server: $(echo "$talk_welcome" | head -c 80)"; fails=$((fails+1))
+  say "FAIL talk-signaling: /signaling/api/v1/welcome is not the signaling server: $(echo "$talk_welcome" | head -c 80)"; bad
 else
-  echo "ok   talk-signaling — HPB backend API answers"
+  say "ok   talk-signaling — HPB backend API answers"
 fi
 talk_ws=$(curl -s -o /dev/null -w '%{http_code}' --http1.1 --max-time 12 --resolve "talk.$DOMAIN:443:127.0.0.1" \
   -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
   "https://talk.$DOMAIN/signaling" 2>/dev/null)
 if [ "$talk_ws" != "400" ] && [ "$talk_ws" != "426" ] && [ "$talk_ws" != "101" ]; then
-  echo "FAIL talk-signaling: websocket handshake got HTTP $talk_ws (want 400/426/101 — signaling server must answer)"; fails=$((fails+1))
+  say "FAIL talk-signaling: websocket handshake got HTTP $talk_ws (want 400/426/101 — signaling server must answer)"; bad
 else
-  echo "ok   talk-signaling — websocket endpoint answers ($talk_ws)"
+  say "ok   talk-signaling — websocket endpoint answers ($talk_ws)"
 fi
 check_tls "talk.$DOMAIN"
 
 # coturn listeners: TURN (udp 3478) + TURNS (tcp 5349) must be bound.
 if ss -lun 2>/dev/null | grep -q ':3478 ' && ss -ltn 2>/dev/null | grep -q ':5349 '; then
-  echo "ok   talk-ports — coturn listening on 3478/udp + 5349/tcp"
+  say "ok   talk-ports — coturn listening on 3478/udp + 5349/tcp"
 else
-  echo "FAIL talk-ports: coturn not listening on 3478/udp + 5349/tcp (is talk-relay up?)"; fails=$((fails+1))
+  say "FAIL talk-ports: coturn not listening on 3478/udp + 5349/tcp (is talk-relay up?)"; bad
 fi
 
 nc_status="$(docker exec -u www-data nextcloud php occ status --output=json 2>/dev/null)"
 if ! grep -q '"installed":true' <<<"$nc_status" || grep -q '"maintenance":true' <<<"$nc_status"; then
-  echo "FAIL nc-status: Nextcloud not installed or stuck in maintenance mode"; fails=$((fails+1))
+  say "FAIL nc-status: Nextcloud not installed or stuck in maintenance mode"; bad
 else
-  echo "ok   nc-status — Nextcloud installed, out of maintenance mode"
+  say "ok   nc-status — Nextcloud installed, out of maintenance mode"
 fi
 
 check_ctns cloud nextcloud postgresql redis talk-hpb talk-relay
@@ -247,9 +273,6 @@ check_ctns monitor uptimekuma
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
-end_sec
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Module: mail — Docker Mailserver + Roundcube webmail.
 # ─────────────────────────────────────────────────────────────────────────────
 hdr mail "Mail — Docker Mailserver + Roundcube (module: mail)"
@@ -261,16 +284,16 @@ check_tls "mail.$DOMAIN"
 for port in 25 587; do
   banner=$(timeout 5 bash -c "exec 3<>/dev/tcp/127.0.0.1/$port; head -1 <&3" 2>/dev/null)
   if [[ "$banner" != 220* ]]; then
-    echo "FAIL smtp:$port — no 220 banner: '$banner'"; fails=$((fails+1))
+    say "FAIL smtp:$port — no 220 banner: '$banner'"; bad
   else
-    echo "ok   smtp:$port — Postfix 220 banner"
+    say "ok   smtp:$port — Postfix 220 banner"
   fi
 done
 imaps=$(timeout 6 openssl s_client -connect 127.0.0.1:993 -quiet 2>/dev/null | head -1)
 if [[ "$imaps" != "* OK"* ]]; then
-  echo "FAIL imaps:993 — no Dovecot banner"; fails=$((fails+1))
+  say "FAIL imaps:993 — no Dovecot banner"; bad
 else
-  echo "ok   imaps:993 — Dovecot IMAPS banner"
+  say "ok   imaps:993 — Dovecot IMAPS banner"
 fi
 
 check_ctns mail mailserver roundcube
@@ -285,44 +308,46 @@ for u in ttyd dnsmasq goose; do
   [ "$(systemctl is-active "$u" 2>/dev/null)" = active ] || down="$down $u"
 done
 if [ -n "$down" ]; then
-  echo "FAIL host-units: inactive:$down"; fails=$((fails+1))
+  say "FAIL host-units: inactive:$down"; bad
 else
-  echo "ok   host-units — ttyd, dnsmasq, goose all active"
+  say "ok   host-units — ttyd, dnsmasq, goose all active"
 fi
 
 ufw_state="$(sudo ufw status 2>/dev/null | head -1)"
 if [[ "$ufw_state" != *"Status: active"* ]]; then
-  echo "FAIL ufw: firewall not active ('$(sudo ufw status 2>/dev/null | head -1)')"; fails=$((fails+1))
+  say "FAIL ufw: firewall not active ('$(sudo ufw status 2>/dev/null | head -1)')"; bad
 else
-  echo "ok   ufw — firewall active"
+  say "ok   ufw — firewall active"
 fi
 
 # NFS datadirectory: only asserted when fstab expects the mount (no fstab
 # entry = storage not onboarded; the check then passes vacuously).
 if grep -q 'cloud/users' /etc/fstab 2>/dev/null; then
   if ! findmnt -n $ROOT/data/cloud/users >/dev/null 2>&1; then
-    echo "FAIL nfs-datadir: fstab expects cloud/users but it is not mounted"; fails=$((fails+1))
+    say "FAIL nfs-datadir: fstab expects cloud/users but it is not mounted"; bad
   else
-    echo "ok   nfs-datadir — datadirectory mounted"
+    say "ok   nfs-datadir — datadirectory mounted"
   fi
 fi
 
 disk_pcent="$(df --output=pcent / 2>/dev/null | tail -1 | tr -dc '0-9')"
 if [ -n "$disk_pcent" ] && [ "$disk_pcent" -ge 90 ]; then
-  echo "FAIL disk: / is ${disk_pcent}% full (want < 90%)"; fails=$((fails+1))
+  say "FAIL disk: / is ${disk_pcent}% full (want < 90%)"; bad
 else
-  echo "ok   disk — / at ${disk_pcent:-?}% (< 90%)"
+  say "ok   disk — / at ${disk_pcent:-?}% (< 90%)"
 fi
 end_sec
 
 echo ""
+# Disabled modules: their failures are shown ONCE here, listed but not counted.
+if [ -n "$IGNORED" ]; then
+  echo "== Not installed / ignored ($ignored_total failing check(s) in modules not installed — not counted) =="
+  printf '%s' "$IGNORED"
+  echo ""
+fi
 if [ "$fails" -gt 0 ]; then
-  echo "SMOKE FAILED — $fails failing check(s) in core / installed modules. Fix before committing/pushing."
+  echo "SMOKE FAILED — $fails failing check(s) in core / enabled modules. Fix before committing/pushing."
   exit 1
 fi
-if [ "$intended" -gt 0 ]; then
-  echo "SMOKE PASSED — core + installed modules all green ($intended failing check(s) in modules not installed — intended behaviour)."
-else
-  echo "SMOKE PASSED — every vhost serves its real app."
-fi
+echo "SMOKE PASSED — core + every enabled module serves its real app."
 exit 0
