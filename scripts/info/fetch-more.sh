@@ -21,7 +21,7 @@ export LC_ALL=C
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DATA="$ROOT/data"
-LOG_DIR="${LOG_DIR:-/var/log/$GITHUB_USER}"
+LOG_DIR="${LOG_DIR:-$DATA/logs}"
 . "$ROOT/scripts/lib/modules.sh"
 mod_in() { mod_installed "$1"; }
 
@@ -88,7 +88,7 @@ printf "            %-28s %8s %8s %5s %6s\n" "mount" "used" "size" "use%" "inode
 df -hT -x tmpfs -x devtmpfs -x overlay 2>/dev/null | awk 'NR>1{printf "            %-28s %8s %8s %5s\n", $7, $4, $3, $6}'
 df -i 2>/dev/null | awk '$5 ~ /%/ {p=$5+0; if (p>50) printf "            inodes %-20s %s\n", $6, $5}'
 row biggest "$(du -sh "$DATA"/*/ 2>/dev/null | sort -rh | head -6 | awk '{printf "%s %s  ", $1, $2}' | sed "s#$DATA/##g")"
-row logs "$GITHUB_USER $(du -sh "$LOG_DIR" 2>/dev/null | cut -f1 || echo -) · journal $(journalctl --disk-usage 2>/dev/null | sed 's/.*take up //; s/ in the file system.*//') · logrotate $(test -f /etc/logrotate.d/$GITHUB_USER && echo installed || echo MISSING)"
+row logs "$(du -sh "$LOG_DIR" 2>/dev/null | cut -f1 || echo -) · journal $(journalctl --disk-usage 2>/dev/null | sed 's/.*take up //; s/ in the file system.*//') · logrotate $(test -f /etc/logrotate.d/instance && echo installed || echo MISSING)"
 row docker-disk "$(docker system df --format '{{.Type}}: {{.Size}}' 2>/dev/null | tr '\n' ' ')"
 row backups "$(ls -1 "$DATA/backups" 2>/dev/null | wc -l) files · $(du -sh "$DATA/backups" 2>/dev/null | cut -f1 || echo 0) · newest: $(ls -1t "$DATA/backups" 2>/dev/null | head -2 | tr '\n' ' ')"
 
