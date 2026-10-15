@@ -82,7 +82,7 @@ if mode == "reverse":
     # textually are reversed (no TIMEZONE/OPERATOR: short or
     # generic values would rewrite unrelated words). Longest value first, so
     # /root/github/x/data is matched before /root/github/x.
-    KEYS = ["REPO_DIR","DATA_DIR","STATE_DIR","LOG_DIR","GITHUB_USER","REPO_NAME",
+    KEYS = ["REPO_DIR","DATA_DIR","LOG_DIR","GITHUB_USER","REPO_NAME",
             "HOSTNAME","SERVER_IP","EMAIL","DOMAIN"]
     for k in sorted((k for k in KEYS if V.get(k)), key=lambda k: -len(V[k])):
         data = data.replace(V[k], "{{%s}}" % k)
