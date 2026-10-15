@@ -52,11 +52,11 @@ TAILDROP="${TAILDROP:-}"
   exit 1
 }
 
-[ -f "$DATA/installed-modules.conf" ] || die "installed-modules.conf not found — this host has not been installed"
-
-# ---- installed modules (all ship; no selection) ----
-INSTALLED="$(tr -d '\r' < "$DATA/installed-modules.conf" | sed '/^$/d')"
-[ -n "$INSTALLED" ] || die "no modules installed"
+# ---- enabled modules (all ship; no selection) — from install.state ----
+STATE="${INSTALL_STATE:-$DATA/install.state}"
+[ -f "$STATE" ] || die "install.state not found — this host has not been installed"
+INSTALLED="$( ( . "$STATE" 2>/dev/null; printf '%s' "${enabled_modules:-}" ) 2>/dev/null )"
+[ -n "$INSTALLED" ] || die "no modules installed (install.state enabled_modules is empty)"
 
 # ---- resolve + verify the taildrop device ----
 case "$TAILDROP" in *@*) DEV="${TAILDROP#*@}"; DEV_USER="${TAILDROP%@*}";; *) DEV="$TAILDROP"; DEV_USER="root";; esac
