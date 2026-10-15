@@ -101,6 +101,15 @@ ERR_TAGS=()
 declare -A ERR_DETAIL=()
 
 log()  { echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG"; }
+# msg — the universal PRINT for a single user-facing line: one timestamped line
+# on stdout (and appended to $LOG, exactly like log()). This is the default for
+# any status/notice output. It is deliberately NOT used for (a) input prompts
+# (`read -rp` — a timestamp in front of a prompt corrupts the typed line) or
+# (b) the lines of a multi-line BLOCK that is printed as one unit (banner,
+# success block, the error list, the app-action choice menus): those print the
+# block's first line through msg and their sub-lines raw, so the timestamp
+# marks the block, not every line inside it.
+msg()  { echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG"; }
 fail() {
   local t
   for t in "${ERR_TAGS[@]:-}"; do [ "$t" = "$1" ] && return 0; done  # no duplicates across runs
@@ -373,7 +382,7 @@ ask_inputs() {
   ask_modules
   save_state
 
-  echo "Installing for $DOMAIN. Full log: $LOG"
+  msg "Installing for $DOMAIN. Full log: $LOG"
 }
 
 # write_state records the install in $INSTALL_STATE (the enabled modules + the
@@ -1172,7 +1181,7 @@ ask_nc_apps() {
   dis=$(printf '%s\n' "${!disable[@]}" | paste -sd', ' -)
   rem=$(printf '%s\n' "${!remove[@]}" | paste -sd', ' -)
   echo ""
-  echo "  Nextcloud apps (config/cloud/apps.conf):"
+  msg "  Nextcloud apps (config/cloud/apps.conf):"
   [ -n "$ipl" ] && echo "    will install/enable: $ipl"
   [ -n "$dis" ] && echo "    will disable:        $dis"
   [ -n "$rem" ] && echo "    will remove:         $rem"
@@ -1181,11 +1190,11 @@ ask_nc_apps() {
   if [ "$resume" = "0" ]; then
     local _confirm
     if ! ask_boolean "Apply configured app actions?" _confirm; then
-      echo "  app actions skipped (not confirmed)"
+      msg "  app actions skipped (not confirmed)"
       return 0
     fi
   else
-    echo "  prompt skipped (cloud already installed); applying configured actions anyway"
+    msg "  prompt skipped (cloud already installed); applying configured actions anyway"
   fi
 
   # ---------- pre-flight: read the live app state exactly once ----------
@@ -1255,7 +1264,7 @@ ask_nc_apps() {
       continue                    # already disabled → skip silently
     elif in_list "$app" $enabled_ids; then
       # An enabled app is a real state change → decision required.
-      echo "  WARN: disable='$app' is currently enabled"
+      msg "  WARN: disable='$app' is currently enabled"
       echo "    live state:  enabled"
       echo "    action would do: disable $app"
       echo "    choices:"
@@ -1299,7 +1308,7 @@ ask_nc_apps() {
       continue                    # not installed → skip silently (occ app:remove is a no-op)
     fi
     # Installed+enabled: removal is destructive → decision required.
-    echo "  WARN: remove='$app' is installed and enabled"
+    msg "  WARN: remove='$app' is installed and enabled"
     echo "    live state:  enabled"
     echo "    action would do: remove $app (deletes app data)"
     echo "    choices:"
@@ -1343,7 +1352,7 @@ ask_nc_apps() {
     docker exec -u www-data nextcloud php occ app:list --enabled 2>/dev/null \
       | grep -oE '^  - [^:]+' | sed -E 's/^  - ([^:]+).*/\1/'
   } > "$MANIFEST_DIR/apps.txt"
-  echo "  recorded enabled apps ($MANIFEST_DIR/apps.txt): $(wc -l < "$MANIFEST_DIR/apps.txt" | tr -d ' ')"
+  msg "  recorded enabled apps ($MANIFEST_DIR/apps.txt): $(wc -l < "$MANIFEST_DIR/apps.txt" | tr -d ' ')"
   return 0
 }
 # outbound SMTP (nextcloud@$DOMAIN sender mailbox), background cron. All
@@ -1495,7 +1504,7 @@ nextcloud_setup() {
       if ! docker exec -u www-data nextcloud php occ user:list 2>/dev/null | grep -q "^  - $uid:"; then
         NP=$(openssl rand -base64 12 | tr -d '/+=' | head -c 12)
         docker exec -e OC_PASS="$NP" -u www-data nextcloud php occ user:add --password-from-env "$uid" >/dev/null 2>&1 \
-          && echo "[install] new user $uid — password: $NP (share with them)"
+          && msg "[install] new user $uid — password: $NP (share with them)"
       fi
       [ -n "$quota" ] && docker exec -u www-data nextcloud php occ user:setting "$uid" files quota "$quota" >/dev/null 2>&1
       [ -n "$email" ] && docker exec -u www-data nextcloud php occ user:setting "$uid" settings email "$email" >/dev/null 2>&1
@@ -2020,7 +2029,7 @@ run_smoke() {
     return 0
   fi
   log "  SMOKE FAILED — the edge is not fully serving every enabled module"
-  echo "  SMOKE FAILED — re-run 'make smoke' and fix what it reports (full output: $LOG)"
+  msg "  SMOKE FAILED — re-run 'make smoke' and fix what it reports (full output: $LOG)"
   return 1
 }
 
@@ -2041,7 +2050,7 @@ finalize_install() {
     write_state
     CHECKPOINT_OPEN=
     echo ""
-    echo " NOT FINISHED — install.state is recorded pending (finished=false)."
+    msg " NOT FINISHED — install.state is recorded pending (finished=false)."
     echo " Fix the failure above, then re-run the installer to finish."
     return 0
   fi
@@ -2101,7 +2110,7 @@ finalize_hardening() {
 success_block() {
   echo ""
   echo "=============================================================="
-  echo " SUCCESS — the stack is up:"
+  msg " SUCCESS — the stack is up:"
   echo "   Nextcloud    https://cloud.$DOMAIN      admin / ${NEXTCLOUD_ADMIN_PASSWORD:-<see modules/nextcloud/.env>}"
   echo "   Vaultwarden  https://vault.$DOMAIN"
   echo "   Uptime Kuma  https://kuma.$DOMAIN       admin / ${KUMA_PASS:-(already set — rotate with: make kuma-passwd USER=admin PASS=…)}"
@@ -2138,7 +2147,7 @@ success_block() {
 summary() {
   if [ ${#ERR_TAGS[@]} -gt 0 ]; then
     echo ""
-    echo " ERROR(S) — no success until every item below is resolved:"
+    msg " ERROR(S) — no success until every item below is resolved:"
     local exp=() unexp=()
     for tag in "${ERR_TAGS[@]}"; do
       if is_expected "$tag"; then exp+=("$tag"); else unexp+=("$tag"); fi
@@ -2162,7 +2171,7 @@ summary() {
   fi
   if [ ${#ERR_WARN_TAGS[@]} -gt 0 ]; then
     echo ""
-    echo " WARNINGS (no success block — see $LOG):"
+    msg " WARNINGS (no success block — see $LOG):"
     for i in "${!ERR_WARN_TAGS[@]}"; do
       echo "   $((i+1)). ${ERR_WARN_TAGS[$i]}"
       echo "      hint: $(hint "${ERR_WARN_TAGS[$i]}")"
@@ -2190,7 +2199,7 @@ previous_install() { [ -s "${INSTALL_STATE:-}" ] || [ -s "$DATA/instance.conf" ]
 
 main() {
   if [ "$(id -u)" -ne 0 ]; then
-    echo "Run as root: root@$NODE_NAME is the only entry point (no sudo hand-off)."; exit 1
+    msg "Run as root: root@$NODE_NAME is the only entry point (no sudo hand-off)."; exit 1
   fi
   ensure_runtime_dirs       # first: the prompts below log (see the helper)
   migrate_state             # one-time legacy setup.state import (before load)
@@ -2202,16 +2211,16 @@ main() {
   INSTALL_RESUMED=0
   if previous_install; then
     echo ""
-    echo "A previous installation was detected."
+    msg "A previous installation was detected."
     local _res
     ask_boolean "Resume the previous installation?" _res || _res=false
     if [ "$_res" = "true" ]; then
-      echo "Resuming — every value already saved is reused; only missing ones are asked."
+      msg "Resuming — every value already saved is reused; only missing ones are asked."
       INSTALL_RESUMED=1
     else
       # Fresh run: IGNORE the previous answers (never take them as valid) but do
       # NOT delete them — a later run can still resume. Everything is re-asked.
-      echo "Starting fresh — every value is asked again (saved answers ignored, not deleted)."
+      msg "Starting fresh — every value is asked again (saved answers ignored, not deleted)."
       unset DOMAIN CF_API_TOKEN TS_AUTHKEY TS_IP \
             MOD_CLOUD MOD_VAULT MOD_MAIL MOD_MONITOR \
             GH_REMOTE GH_AUTH_OK \
