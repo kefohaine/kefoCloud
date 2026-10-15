@@ -490,6 +490,12 @@ github_push() {
     warn github_push "no Git commit identity — cannot push (re-run the installer and enter name + email)"
     return 1
   fi
+  # GitHub is opt-in, so a requested push that CANNOT run is a failure, not a
+  # skip: an unauthorized key must not fall through to a success block.
+  if ! github_auth_ok; then
+    warn github_push "GitHub key is not authorized (ssh -T git@github.com failed) — push skipped"
+    return 1
+  fi
   export GIT_COMMITTER_NAME="$GITHUB_COMMIT_NAME" GIT_COMMITTER_EMAIL="$GITHUB_COMMIT_EMAIL" \
          GIT_AUTHOR_NAME="$GITHUB_COMMIT_NAME" GIT_AUTHOR_EMAIL="$GITHUB_COMMIT_EMAIL"
   git -C "$REPO" config user.name "$GITHUB_COMMIT_NAME" 2>/dev/null || true
@@ -1948,7 +1954,10 @@ finalize_install() {
   write_state
   local ok=1
   run_smoke || ok=0
-  if [ "$ok" = 1 ] && [ "${GH_REMOTE:-false}" = true ] && github_auth_ok; then
+  # If GitHub was opted in, the push is MANDATORY — any failure to push (no key,
+  # rejected (non-collaborator), diverged history) flips ok to 0 and blocks the
+  # success block. github_push returns 0 immediately when NOT opted in.
+  if [ "$ok" = 1 ]; then
     github_push || ok=0
   fi
   if [ "$ok" != 1 ]; then
