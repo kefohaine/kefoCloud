@@ -5,13 +5,11 @@
 # "ok" text/plain, dead SMTP/IMAP, etc.). This is the last line of defence
 # against committing a stub deployment: the 2026-08-28 incident shipped an
 # edge-wide change whose failure mode this test catches.
-# Override with SKIP_SMOKE=1 only when the operator says the smoke is a false
-# alarm (e.g. containers down for maintenance).
+#
+# There is NO bypass: smoke itself refuses to run unless install.state records
+# finished=true, and this hook never writes state (install.sh is its sole
+# writer). A host without a finished install therefore cannot push — accepted.
 set -uo pipefail
-
-if [ "${SKIP_SMOKE:-}" = "1" ]; then
-  exit 0
-fi
 
 repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 smoke="$repo/scripts/stack/smoke-vhosts.sh"
@@ -20,7 +18,7 @@ smoke="$repo/scripts/stack/smoke-vhosts.sh"
 if ! bash "$smoke" >/dev/null 2>&1; then
   echo "pre-push: vhost smoke test FAILED — the live edge is not serving the apps."
   echo "  Fix the running system first, then push again."
-  echo "  (bash $smoke  — full output; SKIP_SMOKE=1 to override, not on a whim)"
+  echo "  (bash $smoke  — full output. No bypass: smoke runs only on a finished install.)"
   exit 1
 fi
 
