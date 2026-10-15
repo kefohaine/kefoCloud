@@ -37,11 +37,12 @@
 #   - sshd hardening — deliberately KEPT (removing the drop-in would
 #     re-enable password auth; weakening is never the uninstall's job)
 #
-# installed-modules.conf is refreshed after each module removal (the same
-# GENERATED file install.sh writes — read by `make smoke` + `make fetch`),
-# so a partial uninstall leaves an accurate record; a full uninstall
-# empties it (an EMPTY conf means "no module expected" — a MISSING conf
-# means "all expected" to smoke, so the file is emptied, not deleted).
+# install.state (data/install.state) is the record install.sh is the sole writer
+# of. Teardown is the ONE exception that may change it: at the end of a
+# teardown that removed anything, the removed modules are dropped from
+# enabled_modules and `finished` is set back to false — so `make smoke` (which
+# aborts unless finished=true) no longer treats a torn-down host as a finished
+# install. Only those two fields are rewritten; the prompted secrets are kept.
 #
 # Errors are collected with tags, each shown as a "problem" plus a "hint",
 # and re-checked on Enter until all are green — then SUCCESS. Manual steps
@@ -62,7 +63,7 @@ OP_USER=root
 # ($NODE_NAME -> kefoCloud) without editing any script.
 REPO="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
 PROJECT_DIR="$REPO/data"
-CONF="$PROJECT_DIR/installed-modules.conf"
+INSTALL_STATE="${INSTALL_STATE:-$PROJECT_DIR/install.state}"
 LOG_DIR=$LOG_DIR
 LOG="$LOG_DIR/uninstall.log"
 ERR_TAGS=()
@@ -206,28 +207,28 @@ mod_rm() { # indirection: is module $1 selected for removal?
   [ "${!v:-false}" = true ]
 }
 
-# ─────────────────────── modules conf refresh (live) ───────────────────────
+# ────────────── install.state teardown update (the one exception) ──────────
 
-mod_installed() { [ -f "$CONF" ] && grep -qx "$1" "$CONF" 2>/dev/null; }
+# The enabled modules recorded BEFORE any removal (empty when there is no
+# state — nothing was installed). Read in a subshell so the state's secrets
+# never enter this script's environment.
+MODS_ORIGINAL=""
+if [ -f "$INSTALL_STATE" ]; then
+  MODS_ORIGINAL="$( ( . "$INSTALL_STATE" 2>/dev/null; printf '%s' "${enabled_modules:-}" ) 2>/dev/null )"
+fi
 
-# snapshot of the modules recorded as installed BEFORE any removal (the
-# conf is rewritten after each module removal, so the original set is
-# captured once — no conf = every module was expected)
-MODS_ORIGINAL="cloud vault mail monitor"
-[ -f "$CONF" ] && MODS_ORIGINAL=$(grep -vE '^[[:space:]]*(#|$)' "$CONF" | tr '\n' ' ')
-
-# GENERATED — the same file install.sh writes, kept accurate: the original
-# set minus every module removed so far. Removing every module leaves it
-# EMPTY (not missing — a missing conf means "all modules expected" to make
-# smoke).
-refresh_modules_conf() {
-  local m keep
-  : > "$CONF"
-  for m in $MODS_ORIGINAL; do
-    mod_rm "$m" || echo "$m" >> "$CONF"
-  done
-  keep=$(paste -sd' ' "$CONF" 2>/dev/null)
-  log "  refreshed installed-modules.conf (${keep:-empty})"
+# Rewrite ONLY enabled_modules + finished in $INSTALL_STATE, preserving every
+# other (secret) line. install.sh is otherwise the sole writer; this is the
+# documented teardown exception.
+state_reset() {   # state_reset <enabled_modules> <finished>
+  [ -f "$INSTALL_STATE" ] || return 0
+  local tmp="$INSTALL_STATE.tmp.$$"
+  { grep -vE '^(enabled_modules|finished)=' "$INSTALL_STATE" 2>/dev/null || :
+    printf 'enabled_modules=%q\n' "$1"
+    printf 'finished=%q\n' "$2"
+  } > "$tmp"
+  chmod 600 "$tmp" 2>/dev/null || true
+  mv -f "$tmp" "$INSTALL_STATE" 2>/dev/null || rm -f "$tmp"
 }
 
 # ─────────────────────── phase: containers (reverse) ───────────────────────
@@ -304,7 +305,6 @@ remove_module() { # $1=module
       rm -rf "$d" >>"$LOG" 2>&1 || fail "rmmod_$m" "data dir $d not deleted"
     done
   fi
-  refresh_modules_conf
 }
 
 # ─────────────────────── phase: edge + host (reverse) ─────────────────────
@@ -540,10 +540,8 @@ success_block() {
   echo "   - sshd hardening (removing it would re-enable password auth)"
   echo "   - $PROJECT_DIR/backups/"
   echo "   - $REPO"
-  if [ -s "$CONF" ]; then
-    echo "   - installed-modules.conf still lists: $(paste -sd' ' "$CONF")"
-  else
-    echo "   - installed-modules.conf is now empty (no modules expected)"
+  if [ -f "$INSTALL_STATE" ]; then
+    echo "   - install.state: enabled_modules now '$(sed -n 's/^enabled_modules=//p' "$INSTALL_STATE")', finished=false"
   fi
   echo ""
   echo " Follow-ups (manual, none block):"
@@ -615,6 +613,17 @@ main() {
   # backups/ on explicit confirm (after the stack is down)
   if [ "${RM_BACKUPS:-false}" = true ] && [ -d "$PROJECT_DIR/backups" ]; then
     rm -rf "$PROJECT_DIR/backups" >>"$LOG" 2>&1 || log "WARN: backups/ not deleted"
+  fi
+  # install.state teardown update (the one exception to install.sh's sole
+  # write): drop the removed modules and clear the finished checkpoint so
+  # `make smoke` no longer treats this host as a finished install.
+  if [ -f "$INSTALL_STATE" ]; then
+    local keep="" m
+    for m in $MODS_ORIGINAL; do
+      mod_rm "$m" || keep+="$m "
+    done
+    state_reset "${keep% }" false
+    log "  install.state: enabled_modules='${keep% }' finished=false"
   fi
   resolve_errors
   # the repo clone LAST and only after this script exits — bash reads the
