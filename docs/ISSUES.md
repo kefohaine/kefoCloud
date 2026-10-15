@@ -373,3 +373,4 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Multi-action conf lines fixed** — the parse collapsed all whitespace, merging `install&enable=a disable=b` into one token; now only leading/trailing whitespace is trimmed.
 - **Redundant "prompt skipped (cloud already installed)" removed** — it fired on every run after the first install; the app-action confirm is now always asked.
 - **`INSTALL_RESUMED` removed** — dead after the resume-skip branch went away.
+- **Mailbox retry window widened** — `mailbox_add()` now retries 5 min (was 60 s, which expired during the ~2 min DMS boot and falsely reported "mailbox not created") and recreates a stopped mailserver; `recheck vaultwarden_setup` also self-heals by calling `mailbox_add`.
