@@ -10,7 +10,7 @@ ssh root@<new-machine>
 bash install.sh
 ```
 
-Enter the domain, CF token, and TS auth key when prompted. The script runs unattended as root; full log at `/var/log/{{HOSTNAME}}-install.log`. Errors are printed numbered at the end, then a success summary with credentials.
+Enter the domain, CF token, and TS auth key when prompted. The script runs unattended as root; full log at `{{LOG_DIR}}/install.log`. Errors are printed numbered at the end, then a success summary with credentials.
 
 ## What the script renames (nothing)
 
