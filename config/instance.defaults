@@ -22,7 +22,7 @@
 # REPO_NAME — the repository name (kefoCloud)
 # REPO_DIR — absolute path of the checkout on the host (/root/github/kefoCloud)
 # DATA_DIR — absolute path of all untracked instance state ($REPO_DIR/data)
-# LOG_DIR — every log this project writes (/var/log/$GITHUB_USER)
+# LOG_DIR — every log this project writes ($REPO_DIR/data/logs)
 # SERVER_IP — the host's public IPv4 (needed for DNS + mail PTR checks)
 # EMAIL — the operator's contact address (admin@$DOMAIN)
 # TIMEZONE — IANA zone used by containers and cron (UTC)
