@@ -10,7 +10,12 @@
 # clone before the installer has ever run.
 #
 # SOURCED, never executed. Defines: DOMAIN, NODE_NAME, GITHUB_USER, REPO_NAME,
-# REPO_DIR, DATA_DIR, LOG_DIR, STATE_DIR, SERVER_IP, EMAIL.
+# REPO_DIR, DATA_DIR, LOG_DIR, STATE_DIR, INSTALL_STATE, SERVER_IP, EMAIL.
+#
+# INSTALL_STATE is the installer's OWN state (enabled modules + finished
+# checkpoint + the prompted secrets), repo-relative under data/ — never a
+# $GITHUB_USER path. STATE_DIR stays a plain instance namespace (rendered into
+# config templates), but the installer's state no longer lives there.
 # Variables already set by the caller win (`: "${X:=...}"` semantics), which is
 # how install.sh passes what it just prompted for.
 #
@@ -46,6 +51,7 @@ fi
 : "${REPO_NAME:=kefoCloud}"
 : "${LOG_DIR:=/var/log/$GITHUB_USER}"
 : "${STATE_DIR:=/var/lib/$GITHUB_USER}"
+: "${INSTALL_STATE:=$DATA_DIR/install.state}"
 : "${SERVER_IP:=}"
 : "${EMAIL:=admin@$DOMAIN}"
 
