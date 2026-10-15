@@ -1341,38 +1341,12 @@ ask_nc_apps() {
     elif ! in_list "$app" $enabled_ids; then
       continue                    # not installed → skip silently (occ app:remove is a no-op)
     fi
-    # Installed+enabled: removal is destructive → decision required.
-    msg "  WARN: remove='$app' is installed and enabled"
-    echo "    live state:  enabled"
-    echo "    action would do: remove $app (deletes app data)"
-    echo "    choices:"
-    echo "      proceed — remove $app now (occ app:remove; DELETES its data)"
-    echo "      drop    — leave $app installed; skip this action"
-    echo "      resolve — disable then remove it yourself (make nc-app-disable / nc-app-remove, or edit config/cloud/apps.conf), then re-check"
-    local choice
-    while true; do
-      read -r choice || { echo "  no terminal input — aborting"; exit 1; }
-      case "${choice,,}" in
-        proceed) break ;;
-        drop) break ;;
-        resolve)
-          echo "    resolve: run 'make nc-app-disable APP=$app' then 'make nc-app-remove APP=$app', or edit config/cloud/apps.conf"
-          continue
-          ;;
-        *) echo "    unknown choice: $choice" ;;
-      esac
-    done
-    case "${choice,,}" in
-      proceed)
-        if ! docker exec -u www-data nextcloud php occ app:remove "$app" >/dev/null 2>&1; then
-          echo "  ERROR: occ app:remove $app failed — see $LOG" >&2
-          fail ask_nc_apps "occ app:remove $app failed"
-          continue
-        fi
-        ;;
-      drop) : ;;
-      resolve) : ;;
-    esac
+    # Installed+enabled: remove silently per config intent.
+    if ! docker exec -u www-data nextcloud php occ app:remove "$app" >/dev/null 2>&1; then
+      echo "  ERROR: occ app:remove $app failed — see $LOG" >&2
+      fail ask_nc_apps "occ app:remove $app failed"
+      continue
+    fi
   done
 
   # ---------- record the resulting enabled set ----------
