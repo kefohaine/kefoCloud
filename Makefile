@@ -269,8 +269,8 @@ gh-web-health:
 >@bash scripts/info/gh-web-health.sh
 
 # Install the repo's git hooks (pre-commit: Caddy validate + app-vhost stub
-# guard; pre-push: live vhost smoke test + history-rewrite warning). Re-run
-# after cloning or after editing a hook.
+# guard; pre-push: live vhost smoke test + history-rewrite warning). install.sh
+# runs this automatically; re-run manually after cloning or after editing a hook.
 install-hooks:
 >@mkdir -p .git/hooks
 >@cp scripts/hooks/pre-commit scripts/hooks/pre-push .git/hooks/
