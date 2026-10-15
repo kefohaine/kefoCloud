@@ -12,9 +12,8 @@
 # SOURCED, never executed. Defines: DOMAIN, NODE_NAME, GITHUB_USER, REPO_NAME,
 # REPO_DIR, DATA_DIR, LOG_DIR, INSTALL_STATE, SERVER_IP, EMAIL.
 #
-# INSTALL_STATE is the installer's OWN state (enabled modules + finished
-# checkpoint + the prompted secrets), repo-relative under data/ — never a
-# $GITHUB_USER path.
+# INSTALL_STATE and LOG_DIR are the installer's OWN state — repo-relative under
+# data/, never a $GITHUB_USER path or an absolute host directory.
 # Variables already set by the caller win (`: "${X:=...}"` semantics), which is
 # how install.sh passes what it just prompted for.
 #
@@ -48,7 +47,7 @@ fi
 : "${NODE_NAME:=$(hostname -s 2>/dev/null || echo server)}"
 : "${GITHUB_USER:=exampleuser}"
 : "${REPO_NAME:=kefoCloud}"
-: "${LOG_DIR:=/var/log/$GITHUB_USER}"
+: "${LOG_DIR:=$DATA_DIR/logs}"
 : "${INSTALL_STATE:=$DATA_DIR/install.state}"
 : "${SERVER_IP:=}"
 : "${EMAIL:=admin@$DOMAIN}"
