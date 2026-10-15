@@ -369,3 +369,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Installer time estimates removed** — the `~3 min` / `~10-15 min` guesses and the Caddy `in 229s (100%)` bar are gone; the build now shows a ping-pong loading bar with elapsed seconds only.
 - **GitHub SSH prompt repeats until authorized** — `github_cred_inputs` re-asks on every run while `GH_AUTH_OK≠1`, so an unanswered remote-access step cannot be silently skipped by a saved `GH_REMOTE=false`.
 - **`install: 'x' and 'x' are the same file` suppressed** — the goose copy is skipped when `command -v goose` already resolves to `/usr/local/bin/goose`.
+- **`cloud/apps.conf` gains `install&disable=`** — installs an app then disables it; `disable=` on an installed app now applies silently (config is intent), and only a `disable=` on a NOT-installed app warns (install&disable / drop).
+- **Multi-action conf lines fixed** — the parse collapsed all whitespace, merging `install&enable=a disable=b` into one token; now only leading/trailing whitespace is trimmed.
+- **Redundant "prompt skipped (cloud already installed)" removed** — it fired on every run after the first install; the app-action confirm is now always asked.
+- **`INSTALL_RESUMED` removed** — dead after the resume-skip branch went away.
