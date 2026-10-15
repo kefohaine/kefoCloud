@@ -1718,6 +1718,39 @@ ssl_mode_full() {
   return 0
 }
 
+cf_txt_record() { # $1=relative name (or apex), $2=TXT content
+  local name="$1" fqdn="$1" records rid current payload response
+  [ "$name" = "$DOMAIN" ] || fqdn="$name.$DOMAIN"
+  records=$(curl -fsS -G -H "Authorization: Bearer $CF_API_TOKEN" \
+    --data-urlencode "type=TXT" --data-urlencode "name=$fqdn" \
+    "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records") || {
+    fail dns_mail_txt "Cloudflare TXT lookup failed for $fqdn"; return 1;
+  }
+  rid=$(printf '%s' "$records" | jq -r '.result[0].id // empty')
+  current=$(printf '%s' "$records" | jq -r '.result[0].content // empty')
+  [ -n "$rid" ] && [ "$current" = "$2" ] && return 0
+  payload=$(jq -nc --arg content "$2" --arg name "$fqdn" \
+    '{type:"TXT",name:$name,content:$content,ttl:1}')
+  if [ -n "$rid" ]; then
+    response=$(curl -fsS -X PUT -H "Authorization: Bearer $CF_API_TOKEN" \
+      -H "Content-Type: application/json" \
+      "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$rid" -d "$payload") || {
+      fail dns_mail_txt "Cloudflare TXT update failed for $fqdn"; return 1;
+    }
+  else
+    response=$(curl -fsS -X POST -H "Authorization: Bearer $CF_API_TOKEN" \
+      -H "Content-Type: application/json" \
+      "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" -d "$payload") || {
+      fail dns_mail_txt "Cloudflare TXT create failed for $fqdn"; return 1;
+    }
+  fi
+  if [ "$(printf '%s' "$response" | jq -r '.success // false')" != "true" ]; then
+    fail dns_mail_txt "Cloudflare TXT publish failed for $fqdn"
+    return 1
+  fi
+  log "  TXT record ensured: $fqdn"
+}
+
   cf_dns() {
   HOST_IP=$(curl -s4 ifconfig.me)
   ZONE_ID=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
@@ -1751,6 +1784,11 @@ ssl_mode_full() {
   # (HTTP(S) only). Caddy still gets their LE certs via DNS-01.
   [ "${MOD_CLOUD:-true}" = "true" ] && cf_record talk false
   [ "${MOD_MAIL:-true}"  = "true" ] && cf_record mail false
+  if [ "${MOD_MAIL:-true}" = "true" ]; then
+    cf_txt_record "$DOMAIN" 'v=spf1 -all'
+    cf_txt_record '*._domainkey' 'v=DKIM1; p='
+    cf_txt_record '_dmarc' 'v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s;'
+  fi
   curl -s -X PATCH -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
     "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/settings/ssl" -d '{"value":"full"}' >>"$LOG" 2>&1 || true
   # DNS-only tokens can't set SSL mode; surface it as an expected manual step.
@@ -1889,6 +1927,7 @@ problem() {
     sslmode)        echo "Cloudflare SSL/TLS mode is not Full (or strict)" ;;
     nextcloud_setup) echo "Nextcloud occ wiring incomplete (Talk signaling/TURN, SMTP, background cron)" ;;
     dkim_setup)      echo "DKIM key / mail._domainkey TXT record not published" ;;
+    dns_mail_txt)   echo "one or more mail-policy TXT records are missing" ;;
     vaultwarden_setup) echo "Vaultwarden SMTP sender mailbox missing (vaultwarden@$DOMAIN)" ;;
     clone)          echo "repo clone failed" ;;
     hooks)          echo "git hooks are not installed in $REPO/.git/hooks" ;;
@@ -1926,6 +1965,7 @@ hint() {
     sslmode)        echo "Cloudflare dashboard -> SSL/TLS -> Overview -> set mode to Full (or Full strict), then re-check" ;;
     nextcloud_setup) echo "the occ wiring is re-applied automatically on each re-check (nextcloud_occ_remediate); if it still fails, ensure the nextcloud/talk containers are up (make dok-recreate-nextcloud) and the mail module's SMTP_PASSWORD exists in modules/nextcloud/.env — see the nextcloud_setup function in this script, then re-check" ;;
     dkim_setup)      echo "run: docker exec mailserver setup config dkim domain $DOMAIN; ensure ENABLE_OPENDKIM=0 in the mailserver compose (Rspamd signs); verify the CF token has Zone > DNS > Edit; then dig @<zone NS> TXT mail._domainkey.$DOMAIN" ;;
+    dns_mail_txt)   echo "the installer retries SPF, wildcard DKIM placeholder, and DMARC TXT records on re-check; verify the token has Zone > DNS > Edit and inspect Cloudflare DNS for $DOMAIN, *._domainkey.$DOMAIN, and _dmarc.$DOMAIN" ;;
     vaultwarden_setup) echo "the installer retries mailbox creation for 5 min (mailbox_add) and recreates the mailserver when it is down (make dok-recreate-mailserver) — a repeat failure means SMTP_PASSWORD is missing from modules/vaultwarden/.env; verify the mail module is enabled (else this step is skipped) and that the mailserver container is healthy, then re-check" ;;
     clone)          echo "the clone is HTTPS (the repo is public) — check network/DNS, then re-check" ;;
     hooks)          echo "run: make install-hooks in $REPO (re-run it after editing a hook)" ;;
@@ -1965,6 +2005,7 @@ recheck() {
     sslmode) ssl_mode_full ;;
     nextcloud_setup) nextcloud_occ_remediate; if [ "${MOD_MAIL:-true}" != "true" ] || docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN"; then docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://talk.$DOMAIN/signaling" && docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "talk.$DOMAIN:3478" && docker exec -u www-data nextcloud php occ config:system:get trusted_domains 2>/dev/null | grep -qx "cloud.$DOMAIN"; else false; fi ;;
     dkim_setup)      dig +short TXT "mail._domainkey.$DOMAIN" @"$(dig +short NS "$DOMAIN" | head -1)" 2>/dev/null | grep -qE 'p=[A-Za-z0-9+/=]{100,}' ;;
+    dns_mail_txt) [ "${MOD_MAIL:-true}" = "true" ] || return 0; cf_txt_record "$DOMAIN" 'v=spf1 -all'; cf_txt_record '*._domainkey' 'v=DKIM1; p='; cf_txt_record '_dmarc' 'v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s;'; local records; records=$(curl -fsS -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=TXT" 2>/dev/null) || return 1; printf '%s' "$records" | jq -e --arg d "$DOMAIN" --arg s 'v=spf1 -all' --arg k 'v=DKIM1; p=' --arg m 'v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s;' '[.result[] | {name,content}] as $r | [[$d,$s],["*._domainkey."+$d,$k],["_dmarc."+$d,$m]] as $expected | [$expected[] | . as $x | any($r[]; .name==$x[0] and .content==$x[1])] | all' >/dev/null ;;
     vaultwarden_setup) if [ "${MOD_MAIL:-true}" = "true" ]; then . modules/vaultwarden/.env 2>/dev/null; mailbox_add "vaultwarden@$DOMAIN" "${SMTP_PASSWORD:-}" >/dev/null 2>&1; docker exec mailserver setup email list 2>/dev/null | grep -qiE "^[* ] *vaultwarden@$DOMAIN( |\$|\[)"; else false; fi ;;
     *) false ;;
   esac
