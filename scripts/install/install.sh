@@ -256,6 +256,16 @@ ask_inputs() {
   # LAST prompt, opt-in, explicit true/false: mint a GitHub key for pushing to
   # the operator's OWN repos, print it, wait until it is authorized, push.
   [ -n "${GH_REMOTE:-}" ] || ask_boolean "Configure remote access to your own GitHub account's repositories?" GH_REMOTE || exit 1
+  # Commit identity, collected up front ONLY when pushing is enabled, so no
+  # further prompt appears mid-run. Blank is allowed (git falls back to its
+  # configured identity); env/state values are honoured (guarded by -z) so a
+  # resume does not re-ask.
+  if [ "${GH_REMOTE:-false}" = "true" ]; then
+    [ -n "${GITHUB_COMMIT_NAME:-}" ] \
+      || read -rp "Git name for commits (blank to skip): " GITHUB_COMMIT_NAME || GITHUB_COMMIT_NAME=""
+    [ -n "${GITHUB_COMMIT_EMAIL:-}" ] \
+      || read -rp "Git email for commits (blank to skip): " GITHUB_COMMIT_EMAIL || GITHUB_COMMIT_EMAIL=""
+  fi
   echo "Installing for $DOMAIN — ~10-15 min. Full log: $LOG"
 }
 
@@ -417,18 +427,10 @@ github_push() {
     printf '%s\n' "$?" > "$_chk/rc"
   ) >"$_chk/out" 2>&1 &
   local _chk_pid=$!
-  # Ask for commit identity once; a repo already committed with bad/missing
-  # identity (e.g. from an earlier install on another host) is easy to fix by
-  # running the installer and entering the real name + email here.
-  if [ -z "${GITHUB_COMMIT_NAME:-}" ]; then
-    printf '\n ── Commit identity ──────────────────────────────────────────────────────\n'
-    printf '   Git commits for this repo will be attributed to the operator.\n\n'
-    read -rp "   Enter your Git name for commits: " GITHUB_COMMIT_NAME \
-      || { echo "   no input — skipping commit identity"; GITHUB_COMMIT_NAME="root"; }
-    read -rp "   Enter your Git email for commits: " GITHUB_COMMIT_EMAIL \
-      || { echo "   no input — skipping commit identity"; GITHUB_COMMIT_EMAIL=""; }
-    printf '\n ──────────────────────────────────────────────────────────────────────────\n\n'
-  fi
+  # Commit identity was collected with the other inputs (ask_inputs) so the run
+  # is prompt-free from here; an empty value falls back to the repo's/global
+  # git identity. A repo already committed with a bad identity can be fixed by
+  # re-running the installer and entering the real name + email at the prompt.
   [ -n "$GITHUB_COMMIT_EMAIL" ] && export GIT_COMMITTER_NAME="$GITHUB_COMMIT_NAME" GIT_COMMITTER_EMAIL="$GITHUB_COMMIT_EMAIL" GIT_AUTHOR_NAME="$GITHUB_COMMIT_NAME" GIT_AUTHOR_EMAIL="$GITHUB_COMMIT_EMAIL"
   git -C "$REPO" config user.name "${GITHUB_COMMIT_NAME:-root}" 2>/dev/null || true
   [ -n "$GITHUB_COMMIT_EMAIL" ] && git -C "$REPO" config user.email "$GITHUB_COMMIT_EMAIL" 2>/dev/null || true
