@@ -1103,49 +1103,43 @@ mailbox_add() {
 # cloud module, driven by config/cloud/apps.conf (shipped with sane defaults:
 # spreed install&enable, app_api disable). The config is the *intent*; this
 # reads the live instance once (occ app:list) and applies actions against real
-# state — nothing is silently skipped unless the action is already satisfied
-# (idempotent, unattended runs). Unknown app ids, the same app with two verbs,
-# or state that blocks an action → warned with full details, prompted for a
-# choice (proceed / drop / resolve), and aborted only if you do not confirm.
-# Runs only when cloud is selected; on a resumed install (a COMPLETED run has
-# already recorded cloud in install.state) the prompt is skipped but the
-# configured actions still apply, and the resulting enabled set is written to
-# $DATA/cloud/recovery/apps.txt (GENERATED, outside the repo).
+# state — an action already satisfied is skipped silently (idempotent,
+# unattended re-runs). The only prompted cases are the ones where the config and
+# the live state genuinely disagree in a surprising way: an unknown verb
+# (ignored), the same app given two different verbs (proceed / abort), a
+# `disable=` on an app that is NOT installed (install&disable / drop), and a
+# `remove=` on an installed+enabled app (proceed / drop / resolve) — removal is
+# the only destructive action. Runs only when cloud is selected; the resulting
+# enabled set is written to $DATA/cloud/recovery/apps.txt (GENERATED, outside
+# the repo).
 ask_nc_apps() {
   local conf="$REPO/config/cloud/apps.conf"
 
-  # Cloud must be desired; skip the prompt on resume but still apply the
-  # configured actions. install.state records `finished=true` only on a
-  # successful run, so cloud-in-enabled_modules is the "the cloud prompt was
-  # already answered by a COMPLETED run" signal — never a mid-run marker. The
-  # mid-run decision uses $INSTALL_RESUMED (set by main when this run resumed a
-  # previous, incomplete install), not the record.
+  # Cloud must be desired; the configured actions then apply.
   [ "${MOD_CLOUD:-true}" = "true" ] || return 0
-  local resume="${INSTALL_RESUMED:-0}"
-  if [ -f "$INSTALL_STATE" ] && sed -n 's/^enabled_modules=//p' "$INSTALL_STATE" | grep -qw cloud; then
-    resume=1
-  fi
 
   # No config → nothing to do (fresh installs get image defaults only).
   [ -f "$conf" ] || return 0
 
   # ---------- parse the config ----------
-  # Valid verbs: install&enable=, disable=, remove=. Multi-action lines are
-  # supported (split on whitespace); bare verbs / comments are ignored; an
-  # unknown verb is warned to stderr and ignored.
-  declare -A install=() disable=() remove=() disable_drop=() remove_drop=() seen=() conflict=()
+  # Valid verbs: install&enable=, install&disable=, disable=, remove=.
+  # Multi-action lines are supported (split on whitespace); bare verbs /
+  # comments are ignored; an unknown verb is warned to stderr and ignored.
+  declare -A install=() install_dis=() disable=() remove=() seen=() conflict=()
   local line tok verb key
   while IFS= read -r line || [ -n "$line" ]; do
     line="${line%%#*}"                          # strip inline comments
-    line="${line//[[:space:]]/}"                # collapse whitespace for blank check
+    line="${line#"${line%%[![:space:]]*}"}"     # trim leading whitespace
+    line="${line%"${line##*[![:space:]]}"}"     # trim trailing whitespace
     [ -z "$line" ] && continue
     for tok in $line; do
       [[ "$tok" == *"="* ]] || continue         # bare verb → ignore
       verb="${tok%%=*}"; key="${tok#*=}"
       case "$verb" in
-        install\&enable) install["$key"]=1; seen["$key"]=1 ;;
-        disable)        disable["$key"]=1; seen["$key"]=1 ;;
-        remove)         remove["$key"]=1; seen["$key"]=1 ;;
+        install\&enable)  install["$key"]=1; seen["$key"]=1 ;;
+        install\&disable) install_dis["$key"]=1; seen["$key"]=1 ;;
+        disable)          disable["$key"]=1; seen["$key"]=1 ;;
+        remove)           remove["$key"]=1; seen["$key"]=1 ;;
         *) echo "  WARN: config/cloud/apps.conf: unknown verb '$verb' in '$tok' — ignored" >&2 ;;
       esac
     done
@@ -1156,7 +1150,7 @@ ask_nc_apps() {
   # abort only if unconfirmed.
   local key cnt
   for key in "${!seen[@]}"; do
-    cnt=$(( ${install["$key"]:-0} + ${disable["$key"]:-0} + ${remove["$key"]:-0} ))
+    cnt=$(( ${install["$key"]:-0} + ${install_dis["$key"]:-0} + ${disable["$key"]:-0} + ${remove["$key"]:-0} ))
     [ "$cnt" -gt 1 ] && conflict["$key"]=1
   done
   local conflicted="${!conflict[*]}"
@@ -1164,6 +1158,7 @@ ask_nc_apps() {
     echo "  ERROR: same app has two different verbs:" >&2
     for key in $conflicted; do
       [ "${install["$key"]:-}" = "1" ] && echo "    $key: install&enable" >&2
+      [ "${install_dis["$key"]:-}" = "1" ] && echo "    $key: install&disable" >&2
       [ "${disable["$key"]:-}" = "1" ] && echo "    $key: disable" >&2
       [ "${remove["$key"]:-}" = "1" ] && echo "    $key: remove" >&2
     done
@@ -1176,25 +1171,23 @@ ask_nc_apps() {
   fi
 
   # ---------- print the plan ----------
-  local ipl dis rem
+  local ipl ids dis rem
   ipl=$(printf '%s\n' "${!install[@]}" | paste -sd', ' -)
+  ids=$(printf '%s\n' "${!install_dis[@]}" | paste -sd', ' -)
   dis=$(printf '%s\n' "${!disable[@]}" | paste -sd', ' -)
   rem=$(printf '%s\n' "${!remove[@]}" | paste -sd', ' -)
   echo ""
   msg "  Nextcloud apps (config/cloud/apps.conf):"
-  [ -n "$ipl" ] && echo "    will install/enable: $ipl"
-  [ -n "$dis" ] && echo "    will disable:        $dis"
-  [ -n "$rem" ] && echo "    will remove:         $rem"
+  [ -n "$ipl" ] && echo "    will install/enable:  $ipl"
+  [ -n "$ids" ] && echo "    will install/disable: $ids"
+  [ -n "$dis" ] && echo "    will disable:         $dis"
+  [ -n "$rem" ] && echo "    will remove:          $rem"
   # An empty plan means the config has no actionable lines → nothing to do.
 
-  if [ "$resume" = "0" ]; then
-    local _confirm
-    if ! ask_boolean "Apply configured app actions?" _confirm; then
-      msg "  app actions skipped (not confirmed)"
-      return 0
-    fi
-  else
-    msg "  prompt skipped (cloud already installed); applying configured actions anyway"
+  local _confirm
+  if ! ask_boolean "Apply configured app actions?" _confirm; then
+    msg "  app actions skipped (not confirmed)"
+    return 0
   fi
 
   # ---------- pre-flight: read the live app state exactly once ----------
@@ -1235,7 +1228,7 @@ ask_nc_apps() {
       continue                    # done
     fi
     # Not installed at all → auto-install + auto-enable per operator request
-    # (config/cloud/apps.conf): no prompt, never stall a resumed install.
+    # (config/cloud/apps.conf): no prompt.
     # Failures are logged and dropped silently; the plan above is authoritative.
     log "  install&enable='$app' — not present in occ; installing then enabling"
     if ! timeout 120 docker exec -u www-data nextcloud php occ app:install "$app" >>"$LOG" 2>&1; then
@@ -1257,46 +1250,77 @@ ask_nc_apps() {
     log "  installed + enabled $app"
   done
 
+  # ---------- apply install&disable ----------
+  # install&disable= requests an app that should exist but stay OFF: install it
+  # first (needed for a fresh DB), then disable it. Already installed (enabled
+  # or disabled) → just make sure it is disabled; not in occ at all → install.
+  for app in "${!install_dis[@]}"; do
+    [ "${conflict["$app"]:-}" = "1" ] && continue
+    if in_list "$app" $enabled_ids || in_list "$app" $disabled_ids; then
+      :                                   # already present — only ensure disabled
+    else
+      log "  install&disable='$app' — not present in occ; installing then disabling"
+      if ! timeout 120 docker exec -u www-data nextcloud php occ app:install "$app" >>"$LOG" 2>&1; then
+        echo "  WARN: occ app:install $app failed — app not in the appstore and no local app dir; action dropped" >&2
+        continue
+      fi
+    fi
+    if in_list "$app" $enabled_ids; then
+      if ! docker exec -u www-data nextcloud php occ app:disable "$app" >/dev/null 2>&1; then
+        echo "  ERROR: occ app:disable $app failed — see $LOG" >&2
+        fail ask_nc_apps "occ app:disable $app failed"
+        continue
+      fi
+    fi
+    log "  installed + disabled $app"
+  done
+
   # ---------- apply disable ----------
+  # disable= on an installed app (enabled or already disabled) is the operator's
+  # stated intent — apply it, no prompt. Only an app that is NOT installed at all
+  # is surprising (nothing to disable) — warn and offer install&disable or skip.
   for app in "${!disable[@]}"; do
     [ "${conflict["$app"]:-}" = "1" ] && continue
     if in_list "$app" $disabled_ids; then
       continue                    # already disabled → skip silently
     elif in_list "$app" $enabled_ids; then
-      # An enabled app is a real state change → decision required.
-      msg "  WARN: disable='$app' is currently enabled"
-      echo "    live state:  enabled"
-      echo "    action would do: disable $app"
-      echo "    choices:"
-      echo "      proceed — disable $app now (occ app:disable)"
-      echo "      drop    — leave $app enabled; skip this action"
-      echo "      resolve — fix it yourself (make nc-app-disable APP=$app, or edit config/cloud/apps.conf), then re-check"
-      local choice
-      while true; do
-        read -r choice || { echo "  no terminal input — dropping action"; break; }
-        case "${choice,,}" in
-          proceed) break ;;
-          drop) disable_drop["$app"]=1; break ;;
-          resolve)
-            echo "    resolve: run 'make nc-app-disable APP=$app' in the UI-free path, or edit config/cloud/apps.conf"
-            continue
-            ;;
-          *) echo "    unknown choice: $choice" ;;
-        esac
-      done
-      case "${choice,,}" in
-        proceed)
-          if ! docker exec -u www-data nextcloud php occ app:disable "$app" >/dev/null 2>&1; then
-            echo "  ERROR: occ app:disable $app failed — see $LOG" >&2
-            fail ask_nc_apps "occ app:disable $app failed"
-            continue
-          fi
-          ;;
-        drop) : ;;
-        resolve) : ;;
-      esac
+      # Installed and enabled → apply the config's intent without prompting.
+      if ! docker exec -u www-data nextcloud php occ app:disable "$app" >/dev/null 2>&1; then
+        echo "  ERROR: occ app:disable $app failed — see $LOG" >&2
+        fail ask_nc_apps "occ app:disable $app failed"
+      fi
+      continue
     fi
-    # Not installed: harmless no-op → skip silently.
+    # Not installed → nothing to disable. Warn and offer to install&disable.
+    msg "  WARN: disable='$app' but it is not installed"
+    echo "    live state:  not installed"
+    echo "    choices:"
+    echo "      install&disable — install $app, then disable it (keeps it present but off)"
+    echo "      drop            — skip this action (leave nothing)"
+    local choice
+    while true; do
+      read -r choice || { echo "  no terminal input — dropping action"; break; }
+      case "${choice,,}" in
+        install\&disable|install|yes) break ;;
+        drop|skip|no) break ;;
+        *) echo "    unknown choice: $choice" ;;
+      esac
+    done
+    case "${choice,,}" in
+      install\&disable|install|yes)
+        if ! timeout 120 docker exec -u www-data nextcloud php occ app:install "$app" >>"$LOG" 2>&1; then
+          echo "  WARN: occ app:install $app failed — app not in the appstore and no local app dir; action dropped" >&2
+          continue
+        fi
+        if ! docker exec -u www-data nextcloud php occ app:disable "$app" >/dev/null 2>&1; then
+          echo "  ERROR: occ app:disable $app failed — see $LOG" >&2
+          fail ask_nc_apps "occ app:disable $app failed"
+          continue
+        fi
+        log "  installed + disabled $app"
+        ;;
+      drop|skip|no) : ;;
+    esac
   done
 
   # ---------- apply remove ----------
@@ -1320,7 +1344,7 @@ ask_nc_apps() {
       read -r choice || { echo "  no terminal input — aborting"; exit 1; }
       case "${choice,,}" in
         proceed) break ;;
-        drop) remove_drop["$app"]=1; break ;;
+        drop) break ;;
         resolve)
           echo "    resolve: run 'make nc-app-disable APP=$app' then 'make nc-app-remove APP=$app', or edit config/cloud/apps.conf"
           continue
@@ -2205,10 +2229,6 @@ main() {
   migrate_state             # one-time legacy setup.state import (before load)
   banner
   load_state
-  # Whether this run is a resume of a previous, incomplete install. Consumed by
-  # ask_nc_apps to skip the app prompt on a resumed run (the manifest is
-  # post-success only, so it cannot serve that mid-run purpose).
-  INSTALL_RESUMED=0
   if previous_install; then
     echo ""
     msg "A previous installation was detected."
@@ -2216,7 +2236,6 @@ main() {
     ask_boolean "Resume the previous installation?" _res || _res=false
     if [ "$_res" = "true" ]; then
       msg "Resuming — every value already saved is reused; only missing ones are asked."
-      INSTALL_RESUMED=1
     else
       # Fresh run: IGNORE the previous answers (never take them as valid) but do
       # NOT delete them — a later run can still resume. Everything is re-asked.
