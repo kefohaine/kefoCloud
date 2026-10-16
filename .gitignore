@@ -6,4 +6,8 @@ __pycache__
 .env
 modules/*/.env
 config/goose/goose.env
+# The operator's own Nextcloud app selection: shipped with sane defaults, but
+# operator-owned — untracked so editing it can never alter the repo or show up
+# in a commit. install.sh reads it (and skips the prompt when it is unchanged).
+config/cloud/apps.conf
 /data/
