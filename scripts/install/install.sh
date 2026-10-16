@@ -193,10 +193,10 @@ _task_row() {
   local i="$1"
   local st="${TASK_STATE[$i]:-wait}" ts="${TASK_TS[$i]}" name="${TASK_NAMES[$i]}"
   case "$st" in
-    done)  printf '%s[%s]%s %s[DONE]%s %s\n'  "$C_PURPLE" "$ts" "$C_RST" "$C_GREEN" "$C_RST" "$name" ;;
-    error) printf '%s[%s]%s %s[ERROR]%s %s\n' "$C_PURPLE" "$ts" "$C_RST" "$C_RED"   "$C_RST" "$name" ;;
-    run)   printf '%s[%s]%s %s[TASK]%s %s\n'  "$C_PURPLE" "$(_anim_field)" "$C_RST" "$C_ORANGE" "$C_RST" "$name" ;;
-    *)     printf '%s[%s]%s %s[WAIT]%s %s\n'  "$C_PURPLE" "$ts" "$C_RST" "$C_GREY"  "$C_RST" "$name" ;;
+    done)  printf '%s[DONE]%s %s %s\n'  "$C_GREEN"  "$C_RST" "$ts" "$name" ;;
+    error) printf '%s[ERROR]%s %s %s\n' "$C_RED"    "$C_RST" "$ts" "$name" ;;
+    run)   printf '%s[TASK]%s %s[%s]%s %s\n' "$C_ORANGE" "$C_RST" "$C_PURPLE" "$(_anim_field)" "$C_RST" "$name" ;;
+    *)     printf '%s[WAIT]%s %s %s\n'  "$C_GREY"   "$C_RST" "$ts" "$name" ;;
   esac
 }
 # Everything printed below the checklist block is "tail": lines an interactive
@@ -3065,7 +3065,7 @@ main() {
     exit 1
   fi
 
-  msg "Starting installation.."
+  msg "[INFO] Starting installation.. Todo List:"
   _tasks_draw
   run_install
   resolve_errors
