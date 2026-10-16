@@ -2871,6 +2871,7 @@ finalize_hardening() {
 
 success_block() {
   local R="──────────────────────────────────────────────────────────────────"
+  local n=0
   log "  SUCCESS — the stack is up (success block shown)"
   echo ""
   printf ' %s%s%s\n' "$C_GREEN" "$R" "$C_RST"
@@ -2905,19 +2906,20 @@ success_block() {
   echo ""
   printf '  %sFollow-ups (none block the install):%s\n' "$C_GREY" "$C_RST"
   if mod_on mail; then
-    printf '   %sAdditional step%s — configure a PTR (rDNS) record with your VPS provider:\n' "$C_ORANGE" "$C_RST"
-    printf '     %s  ->  mail.%s\n' "${HOST_IP:-<machine IP>}" "$DOMAIN"
-    printf '     %s(only your provider can create it; SPF/DKIM/DMARC alone won'"'"'t stop rejects)%s\n' "$C_GREY" "$C_RST"
+    n=$((n+1))
+    printf '   %s%d. PTR (rDNS) record%s — set it at your VPS provider for %s -> mail.%s\n' \
+      "$C_ORANGE" "$n" "$C_RST" "${HOST_IP:-<machine IP>}" "$DOMAIN"
+    printf '      %s(only your provider can create it; SPF/DKIM/DMARC alone won'"'"'t stop rejects)%s\n' "$C_GREY" "$C_RST"
   fi
-  printf '   1. Tailscale split-DNS: admin console -> DNS -> add %s -> %s\n' "$DOMAIN" "${TS_IP:-<tailscale IP>}"
+  n=$((n+1)); printf '   %d. Tailscale split-DNS: admin console -> DNS -> add %s -> %s\n' "$n" "$DOMAIN" "${TS_IP:-<tailscale IP>}"
   printf '      %sso tail.%s resolves for tailnet devices (dnsmasq on the machine already answers it)%s\n' "$C_GREY" "$DOMAIN" "$C_RST"
-  printf '   2. %s(optional)%s Cloudflare WAF rule skip for cloud.%s (desktop sync)\n' "$C_GREY" "$C_RST" "$DOMAIN"
-  if [ "${GH_REMOTE:-false}" = "true" ]; then
-    printf '   3. GitHub remote access: origin is git@github.com:%s/%s.git, key /root/.ssh/github_key\n' "$GITHUB_USER" "$REPO_NAME"
+  n=$((n+1)); printf '   %d. %s(optional)%s Cloudflare WAF rule skip for cloud.%s (desktop sync)\n' "$n" "$C_GREY" "$C_RST" "$DOMAIN"
+  n=$((n+1)); if [ "${GH_REMOTE:-false}" = "true" ]; then
+    printf '   %d. GitHub remote access: origin is git@github.com:%s/%s.git, key /root/.ssh/github_key\n' "$n" "$GITHUB_USER" "$REPO_NAME"
   else
-    printf '   3. %sNo GitHub remote access%s (declined at the last prompt) — re-run and answer true to mint the push key\n' "$C_GREY" "$C_RST"
+    printf '   %d. %sNo GitHub remote access%s (declined at the last prompt) — re-run and answer true to mint the push key\n' "$n" "$C_GREY" "$C_RST"
   fi
-  printf '   4. Mailboxes: make mail-gen MAIL=name@%s (or bare make mail-gen for a disposable);\n' "$DOMAIN"
+  n=$((n+1)); printf '   %d. Mailboxes: make mail-gen MAIL=name@%s (or bare make mail-gen for a disposable);\n' "$n" "$DOMAIN"
   printf '      %sthe nextcloud@%s and vaultwarden@%s SMTP sender mailboxes are created automatically%s\n' "$C_GREY" "$DOMAIN" "$DOMAIN" "$C_RST"
   printf ' %s%s%s\n\n' "$C_GREEN" "$R" "$C_RST"
 }
