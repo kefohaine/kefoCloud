@@ -2600,27 +2600,21 @@ task_hygiene() {
   task_end
 }
 
-# The ordered task list, in TASK_NAMES order. "Smoke Pass" is the last task and
-# is marked from finalize_install — it runs only after the push and finished
-# checkpoint.
+# The ordered task list, in TASK_NAMES order. A task that fails STOPS the run:
+# the checklist halts on its [ERROR] row (later rows stay [WAIT]) instead of
+# running on to the end, and the wizard cannot finish through a failure — the
+# operator resolves it (the post-run re-check, or a resume) before it proceeds.
+# "Smoke Pass" is the last task and is marked from finalize_install — it runs
+# only after the push and the finished checkpoint.
 run_install() {
-  task_packages
-  task_ssh
-  task_firewall
-  task_tailscale
-  task_docker
-  task_goose
-  task_stackcfg
-  task_containers
-  task_repo
-  task_host
-  task_dns
-  task_certs
-  task_mail
-  task_cloud
-  task_vault
-  task_monitor
-  task_hygiene
+  local _t
+  for _t in task_packages task_ssh task_firewall task_tailscale task_docker \
+            task_goose task_stackcfg task_containers task_repo task_host \
+            task_dns task_certs task_mail task_cloud task_vault task_monitor \
+            task_hygiene; do
+    "$_t"
+    [ -n "${TASK_ERR:-}" ] && { TASK_ERR=; break; }
+  done
   save_state
 }
 
