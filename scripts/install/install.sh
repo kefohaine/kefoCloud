@@ -966,7 +966,12 @@ task_firewall() {
 task_tailscale() {
   task_start
   if ! command -v tailscale >/dev/null 2>&1; then
-    curl -fsSL https://tailscale.com/install.sh | sh || fail tailscale
+    # Output goes to the LOG, never the console: tailscale's install.sh runs with
+    # `set -x` and calls apt, so piping it to the tty dumps a trace + apt chatter
+    # straight into the live checklist. Those lines are external to the animator's
+    # relative-cursor accounting (_TAIL only counts what _note prints), so the
+    # block drifted, rows scattered out of order and text overlapped (2026-10-16).
+    curl -fsSL https://tailscale.com/install.sh | sh >>"$LOG" 2>&1 || fail tailscale
   fi
   # Encrypt the tailscaled state file at rest. On Linux the flag NEEDS a TPM
   # (/dev/tpmrm0): on a box without one, forcing `--encrypt-state` makes
