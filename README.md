@@ -14,7 +14,9 @@ cd kefoCloud && bash scripts/install/install.sh
 
 Prompts once then runs unattended — errors are listed with a hint each and re-checked until resolved, and succes is only granted when the smoke check passes
 
-`scripts/install/uninstall.sh` reverses it in the same style — no prompt has a default (only `yes`/`no` are accepted), operator data and the tailscale-only SSH path are never touched without an explicit confirm, and the tailnet membership goes last.
+Re-running it on an installed box first asks **repair** or **reinstall**: *repair* reuses every saved value (asking only the missing ones), while *reinstall* is destructive — after one final `yes/no` it erases `data/` whole (containers down with their volumes first), re-asks every value, and rebuilds **the production stack only**: no repo framework, no host (packages, SSH, firewall, tailnet, docker, host services), no DNS/certs. Those tasks are marked `[SKIP]`; Smoke Pass stays mandatory last. The run log is reopened fresh at `data/logs/install.log`.
+
+`scripts/install/uninstall.sh` reverses it in the same style — no prompt has a default (only `yes`/`no` are accepted), operator data and the tailscale-only SSH path are never touched without an explicit confirm, and the tailnet membership goes last. A teardown that leaves the box usable offers the same reinstall right there (or prints the command to run it later).
 
 ### Modules
 
