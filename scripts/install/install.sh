@@ -1157,15 +1157,12 @@ kuma_seed() {
 # command can land in a dead/restarting window; and a single attempt gives no
 # second chance once the installer has moved on (2026-09-25: both mailboxes
 # uncreated, leaving the whole mail stack with no account).
-# Returns non-zero after a 60 s confirmation window.
 # Wait until the mailserver's account API actually answers, not merely until the
 # container is running: docker-mailserver serves `setup email list` while it is
-# still counting down to its own "no mail account to start Dovecot (120s left)"
+# still counting down to its own "no mail account to start Dovecot (120 s)"
 # self-exit, so a mailbox ADD issued in that window is lost when the container
-# restarts underneath it (2026-10-15: vaultwarden@ reported uncreated on a run
-# where the very next attempt succeeded). One wait, shared by every mailbox
-# caller, instead of a per-call retry that turns a boot race into a 5-minute
-# stall. Returns non-zero when the API never answers.
+# restarts underneath it. One wait, shared by every mailbox caller, instead of a
+# per-call retry that turns a boot race into a 5-minute stall.
 mail_wait_ready() {
   local i=0
   while [ $i -lt 300 ]; do
@@ -1188,12 +1185,10 @@ mail_wait_ready() {
   return 1
 }
 
-# Is the address in the mailserver's account list? Parsed POSITIVELY, not by
-# matching the row's trailing colon/paren formatting: DMS prints a quota-less
-# mailbox as `(  /  ) [%]` and a quota'd one as `( 0 / ~ ) [0%]`, and a probe
-# account DMS normalizes can make `setup email list` abort its whole listing
-# with `_bytes_to_human_readable_size` — both used to be read as "absent"
-# (2026-10-15). Grep the address itself, anchored to the start of a row.
+# Is the address in the mailserver's account list? The address itself decides —
+# never the row's trailing quota formatting (DMS prints `(  /  ) [%]` for a
+# quota-less mailbox and `( 0 / ~ ) [0%]` otherwise, and a probe account it
+# normalizes can abort the whole listing with `_bytes_to_human_readable_size`).
 mailbox_exists() {
   # Exact compare with grep -Fx, NOT a regex: an email address contains only
   # `[a-z0-9@.-]` by the time DMS has normalized it, so it needs no escaping —
