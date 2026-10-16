@@ -1951,26 +1951,17 @@ ask_nc_apps() {
   # Cloud must be desired; the configured actions then apply.
   mod_on cloud || return 0
 
-  # A fresh clone has no conf: it is the operator's own file (gitignored and
-  # untracked, so editing it can never alter the repo). Seed it once from the
-  # tracked template, so the shipped defaults still apply on a new host.
-  if [ ! -f "$conf" ] && [ -f "$conf.default" ]; then
-    cp "$conf.default" "$conf" 2>/dev/null && detail "  seeded $conf from config/cloud/apps.conf.default"
+  # apps.conf holds ONLY the operator's own extra apps, and is read on a FRESH
+  # install only: on a re-run (resume/repair) the selection is already in the
+  # instance, so re-asking it is useless. It may be empty (the normal case) or
+  # absent (a fresh clone, where it is untracked) — neither is an error.
+  local _fresh=true _sum=""
+  if [ -n "${NC_APPS_APPLIED:-}" ]; then
+    _fresh=false
+    detail "  apps.conf not read this run (already applied) — only the enforced apps are checked"
   fi
-
-  # No config → nothing to do (fresh installs get image defaults only).
-  [ -f "$conf" ] || return 0
-
-  # Already applied, and the config has not changed since: nothing to do. A
-  # re-run (resume/repair) reaches this task again, and re-asking would be
-  # useless — the actions are in the instance, and the same answers would apply
-  # the same actions again. The fingerprint is the config's content hash, so an
-  # edited apps.conf asks again (that is the operator's way to change their mind).
-  local _sum
-  _sum=$(sha256sum "$conf" 2>/dev/null | awk '{print $1}')
-  if [ -n "${NC_APPS_APPLIED:-}" ] && [ -n "$_sum" ] && [ "$NC_APPS_APPLIED" = "$_sum" ]; then
-    detail "  config/cloud/apps.conf unchanged since it was applied — nothing to ask"
-    return 0
+  if [ "${_fresh}" = true ]; then
+    _sum=$(sha256sum "$conf" 2>/dev/null | awk '{print $1}')
   fi
 
   # ---------- parse the config ----------
@@ -1978,8 +1969,16 @@ ask_nc_apps() {
   # Multi-action lines are supported (split on whitespace); bare verbs /
   # comments are ignored; an unknown verb is warned to stderr and ignored.
   declare -A install=() install_dis=() disable=() remove=() seen=() conflict=()
+  # ENFORCED, never configurable: TALK's signaling backend must be installed and
+  # enabled, and AppAPI must be installed-but-disabled (it opens an app-install
+  # path from the web UI). Any spreed/app_api line in apps.conf is dropped below
+  # with a warning — an operator who wants them otherwise changes them from
+  # their own Nextcloud Apps page.
+  install["spreed"]=1;  seen["spreed"]=1
+  install_dis["app_api"]=1; seen["app_api"]=1
   local line tok verb key
   while IFS= read -r line || [ -n "$line" ]; do
+    [ "${_fresh}" = true ] || break         # re-run: enforced apps only
     line="${line%%#*}"                          # strip inline comments
     line="${line#"${line%%[![:space:]]*}"}"     # trim leading whitespace
     line="${line%"${line##*[![:space:]]}"}"     # trim trailing whitespace
@@ -1987,6 +1986,12 @@ ask_nc_apps() {
     for tok in $line; do
       [[ "$tok" == *"="* ]] || continue         # bare verb → ignore
       verb="${tok%%=*}"; key="${tok#*=}"
+      case "$key" in
+        spreed|app_api)
+          _note "$(printf '  %sENFORCED%s config/cloud/apps.conf: %s is set by the installer (spreed: install&enable, app_api: install&disable) — line ignored; change it from your Nextcloud Apps page' \
+            "$C_ORANGE" "$C_RST" "$key")"
+          continue ;;
+      esac
       case "$verb" in
         install\&enable)  install["$key"]=1; seen["$key"]=1 ;;
         install\&disable) install_dis["$key"]=1; seen["$key"]=1 ;;
@@ -1995,7 +2000,7 @@ ask_nc_apps() {
         *) _note "$(printf '  %sWARN%s config/cloud/apps.conf: unknown verb %s in %s — ignored' "$C_ORANGE" "$C_RST" "'$verb'" "'$tok'")" ;;
       esac
     done
-  done < "$conf"
+  done < <( [ -f "$conf" ] && cat "$conf" )
 
   # ---------- conflicts: same app with two different verbs ----------
   # Fatal unless you explicitly drop them: warn with full details, prompt,
@@ -2216,10 +2221,9 @@ ask_nc_apps() {
       | grep -oE '^  - [^:]+' | sed -E 's/^  - ([^:]+).*/\1/'
   } > "$MANIFEST_DIR/apps.txt"
   detail "  recorded enabled apps ($MANIFEST_DIR/apps.txt): $(wc -l < "$MANIFEST_DIR/apps.txt" | tr -d ' ')"
-  # Record what was applied: on a re-run with the SAME config the prompt is
-  # skipped (see the top of this function), so a resume is not asked twice about
-  # actions that are already in the instance. Written only after a clean apply.
-  NC_APPS_APPLIED="$_sum"
+  # Record that the app selection was applied: a later run (resume/repair) then
+  # only re-checks the enforced apps instead of reading apps.conf again.
+  NC_APPS_APPLIED=1
   save_state
   return 0
 }
