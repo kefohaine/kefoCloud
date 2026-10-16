@@ -351,9 +351,13 @@ _task_resume() {
     _TAIL=0
     _task_update "$TASK_CUR"
   fi
-  [ -n "$TASK_DRAWN" ] && [ -n "$TASK_ACTIVE" ] && [ -z "$ANIM_PID" ] && {
+  # Only a row that is genuinely RUNNING animates: never a [SKIP] row that was
+  # pre-marked (they are ruled out before the run) nor a finished one, so an
+  # animator can never repaint a row's status into something it is not.
+  if [ -n "$TASK_DRAWN" ] && [ -n "$TASK_ACTIVE" ] && [ -z "$ANIM_PID" ] \
+     && [ "${TASK_STATE[$TASK_CUR]:-}" = run ]; then
     _task_anim "$TASK_CUR" & ANIM_PID=$!
-  }
+  fi
 }
 _tasks_draw() {
   local i
@@ -2954,6 +2958,12 @@ task_hygiene() {
 # past a failure and marks the rest [DONE].
 pause_and_resolve() {
   local tag still
+  # Stop the animator for the whole exchange: the error block and its prompt are
+  # printed BELOW the to-do list, and a live animator would keep repainting the
+  # running row inside the block being written (the 2026-10-16 overlap). Every
+  # exit path takes the matching _task_resume (which wipes the tail and restores
+  # the block), so the checklist always comes back on its own row.
+  _task_pause
   while [ ${#ERR_TAGS[@]} -gt 0 ]; do
     _note ""
     _note "$(printf '%s┌─ [FAIL]%s resolve to continue' "$C_RED" "$C_RST")"
@@ -2964,10 +2974,10 @@ pause_and_resolve() {
     _note "$(printf '%s└──────────────────────────────────────────────%s' "$C_RED" "$C_RST")"
     # No terminal to answer on (piped / cron / CI): the error cannot be resolved
     # here, so stop LOUD instead of running on through the rest of the checklist.
-    if [ ! -t 0 ]; then _tail_clear; return 1; fi
+    if [ ! -t 0 ]; then _tail_clear; _task_resume; return 1; fi
     printf '%s[INFO]%s Fix / complete the items above, then press Enter to re-check (Ctrl-C aborts): ' "$C_GREY" "$C_RST"
     # Aborted (Ctrl-C / EOF) with the error still open → hard stop.
-    read -r _ || { _task_count 1; _tail_clear; return 1; }
+    read -r _ || { _task_count 1; _tail_clear; _task_resume; return 1; }
     _task_count 1
     still=()
     for tag in "${ERR_TAGS[@]}"; do
@@ -2989,6 +2999,7 @@ pause_and_resolve() {
     _tail_clear
     [ ${#ERR_TAGS[@]} -eq 0 ] && { TASK_STATE[$TASK_CUR]=done; _task_update "$TASK_CUR"; }
   done
+  _task_resume
   return 0
 }
 
