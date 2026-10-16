@@ -18,8 +18,9 @@
 # issues remain.
 #
 # Sources merged: OPTIMIZE.md (Debian 13 setup), the repo's tuned values
-# (config/sysctl, docker daemon, dnsmasq cache, storage-box swap), `make
-# cleanup` (apt autoremove/clean + docker prune — minus backup pruning), and
+# (config/sysctl, docker daemon, dnsmasq cache, storage-box swap), apt
+# autoremove/clean + docker prune (the retired `make cleanup` payload, minus
+# backup pruning), and
 # standard high-performance-machine tuning (journald caps, inotify, noatime,
 # fstrim, THP=madvise, IRQ balance, earlyoom).
 #
@@ -169,7 +170,7 @@ ask_inputs() { # no prompts — every choice is auto-detected or env-overridable
   log "plan: swap=${SWAP_GB}G (RAM/3 rounded up) noatime=${NOATIME} disk=${ROOT_DEV} (${KIND}) setra=${SETRA} fstrim=${FORCE_FSTRIM} irqbalance=${WITH_IRQBALANCE} earlyoom=${WITH_EARLYOOM} tuned=${WITH_TUNED}${YES_NOTE}"
 }
 
-# ------------------------------------------------------------------ 1. apt cleanup (make cleanup minus backups)
+# ------------------------------------------------------------------ 1. apt cleanup (apt autoremove + clean)
 apt_clean() {
   log "apt: update / autoremove / clean"
   [ "$DRY" = 1 ] && { log "  would apt-get update + autoremove -y + clean"; return 0; }
@@ -301,7 +302,7 @@ swap_tune() {
 }
 
 # ------------------------------------------------------------------ 5. unneeded services
-SERVICE_PRUNE="cups.service cups-browsed.service ModemManager.service avahi-daemon.service bluetooth.service wpa_supplicant.service speech-dispatcher.service pppd-dns.service"
+SERVICE_PRUNE="cups.service cups-browsed.service ModemManager.service avahi-daemon.service bluetooth.service wpa_supplicant.service speech-dispatcher.service pppd-dns.service openipmi.service systemd-networkd-wait-online.service"
 services_prune() {
   log "services: disabling unneeded units (only if present + enabled)"
   local u st
@@ -332,7 +333,7 @@ Compress=yes
   log "  ok: journald capped"
 }
 
-# ------------------------------------------------------------------ 7. docker (daemon tuning + prune, like make cleanup)
+# ------------------------------------------------------------------ 7. docker (daemon tuning + prune)
 docker_tune() {
   [ "$HAS_DOCKER" = 0 ] && { log "docker: not installed — skipped"; return 0; }
   log "docker: daemon tuning + prune"
