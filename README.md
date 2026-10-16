@@ -12,6 +12,8 @@ git clone https://github.com/kefohaine/kefoCloud.git && cd kefoCloud
 bash scripts/install/install.sh
 ```
 
+Prompts once then runs unattended — errors are listed with a hint each and re-checked until resolved, and succes is only granted when the smoke check passes
+
 `scripts/install/uninstall.sh` reverses it in the same style — no prompt has a default (only `yes`/`no` are accepted), operator data and the tailscale-only SSH path are never touched without an explicit confirm, and the tailnet membership goes last.
 
 ### Modules
