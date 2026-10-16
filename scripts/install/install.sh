@@ -516,7 +516,8 @@ ask_ssh_key() {
   printf ' Use a key you can actually use — hardening is key-only, so a wrong or lost\n'
   printf ' key is a lockout.\n\n'
   while :; do
-    read -rp "Public SSH key of your device: " line \
+    printf '%s[INFO]%s Public SSH key of your device: ' "$C_GREY" "$C_RST"
+    read -r line \
       || { echo "A public key is required — re-run the installer from a terminal."; exit 1; }
     line="$(printf '%s' "$line" | tr -d '\r' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
     case "$line" in
