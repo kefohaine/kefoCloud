@@ -692,12 +692,9 @@ ask_choice() {   # ask_choice <question> <variable> <word...>
   return $rc
 }
 _ask_choice_raw() {
-  # Orange [WARN], not the usual grey [INFO]: this prompt is the first thing a
-  # returning operator sees above the checklist and it decides what the whole
-  # run does (it replaces the previous run's answers), so it is not routine input.
   local q="$1" var="$2"; shift 2; local words=("$@") answer="" w
   while :; do
-    printf '%s[WARN]%s %s' "$C_ORANGE" "$C_RST" "$q"
+    printf '%s[INFO]%s %s' "$C_GREY" "$C_RST" "$q"
     read -r answer || { _task_count 1; return 1; }
     _task_count 1
     for w in "${words[@]}"; do
@@ -3603,15 +3600,15 @@ main() {
     exit 1
   fi
 
-  # The start-of-run banner line: grey [INFO], purple [HH:MM:SS], white text —
+  # The start-of-run banner line: orange [WARN], purple [HH:MM:SS], white text —
   # printed once, just above the checklist (msg is log-only once a task is live).
   # The verb names what THIS run does: Installing / Repairing / Reinstalling.
   local _verb="Installing"
   [ "${REINSTALL:-false}" = true ] && _verb="Reinstalling"
   [ -n "${REPAIR:-}" ] && _verb="Repairing"
-  printf '[INFO] %s %s..\n' "$(date +%H:%M:%S)" "$_verb" >>"$LOG"
-  printf '%s[INFO]%s %s %s%s..%s\n' \
-    "$C_GREY" "$C_RST" "$(_tstamp)" "$C_WHITE" "$_verb" "$C_RST"
+  printf '[WARN] %s %s..\n' "$(date +%H:%M:%S)" "$_verb" >>"$LOG"
+  printf '%s[WARN]%s %s %s%s..%s\n' \
+    "$C_ORANGE" "$C_RST" "$(_tstamp)" "$C_WHITE" "$_verb" "$C_RST"
   _tasks_draw
   if ! run_install; then
     # A task failed and stayed unresolved: stop here, LOUD. The remaining rows
