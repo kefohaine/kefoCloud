@@ -196,7 +196,7 @@ _anim_field() {
 # One newline-terminated row for task $1.
 _task_row() {
   local i="$1"
-  local st="${TASK_STATE[$i]:-wait}" ts="${TASK_TS[$i]}" name="${TASK_NAMES[$i]}"
+  local st="${TASK_STATE[$i]:-wait}" ts="${TASK_TS[$i]:-}" name="${TASK_NAMES[$i]:-}"
   case "$st" in
     done)  printf '%s[DONE]%s %s[%s]%s %s\n'  "$C_GREEN"  "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
     skip)  printf '%s[SKIP]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
