@@ -231,6 +231,22 @@ load_state() {
   ERR_TAGS=("${uniq[@]}")
 }
 
+# Is a module enabled for THIS run? One definition, one fallback. The fallback
+# is "enabled" because a resume or a fresh run always sets MOD_* from the
+# prompts — an UNSET value can only mean "this run never asked", which is a
+# run that should be doing the full job, not silently skipping steps. Every
+# caller goes through here, so a step can never disagree with the module record
+# written to install.state (2026-10-15: three different call sites disagreed on
+# the fallback, and one of them made a healthy Nextcloud report a failure).
+mod_on() {
+  # Build the name first, then indirect it: `${MOD_${1^^}:-true}` is NOT valid
+  # bash (nested expansion inside a variable name) — it errors and every test
+  # silently becomes false, which is exactly the bug that once recorded an empty
+  # module set and muted smoke (2026-10-04).
+  local name="MOD_${1^^}"
+  [ "${!name:-true}" = "true" ]
+}
+
 # The enabled set as recorded in state: the modules the operator chose. Built
 # from the MOD_* answers; an unset MOD_* is NEVER assumed true here (unlike the
 # install path, which defaults to true) — the record only names answered ones.
@@ -504,9 +520,8 @@ write_state() {
     esac
     ev=$((ct+cf+dd+vh))
     [ "$ev" -gt 0 ] && echo "$m" >> "$det"
-    local _mod="MOD_${m^^}"
     printf '%-8s declared=%s running=%s compose=%s data=%s vhost=%s -> %s\n' \
-      "$m" "$([ "${!_mod:-true}" = true ] && echo 1 || echo 0)" \
+      "$m" "$(mod_on "$m" && echo 1 || echo 0)" \
       "$ct" "$cf" "$dd" "$vh" "$([ "$ev" -gt 0 ] && echo PRESENT || echo absent)" >> "$rep"
   done
 
@@ -593,31 +608,32 @@ github_push() {
   fi
   export GIT_COMMITTER_NAME="$GITHUB_COMMIT_NAME" GIT_COMMITTER_EMAIL="$GITHUB_COMMIT_EMAIL" \
          GIT_AUTHOR_NAME="$GITHUB_COMMIT_NAME" GIT_AUTHOR_EMAIL="$GITHUB_COMMIT_EMAIL"
-  git -C "$REPO" config user.name "$GITHUB_COMMIT_NAME" 2>/dev/null || true
-  git -C "$REPO" config user.email "$GITHUB_COMMIT_EMAIL" 2>/dev/null || true
   local url="git@github.com:$GITHUB_USER/$REPO_NAME.git"
 
-  # Push to a TEMPORARY remote first and only rewrite `origin` once the push
-  # succeeds: a non-collaborator's push is rejected, so their `origin` stays
-  # exactly as it was instead of being force-rewritten to a repo they cannot
-  # write.
-  git -C "$REPO" remote remove ghpush 2>/dev/null || true
-  git -C "$REPO" remote add ghpush "$url" 2>/dev/null || true
+  # Idempotent by construction: no persistent remote is created or rewritten.
+  # `temppush` is a one-shot URL remote — added, pushed, removed — and it is
+  # removed BEFORE the push (run both steps, then clean up on every exit path),
+  # so a re-run after an abort finds nothing stale to collide with. Git with no
+  # origin falls back to the COMMAND-LINE url, which is what a clone whose
+  # origin was never set needs; on this instance an origin from upstream is
+  # preserved and the installer push goes nowhere near it. Every piece of
+  # identity is passed with `-c`, so the run does not write shared repo config.
+  git -C "$REPO" remote remove temppush 2>/dev/null || true
   local push_out rc
-  push_out="$(git -C "$REPO" push --no-verify ghpush HEAD 2>&1)"
+  push_out="$(git -C "$REPO" -c user.name="$GITHUB_COMMIT_NAME" -c user.email="$GITHUB_COMMIT_EMAIL" \
+                -c remote.temppush.url="$url" \
+                push --no-verify temppush HEAD 2>&1)"
   rc=$?
+  git -C "$REPO" remote remove temppush 2>/dev/null || true
   printf '%s\n' "$push_out" >>"$LOG"
   if [ $rc -eq 0 ]; then
-    git -C "$REPO" remote set-url origin "$url" 2>/dev/null || true
-    git -C "$REPO" remote remove ghpush 2>/dev/null || true
-    detail "  GitHub: pushed to $url (origin set)"
+    detail "  GitHub: pushed to $url"
     return 0
   fi
-  git -C "$REPO" remote remove ghpush 2>/dev/null || true
   if printf '%s' "$push_out" | grep -q 'fetch first'; then
     warn github_push "push rejected — local history diverged from the remote (fetch first); run 'make fetch' or 'git pull --rebase' and re-run the installer"
   else
-    warn github_push "push rejected — $url refused $GITHUB_USER (not a collaborator, or the key is not authorized). origin was left unchanged."
+    warn github_push "push rejected — $url refused $GITHUB_USER (not a collaborator, or the key is not authorized)"
   fi
   return 1
 }
@@ -729,6 +745,12 @@ phase_host() {
   chmod 700 /root/.ssh
   if [ -s /root/.ssh/authorized_keys ]; then
     chmod 600 /root/.ssh/authorized_keys
+    # Restart sshd ONLY when the config actually changed: a restart drops every
+    # in-flight session, and a re-run that rewrites byte-identical files must not
+    # disconnect the operator mid-install. The digest is taken before and after
+    # the rewrite, so a genuine hardening change still takes effect immediately.
+    local ssh_before ssh_after
+    ssh_before=$(cat /etc/ssh/sshd_config.d/50-cloud-init.conf /etc/ssh/sshd_config 2>/dev/null | sha256sum)
     printf 'PasswordAuthentication no\nPermitRootLogin prohibit-password\nAllowUsers root\n' \
       > /etc/ssh/sshd_config.d/50-cloud-init.conf
     chmod 600 /etc/ssh/sshd_config.d/50-cloud-init.conf
@@ -737,8 +759,13 @@ phase_host() {
            -e 's/^#\?X11Forwarding.*/X11Forwarding no/' /etc/ssh/sshd_config
     grep -q '^PubkeyAuthentication' /etc/ssh/sshd_config || echo 'PubkeyAuthentication yes' >> /etc/ssh/sshd_config
     grep -q '^AllowUsers' /etc/ssh/sshd_config || echo 'AllowUsers root' >> /etc/ssh/sshd_config
-    systemctl restart sshd
-    detail "  sshd hardened: key-only root login (AllowUsers root)"
+    ssh_after=$(cat /etc/ssh/sshd_config.d/50-cloud-init.conf /etc/ssh/sshd_config 2>/dev/null | sha256sum)
+    if [ "$ssh_before" != "$ssh_after" ]; then
+      systemctl restart sshd
+      detail "  sshd hardened: key-only root login (AllowUsers root)"
+    else
+      detail "  sshd already hardened (unchanged) — not restarted"
+    fi
   else
     fail ssh_keys
     log "no SSH key in /root/.ssh/authorized_keys (ask_ssh_key should have installed one) — add a pubkey, then re-check; sshd stays password-capable until then"
@@ -906,16 +933,44 @@ prep_dirs() {
     printf '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1">\n<title>%s</title></head><body>\n<h1>%s</h1>\n<p>This is the placeholder homepage. Drop your pages in <code>%s/www</code> — they are served at the vhost roots (<code>www.%s</code>, <code>tail.%s</code>) and are never overwritten by a render.</p>\n</body></html>\n' \
       "$DOMAIN" "$DOMAIN" "$DATA" "$DOMAIN" "$DOMAIN" > "$ROOT/data/www/index.html"
   fi
-  sudo chown -R 33:33 $ROOT/data/cloud/html $ROOT/data/cloud/users
-  sudo chown -R 1000:1000 $ROOT/data/vault/data
-  sudo chown -R 5000:5000 $ROOT/data/mailserver/data $ROOT/data/mailserver/state $ROOT/data/mailserver/logs
-  sudo chown -R 33:33 $ROOT/data/mailserver/roundcube
+  # Recursive chowns only when the ownership is actually wrong: on an installed
+  # instance these trees can hold hundreds of thousands of files, and a re-run
+  # that walks them all just to find nothing to change is pure cost. The check is
+  # per top-level dir and falls back to "fix it" whenever stat cannot tell.
+  need_chown() { [ "$(stat -c '%u' "$1" 2>/dev/null || echo x)" != "$2" ]; }
+  need_chown $ROOT/data/cloud/html 33        && sudo chown -R 33:33 $ROOT/data/cloud/html
+  need_chown $ROOT/data/cloud/users 33       && sudo chown -R 33:33 $ROOT/data/cloud/users
+  need_chown $ROOT/data/vault/data 1000      && sudo chown -R 1000:1000 $ROOT/data/vault/data
+  need_chown $ROOT/data/mailserver/data 5000  && sudo chown -R 5000:5000 $ROOT/data/mailserver/data
+  need_chown $ROOT/data/mailserver/state 5000 && sudo chown -R 5000:5000 $ROOT/data/mailserver/state
+  # DMS's image owns /var/log/mail as its syslog user (uid 113); the compose user
+  # (5000) is only for the mail volume and state. A uid that does not exist
+  # locally is fine — the number is what matters across the bind mount.
+  need_chown $ROOT/data/mailserver/logs 113   && sudo chown -R 113:0 $ROOT/data/mailserver/logs
+  need_chown $ROOT/data/mailserver/roundcube 33 && sudo chown -R 33:33 $ROOT/data/mailserver/roundcube
   # root-owned: talk configs (talk-gen), the public drop folder and the
   # instance web root (read-only from the edge container).
   # pgdata stays root-owned — the postgres entrypoint chowns it on first boot.
-  sudo chown -R root:root $ROOT/data/talk \
-    $ROOT/data/download \
-    $ROOT/data/www
+  for d in talk download www; do
+    need_chown "$ROOT/data/$d" 0 && sudo chown -R root:root "$ROOT/data/$d"
+  done
+  # The container-side id above is what the IMAGE runs as, not a guess. One
+  # exception, measured rather than assumed: DMS's image creates /var/log/mail
+  # owned by its `syslog` user (uid 113), and the daemons it runs write there as
+  # `docker` — so forcing that dir to 5000 breaks mail logging. Every other
+  # mount is the compose user. A `chown` to an id that does not exist, or an
+  # image that changed its runtime user, leaves a mount the app cannot write —
+  # which surfaces much later as an opaque app error (Vaultwarden "unable to
+  # open database file", Nextcloud "Data directory is invalid") on a stack whose
+  # containers all report healthy.
+  local d want got
+  for spec in "cloud/html 33" "cloud/users 33" "vault/data 1000" \
+              "mailserver/data 5000" "mailserver/state 5000" \
+              "mailserver/logs 113" "mailserver/roundcube 33"; do
+    set -- $spec; d="$DATA/$1"; want="$2"
+    got=$(stat -c '%u' "$d" 2>/dev/null || echo "")
+    [ "$got" = "$want" ] || fail prep_dirs "$d is owned by uid ${got:-?} — its container runs as uid $want (see prep_dirs in this script)"
+  done
 }
 
 write_instance_conf() {
@@ -963,13 +1018,25 @@ seed_stack() {
   # "Next step: Access your instance to finish the web-based installation!"
   # and `occ` then only ever answers "Set an admin Login." Nextcloud stayed
   # uninstalled and the whole occ wiring below was skipped (2026-09-25).
+  # PER KEY, never "the file exists so it must be seeded": `make render` creates
+  # the file first, and a file-existence guard is what let compose interpolate
+  # the admin creds as EMPTY (2026-09-25). A key that is present but has no
+  # value is just as broken — empty means the entrypoint refuses to install — so
+  # a blank line is treated as unseeded and repaired with one canonical append.
   local ncen=modules/nextcloud/.env
   [ -f "$ncen" ] || { umask 077; : >"$ncen"; }
   chmod 600 "$ncen"
-  if ! grep -q '^NEXTCLOUD_ADMIN_PASSWORD=' "$ncen"; then
-    NEXTCLOUD_ADMIN_PASSWORD=$(openssl rand -base64 18 | tr -d '/+=' | head -c 20)
-    grep -q '^NEXTCLOUD_ADMIN_USER=' "$ncen" || echo 'NEXTCLOUD_ADMIN_USER=admin' >>"$ncen"
-    echo "NEXTCLOUD_ADMIN_PASSWORD=$NEXTCLOUD_ADMIN_PASSWORD" >>"$ncen"
+  ncseed() {
+    local key="$1" val="$2"
+    if grep -q "^$key=" "$ncen"; then
+      grep -q "^$key=." "$ncen" || sed -i "s|^$key=$|$key=$val|" "$ncen"
+    else
+      echo "$key=$val" >>"$ncen"
+    fi
+  }
+  ncseed NEXTCLOUD_ADMIN_USER admin
+  if ! grep -q '^NEXTCLOUD_ADMIN_PASSWORD=.' "$ncen"; then
+    ncseed NEXTCLOUD_ADMIN_PASSWORD "$(openssl rand -base64 18 | tr -d '/+=' | head -c 20)"
   fi
   # Read the creds back so the summary prints the password actually in use
   # (older installs may already have them, and this run must not print a
@@ -1001,7 +1068,18 @@ seed_stack() {
   local vwenv=modules/vaultwarden/.env
   [ -f "$vwenv" ] || { umask 077; : >"$vwenv"; }
   chmod 600 "$vwenv"
-  vwset() { grep -q "^$1=" "$vwenv" || echo "$1=$2" >>"$vwenv"; }
+  # Present-but-empty is repaired the same way a missing key is: compose
+  # interpolates an empty SMTP_* as "", Vaultwarden rejects "" (SMTP_SECURITY,
+  # SMTP_HOST) and crash-loops — the file existing is not evidence the key is
+  # usable.
+  vwset() {
+    local key="$1" val="$2"
+    if grep -q "^$key=" "$vwenv"; then
+      grep -q "^$key=." "$vwenv" || sed -i "s|^$key=$|$key=$val|" "$vwenv"
+    else
+      echo "$key=$val" >>"$vwenv"
+    fi
+  }
   # starttls is the only value Vaultwarden accepts for this variable besides
   # force_tls/off — it must never be left empty.
   vwset SMTP_HOST "mail.$DOMAIN"
@@ -1103,14 +1181,14 @@ containers_up() {
   # DNS-01 issuance runs at startup, so the mail/turn certs the talk stack
   # and mailserver need are on disk by the time they start. Modules respect
   # the install-time choice (default: everything ON).
-  if [ "${MOD_CLOUD:-true}" = "true" ]; then
+  if mod_on cloud; then
     log "  recreate: nextcloud-db + nextcloud"
     make dok-recreate-nextcloud-db >>"$LOG" 2>&1 || fail nextcloud_db
     make dok-recreate-nextcloud   >>"$LOG" 2>&1 || fail nextcloud
   fi
-  [ "${MOD_VAULT:-true}"   = "true" ] && { log "  recreate: vaultwarden"; make dok-recreate-vaultwarden >>"$LOG" 2>&1 || fail vaultwarden; }
-  [ "${MOD_MONITOR:-true}" = "true" ] && { log "  recreate: uptimekuma";  make dok-recreate-uptimekuma  >>"$LOG" 2>&1 || fail kuma; }
-  [ "${MOD_MAIL:-true}"    = "true" ] && { log "  recreate: mailserver";  make dok-recreate-mailserver  >>"$LOG" 2>&1 || fail mailserver; }
+  mod_on vault && { log "  recreate: vaultwarden"; make dok-recreate-vaultwarden >>"$LOG" 2>&1 || fail vaultwarden; }
+  mod_on monitor && { log "  recreate: uptimekuma";  make dok-recreate-uptimekuma  >>"$LOG" 2>&1 || fail kuma; }
+  mod_on mail && { log "  recreate: mailserver";  make dok-recreate-mailserver  >>"$LOG" 2>&1 || fail mailserver; }
 }
 
 kuma_seed() {
@@ -1225,6 +1303,16 @@ mailbox_add() {
       detail "  mailbox created: $addr"
       return 0
     fi
+    # A store the CLI cannot write is not a boot race — `setup email add` never
+    # succeeds against it, so retrying the same call for 90 s only delays the
+    # report. Recreate once (the entrypoint re-checks / re-inits the accounts
+    # file on boot), then keep retrying: a recreated DMS comes back with the
+    # store it can use on a bind mount that is writable again.
+    if printf '%s' "$out" | grep -qiE 'permission denied|read-only file system|cannot open|unable to (write|create)'; then
+      log "  setup email add: account store not writable — recreating mailserver"
+      make dok-recreate-mailserver >>"$LOG" 2>&1 || true
+      mail_wait_ready
+    fi
     # Container down → recreate it (a live one just needs the retry; restarting
     # a booting DMS would reset its own account wait timer).
     if ! docker exec mailserver true >/dev/null 2>&1; then
@@ -1255,7 +1343,7 @@ ask_nc_apps() {
   local conf="$REPO/config/cloud/apps.conf"
 
   # Cloud must be desired; the configured actions then apply.
-  [ "${MOD_CLOUD:-true}" = "true" ] || return 0
+  mod_on cloud || return 0
 
   # No config → nothing to do (fresh installs get image defaults only).
   [ -f "$conf" ] || return 0
@@ -1550,14 +1638,11 @@ nextcloud_setup() {
   # install/enable/disable/remove based on the shipped occ app list.
   ask_nc_apps
 
-  # SMTP wiring is gated on the mail module being enabled *and* the mail phase
-  # actually having prepared the account API in this run. Every other consumer
-  # (vaultwarden_setup, the recheck arm) falls back to enabled when MOD_MAIL is
-  # missing, so use the same fallback here: with MOD_MAIL unset the mail work
-  # never ran, and a missing mailserver is the mail module's failure to report,
-  # not nextcloud's.
+  # SMTP wiring is gated on the mail module — `mod_on mail` is the single
+  # definition of that test, so this step can never disagree with what the
+  # module record in install.state says or with the mailbox/recheck arms.
   . modules/nextcloud/.env
-  if [ "${MOD_MAIL:-true}" = "true" ]; then
+  if mod_on mail; then
     mailbox_add "nextcloud@$DOMAIN" "${SMTP_PASSWORD:-}" \
       || fail nextcloud_setup "mailbox nextcloud@$DOMAIN not created"
   else
@@ -1711,7 +1796,7 @@ nextcloud_setup() {
     return $rc
   }
   # SMTP is only wired when the mail module is enabled (see the mailbox step).
-  if [ "${MOD_MAIL:-false}" = "true" ]; then
+  if mod_on mail; then
     occ_check "mail.$DOMAIN" docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null \
       || fail nextcloud_setup "mail_smtphost not set"
   fi
@@ -1739,7 +1824,7 @@ nextcloud_occ_remediate() {
     docker exec -u www-data nextcloud php occ config:system:set trusted_proxies "$i" --value "$p" >/dev/null 2>&1
     i=$((i+1))
   done
-  if [ "${MOD_MAIL:-true}" = "true" ]; then
+  if mod_on mail; then
     docker exec -u www-data nextcloud php occ config:system:set mail_smtphost --value "mail.$DOMAIN" >/dev/null 2>&1
     docker exec -u www-data nextcloud php occ config:system:set mail_smtpport --value 587 >/dev/null 2>&1
     docker exec -u www-data nextcloud php occ config:system:set mail_smtpname --value "nextcloud@$DOMAIN" >/dev/null 2>&1
@@ -1769,7 +1854,7 @@ vaultwarden_setup() {
   cd "$REPO" || exit 1
   # The vaultwarden SMTP sender mailbox depends on the mail module: with mail
   # disabled there is no mailserver to authenticate against, so skip it.
-  if [ "${MOD_MAIL:-true}" != "true" ]; then
+  if ! mod_on mail; then
     log "  mail module disabled — skipping mailbox vaultwarden@$DOMAIN"
     return 0
   fi
@@ -1935,18 +2020,18 @@ cf_mail_dns() {
   # proxied (orange cloud): vault/kuma/www. talk rides on the cloud door.
   for h in cloud vault kuma www; do
     case "$h" in
-      cloud) [ "${MOD_CLOUD:-true}" = "true" ] && cf_record "$h" false;;
-      vault) [ "${MOD_VAULT:-true}" = "true" ] && cf_record "$h" true;;
-      kuma)  [ "${MOD_MONITOR:-true}" = "true" ] && cf_record "$h" true;;
+      cloud) mod_on cloud && cf_record "$h" false;;
+      vault) mod_on vault && cf_record "$h" true;;
+      kuma)  mod_on monitor && cf_record "$h" true;;
       www)   cf_record "$h" true;;
     esac
   done
   # talk/mail MUST be DNS-only (grey cloud): TURN relays media over
   # UDP/TCP 3478/5349 + 49160-49200 and SMTP/IMAP also bypass the CF proxy
   # (HTTP(S) only). Caddy still gets their LE certs via DNS-01.
-  [ "${MOD_CLOUD:-true}" = "true" ] && cf_record talk false
-  [ "${MOD_MAIL:-true}"  = "true" ] && cf_record mail false
-  [ "${MOD_MAIL:-true}" = "true" ] && cf_mail_dns
+  mod_on cloud && cf_record talk false
+  mod_on mail  && cf_record mail false
+  mod_on mail && cf_mail_dns
   curl -s -X PATCH -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
     "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/settings/ssl" -d '{"value":"full"}' >>"$LOG" 2>&1 || true
   # DNS-only tokens can't set SSL mode; surface it as an expected manual step.
@@ -1970,24 +2055,40 @@ cert_issuer() {
 issue_certs() {
   local hosts="" h iss pending=()
   hosts="www"
-  [ "${MOD_CLOUD:-true}" = "true" ]   && hosts="$hosts cloud talk"
-  [ "${MOD_VAULT:-true}" = "true" ]   && hosts="$hosts vault"
-  [ "${MOD_MONITOR:-true}" = "true" ] && hosts="$hosts kuma"
-  [ "${MOD_MAIL:-true}" = "true" ]    && hosts="$hosts mail"
+  mod_on cloud   && hosts="$hosts cloud talk"
+  mod_on vault   && hosts="$hosts vault"
+  mod_on monitor && hosts="$hosts kuma"
+  mod_on mail    && hosts="$hosts mail"
   for h in $hosts; do
     curl -sk --resolve "$h.$DOMAIN:443:127.0.0.1" -o /dev/null "https://$h.$DOMAIN/" >>"$LOG" 2>&1 || true
     sleep 3
   done
   # The trigger requests above only wake Caddy up — the first DNS-01 issuance
-  # is not instant, so cert_issuer polls before declaring failure.
+  # is not instant, so cert_issuer polls before declaring failure. The two
+  # outcomes are NOT the same and must not be treated as one:
+  #   * empty issuer  = Caddy has not finished issuing yet (normal warm-up);
+  #                     wait it out, never restart the edge for it.
+  #   * real issuer that is not Let's Encrypt = an order genuinely stuck, which
+  #     one restart re-attempts (observed on kuma.$DOMAIN: every other vhost
+  #     issued while that lock kept retrying).
+  # Restarting on the empty case alone killed every live connection for nothing.
+  local stuck=() h2
   for h in $hosts; do
-    case "$(cert_issuer "$h")" in *"Let's Encrypt"*) ;; *) pending+=("$h");; esac
+    iss=$(cert_issuer "$h")
+    case "$iss" in
+      *"Let's Encrypt"*) ;;
+      "") pending+=("$h") ;;
+      *) stuck+=("$h") ;;
+    esac
   done
-  # Caddy's ACME retry backoff can leave a single order stuck (observed on
-  # kuma.$DOMAIN: every other vhost issued, kuma's lock kept retrying) — one
-  # restart re-attempts the pending identifiers.
   if [ ${#pending[@]} -gt 0 ]; then
-    detail "  ${#pending[@]} cert(s) pending (${pending[*]}) — restarting Caddy to re-attempt"
+    detail "  ${#pending[@]} cert(s) still issuing (${pending[*]}) — waiting for Caddy to finish"
+    for h2 in "${pending[@]}"; do
+      case "$(cert_issuer "$h2")" in *"Let's Encrypt"*) ;; *) stuck+=("$h2");; esac
+    done
+  fi
+  if [ ${#stuck[@]} -gt 0 ]; then
+    detail "  ${#stuck[@]} cert order(s) stuck (${stuck[*]}) — restarting Caddy to re-attempt"
     # The container is named `caddy` (compose container_name), not $DOMAIN —
     # restarting "$DOMAIN" always failed with "No such container" and the
     # re-attempt never happened (2026-09-25).
@@ -2011,13 +2112,17 @@ issue_certs() {
 sweep_hits() {
   # Flag only legacy placeholders that cannot legitimately remain after a
   # rename (the skeleton shipped "exampleuser" as owner and "homelab" as project).
-  # Exclude generated/compiled areas, documentation, and instance .envs, and skip
-  # anything referencing the kefoCloud project name so project records never trip
-  # the sweep. Note: --exclude-dir=docs is needed because docs/GUIDE.md documents
-  # the old homelab rename and must never be flagged.
+  # Scoped to the two dirs that can actually carry a placeholder: the tracked
+  # modules/ and config/ trees. Scanning $REPO root-wide walked data/ (the live
+  # instance: maildirs, pgdata, certs — hundreds of thousands of files, ~23 s per
+  # pass) and had to be filtered back out afterwards; `-not -path` was a FIND flag
+  # handed to grep, so it did nothing and the exclusion rested on the kefoCloud
+  # grep alone. docs/ and scripts/ are out of scope by design: docs record the
+  # rename as history and these scripts name the old project by nature.
   grep -rlI -e homelab -e exampleuser \
-    "$REPO" --exclude-dir=.git --exclude-dir=docs --exclude-dir=archives --exclude-dir=scripts \
-    --exclude='*.md' --exclude='.env' -not -path '*/data/*' 2>/dev/null |
+    "$REPO/modules" "$REPO/config" \
+    --exclude-dir=.git --exclude-dir=archives \
+    --exclude='*.md' --exclude='.env' 2>/dev/null |
     grep -v 'kefoCloud' || true
 }
 
@@ -2049,16 +2154,16 @@ phase_stack() {
   # the DKIM publish needs the same container — running the mail work first is
   # what keeps a slow DMS boot from surfacing as a mailbox failure halfway
   # through the run (2026-10-15).
-  if [ "${MOD_MAIL:-true}" = "true" ]; then
+  if mod_on mail; then
     mail_wait_ready
     dkim_setup
   fi
-  if [ "${MOD_CLOUD:-true}" = "true" ]; then
+  if mod_on cloud; then
     nextcloud_setup
   fi
-  [ "${MOD_VAULT:-true}" = "true" ] && vaultwarden_setup
+  mod_on vault && vaultwarden_setup
   issue_certs
-  [ "${MOD_MONITOR:-true}" = "true" ] && kuma_seed
+  mod_on monitor && kuma_seed
   sweep
 }
 
@@ -2169,10 +2274,10 @@ recheck() {
     cert_*) local h=${1#cert_}; echo | timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$h.$DOMAIN" 2>/dev/null | openssl x509 -noout -issuer 2>/dev/null | grep -q "Let's Encrypt" ;;
     sweep) [ -z "$(sweep_hits)" ] ;;
     sslmode) ssl_mode_full ;;
-    nextcloud_setup) nextcloud_occ_remediate; if [ "${MOD_MAIL:-false}" != "true" ] || docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN"; then docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://talk.$DOMAIN/signaling" && docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "talk.$DOMAIN:3478" && docker exec -u www-data nextcloud php occ config:system:get trusted_domains 2>/dev/null | grep -qx "cloud.$DOMAIN"; else false; fi ;;
+    nextcloud_setup) nextcloud_occ_remediate; if ! mod_on mail || docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN"; then docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://talk.$DOMAIN/signaling" && docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "talk.$DOMAIN:3478" && docker exec -u www-data nextcloud php occ config:system:get trusted_domains 2>/dev/null | grep -qx "cloud.$DOMAIN"; else false; fi ;;
     dkim_setup)      dig +short TXT "mail._domainkey.$DOMAIN" @"$(dig +short NS "$DOMAIN" | head -1)" 2>/dev/null | grep -qE 'p=[A-Za-z0-9+/=]{100,}' ;;
-    dns_mail_txt) [ "${MOD_MAIL:-true}" = "true" ] || return 0; cf_mail_dns; local records; records=$(curl -fsS -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" 2>/dev/null) || return 1; printf '%s' "$records" | jq -e --arg d "$DOMAIN" --arg s "v=spf1 a:mail.$DOMAIN mx -all" --arg k 'v=DKIM1; p=' --arg m 'v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s;' '[.result[] | {type,name,content}] as $r | [[$d,"MX"],["*._domainkey."+$d,"TXT"],["_dmarc."+$d,"TXT"]] as $fs | [($fs[] | . as $x | any($r[]; .type==$x[1] and .name==$x[0])), any($r[]; .type=="TXT" and .name==$d and .content==$s)] | all' >/dev/null ;;
-    vaultwarden_setup) if [ "${MOD_MAIL:-false}" = "true" ]; then . modules/vaultwarden/.env 2>/dev/null; mailbox_add "vaultwarden@$DOMAIN" "${SMTP_PASSWORD:-}" >/dev/null 2>&1; mailbox_exists "vaultwarden@$DOMAIN"; else false; fi ;;
+    dns_mail_txt) mod_on mail || return 0; cf_mail_dns; local records; records=$(curl -fsS -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" 2>/dev/null) || return 1; printf '%s' "$records" | jq -e --arg d "$DOMAIN" --arg s "v=spf1 a:mail.$DOMAIN mx -all" --arg k 'v=DKIM1; p=' --arg m 'v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s;' '[.result[] | {type,name,content}] as $r | [[$d,"MX"],["*._domainkey."+$d,"TXT"],["_dmarc."+$d,"TXT"]] as $fs | [($fs[] | . as $x | any($r[]; .type==$x[1] and .name==$x[0])), any($r[]; .type=="TXT" and .name==$d and .content==$s)] | all' >/dev/null ;;
+    vaultwarden_setup) if mod_on mail; then . modules/vaultwarden/.env 2>/dev/null; mailbox_add "vaultwarden@$DOMAIN" "${SMTP_PASSWORD:-}" >/dev/null 2>&1; mailbox_exists "vaultwarden@$DOMAIN"; else false; fi ;;
     *) false ;;
   esac
 }
@@ -2340,12 +2445,17 @@ ask_optimize() {
 
 finalize_hardening() {
   # Runs once every error is resolved: if a key exists now, harden sshd
-  # (phase 1 skipped it when no key was present at install time).
+  # (phase 1 skipped it when no key was present at install time). Same
+  # change-detection as phase_host — a re-run that writes identical config does
+  # not restart sshd, so an operator's session is never dropped for nothing.
   if [ -s /root/.ssh/authorized_keys ]; then
+    local before after
+    before=$(cat /etc/ssh/sshd_config.d/50-cloud-init.conf 2>/dev/null | sha256sum)
     printf 'PasswordAuthentication no\nPermitRootLogin prohibit-password\nAllowUsers root\n' \
       > /etc/ssh/sshd_config.d/50-cloud-init.conf
     chmod 600 /etc/ssh/sshd_config.d/50-cloud-init.conf
-    systemctl restart sshd >/dev/null 2>&1 || true
+    after=$(cat /etc/ssh/sshd_config.d/50-cloud-init.conf 2>/dev/null | sha256sum)
+    [ "$before" = "$after" ] || systemctl restart sshd >/dev/null 2>&1 || true
   fi
   # Close the temporary installer-session SSH rule (tailnet access stays).
   local ip="${INSTALLER_SSH_IP:-}"
@@ -2385,7 +2495,7 @@ success_block() {
   echo " ─────────────────────────────────────────────────────────────────────────"
   echo ""
   echo " Follow-ups (none block the install):"
-  if [ "${MOD_MAIL:-true}" = "true" ]; then
+  if mod_on mail; then
     echo "   Additional step — configure a PTR (rDNS) record with your VPS provider:"
     echo "     ${HOST_IP:-<machine IP>}  ->  mail.$DOMAIN"
     echo "     (only your provider can create it; SPF/DKIM/DMARC alone won't stop rejects)"
@@ -2501,7 +2611,7 @@ main() {
   _bar_begin "phase 1/2 — host: packages, ssh, docker, tailscale, firewall"
   phase_host
   detail "=== phase 2/2 — stack"
-  detail "  modules enabled: $(enabled_modules_list) | cloud=$([ "${MOD_CLOUD:-true}" = true ] && echo on || echo off) vault=$([ "${MOD_VAULT:-true}" = true ] && echo on || echo off) mail=$([ "${MOD_MAIL:-true}" = true ] && echo on || echo off) monitor=$([ "${MOD_MONITOR:-true}" = true ] && echo on || echo off)"
+  detail "  modules enabled: $(enabled_modules_list) (per-module: cloud=$(mod_on cloud && echo on || echo off) vault=$(mod_on vault && echo on || echo off) mail=$(mod_on mail && echo on || echo off) monitor=$(mod_on monitor && echo on || echo off))"
   _bar_begin "phase 2/2 — stack: repo, containers, DNS, certs, modules, smoke"
   phase_stack
   _bar_stop
