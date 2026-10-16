@@ -3092,14 +3092,13 @@ main() {
       # because "resume" reads like "continue from where it stopped" (2026-10-16).
       if [ "${FINISHED:-false}" = "true" ]; then
         msg "  previous run finished successfully — a resume re-runs the whole (idempotent) pipeline, it does not skip completed steps."
-      else
-        msg "  previous run did not finish — resuming re-runs the (idempotent) pipeline to complete it."
       fi
     else
       # Fresh run: IGNORE the previous answers (never take them as valid) but do
       # NOT delete them — a later run can still resume. Everything is re-asked.
       detail "  starting fresh — every value is asked again (saved answers ignored, not deleted)"
       unset DOMAIN CF_API_TOKEN TS_AUTHKEY TS_IP SSH_PUBKEY \
+            LOCALE_COUNTRY \
             MOD_CLOUD MOD_VAULT MOD_MAIL MOD_MONITOR \
             GH_REMOTE GH_AUTH_OK \
             GITHUB_COMMIT_NAME GITHUB_COMMIT_EMAIL
