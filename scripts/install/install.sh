@@ -198,6 +198,9 @@ TASK_NAMES=(
 # not touch data/ is marked [SKIP] on a reinstall run (see task_reinstall_skip),
 # and Smoke Pass stays mandatory last, exactly as on a normal install.
 REINSTALL=false
+# Shown once, at the end of every [SKIP] row: a repair skips nothing (empty),
+# a reinstall names why the row did not run. Set in main() with the mode.
+REINSTALL_SKIP_NOTE=
 # Which task functions DO touch data/ (kept live on a reinstall): Stack Config
 # (rendered/, instance.conf, seeds), Containers Up (the stack and its volumes),
 # Mail / Nextcloud / Vaultwarden / Monitoring Setup (their data dirs). Every
@@ -241,12 +244,14 @@ _task_row() {
   local st="${TASK_STATE[$i]:-wait}" ts="${TASK_TS[$i]:-}" name="${TASK_NAMES[$i]:-}"
   case "$st" in
     done)  printf '%s[DONE]%s %s[%s]%s %s\n'  "$C_GREEN"  "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
-    # A skipped task says so in the NAME too, not only in the status column: the
-    # row's [HOST]/[STACK]/[BOTH] tag is replaced by [SKIP], whichever part of
-    # the box the task belongs to, so a skipped row can never read like a task
-    # that ran (tasker_location is irrelevant to a skip).
-    skip)  printf '%s[SKIP]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$ts" "$C_RST" \
-             "$(printf '%s' "$name" | sed -E 's/^\[[A-Z]+\](\+\[[A-Z]+\])?/[SKIP]/')" ;;
+    # A skipped task says so on BOTH sides of the row, not only in the status
+    # column: the row's [HOST]/[STACK]/[BOTH] tag becomes [SKIP] and the name is
+    # suffixed [SKIP] — whichever part of the box the task belongs to, so a
+    # skipped row can never be mistaken for a task that ran, and the reason (the
+    # reinstall's scope) is spelled out at the end of the line.
+    skip)  printf '%s[SKIP]%s %s[%s]%s %s%s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$ts" "$C_RST" \
+             "$(printf '%s' "$name" | sed -E 's/^\[[A-Z]+\](\+\[[A-Z]+\])?/[SKIP]/')" \
+             "${REINSTALL_SKIP_NOTE:- — deliberately not run}" ;;
     error) printf '%s[ERROR]%s %s[%s]%s %s\n' "$C_RED"    "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
     run)   printf '%s[TASK]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$(_anim_field)" "$C_RST" "$name" ;;
     # A pending row has no time yet: the placeholder stands until the task
@@ -3425,6 +3430,10 @@ main() {
         exit 0
       fi
       detail "  reinstall — production stack only: data/ is erased, everything else is skipped"
+      # The checklist is NEVER shortened: every row is always drawn, for a repair
+      # and a reinstall alike. A reinstall only marks the rows it does not run,
+      # and this note (appended to each of them) says why once, on the row.
+      REINSTALL_SKIP_NOTE=" — [SKIP]: outside the reinstall's scope"
       REINSTALL=true
       if ! reinstall_handoff "$@"; then
         # The hand-off refused (or uninstall.sh failed): STOP — a reinstall on
