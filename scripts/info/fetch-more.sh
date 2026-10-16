@@ -39,7 +39,7 @@ have() { command -v "$1" >/dev/null 2>&1; }
 dot()  { local s="$1" n="$2" t="${3:-}"; [ -n "$t" ] && printf "%s%d %s · " "$s" "$n" "$t" || printf "%s%d %s" "$s" "$n"; }
 
 echo ""
-printf "  %s%s%s — homelab fetch-more  %s· %s%s\n" "$B" "$(hostname)" "$N" "$D" "$(date '+%F %T %Z')" "$N"
+printf "  %s%s%s — kefoCloud fetch-more  %s· %s%s\n" "$B" "$(hostname)" "$N" "$D" "$(date '+%F %T %Z')" "$N"
 printf "  %srepo %s · data %s%s\n" "$D" "$ROOT" "$DATA" "$N"
 rule
 
@@ -201,6 +201,10 @@ if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     row dirty "${G}clean${N}"
   fi
   row remote "$(git -C "$ROOT" remote get-url origin 2>/dev/null)"
+  # Identity (repo-local) and the installed guards — root/invented identities are
+  # refused by the hooks (AGENTS rule 27).
+  row identity "$(git -C "$ROOT" config user.name 2>/dev/null || echo '-') <$(git -C "$ROOT" config user.email 2>/dev/null || echo '-')> · useConfigOnly=$(git -C "$ROOT" config user.useConfigOnly 2>/dev/null || echo false)"
+  row hooks "pre-commit $([ -x "$ROOT/.git/hooks/pre-commit" ] && echo ✓ || echo ✗) · pre-push $([ -x "$ROOT/.git/hooks/pre-push" ] && echo ✓ || echo ✗) · run make install-hooks to (re)install"
 fi
 mstr=""
 while read -r m; do

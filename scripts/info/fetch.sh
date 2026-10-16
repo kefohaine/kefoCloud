@@ -42,7 +42,7 @@ row()  { printf "  %s%-9s%s %s\n" "${C}${B}" "$1" "$N" "$2"; }
 rule() { printf "  %s%s%s\n" "$D" "$(printf '%*s' 62 '' | tr ' ' '-')" "$N"; }
 
 echo ""
-printf "  %s%s%s — homelab fetch  %s· %s%s\n" "$B" "$(hostname)" "$N" "$D" "$(date '+%F %T %Z')" "$N"
+printf "  %s%s%s — kefoCloud fetch  %s· %s%s\n" "$B" "$(hostname)" "$N" "$D" "$(date '+%F %T %Z')" "$N"
 rule
 
 # installation — the install checkpoint (install.state `finished`), first: the
@@ -68,16 +68,17 @@ awk -v v="$l15" -v n="$ncpu" 'BEGIN{exit !(v > n*2)}' && lcol="$R"
 cpup=$(top -bn1 2>/dev/null | awk '/^%Cpu/{printf "%.0f", 100-$8; exit}')
 row load "${lcol}${l1} ${l5} ${l15}${N} · cpu ${cpup:-?}% · ${ncpu} cores"
 
-# memory + swap
-m=$(free -b | awk '/^Mem:/{printf "%.1f/%.1f GiB", $3/1073741824, $2/1073741824}')
-mp=$(free -b | awk '/^Mem:/{printf "%d", $3*100/$2}')
-s=$(free -b | awk '/^Swap:/{if($2==0){print "none"; exit} printf "%.1f/%.1f GiB", $3/1073741824, $2/1073741824}')
+# memory + swap (one `free` read, not three)
+freeb=$(free -b)
+m=$(awk '/^Mem:/{printf "%.1f/%.1f GiB", $3/1073741824, $2/1073741824}' <<<"$freeb")
+mp=$(awk '/^Mem:/{printf "%d", $3*100/$2}' <<<"$freeb")
+s=$(awk '/^Swap:/{if($2==0){print "none"; exit} printf "%.1f/%.1f GiB", $3/1073741824, $2/1073741824}' <<<"$freeb")
 mcol="$N"; [ "${mp:-0}" -ge 85 ] 2>/dev/null && mcol="$R"
 row memory "${mcol}${m} (${mp:-?}%)${N} · swap ${s}"
 
-# disk
-dk=$(df -h / | awk 'NR==2{print $3"/"$2" ("$5")"}')
-dp=$(df --output=pcent / 2>/dev/null | tail -1 | tr -dc '0-9')
+# disk (one `df` read)
+read -r dk_used dk_size dp < <(df -h / | awk 'NR==2{print $3, $2, $5+0}')
+dk="${dk_used}/${dk_size} (${dp}%)"
 dcol="$N"
 [ "${dp:-0}" -ge 90 ] 2>/dev/null && dcol="$R"
 [ "${dp:-0}" -ge 75 ] 2>/dev/null && dcol="$Y"
@@ -119,6 +120,13 @@ if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   gd=$(git -C "$ROOT" status --porcelain 2>/dev/null | wc -l)
   if [ "$gd" -gt 0 ]; then gs="${Y}${gd} uncommitted${N}"; else gs="${G}clean${N}"; fi
   row git "$gb · $gs"
+  # The repo's git guards (identity/edge pre-commit + smoke pre-push) — installed
+  # by `make install-hooks` and at deploy time by install.sh.
+  if [ -x "$ROOT/.git/hooks/pre-commit" ] && [ -x "$ROOT/.git/hooks/pre-push" ]; then
+    row hooks "${G}installed${N} — pre-commit (identity + edge), pre-push (smoke)"
+  else
+    row hooks "${R}missing${N} — run: make install-hooks"
+  fi
 fi
 
 # host units
