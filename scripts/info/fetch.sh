@@ -11,8 +11,8 @@
 # Module-aware: the record comes from data/install.state via
 # scripts/lib/modules.sh — the ONE accessor (install.sh is the sole writer).
 # TWO INDEPENDENT FACTS, never conflated:
-#   * `finished` — the install checkpoint (successful / pending / no state),
-#                  printed first as the honest caveat.
+#   * `installation` — the install checkpoint printed FIRST: complete (green) /
+#                  pending (red) / no state, from install.state `finished`.
 #   * `modules`  — installed (green) vs not installed (red), from install.state,
 #                  regardless of `finished`. A not-installed module is ABSENT —
 #                  no route — and is printed in WORDS, never colour alone: it is
@@ -45,12 +45,13 @@ echo ""
 printf "  %s%s%s — homelab fetch  %s· %s%s\n" "$B" "$(hostname)" "$N" "$D" "$(date '+%F %T %Z')" "$N"
 rule
 
-# finished — the install checkpoint, first (the honest caveat for the rows below)
+# installation — the install checkpoint (install.state `finished`), first: the
+# honest caveat for every row below. complete=green, pending/no state=red.
 case "$(mod_finished)" in
-  true)    row finished "${G}successful${N} — install.state finished=true" ;;
-  false)   row finished "${Y}pending${N} — install.state finished=false (install did not complete)" ;;
-  absent)  row finished "${R}no state${N} — data/install.state absent (never installed)" ;;
-  *)       row finished "${R}unknown${N} ($(mod_finished))" ;;
+  true)    row installation "${G}complete${N} — install.state finished=true" ;;
+  false)   row installation "${R}pending${N} — install.state finished=false (install did not complete)" ;;
+  absent)  row installation "${R}pending${N} — data/install.state absent (never installed)" ;;
+  *)       row installation "${R}pending${N} — finished=$(mod_finished)" ;;
 esac
 
 # host
@@ -87,26 +88,22 @@ topmem=$(ps -eo comm,pmem --sort=-pmem --no-headers 2>/dev/null | head -3 \
   | awk '{printf "%s%s %.0f%%", (NR>1?" · ":""), $1, $2}')
 row "top mem" "$topmem"
 
-# modules (install.state — the same record `make smoke` reads): every declared
-# module shown, with the state spelled out: `cloud` vs `vault (not installed)`. The
-# word is the point: a not-installed module must never be inferred from colour.
+# modules — ALWAYS every module the repo declares (config/modules.conf), from
+# install.state: recorded in green, the rest in red with the words spelled out
+# (never colour alone — a not-installed module must not be inferred from colour).
 mods=""
 while read -r m; do
   [ -n "$m" ] || continue
   if mod_installed "$m"; then mods+="${G}${m}${N}  "
-  else mods+="${R}${m} (not installed)${N}  "; fi
+  else mods+="${R}${m}${N} ${D}(not installed)${N}  "; fi
 done < <(mod_all)
 mods+="${D}(install.state enabled_modules)${N}"
 row modules "$mods"
 
-# containers — the repo-wide roster (edge + every module's containers), state
+# containers — mod_roster: the edge + EVERY declared module's containers, state
 # from live docker, INDEPENDENT of which modules are enabled. running=green,
 # stopped=red.
-roster="caddy"
-while read -r m; do
-  [ -n "$m" ] || continue
-  roster+=" $(mod_containers "$m")"
-done < <(mod_all)
+roster="$(mod_roster)"
 runnow="$(docker ps --format '{{.Names}}' 2>/dev/null)"
 ctns=""
 for c in $roster; do
