@@ -861,7 +861,7 @@ migrate:
 # Git
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: git-pull git-add git-com git-push
+.PHONY: git-pull git-add git-com git-push git-force-push
 
 git-pull:
 >cd $(REPO) && git pull --ff-only
@@ -878,6 +878,17 @@ git-com:
 
 git-push:
 >cd $(REPO) && git push
+
+# Force-push a branch whose history was rewritten (identity swap, linearization,
+# path scrub). --force-with-lease ONLY: it refuses when the remote tip is not the
+# one we last fetched, so it can never clobber a commit pushed from elsewhere.
+# BRANCH is required and may list several branches. Before any rewrite keep the
+# old tip in a refs/backup/* ref (that ref is the revert path).
+# Revert of a rewrite pushed this way: git reset --hard <refs/backup/* tip>, then
+# make git-force-push BRANCH=<branch>.
+git-force-push:
+>@test -n "$(BRANCH)" || { scripts/lib/mklog error "Usage: make git-force-push BRANCH=<branch> [BRANCH2 …]"; exit 1; }
+>cd $(REPO) && git push --force-with-lease origin $(BRANCH)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Help (default goal) — scripts/info/help.sh renders both lists in the
