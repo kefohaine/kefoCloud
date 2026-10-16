@@ -161,7 +161,8 @@ ERR_WARN_TAGS=()
 # ─────────────────────── the installation task checklist ───────────────────
 # One fixed list, printed once as a live checklist. Each row starts as [WAIT]
 # (grey), becomes an animated [TASK] (orange) while it runs, and ends as [DONE]
-# (green) or [ERROR] (red). A failed task is marked, the run CONTINUES through
+# (green), [SKIP] (orange, a module that is off) or [ERROR] (red). A failed
+# task is marked, the run CONTINUES through
 # the remaining tasks, and every error is reported at the end. Nothing prints
 # between the task rows (msg is muted while TASK_ACTIVE is set); each step's own
 # output goes to $LOG. On a non-TTY run the animation is skipped and each row is
@@ -175,7 +176,7 @@ TASK_NAMES=(
 )
 TASK_TOTAL=${#TASK_NAMES[@]}
 declare -a TASK_STATE=() TASK_TS=()
-TASK_CUR=-1 TASK_ACTIVE= TASK_DRAWN= ANIM_PID= ANIM_POS=0 TASK_ERR=
+TASK_CUR=-1 TASK_ACTIVE= TASK_DRAWN= ANIM_PID= ANIM_POS=0 TASK_ERR= TASK_SKIP=
 _TAIL=0 _ANIM_PAUSE= _COLS=80 ANIM_SYM='$'
 
 # The current task's status column: an 8-wide field with ONE orange marker that
@@ -196,6 +197,7 @@ _task_row() {
   local st="${TASK_STATE[$i]:-wait}" ts="${TASK_TS[$i]}" name="${TASK_NAMES[$i]}"
   case "$st" in
     done)  printf '%s[DONE]%s %s[%s]%s %s\n'  "$C_GREEN"  "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
+    skip)  printf '%s[SKIP]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
     error) printf '%s[ERROR]%s %s[%s]%s %s\n' "$C_RED"    "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
     run)   printf '%s[TASK]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$(_anim_field)" "$C_RST" "$name" ;;
     *)     printf '%s[WAIT]%s %s[%s]%s %s\n'  "$C_GREY"   "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
@@ -317,20 +319,26 @@ _tasks_draw() {
   TASK_DRAWN=1
 }
 task_start() {
-  TASK_CUR=$(( TASK_CUR + 1 )); TASK_ACTIVE=1 TASK_ERR=
+  TASK_CUR=$(( TASK_CUR + 1 )); TASK_ACTIVE=1 TASK_ERR= TASK_SKIP=
   TASK_STATE[$TASK_CUR]=run
   if [ -n "$TASK_DRAWN" ]; then
     _task_update "$TASK_CUR"
     _task_anim "$TASK_CUR" & ANIM_PID=$!
   fi
 }
+# A task whose module is off marks its row [SKIP] instead of [DONE] — the
+# checklist then says exactly which modules were installed and which were
+# deliberately not (called from inside a task, before task_end).
+task_skip() { [ -n "$TASK_ACTIVE" ] && TASK_SKIP=1; return 0; }
 task_end() {
   [ -n "$TASK_ACTIVE" ] || return 0
   [ -n "$ANIM_PID" ] && { kill "$ANIM_PID" 2>/dev/null; wait "$ANIM_PID" 2>/dev/null; ANIM_PID=; }
   TASK_TS[$TASK_CUR]=$(date +%H:%M:%S)
-  [ -n "${TASK_ERR:-}" ] && TASK_STATE[$TASK_CUR]=error || TASK_STATE[$TASK_CUR]=done
+  if   [ -n "${TASK_ERR:-}" ];  then TASK_STATE[$TASK_CUR]=error
+  elif [ -n "${TASK_SKIP:-}" ]; then TASK_STATE[$TASK_CUR]=skip
+  else                               TASK_STATE[$TASK_CUR]=done; fi
   if [ -n "$TASK_DRAWN" ]; then _task_update "$TASK_CUR"; else _task_row "$TASK_CUR"; fi
-  TASK_ACTIVE= TASK_ERR=
+  TASK_ACTIVE= TASK_ERR= TASK_SKIP=
 }
 
 # ───────────────────── fresh log for this run ──────────────────────────────
@@ -2633,25 +2641,25 @@ task_certs() {
 }
 
 # Per-module setup, one checklist row each (a module that is off marks its row
-# [DONE] with "off — skipped", so the checklist says exactly which module ran).
+# [SKIP], so the checklist says exactly which module ran and which was off).
 task_mail() {
   task_start
-  if mod_on mail; then mail_wait_ready; dkim_setup; else detail "  mail module off — skipped"; fi
+  if mod_on mail; then mail_wait_ready; dkim_setup; else detail "  mail module off — skipped"; task_skip; fi
   task_end
 }
 task_cloud() {
   task_start
-  if mod_on cloud; then nextcloud_setup; else detail "  cloud module off — skipped"; fi
+  if mod_on cloud; then nextcloud_setup; else detail "  cloud module off — skipped"; task_skip; fi
   task_end
 }
 task_vault() {
   task_start
-  if mod_on vault; then vaultwarden_setup; vaultwarden_admin; else detail "  vault module off — skipped"; fi
+  if mod_on vault; then vaultwarden_setup; vaultwarden_admin; else detail "  vault module off — skipped"; task_skip; fi
   task_end
 }
 task_monitor() {
   task_start
-  if mod_on monitor; then kuma_seed; else detail "  monitor module off — skipped"; fi
+  if mod_on monitor; then kuma_seed; else detail "  monitor module off — skipped"; task_skip; fi
   task_end
 }
 # Repo Hygiene: no stale references to the old project name in the tree.
