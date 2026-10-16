@@ -30,8 +30,20 @@ fi
 # verify with `make gh-web-health` once the push lands.
 while read -r lref lsha rref rsha; do
   [ "$lsha" = "0000000000000000000000000000000000000000" ] && continue  # deletion
-  [ "$rsha" = "0000000000000000000000000000000000000000" ] && continue  # new branch
-  [ "$lsha" = "$rsha" ] && continue
+  [ "$lsha" = "$rsha" ] && continue                                   # nothing new
+  # Identity guard: refuse to push any commit authored/committed as root. The
+  # history must never carry root@<host> commits (AGENTS rule 12) — GitHub
+  # cannot attribute them, and on a fresh host git defaults to root because no
+  # identity is configured. install.sh sets the real identity at deploy time.
+  # Runs before the fast-forward test so a NEW branch is scanned whole (rsha=0s).
+  range="$lsha"; [ "$rsha" != "0000000000000000000000000000000000000000" ] && range="$rsha..$lsha"
+  if git log --format='%ae%n%ce' "$range" 2>/dev/null | grep -q 'root@'; then
+    echo "pre-push: refusing to push — the range $range contains commits authored or committed as root."
+    echo "  Fix the identity (git config user.name/user.email) and rewrite those commits, then push again."
+    echo "  Inspect: git log --format='%h %ae %ce' $range | grep root"
+    exit 1
+  fi
+  [ "$rsha" = "0000000000000000000000000000000000000000" ] && continue  # new branch: no rewrite warning
   if ! git merge-base --is-ancestor "$rsha" "$lsha" 2>/dev/null; then
     echo "pre-push: WARNING — this push replaces existing remote history (not a fast-forward)."
     echo "  After it lands, github.com may 404/500 while git stays healthy (2026-09-03 lesson)."

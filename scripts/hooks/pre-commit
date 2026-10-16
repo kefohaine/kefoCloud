@@ -16,6 +16,21 @@ set -uo pipefail
 staged=$(git diff --cached --name-only)
 [ -z "$staged" ] && exit 0
 
+# 0. Identity guard: a commit must never be authored as root. A fresh host has
+#    no git identity, so git silently falls back to `root@<host>`, poisoning the
+#    history with non-attributable commits (AGENTS rule 12). Fail loud and say
+#    exactly how to fix it; install.sh writes the real identity at deploy time.
+ident=$(git var GIT_AUTHOR_IDENT 2>/dev/null || true)
+case "$ident" in
+  *"root@"*|"root <"*)
+    echo "pre-commit: refusing to commit as root — identity is '$ident'"
+    echo "  Set the account-noreply identity first, e.g.:"
+    echo "    git config user.name  <github-login>"
+    echo "    git config user.email <account-id>+<github-login>@users.noreply.github.com"
+    exit 1
+    ;;
+esac
+
 # 1. Caddy config must validate when anything under modules/caddy/ changes.
 if echo "$staged" | grep -q '^modules/caddy/'; then
   if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'caddy'; then
