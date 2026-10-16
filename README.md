@@ -1,6 +1,6 @@
-![Repository Title](.github/images/title.png)
+# kefoCloud
 
-![Repository Banner](.github/images/banner.png)
+![Repository Title](.github/images/title.png)
 
 One repo that turns any Debian system into your own self-hosted server stack — cloud, mail, monitoring and more — with one command and a few prompts.
 Fork it, run the installer, and the same board is yours — under your own domain, with no server but yours.
@@ -15,6 +15,8 @@ bash scripts/install/install.sh
 `scripts/install/uninstall.sh` reverses it in the same style — no prompt has a default (only `yes`/`no` are accepted), operator data and the tailscale-only SSH path are never touched without an explicit confirm, and the tailnet membership goes last.
 
 ### Modules
+
+![Repository Banner](.github/images/banner.png)
 
 | name | app | note |
 |---|---|---|
