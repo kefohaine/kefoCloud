@@ -43,6 +43,8 @@ if [ "$FIN" != "true" ]; then
 fi
 
 inst=""
+mods_absent=""          # declared: the end section reads it under `set -u`,
+                        # and with every module installed nothing assigns it
 while read -r m; do
   [ -n "$m" ] || continue
   mod_installed "$m" && inst+="$m " || mods_absent="${mods_absent:-}${m} "
