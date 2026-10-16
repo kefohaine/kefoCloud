@@ -1550,10 +1550,12 @@ nextcloud_setup() {
   # install/enable/disable/remove based on the shipped occ app list.
   ask_nc_apps
 
-  # NC outbound SMTP sender mailbox — create if missing (secrets from .env).
-  # The mailbox only exists if the mail module is enabled: without a mailserver
-  # there is no SMTP host to authenticate against, so a disabled mail module
-  # skips the address (and the SMTP wiring below) instead of failing.
+  # SMTP wiring is gated on the mail module being enabled *and* the mail phase
+  # actually having prepared the account API in this run. Every other consumer
+  # (vaultwarden_setup, the recheck arm) falls back to enabled when MOD_MAIL is
+  # missing, so use the same fallback here: with MOD_MAIL unset the mail work
+  # never ran, and a missing mailserver is the mail module's failure to report,
+  # not nextcloud's.
   . modules/nextcloud/.env
   if [ "${MOD_MAIL:-true}" = "true" ]; then
     mailbox_add "nextcloud@$DOMAIN" "${SMTP_PASSWORD:-}" \
@@ -1709,7 +1711,7 @@ nextcloud_setup() {
     return $rc
   }
   # SMTP is only wired when the mail module is enabled (see the mailbox step).
-  if [ "${MOD_MAIL:-true}" = "true" ]; then
+  if [ "${MOD_MAIL:-false}" = "true" ]; then
     occ_check "mail.$DOMAIN" docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null \
       || fail nextcloud_setup "mail_smtphost not set"
   fi
@@ -2167,10 +2169,10 @@ recheck() {
     cert_*) local h=${1#cert_}; echo | timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$h.$DOMAIN" 2>/dev/null | openssl x509 -noout -issuer 2>/dev/null | grep -q "Let's Encrypt" ;;
     sweep) [ -z "$(sweep_hits)" ] ;;
     sslmode) ssl_mode_full ;;
-    nextcloud_setup) nextcloud_occ_remediate; if [ "${MOD_MAIL:-true}" != "true" ] || docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN"; then docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://talk.$DOMAIN/signaling" && docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "talk.$DOMAIN:3478" && docker exec -u www-data nextcloud php occ config:system:get trusted_domains 2>/dev/null | grep -qx "cloud.$DOMAIN"; else false; fi ;;
+    nextcloud_setup) nextcloud_occ_remediate; if [ "${MOD_MAIL:-false}" != "true" ] || docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN"; then docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://talk.$DOMAIN/signaling" && docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "talk.$DOMAIN:3478" && docker exec -u www-data nextcloud php occ config:system:get trusted_domains 2>/dev/null | grep -qx "cloud.$DOMAIN"; else false; fi ;;
     dkim_setup)      dig +short TXT "mail._domainkey.$DOMAIN" @"$(dig +short NS "$DOMAIN" | head -1)" 2>/dev/null | grep -qE 'p=[A-Za-z0-9+/=]{100,}' ;;
     dns_mail_txt) [ "${MOD_MAIL:-true}" = "true" ] || return 0; cf_mail_dns; local records; records=$(curl -fsS -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" 2>/dev/null) || return 1; printf '%s' "$records" | jq -e --arg d "$DOMAIN" --arg s "v=spf1 a:mail.$DOMAIN mx -all" --arg k 'v=DKIM1; p=' --arg m 'v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s;' '[.result[] | {type,name,content}] as $r | [[$d,"MX"],["*._domainkey."+$d,"TXT"],["_dmarc."+$d,"TXT"]] as $fs | [($fs[] | . as $x | any($r[]; .type==$x[1] and .name==$x[0])), any($r[]; .type=="TXT" and .name==$d and .content==$s)] | all' >/dev/null ;;
-    vaultwarden_setup) if [ "${MOD_MAIL:-true}" = "true" ]; then . modules/vaultwarden/.env 2>/dev/null; mailbox_add "vaultwarden@$DOMAIN" "${SMTP_PASSWORD:-}" >/dev/null 2>&1; mailbox_exists "vaultwarden@$DOMAIN"; else false; fi ;;
+    vaultwarden_setup) if [ "${MOD_MAIL:-false}" = "true" ]; then . modules/vaultwarden/.env 2>/dev/null; mailbox_add "vaultwarden@$DOMAIN" "${SMTP_PASSWORD:-}" >/dev/null 2>&1; mailbox_exists "vaultwarden@$DOMAIN"; else false; fi ;;
     *) false ;;
   esac
 }
@@ -2219,6 +2221,17 @@ resolve_errors() {
       || { echo "No terminal input — aborting."; exit 1; }
     local still=()
     for tag in "${remaining[@]}"; do
+      # A recorded setup failure is not a boolean to probe — re-RUN its setup
+      # step first (the steps are idempotent), then inspect the state it leaves.
+      # Without this a tag whose recheck arm inspects occ config (nextcloud_setup)
+      # or a mailbox (vaultwarden_setup) can never heal: nextcloud_setup's own
+      # wiring only ran during the failed pass, and the containers it was running
+      # against are recreated by then (2026-10-15).
+      case "$tag" in
+        nextcloud_setup) mail_wait_ready 2>/dev/null || true; nextcloud_setup;;
+        vaultwarden_setup) vaultwarden_setup;;
+        dkim_setup) mail_wait_ready 2>/dev/null || true; dkim_setup;;
+      esac
       if recheck "$tag"; then
         echo "   ✓ solved: $tag — $(problem "$tag")"
       else
