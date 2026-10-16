@@ -1388,45 +1388,49 @@ seed_stack() {
   cd "$REPO" || exit 1
   # The repo already carries the canonical naming (modules/caddy,
   # container $DOMAIN, vhosts/<host>.caddy, user root) — no domain
-  # renames apply. Fresh-install state: Nextcloud admin creds, stack
-  # secrets, goose secret.
-  # Admin creds live in the SAME file talk-gen fills with the stack secrets, so
-  # this is per-key and never "write the file only if it is absent": `make
-  # render` creates modules/nextcloud/.env first (instance values block), the
-  # existence guard therefore never fired, compose interpolated BOTH vars as
-  # empty and the image entrypoint refused to install — its fallback is
-  # "Next step: Access your instance to finish the web-based installation!"
-  # and `occ` then only ever answers "Set an admin Login." Nextcloud stayed
-  # uninstalled and the whole occ wiring below was skipped (2026-09-25).
-  # PER KEY, never "the file exists so it must be seeded": `make render` creates
-  # the file first, and a file-existence guard is what let compose interpolate
-  # the admin creds as EMPTY (2026-09-25). A key that is present but has no
-  # value is just as broken — empty means the entrypoint refuses to install — so
-  # a blank line is treated as unseeded and repaired with one canonical append.
-  local ncen=modules/nextcloud/.env
-  [ -f "$ncen" ] || { umask 077; : >"$ncen"; }
-  chmod 600 "$ncen"
-  ncseed() {
-    local key="$1" val="$2"
-    if grep -q "^$key=" "$ncen"; then
-      grep -q "^$key=." "$ncen" || sed -i "s|^$key=$|$key=$val|" "$ncen"
-    else
-      echo "$key=$val" >>"$ncen"
+  # renames apply. Each module's credentials and secrets are seeded ONLY when
+  # that module is on: a module the operator turned off gets no admin creds, no
+  # SMTP sender and no stack secrets minted for it (the goose secret, which the
+  # host service always needs, is core).
+  if mod_on cloud; then
+    # Admin creds live in the SAME file talk-gen fills with the stack secrets, so
+    # this is per-key and never "write the file only if it is absent": `make
+    # render` creates modules/nextcloud/.env first (instance values block), the
+    # existence guard therefore never fired, compose interpolated BOTH vars as
+    # empty and the image entrypoint refused to install — its fallback is
+    # "Next step: Access your instance to finish the web-based installation!"
+    # and `occ` then only ever answers "Set an admin Login." Nextcloud stayed
+    # uninstalled and the whole occ wiring below was skipped (2026-09-25).
+    # PER KEY, never "the file exists so it must be seeded": `make render` creates
+    # the file first, and a file-existence guard is what let compose interpolate
+    # the admin creds as EMPTY (2026-09-25). A key that is present but has no
+    # value is just as broken — empty means the entrypoint refuses to install — so
+    # a blank line is treated as unseeded and repaired with one canonical append.
+    local ncen=modules/nextcloud/.env
+    [ -f "$ncen" ] || { umask 077; : >"$ncen"; }
+    chmod 600 "$ncen"
+    ncseed() {
+      local key="$1" val="$2"
+      if grep -q "^$key=" "$ncen"; then
+        grep -q "^$key=." "$ncen" || sed -i "s|^$key=$|$key=$val|" "$ncen"
+      else
+        echo "$key=$val" >>"$ncen"
+      fi
+    }
+    ncseed NEXTCLOUD_ADMIN_USER admin
+    if ! grep -q '^NEXTCLOUD_ADMIN_PASSWORD=.' "$ncen"; then
+      ncseed NEXTCLOUD_ADMIN_PASSWORD "$(openssl rand -base64 18 | tr -d '/+=' | head -c 20)"
     fi
-  }
-  ncseed NEXTCLOUD_ADMIN_USER admin
-  if ! grep -q '^NEXTCLOUD_ADMIN_PASSWORD=.' "$ncen"; then
-    ncseed NEXTCLOUD_ADMIN_PASSWORD "$(openssl rand -base64 18 | tr -d '/+=' | head -c 20)"
+    # Read the creds back so the summary prints the password actually in use
+    # (older installs may already have them, and this run must not print a
+    # freshly generated value that was never written).
+    NEXTCLOUD_ADMIN_USER=$(sed -n 's/^NEXTCLOUD_ADMIN_USER=//p' "$ncen" | tail -1)
+    NEXTCLOUD_ADMIN_PASSWORD=$(sed -n 's/^NEXTCLOUD_ADMIN_PASSWORD=//p' "$ncen" | tail -1)
+    # Stack secrets (PostgreSQL, Redis, signaling, TURN, SMTP mailbox) +
+    # Talk service configs — idempotent, appends only missing keys.
+    detail "  nextcloud stack secrets via talk-gen"
+    make talk-gen >>"$LOG" 2>&1 || fail talk_gen
   fi
-  # Read the creds back so the summary prints the password actually in use
-  # (older installs may already have them, and this run must not print a
-  # freshly generated value that was never written).
-  NEXTCLOUD_ADMIN_USER=$(sed -n 's/^NEXTCLOUD_ADMIN_USER=//p' "$ncen" | tail -1)
-  NEXTCLOUD_ADMIN_PASSWORD=$(sed -n 's/^NEXTCLOUD_ADMIN_PASSWORD=//p' "$ncen" | tail -1)
-  # Stack secrets (PostgreSQL, Redis, signaling, TURN, SMTP mailbox) +
-  # Talk service configs — idempotent, appends only missing keys.
-  detail "  nextcloud stack secrets via talk-gen"
-  make talk-gen >>"$LOG" 2>&1 || fail talk_gen
   # The goose server secret lives OUTSIDE the repo (root:root 0640) and is read by
   # the unit through EnvironmentFile= — never written into a tracked file.
   detail "  goose service secret -> /etc/goose/goose.env"
@@ -1436,52 +1440,54 @@ seed_stack() {
     sudo chown root:"root" /etc/goose/goose.env
     sudo chmod 0640 /etc/goose/goose.env
   fi
-  # Vaultwarden SMTP sender (vaultwarden@$DOMAIN) — SMTP vars for the
-  # compose interpolation; the mailbox itself is created after the
-  # mailserver container is up (see vaultwarden_setup). Idempotent PER KEY —
-  # never "write the file only if it is absent": `make render` already creates
-  # modules/vaultwarden/.env (instance values, appended under the
-  # '# >>> instance values' banner), so a file-existence guard skipped this
-  # whole block, compose interpolated every SMTP_* to empty, vaultwarden
-  # crash-looped on "SMTP_SECURITY is invalid" and vaultwarden_setup hit an
-  # unbound $SMTP_PASSWORD (2026-09-25).
-  local vwenv=modules/vaultwarden/.env
-  [ -f "$vwenv" ] || { umask 077; : >"$vwenv"; }
-  chmod 600 "$vwenv"
-  # Present-but-empty is repaired the same way a missing key is: compose
-  # interpolates an empty SMTP_* as "", Vaultwarden rejects "" (SMTP_SECURITY,
-  # SMTP_HOST) and crash-loops — the file existing is not evidence the key is
-  # usable.
-  vwset() {
-    local key="$1" val="$2"
-    if grep -q "^$key=" "$vwenv"; then
-      grep -q "^$key=." "$vwenv" || sed -i "s|^$key=$|$key=$val|" "$vwenv"
-    else
-      echo "$key=$val" >>"$vwenv"
+  if mod_on vault; then
+    # Vaultwarden SMTP sender (vaultwarden@$DOMAIN) — SMTP vars for the
+    # compose interpolation; the mailbox itself is created after the
+    # mailserver container is up (see vaultwarden_setup). Idempotent PER KEY —
+    # never "write the file only if it is absent": `make render` already creates
+    # modules/vaultwarden/.env (instance values, appended under the
+    # '# >>> instance values' banner), so a file-existence guard skipped this
+    # whole block, compose interpolated every SMTP_* to empty, vaultwarden
+    # crash-looped on "SMTP_SECURITY is invalid" and vaultwarden_setup hit an
+    # unbound $SMTP_PASSWORD (2026-09-25).
+    local vwenv=modules/vaultwarden/.env
+    [ -f "$vwenv" ] || { umask 077; : >"$vwenv"; }
+    chmod 600 "$vwenv"
+    # Present-but-empty is repaired the same way a missing key is: compose
+    # interpolates an empty SMTP_* as "", Vaultwarden rejects "" (SMTP_SECURITY,
+    # SMTP_HOST) and crash-loops — the file existing is not evidence the key is
+    # usable.
+    vwset() {
+      local key="$1" val="$2"
+      if grep -q "^$key=" "$vwenv"; then
+        grep -q "^$key=." "$vwenv" || sed -i "s|^$key=$|$key=$val|" "$vwenv"
+      else
+        echo "$key=$val" >>"$vwenv"
+      fi
+    }
+    # starttls is the only value Vaultwarden accepts for this variable besides
+    # force_tls/off — it must never be left empty.
+    vwset SMTP_HOST "mail.$DOMAIN"
+    vwset SMTP_PORT 587
+    vwset SMTP_SECURITY starttls
+    vwset SMTP_USERNAME "vaultwarden@$DOMAIN"
+    vwset SMTP_PASSWORD "$(openssl rand -hex 16)"
+    vwset SMTP_FROM "vaultwarden@$DOMAIN"
+    vwset SMTP_FROM_NAME Vaultwarden
+    vwset SMTP_AUTH_MECHANISM Login
+    # Default vault account (the one the success block prints). Vaultwarden has
+    # no user CLI and signups are closed (SIGNUPS_ALLOWED=false), so the account
+    # is seeded straight into its SQLite DB by scripts/modules/vaultwarden-user.sh
+    # — the same "no CLI, write the DB" pattern as Uptime Kuma. Stored PER KEY
+    # (like NEXTCLOUD_ADMIN_*) so a re-run prints the SAME password, never a
+    # freshly generated value that was never written.
+    vwset VAULTWARDEN_ADMIN_USER "admin@$DOMAIN"
+    if ! grep -q '^VAULTWARDEN_ADMIN_PASSWORD=.' "$vwenv"; then
+      vwset VAULTWARDEN_ADMIN_PASSWORD "$(openssl rand -base64 18 | tr -d '/+=' | head -c 20)"
     fi
-  }
-  # starttls is the only value Vaultwarden accepts for this variable besides
-  # force_tls/off — it must never be left empty.
-  vwset SMTP_HOST "mail.$DOMAIN"
-  vwset SMTP_PORT 587
-  vwset SMTP_SECURITY starttls
-  vwset SMTP_USERNAME "vaultwarden@$DOMAIN"
-  vwset SMTP_PASSWORD "$(openssl rand -hex 16)"
-  vwset SMTP_FROM "vaultwarden@$DOMAIN"
-  vwset SMTP_FROM_NAME Vaultwarden
-  vwset SMTP_AUTH_MECHANISM Login
-  # Default vault account (the one the success block prints). Vaultwarden has
-  # no user CLI and signups are closed (SIGNUPS_ALLOWED=false), so the account
-  # is seeded straight into its SQLite DB by scripts/modules/vaultwarden-user.sh
-  # — the same "no CLI, write the DB" pattern as Uptime Kuma. Stored PER KEY
-  # (like NEXTCLOUD_ADMIN_*) so a re-run prints the SAME password, never a
-  # freshly generated value that was never written.
-  vwset VAULTWARDEN_ADMIN_USER "admin@$DOMAIN"
-  if ! grep -q '^VAULTWARDEN_ADMIN_PASSWORD=.' "$vwenv"; then
-    vwset VAULTWARDEN_ADMIN_PASSWORD "$(openssl rand -base64 18 | tr -d '/+=' | head -c 20)"
+    VAULTWARDEN_ADMIN_USER=$(sed -n 's/^VAULTWARDEN_ADMIN_USER=//p' "$vwenv" | tail -1)
+    VAULTWARDEN_ADMIN_PASSWORD=$(sed -n 's/^VAULTWARDEN_ADMIN_PASSWORD=//p' "$vwenv" | tail -1)
   fi
-  VAULTWARDEN_ADMIN_USER=$(sed -n 's/^VAULTWARDEN_ADMIN_USER=//p' "$vwenv" | tail -1)
-  VAULTWARDEN_ADMIN_PASSWORD=$(sed -n 's/^VAULTWARDEN_ADMIN_PASSWORD=//p' "$vwenv" | tail -1)
 }
 
 docker_net() {
