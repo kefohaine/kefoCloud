@@ -369,7 +369,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 
 - **Logs moved into the repo tree** — `LOG_DIR` is now `$DATA_DIR/logs` (was `/var/log/$GITHUB_USER`); `instance.sh`, `install.sh`, `uninstall.sh`, `fetch-more.sh`, the logrotate template and `instance.defaults` updated, legacy `/var/log/*-install.log` relocated on first run.
 - **Cloud/vault email creation now depends on the mail module** — `nextcloud@` / `vaultwarden@` mailboxes (and the NC SMTP wiring) are skipped when `MOD_MAIL=false`, so a mail-less install no longer fails on a nonexistent mailserver.
-- **`nextcloud_setup` failures self-heal** — the idempotent occ wiring is re-applied by `nextcloud_occ_remediate()` on each re-check, so a cold-cache boot no longer needs the manual occ steps from the GUIDE hint.
+- **`nextcloud_setup` failures self-heal for real** — resolve_errors re-runs the idempotent `nextcloud_setup` before rechecking it (the occ wiring, and now `mail.$DOMAIN`, is only written by that step), so a cold-cache boot no longer dead-ends on a tag whose recheck arm could only ever answer false.
 - **Installer time estimates removed** — the `~3 min` / `~10-15 min` guesses and the Caddy `in 229s (100%)` bar are gone; the build now shows a ping-pong loading bar with elapsed seconds only.
 - **GitHub SSH prompt repeats until authorized** — `github_cred_inputs` re-asks on every run while `GH_AUTH_OK≠1`, so an unanswered remote-access step cannot be silently skipped by a saved `GH_REMOTE=false`.
 - **`install: 'x' and 'x' are the same file` suppressed** — the goose copy is skipped when `command -v goose` already resolves to `/usr/local/bin/goose`.
