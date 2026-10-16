@@ -692,9 +692,12 @@ ask_choice() {   # ask_choice <question> <variable> <word...>
   return $rc
 }
 _ask_choice_raw() {
-  local q="$1" var="$2"; shift 2; local words=("$@") answer w
+  # Orange [WARN], not the usual grey [INFO]: this prompt is the first thing a
+  # returning operator sees above the checklist and it decides what the whole
+  # run does (it replaces the previous run's answers), so it is not routine input.
+  local q="$1" var="$2"; shift 2; local words=("$@") answer="" w
   while :; do
-    printf '%s[INFO]%s %s' "$C_GREY" "$C_RST" "$q"
+    printf '%s[WARN]%s %s' "$C_ORANGE" "$C_RST" "$q"
     read -r answer || { _task_count 1; return 1; }
     _task_count 1
     for w in "${words[@]}"; do
