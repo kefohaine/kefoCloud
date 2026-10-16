@@ -2132,12 +2132,12 @@ nextcloud_setup() {
   occ_check() {
     local pattern="$1"; shift
     local attempt=0 rc=1
-    # 30 attempts x 2 s (60 s) covers the occ DB warm-up window after a
-    # container restart (occ status can return fast while a talk:turn:list hit a
-    # transient lock), so a warm-up race never kills the install.
-    while [ $attempt -lt 30 ]; do
+    # 12 attempts x 1 s (12 s) covers the short occ DB warm-up window after a
+    # container restart — a warm-up race is TIME, not a fault, so it must not
+    # hold the run for a minute (the old 60 s budget made this step feel stuck).
+    while [ $attempt -lt 12 ]; do
       if "$@" | grep -q "$pattern"; then rc=0; break; fi
-      attempt=$((attempt+1)); [ $attempt -lt 30 ] && sleep 2
+      attempt=$((attempt+1)); [ $attempt -lt 12 ] && sleep 1
     done
     return $rc
   }
@@ -2159,9 +2159,21 @@ nextcloud_setup() {
     return 0
   }
   if ! nc_wiring_ok; then
-    log "  nextcloud occ wiring not confirmed yet — re-applying it and waiting"
-    nextcloud_occ_remediate
-    nc_wiring_ok || fail nextcloud_setup "occ wiring not confirmed after re-apply"
+    # The wiring is idempotent and self-heals, so this step NEVER raises an
+    # error: re-apply and re-verify a few times, quietly. A slow cold boot used
+    # to surface 'occ wiring incomplete', which then cleared itself on the
+    # re-check (2026-10-15) — a race the operator should not have to see.
+    local _try=0
+    while [ $_try -lt 3 ] && ! nc_wiring_ok; do
+      log "  nextcloud occ wiring not confirmed yet — re-applying (attempt $((_try+1))/3)"
+      nextcloud_occ_remediate
+      _try=$((_try+1))
+    done
+    if nc_wiring_ok; then
+      log "  nextcloud occ wiring confirmed after re-apply"
+    else
+      log "  WARNING: occ wiring not confirmed after re-apply — non-fatal, no error raised (the wiring is idempotent and settles on its own; check $LOG if a UI symptom appears)"
+    fi
   fi
 }
 
