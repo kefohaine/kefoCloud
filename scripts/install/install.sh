@@ -243,15 +243,15 @@ _anim_field() {
   done
   printf '%s' "$out"
 }
-# Colour the leading scope tag of a task name, brackets included: [H] blue
-# (host), [S] yellow (stack), [B] green (both). Only the first tag is coloured —
+# Colour the leading scope tag of a task name, brackets included: [H] purple
+# (host), [S] orange (stack), [B] green (both). Only the first tag is coloured —
 # the task text keeps the row's own colour. Pure string work: no colour is ever
 # stored in TASK_NAMES, so a log/plain run needs no stripping.
 _task_name_colored() {   # _task_name_colored <task name>
   local n="$1" c=""
   case "$n" in
-    "[H]"*) c="$C_BLUE" ;;
-    "[S]"*) c="$C_YELLOW" ;;
+    "[H]"*) c="$C_PURPLE" ;;
+    "[S]"*) c="$C_ORANGE" ;;
     "[B]"*) c="$C_GREEN" ;;
     *) printf '%s' "$n"; return 0 ;;
   esac
@@ -265,11 +265,9 @@ _task_row() {
   name="$(_task_name_colored "$name")"
   case "$st" in
     done)  printf '%s[DONE]%s %s[%s]%s %s\n'  "$C_GREEN"  "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
-    # A skipped task says so on BOTH sides of the row, not only in the status
-    # column: the row's [H]/[S]/[B] tag becomes an orange [SKIP] and the name is
-    # suffixed [SKIP] — whichever part of the box the task belongs to, so a
-    # skipped row can never be mistaken for a task that ran, and the reason (the
-    # reinstall's scope) is spelled out at the end of the line.
+    # A skipped task says so on BOTH sides of the row: the row's [H]/[S]/[B]
+    # tag becomes an orange [SKIP] and the name is suffixed with the reason,
+    # whichever part of the box the task belongs to.
     skip)  printf '%s[SKIP]%s %s[%s]%s %s%s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$ts" "$C_RST" \
              "$(printf '%s' "$name" | sed -E "s/^(\x1b\[[0-9;]*m)*\[[HSB]\]/${C_ORANGE}[SKIP]${C_RST}/")" \
              "${REINSTALL_SKIP_NOTE:- — deliberately not run}" ;;
@@ -382,8 +380,19 @@ _task_resume() {
 _tasks_draw() {
   local i
   # A row's time is set when it ends (task_end); a [WAIT] row shows the
-  # placeholder instead, so nothing is pre-filled here.
-  for i in $(seq 0 $((TASK_TOTAL - 1))); do TASK_STATE[$i]=wait; done
+  # placeholder instead, so nothing is pre-filled here — except the rows this
+  # mode will never run: a reinstall marks every task outside data/ [SKIP] the
+  # moment the block is drawn, so the run says what it will not do up front
+  # instead of leaving those rows [WAIT] until the pipeline walks past them.
+  for i in $(seq 0 $((TASK_TOTAL - 1))); do
+    TASK_STATE[$i]=wait
+    if reinstall_unrelated "${TASKS[$i]:-}"; then
+      TASK_STATE[$i]=skip
+      # A skipped row never runs, so it has no end time: show the placeholder
+      # like any other row that has not reported, not a fabricated clock.
+      TASK_TS[$i]=
+    fi
+  done
   [ -t 1 ] || return 0
   # Learn the terminal width (for _note's physical-row counting) and re-assert
   # the tty's NL policy before the block exists: any earlier subcommand that ran
@@ -399,6 +408,10 @@ _tasks_draw() {
 }
 task_start() {
   TASK_CUR=$(( TASK_CUR + 1 )); TASK_ACTIVE=1 TASK_ERR= TASK_SKIP=
+  # A reinstall pre-marks rows outside data/ [SKIP] (see _tasks_draw); the task
+  # body then calls task_reinstall_skip and returns without doing anything, so
+  # the row must not flicker through [EXEC] on the way.
+  [ "${TASK_STATE[$TASK_CUR]:-}" = skip ] && return 0
   TASK_STATE[$TASK_CUR]=run
   if [ -n "$TASK_DRAWN" ]; then
     _task_update "$TASK_CUR"
@@ -410,15 +423,20 @@ task_start() {
 # deliberately not (called from inside a task, before task_end). Two callers:
 # a module the operator turned off, and a task outside the reinstall's scope
 # (task_reinstall_skip). Either way the row reads [SKIP] in the status column
-# AND in place of the task's [HOST]/[STACK]/[BOTH] tag.
+# — the row's [H]/[S]/[B] tag is never rewritten: the tag says which part of the
+# box a task belongs to, at all times.
 task_skip() { [ -n "$TASK_ACTIVE" ] && TASK_SKIP=1; return 0; }
 task_end() {
   [ -n "$TASK_ACTIVE" ] || return 0
+  # TASK_CUR is the row just run; a task_reinstall_skip already recorded it as
+  # [SKIP] in task_start, so keep that state and timestamp-free placeholder.
   [ -n "$ANIM_PID" ] && { kill "$ANIM_PID" 2>/dev/null; wait "$ANIM_PID" 2>/dev/null; ANIM_PID=; }
-  TASK_TS[$TASK_CUR]=$(date +%H:%M:%S)
   if   [ -n "${TASK_ERR:-}" ];  then TASK_STATE[$TASK_CUR]=error
   elif [ -n "${TASK_SKIP:-}" ]; then TASK_STATE[$TASK_CUR]=skip
+  elif [ "${TASK_STATE[$TASK_CUR]:-}" = skip ]; then :   # pre-marked: no time
   else                               TASK_STATE[$TASK_CUR]=done; fi
+  # A [SKIP] row has no end time at all (it never ran): the placeholder stands.
+  if [ "${TASK_STATE[$TASK_CUR]:-}" != skip ]; then TASK_TS[$TASK_CUR]=$(date +%H:%M:%S); fi
   if [ -n "$TASK_DRAWN" ]; then _task_update "$TASK_CUR"; else _task_row "$TASK_CUR"; fi
   # TASK_ERR is deliberately NOT cleared here: run_install reads it right after
   # task_end to decide whether to pause on the failed row (task_start resets it).
@@ -2933,16 +2951,22 @@ pause_and_resolve() {
 # an unresolved failure, and never marks the tasks after it [DONE]. "Smoke Pass"
 # is the last task and is marked from finalize_install — it runs only after the
 # push and the finished checkpoint.
+# The run order, in ONE place: the checklist (which pre-marks the rows a
+# reinstall will skip) and run_install both read it, so the two can never drift.
+# Same order as TASK_NAMES: every [HOST] step first, then the [STACK] steps,
+# then the [BOTH] verdict (smoke). Nothing in the list depends on a later step,
+# except that the stack needs the host ready (docker, goose, DNS, certs) — which
+# is exactly why the host half comes first.
+TASKS=(
+  task_packages task_ssh task_firewall task_tailscale task_docker task_goose
+  task_repo task_host task_dns task_hygiene
+  task_stackcfg task_containers task_certs task_mail task_cloud task_vault
+  task_monitor
+)
+
 run_install() {
   local _t
-  # Same order as TASK_NAMES: every [HOST] step first, then the [STACK] steps,
-  # then the [BOTH] verdict (smoke). Nothing in the list depends on a later
-  # step, except that the stack needs the host ready (docker, goose, DNS, certs)
-  # — which is exactly why the host half comes first.
-  for _t in task_packages task_ssh task_firewall task_tailscale task_docker \
-            task_goose task_repo task_host task_dns task_hygiene \
-            task_stackcfg task_containers task_certs task_mail task_cloud \
-            task_vault task_monitor; do
+  for _t in "${TASKS[@]}"; do
     "$_t"
     [ -n "${TASK_ERR:-}" ] && { TASK_ERR=; pause_and_resolve || return 1; }
   done
