@@ -215,16 +215,8 @@ verify_stack_gone() {
   return 0
 }
 
-# Hand the box back to install.sh after a teardown that left it unusable (the
-# stack and its data gone, nothing else touched) — that is exactly the state
-# install.sh's reinstall gate expects, so it rebuilds the production stack with
-# freshly asked values and runs smoke last. Offered, never assumed: only an
-# explicit yes spawns it, and UNS_INSTALLER=yes (set by install.sh's own
-# hand-off, one level down) suppresses it entirely so the two scripts can never
-# bounce the box between each other.
 ask_restore() {
   local v="${UNINSTALL_RESTORE:-}" a
-  [ "${UNS_INSTALLER:-}" = yes ] && return 0
   if [ -n "$v" ]; then
     case "${v,,}" in
       yes) RESTORE_AFTER=true ;; no) RESTORE_AFTER=false ;; *) v="" ;;

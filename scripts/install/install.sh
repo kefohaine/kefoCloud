@@ -523,6 +523,68 @@ ensure_runtime_dirs() {
   install -d -m 0700 "$DATA"
 }
 
+# ─────────────────── reinstall: hand the REMOVAL to uninstall.sh ───────────
+# install.sh is ADD-ONLY: it creates, never removes. So a reinstall does not
+# tear anything down here — it asks, then HANDS OFF to uninstall.sh, which owns
+# all removal and all of its safety checks (containers down, volumes + data/
+# gone, docker gone, install.state cleared). install.sh only decides when to
+# hand off and what to do with the answer:
+#
+#   bash scripts/install/uninstall.sh --reinstall
+#     → scope pre-answered (stack only, data/ deleted, no repo/host/tailnet),
+#       no prompts, then uninstall.sh VERIFIES the box is really clean and
+#       exits 0 only when it is;
+#     → 0 means "nothing of the stack is left" → install.sh continues with the
+#       reinstall run (tasks [SKIP]ped outside data/, smoke last);
+#     → 1 means "something is still there" → the reinstall is ABORTED; the run
+#       stops before touching anything and the box is left as uninstall.sh
+#       left it (a repair run can still finish it).
+# The log namespace lives under data/, which the teardown deletes — so the most
+# recent install.log is preserved at the repo root first and read back into this
+# run's fresh data/logs/install.log (one run, one log, as always).
+reinstall_handoff() {
+  local u="$REPO/scripts/install/uninstall.sh"
+  local carry="$REPO/.reinstall-install.log" ts
+  if [ ! -f "$u" ]; then
+    fail reinstall "scripts/install/uninstall.sh is missing — cannot uninstall the stack"
+    return 1
+  fi
+  [ -f "$LOG" ] && cp -f "$LOG" "$carry" 2>/dev/null || true
+
+  detail "  handing the removal to scripts/install/uninstall.sh --reinstall (install.sh never removes)"
+  echo ""
+  # Interactive on purpose: the operator watches the teardown and its
+  # verification, then sees install.sh take over again. Always return 0 to
+  # start the reinstall run.
+  UNS_INSTALLER=yes bash "$u" --reinstall
+  local rc=$?
+
+  # data/ (and its logs) may be gone: reopen the log namespace, then restore
+  # this run's own log on top of the fresh file.
+  ensure_runtime_dirs
+  init_log "$@"
+  if [ -f "$carry" ]; then
+    # Kept for the record, with an explicit marker: the carried file is the
+    # previous run's log, not this one's.
+    ts="$(date +%s)"
+    { echo "=== carried over from the previous install.log (before the reinstall teardown) ==="
+      cat "$carry"; } >>"$LOG" 2>/dev/null || true
+    rm -f "$carry" 2>/dev/null || true
+    log "  previous install.log carried into this run's log (marker: 'carried over from the previous install.log')"
+  fi
+  log "  reinstall: uninstall.sh --reinstall exited $rc"
+
+  if [ "$rc" != 0 ]; then
+    # uninstall.sh verified the box and found the stack still there — or its
+    # removal failed. Either way nothing is safe to reinstall onto.
+    echo ""
+    msg " NOT FINISHED — the stack is not fully uninstalled (see $LOG_DIR/uninstall.log)."
+    echo " Nothing was reinstalled. Fix the items uninstall.sh listed, then re-run this installer."
+    return 1
+  fi
+  detail "  verified gone — data/ is empty and nothing of the stack is left; reinstalling now"
+  return 0
+}
 
 # Module prompts are ALWAYS asked — there is no answer-sheet defaults file, and
 # every prompt is asked on every run except when a resume supplies the answer.
@@ -3338,6 +3400,15 @@ main() {
       fi
       detail "  reinstall — production stack only: data/ is erased, everything else is skipped"
       REINSTALL=true
+      if ! reinstall_handoff "$@"; then
+        # The hand-off refused (or uninstall.sh failed): STOP — a reinstall on
+        # top of a half-removed stack is exactly the accident this gate exists
+        # to prevent. install.sh changed nothing.
+        FINISHED=false
+        save_state
+        summary
+        exit 1
+      fi
       # Every value is re-asked from scratch: the state the previous instance
       # held was erased with data/, and a reinstall never inherits the previous
       # instance's answers.
