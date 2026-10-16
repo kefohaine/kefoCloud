@@ -2087,20 +2087,28 @@ resolve_errors() {
   finalize_install
 }
 
-# The install checkpoint gate — the LAST thing a green run does:
-#   1. record the install: enabled_modules + finished=true, via write_state.
-#   2. make smoke — the "is everything actually done?" source (it aborts unless
-#      finished=true, which is why the checkpoint is written first). Fail LOUD:
-#      on failure the checkpoint is reverted to finished=false and the run stops
-#      without a success prompt.
-#   3. only then GitHub (opt-in + an authorized key): a --no-verify push, which
-#      performs the edge smoke on the operator's side only after we ran ours.
-#      A rejected push (not a collaborator) also reverts the checkpoint.
-# CHECKPOINT_OPEN guards the window between step 1 and the last decision: if the
+# The install checkpoint gate — the LAST thing a green run does, in this order:
+#   1. the stack is up (assets installed) — already true when this runs.
+#   2. GitHub push (opt-in + an authorized key): a --no-verify push to a
+#      TEMPORARY remote. It runs BEFORE the checkpoint on purpose: a rejected
+#      push (not a collaborator, diverged history) means the run is NOT done, so
+#      no `finished=true` is ever recorded for it. github_push returns 0
+#      immediately when NOT opted in.
+#   3. record the install: enabled_modules + finished=true, via write_state.
+#   4. make smoke — the "is everything actually done?" source. The gate it
+#      enforces (install.state finished=true) is why the checkpoint is written
+#      FIRST; smoke then writes the VERDICT back itself (make smoke-record, the
+#      one caller authorized to do so): core + enabled modules are the verdict,
+#      a not-installed module's checks are informational only.
+#   5. finished=false + stop, no success block, when smoke fails. Fail LOUD.
+# CHECKPOINT_OPEN guards the window between step 3 and the last decision: if the
 # run is interrupted there, the EXIT trap reverts finished to false.
 run_smoke() {
   log "  running the live edge smoke test (make smoke) — the last check"
-  if make -C "$REPO" smoke >>"$LOG" 2>&1; then
+  # SMOKE_STATE=1 authorizes smoke to record its own verdict as install.state
+  # `finished` (make smoke-record). It is set ONLY here: an operator's own
+  # `make smoke` and the pre-push hook never rewrite state.
+  if SMOKE_STATE=1 make -C "$REPO" smoke >>"$LOG" 2>&1; then
     log "  smoke passed — the edge and every enabled module answer"
     return 0
   fi
@@ -2110,18 +2118,28 @@ run_smoke() {
 }
 
 finalize_install() {
+  # 1-2: the push happens BEFORE the checkpoint. If GitHub was opted in the push
+  # is MANDATORY — any failure to push (no key, rejected (non-collaborator),
+  # diverged history) means the install is not finished, so no finished=true is
+  # recorded and the success block is never reached.
+  local ok=1
+  github_push || ok=0
+  if [ "$ok" != 1 ]; then
+    FINISHED=false
+    write_state
+    echo ""
+    msg " NOT FINISHED — the GitHub push failed (see above / $LOG)."
+    echo " Fix it, then re-run the installer to finish."
+    return 0
+  fi
+  # 3: the checkpoint opens; smoke below writes its verdict back through it.
   FINISHED=true
   CHECKPOINT_OPEN=1
   write_state
-  local ok=1
-  run_smoke || ok=0
-  # If GitHub was opted in, the push is MANDATORY — any failure to push (no key,
-  # rejected (non-collaborator), diverged history) flips ok to 0 and blocks the
-  # success block. github_push returns 0 immediately when NOT opted in.
-  if [ "$ok" = 1 ]; then
-    github_push || ok=0
-  fi
-  if [ "$ok" != 1 ]; then
+  # 4-5: smoke is the verdict. It records finished=true on its own when it
+  # passes; on failure it records finished=false, and we revert here as well
+  # (idempotent) so the state is pending even if smoke could not write.
+  if ! run_smoke; then
     FINISHED=false
     write_state
     CHECKPOINT_OPEN=
