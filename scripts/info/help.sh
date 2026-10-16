@@ -7,8 +7,8 @@
 #   core (make help)      the common daily surface — dashboard, maintain,
 #                         git, container/unit/tmux basics
 #   more (make help-more) the granular / technical recipes — per-file
-#                         installs, backup (tailnet device only) & clean
-#                         primitives, account registries, the occ wrappers
+#                         installs, backup (tailnet device only), account
+#                         registries, the occ wrappers
 #
 # Usage: help.sh [core|more]   (default core)
 # Rows are `command|description` heredocs — keep one row per line, no `|`
@@ -50,9 +50,8 @@ EOF
   rows <<'EOF'
 make update|pull + recreate every deployed unit via stack-up.sh — edge last, gated, auto-rollback
 make apt-upgrade|apt-get update + upgrade (deliberately separate from the container work)
-make backup|ship ALL modules as two bundles (nextcloud-backup-*.tar.gz DB+datadir, other-backup-*.tar.gz datadirs) to a tailnet device (TAILDROP= required; data/ untouched, repo/config never touched); see import-data to restore
+make backup|ship ALL modules as two bundles (nextcloud-backup-*.tar.gz DB+datadir, other-backup-*.tar.gz datadirs) to a tailnet device (TAILDROP= required; data/ untouched, repo/config never touched); see import-backups to restore
 make import-backups|preview + interactive restore of module bundles from a tailnet device's backups/ (TAILDROP= required; preview + typed yes are built in — no DRYRUN flag; stops all non-caddy containers); never stops caddy
-make cleanup|apt autoremove/clean + docker prune (no backup prunes — all backups ship to a tailnet device)
 EOF
 
   sec "migrate / restore"
@@ -67,6 +66,7 @@ make git-pull|pull remote changes
 make git-add|stage every change
 make git-com MSG=<sentence>|commit staged changes — single-sentence MSG only
 make git-push|push to the remote
+make git-force-push BRANCH=<b>|force-push a rewritten branch (--force-with-lease only; BRANCH required — never clobbers another's commits)
 EOF
 
   sec "docker containers"
@@ -113,15 +113,9 @@ make install-dnsmasq-override|dnsmasq drop-in override → /etc/systemd/system/d
 make install-docker|daemon.json → /etc/docker (docker daemon restart needed to apply)
 make install-sysctl|99-kefo.conf → /etc/sysctl.d
 make install-cron|nextcloud → /etc/cron.d (occ cron every 5 min)
-make install-hooks|git hooks — pre-commit edge guard, pre-push smoke + history-rewrite warning
+make install-hooks|git hooks — pre-commit (GitHub-identity + edge guard), pre-push (smoke + history-rewrite warning)
 EOF
 
-
-  sec "clean"
-  rows <<'EOF'
-make clean-docker|prune builder, images, containers
-make clean-apt|apt autoremove + clean
-EOF
 
   sec "onboarding & stack tools"
   rows <<'EOF'
