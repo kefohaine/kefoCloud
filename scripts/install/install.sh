@@ -203,6 +203,9 @@ TASK_NAMES=(
 # not touch data/ is marked [SKIP] on a reinstall run (see task_reinstall_skip),
 # and Smoke Pass stays mandatory last, exactly as on a normal install.
 REINSTALL=false
+# Set in main() when the operator answers 'repair' — the mode the run's start
+# line names (a fresh install sets neither).
+REPAIR=
 # Which task functions DO touch data/ (kept live on a reinstall): Stack Config
 # (rendered/, instance.conf, seeds), Containers Up (the stack and its volumes),
 # Mail / Nextcloud / Vaultwarden / Monitoring Setup (their data dirs). Every
@@ -3501,6 +3504,7 @@ main() {
             GH_REMOTE GH_AUTH_OK \
             GITHUB_COMMIT_NAME GITHUB_COMMIT_EMAIL
     elif [ "$_mode" = "repair" ]; then
+      REPAIR=true
       detail "  repairing — every saved value is reused; only missing ones are asked"
       # A repair is a full pipeline re-run, not a skip: every step is idempotent
       # (containers are recreated, DNS records upserted, setup steps re-applied),
@@ -3537,9 +3541,13 @@ main() {
 
   # The start-of-run banner line: grey [INFO], purple [HH:MM:SS], white text —
   # printed once, just above the checklist (msg is log-only once a task is live).
-  printf '[INFO] %s Starting installation..\n' "$(date +%H:%M:%S)" >>"$LOG"
-  printf '%s[INFO]%s %s %sStarting installation..%s\n' \
-    "$C_GREY" "$C_RST" "$(_tstamp)" "$C_WHITE" "$C_RST"
+  # The verb names what THIS run does: Installing / Repairing / Reinstalling.
+  local _verb="Installing"
+  [ "${REINSTALL:-false}" = true ] && _verb="Reinstalling"
+  [ -n "${REPAIR:-}" ] && _verb="Repairing"
+  printf '[INFO] %s %s..\n' "$(date +%H:%M:%S)" "$_verb" >>"$LOG"
+  printf '%s[INFO]%s %s %s%s..%s\n' \
+    "$C_GREY" "$C_RST" "$(_tstamp)" "$C_WHITE" "$_verb" "$C_RST"
   _tasks_draw
   if ! run_install; then
     # A task failed and stayed unresolved: stop here, LOUD. The remaining rows
