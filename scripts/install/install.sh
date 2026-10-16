@@ -2238,6 +2238,7 @@ problem() {
     hooks)          echo "git hooks are not installed in $REPO/.git/hooks" ;;
     github_key)     echo "the GitHub key could not be created" ;;
     github_auth)    echo "GitHub remote access was requested but the key is not authorized / nothing was pushed" ;;
+    github_push)    echo "the requested GitHub push did not happen" ;;
     *)              echo "$1" ;;
   esac
 }
@@ -2276,6 +2277,7 @@ hint() {
     hooks)          echo "run: make install-hooks in $REPO (re-run it after editing a hook)" ;;
     github_key)     echo "check /root/.ssh is writable (mkdir -p /root/.ssh && chmod 700 /root/.ssh), then re-check" ;;
     github_auth)    echo "authorize the installer's printed public key at GitHub -> Settings -> SSH and GPG keys -> New SSH key, then re-check" ;;
+    github_push)    echo "the log line just above says why — unknown account, missing commit identity, an unauthorized key (paste it at GitHub -> Settings -> SSH and GPG keys), or a rejected push (run 'make fetch' / 'git pull --rebase', then re-run the installer)" ;;
     *)              echo "" ;;
   esac
 }
@@ -2575,9 +2577,15 @@ summary() {
   if [ ${#ERR_WARN_TAGS[@]} -gt 0 ]; then
     echo ""
     msg " WARNINGS (no success block — see $LOG):"
+    local wt
     for i in "${!ERR_WARN_TAGS[@]}"; do
-      echo "   $((i+1)). ${ERR_WARN_TAGS[$i]}"
-      echo "      hint: $(hint "${ERR_WARN_TAGS[$i]}")"
+      wt="${ERR_WARN_TAGS[$i]}"
+      # Print the problem AND the recorded reason (ERR_DETAIL), like the error
+      # blocks: a bare tag with an empty hint told the operator nothing about
+      # WHY the push failed (2026-10-15).
+      echo "   $((i+1)). $wt"
+      echo "      problem: $(problem "$wt")${ERR_DETAIL[$wt]:+ (${ERR_DETAIL[$wt]})}"
+      echo "      hint: $(hint "$wt")"
     done
   fi
 }
