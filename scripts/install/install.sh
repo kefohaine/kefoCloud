@@ -682,7 +682,7 @@ github_access() {
 # ───────────────────────────── Phase 1 (root) ─────────────────────────────
 
 phase_host() {
-  detail "Phase 1 (host): packages, ssh, docker, tailscale, firewall"
+  msg "Phase 1 (host): packages, ssh, docker, tailscale, firewall"
   # Log may contain host/secret-adjacent output — root-readable only, never 666.
   # One-time relocation off the legacy /var/log paths (never drop the old log).
   if [ ! -f "$LOG" ]; then
@@ -2135,7 +2135,7 @@ sweep() {
 }
 
 phase_stack() {
-  detail "Phase 2 (stack): repo, host config, containers, DNS, certs"
+  msg "Phase 2 (stack): repo, host config, containers, DNS, certs"
   # Fail fast: the Cloudflare zone must already exist (the script cannot
   # create one — that needs nameservers pointing at Cloudflare).
   if [ -z "$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
@@ -2611,10 +2611,10 @@ main() {
   # The bar carries the CURRENT phase, so each phase opens it and every later
   # print lands above it. Stopped before the summary so the closing blocks are
   # not overwritten by a redrawn line.
-  detail "=== phase 1/2 — host"
+  msg "=== phase 1/2 — host"
   _bar_begin "phase 1/2 — host: packages, ssh, docker, tailscale, firewall"
   phase_host
-  detail "=== phase 2/2 — stack"
+  msg "=== phase 2/2 — stack"
   detail "  modules enabled: $(enabled_modules_list) (per-module: cloud=$(mod_on cloud && echo on || echo off) vault=$(mod_on vault && echo on || echo off) mail=$(mod_on mail && echo on || echo off) monitor=$(mod_on monitor && echo on || echo off))"
   _bar_begin "phase 2/2 — stack: repo, containers, DNS, certs, modules, smoke"
   phase_stack
