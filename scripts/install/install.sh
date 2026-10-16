@@ -167,10 +167,11 @@ ERR_WARN_TAGS=()
 # output goes to $LOG. On a non-TTY run the animation is skipped and each row is
 # printed once, when it finishes.
 TASK_NAMES=(
-  "Dependent Packages" "SSH Hardening" "Firewall Restriction"
-  "Tailscale Connectivity" "Docker Framework" "Docker Containers"
-  "Repository Management" "DNS Records" "SSL Certificates"
-  "Module Contents" "Smoke Pass"
+  "System Packages" "SSH Hardening" "Firewall Rules" "Tailscale Connectivity"
+  "Docker Engine" "Goose CLI" "Stack Config" "Containers Up"
+  "Repository Setup" "Host Services" "DNS Records" "SSL Certificates"
+  "Mail Setup" "Nextcloud Setup" "Vaultwarden Setup" "Monitoring Setup"
+  "Repo Hygiene" "Smoke Pass"
 )
 TASK_TOTAL=${#TASK_NAMES[@]}
 declare -a TASK_STATE=() TASK_TS=()
@@ -886,13 +887,11 @@ github_access() {
 }
 
 # ───────────────────────────── Phase 1 (root) ─────────────────────────────
-
-# ───────────────────────────── Phase 1 (root) ─────────────────────────────
 # One function per checklist task, in checklist (TASK_NAMES) order. Each opens
 # with task_start and closes with task_end, so a `fail` inside marks its row
 # [ERROR] and the run continues through the remaining tasks.
 
-# Dependent Packages: log relocation, hostname, base apt packages.
+# System Packages: log relocation, hostname, base apt packages.
 task_packages() {
   task_start
   # Log may contain host/secret-adjacent output — root-readable only, never 666.
@@ -1069,7 +1068,7 @@ task_tailscale() {
   task_end
 }
 
-# Docker Framework: docker engine (+ daemon config), then goose.
+# Docker Engine: docker + compose plugin, daemon config, start.
 task_docker() {
   task_start
   # Debian packages first (bookworm ships docker-compose-plugin); trixie does
@@ -1116,7 +1115,12 @@ EOF
   if ! systemctl is-active --quiet docker; then
     systemctl start docker >>"$LOG" 2>&1 || log "docker start failed (re-checks will catch it)"
   fi
+  task_end
+}
 
+# Goose CLI: install the agent binary (needs the bzip2 apt dep above).
+task_goose() {
+  task_start
   if ! command -v goose >/dev/null 2>&1 && [ ! -x /usr/local/bin/goose ]; then
     # Official installer (release archive, .tar.bz2 — hence the bzip2 apt dep
     # above). Output goes to the log, so a failure is diagnosable.
@@ -2447,8 +2451,8 @@ sweep() {
 
 # ── Phase 2 (stack) — one function per checklist task, in checklist order ──
 
-# Docker Containers: render + secrets + prep dirs, then bring the stack up.
-task_containers() {
+# Stack Config: render templates, mint secrets, prep dirs and instance.conf.
+task_stackcfg() {
   task_start
   cd "$REPO" || exit 1
   docker_net
@@ -2456,17 +2460,32 @@ task_containers() {
   prep_dirs
   write_instance_conf
   seed_stack
+  task_end
+}
+
+# Containers Up: bring the compose stack up and re-check every container.
+task_containers() {
+  task_start
+  cd "$REPO" || exit 1
   containers_up
   task_end
 }
 
-# Repository Management: repo identity + host services (make install-config).
+# Repository Setup: clone/present the repo, pin the commit identity, install hooks.
 task_repo() {
   task_start
   ensure_repo
   github_set_identity
   install_hooks
+  task_end
+}
+
+# Host Services: render+install host config (make install-config) and clear the
+# two benign permanently-failed distro units.
+task_host() {
+  task_start
   host_services
+  disable_benign_failed_units
   task_end
 }
 
@@ -2484,36 +2503,56 @@ task_certs() {
   task_end
 }
 
-# Module Contents: per-module setup (mail/DKIM, Nextcloud, Vaultwarden, Kuma).
-task_modules() {
+# Per-module setup, one checklist row each (a module that is off marks its row
+# [DONE] with "off — skipped", so the checklist says exactly which module ran).
+task_mail() {
   task_start
-  if mod_on mail; then
-    mail_wait_ready
-    dkim_setup
-  fi
-  if mod_on cloud; then
-    nextcloud_setup
-  fi
-  mod_on vault && vaultwarden_setup
-  mod_on vault && vaultwarden_admin
-  mod_on monitor && kuma_seed
+  if mod_on mail; then mail_wait_ready; dkim_setup; else detail "  mail module off — skipped"; fi
+  task_end
+}
+task_cloud() {
+  task_start
+  if mod_on cloud; then nextcloud_setup; else detail "  cloud module off — skipped"; fi
+  task_end
+}
+task_vault() {
+  task_start
+  if mod_on vault; then vaultwarden_setup; vaultwarden_admin; else detail "  vault module off — skipped"; fi
+  task_end
+}
+task_monitor() {
+  task_start
+  if mod_on monitor; then kuma_seed; else detail "  monitor module off — skipped"; fi
+  task_end
+}
+# Repo Hygiene: no stale references to the old project name in the tree.
+task_hygiene() {
+  task_start
   sweep
   task_end
 }
 
-# The ordered task list. "Smoke Pass" is the last task and is marked from
-# finalize_install — it runs only after the push and the finished checkpoint.
+# The ordered task list, in TASK_NAMES order. "Smoke Pass" is the last task and
+# is marked from finalize_install — it runs only after the push and finished
+# checkpoint.
 run_install() {
   task_packages
   task_ssh
   task_firewall
   task_tailscale
   task_docker
+  task_goose
+  task_stackcfg
   task_containers
   task_repo
+  task_host
   task_dns
   task_certs
-  task_modules
+  task_mail
+  task_cloud
+  task_vault
+  task_monitor
+  task_hygiene
   save_state
 }
 
