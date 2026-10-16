@@ -2960,16 +2960,23 @@ pause_and_resolve() {
 # then the [BOTH] verdict (smoke). Nothing in the list depends on a later step,
 # except that the stack needs the host ready (docker, goose, DNS, certs) — which
 # is exactly why the host half comes first.
+# One entry per checklist row, in the SAME order as TASK_NAMES — including
+# smoke (run_finalize's last row), which run_install does not call because it
+# runs from finalize_install after the checkpoint: the list is the checklist's
+# row map first, and the run order second.
 TASKS=(
   task_packages task_ssh task_firewall task_tailscale task_docker task_goose
   task_repo task_host task_dns task_hygiene
   task_stackcfg task_containers task_certs task_mail task_cloud task_vault
-  task_monitor
+  task_monitor task_smoke
 )
 
 run_install() {
   local _t
-  for _t in "${TASKS[@]}"; do
+  # TASKS has one entry per checklist row, smoke included; the pipeline runs
+  # every row but the last (smoke is run by finalize_install, after the
+  # checkpoint — see the smoke row there).
+  for _t in "${TASKS[@]:0:${#TASKS[@]}-1}"; do
     "$_t"
     [ -n "${TASK_ERR:-}" ] && { TASK_ERR=; pause_and_resolve || return 1; }
   done
@@ -3227,7 +3234,9 @@ finalize_install() {
   # 4-5: smoke's exit code is the verdict. Pass → the checkpoint we just wrote
   # stands (finished=true). Fail → this script writes finished=false and stops.
   # "Smoke Pass" is the last checklist row, marked here because smoke only runs
-  # after the push and the finished checkpoint.
+  # after the push and the finished checkpoint. task_smoke exists so the row has
+  # an entry in TASKS like every other row (the checklist maps rows to tasks by
+  # index); this is the only place it is called.
   task_start
   if ! run_smoke; then
     TASK_ERR=1
