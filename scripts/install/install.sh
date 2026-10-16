@@ -1409,7 +1409,10 @@ disable_benign_failed_units() {
       systemctl disable "$u" >>"$LOG" 2>&1 || true
       detail "  disabled $u (fails every boot without the hardware/daemon it expects)"
     fi
-    systemctl reset-failed "$u" >>"$LOG" 2>&1 || true
+    if systemctl is-failed --quiet "$u" 2>/dev/null; then
+      systemctl reset-failed "$u" >>"$LOG" 2>&1 || true
+      detail "  cleared the failed state of $u"
+    fi
   done
 }
 
