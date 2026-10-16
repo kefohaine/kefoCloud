@@ -1611,10 +1611,15 @@ kuma_seed() {
     fail kuma_seed "kuma.db has no schema after 5 min (Kuma still in Setup Database)"
     return
   fi
-  KUMA_PASS=$(openssl rand -base64 18 | tr -d '/+=' | head -c 20)
   local n
   n=$(docker exec uptimekuma sqlite3 /app/data/kuma.db "SELECT COUNT(*) FROM user WHERE username='admin';" 2>/dev/null | tr -d '\n')
   if [ "$n" = "0" ]; then
+    # Mint the password ONLY when the admin is actually created. Generating it
+    # unconditionally made a re-run print a fresh random value in the success
+    # block that was never written — the operator then held a Kuma password
+    # that does not work. On a re-run KUMA_PASS stays empty and the success
+    # block prints its "(already set …)" fallback (idempotent, same as before).
+    KUMA_PASS=$(openssl rand -base64 18 | tr -d '/+=' | head -c 20)
     local HASH
     HASH=$(htpasswd -bnBC 10 "" "$KUMA_PASS" 2>/dev/null | tr -d ':\n')
     if [ -n "$HASH" ]; then
