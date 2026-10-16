@@ -127,8 +127,8 @@ declare -A ERR_DETAIL=()
 # file always describes exactly one run. Timestamps are purple on a TTY; the
 # persistent status bar's seconds/phase are orange. Both are plain when the
 # output is not a terminal or NO_COLOR is set (pipes, cron, CI).
-C_PURPLE=$'\033[35m' C_ORANGE=$'\033[33m' C_GREEN=$'\033[32m' C_RED=$'\033[31m' C_GREY=$'\033[90m' C_RST=$'\033[0m'
-if [ ! -t 1 ] || [ -n "${NO_COLOR:-}" ]; then C_PURPLE= C_ORANGE= C_GREEN= C_RED= C_GREY= C_RST=; fi
+C_PURPLE=$'\033[35m' C_ORANGE=$'\033[33m' C_GREEN=$'\033[32m' C_RED=$'\033[31m' C_GREY=$'\033[90m' C_WHITE=$'\033[37m' C_RST=$'\033[0m'
+if [ ! -t 1 ] || [ -n "${NO_COLOR:-}" ]; then C_PURPLE= C_ORANGE= C_GREEN= C_RED= C_GREY= C_WHITE= C_RST=; fi
 _tstamp() { printf '%s[%s]%s' "$C_PURPLE" "$(date +%H:%M:%S)" "$C_RST"; }
 log()    { printf '%s %s\n' "$(_tstamp)" "$*" >>"$LOG"; }
 detail() { log "$@"; }
@@ -3194,7 +3194,11 @@ main() {
     exit 1
   fi
 
-  msg "[INFO] Starting installation.. Todo List:"
+  # The start-of-run banner line: grey [INFO], purple [HH:MM:SS], white text —
+  # printed once, just above the checklist (msg is log-only once a task is live).
+  printf '[INFO] %s Starting installation..\n' "$(date +%H:%M:%S)" >>"$LOG"
+  printf '%s[INFO]%s %s %sStarting installation..%s\n' \
+    "$C_GREY" "$C_RST" "$(_tstamp)" "$C_WHITE" "$C_RST"
   _tasks_draw
   run_install
   resolve_errors
