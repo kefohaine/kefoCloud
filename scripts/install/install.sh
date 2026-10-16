@@ -261,7 +261,7 @@ cat <<'EOF'
                               ░                                   ░      
 
 EOF
-  printf '%s[WELCOME]%s Modular installation wizard for https://github.com/%s/%s\n\n' \
+  printf '%s[WELCOME]%s Installation wizard for https://github.com/%s/%s\n\n' \
     "$C_GREEN" "$C_RST" "${GITHUB_USER:-?}" "${REPO_NAME:-?}"
   printf '%s[WARN]%s Operating kefoCloud before completing installation is highly discouraged\n' \
     "$C_ORANGE" "$C_RST"
