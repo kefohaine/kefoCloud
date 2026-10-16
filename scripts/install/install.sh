@@ -173,28 +173,15 @@ ERR_WARN_TAGS=()
 # the rest [DONE]. Nothing prints between the task rows (msg is muted while
 # TASK_ACTIVE is set); each step's own output goes to $LOG. On a non-TTY run the
 # animation is skipped and each row is printed once, when it finishes.
-# Each row is tagged with the part of the box it touches, and the tag is the
-# SAME split a reinstall uses (reinstall_unrelated): [H] (HOST, blue) = the
-# machine itself
-# (packages, ssh, firewall, tailnet, docker, goose, the repo clone, host
-# services, DNS records, repo hygiene) — a reinstall never touches it, so its
-# row reads [SKIP]; [S] (STACK, yellow) = the production stack and the data/ it reads (stack
-# config, containers, the LE certs Caddy issues from those vhosts, and the
-# mail/nextcloud/vaultwarden/monitoring setup) — what a reinstall rebuilds.
-# Smoke Pass is the verdict on both, hence [B] (BOTH, green).
-# Rows are grouped HOST → STACK → BOTH, and run_install follows this order: the
-# stack needs the host ready first (docker, goose, host services, DNS records),
-# and the one step that needs the stack up — SSL Certificates, which Caddy can
-# only issue once containers_up has started the edge — sits after Containers Up.
 TASK_NAMES=(
-  "[H] System Packages" "[H] SSH Hardening" "[H] Firewall Rules"
-  "[H] Tailscale Connectivity" "[H] Docker Engine" "[H] Goose CLI"
-  "[H] Repository Setup" "[H] Host Services" "[H] DNS Records"
-  "[H] Repo Hygiene"
-  "[S] Stack Config" "[S] Containers Up" "[S] SSL Certificates"
-  "[S] Mail Setup" "[S] Nextcloud Setup" "[S] Vaultwarden Setup"
-  "[S] Monitoring Setup"
-  "[B] Smoke Pass"
+  "System Packages" "SSH Hardening" "Firewall Rules"
+  "Tailscale Connectivity" "Docker Engine" "Goose CLI"
+  "Repository Setup" "Host Services" "DNS Records"
+  "Repo Hygiene"
+  "Stack Config" "Containers Up" "SSL Certificates"
+  "Mail Setup" "Nextcloud Setup" "Vaultwarden Setup"
+  "Monitoring Setup"
+  "Smoke Pass"
 )
 # Reinstall = the PRODUCTION STACK only. data/ is erased and the stack is
 # rebuilt from freshly asked values; NOTHING outside data/ is touched — no repo
@@ -243,34 +230,17 @@ _anim_field() {
   done
   printf '%s' "$out"
 }
-# Colour the leading scope tag of a task name, brackets included: [H] purple
-# (host), [S] orange (stack), [B] green (both). Only the first tag is coloured —
-# the task text keeps the row's own colour. Pure string work: no colour is ever
-# stored in TASK_NAMES, so a log/plain run needs no stripping.
-_task_name_colored() {   # _task_name_colored <task name>
-  local n="$1" c=""
-  case "$n" in
-    "[H]"*) c="$C_PURPLE" ;;
-    "[S]"*) c="$C_ORANGE" ;;
-    "[B]"*) c="$C_GREEN" ;;
-    *) printf '%s' "$n"; return 0 ;;
-  esac
-  # $n starts with "[X] <text>" (X is one character); recolour that prefix.
-  printf '%s%s%s%s' "$c" "${n:0:3}" "$C_RST" "${n:3}"
-}
 # One newline-terminated row for task $1.
 _task_row() {
   local i="$1"
   local st="${TASK_STATE[$i]:-wait}" ts="${TASK_TS[$i]:-}" name="${TASK_NAMES[$i]:-}"
-  name="$(_task_name_colored "$name")"
   # Only a task that ENDED has a clock: everything else (pending, and a row
   # skipped before it could run) shows the [--:--:--] placeholder.
   [ -n "$ts" ] || ts="--:--:--"
   case "$st" in
     done)  printf '%s[DONE]%s %s[%s]%s %s\n'  "$C_GREEN"  "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
-    # A skipped task keeps its scope tag ([H]/[S]/[B] — the tag says which part
-    # of the box the task belongs to, ALWAYS) and is marked [SKIP] in the status
-    # column, so the row can never be mistaken for a task that ran.
+    # A skipped task is marked [SKIP] in the status column, so the row can never
+    # be mistaken for a task that ran.
     skip)  printf '%s[SKIP]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
     error) printf '%s[FAIL]%s %s[%s]%s %s\n'  "$C_RED"    "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
     run)   printf '%s[EXEC]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$(_anim_field)" "$C_RST" "$name" ;;
@@ -374,9 +344,12 @@ _task_resume() {
     _TAIL=0
     _task_update "$TASK_CUR"
   fi
-  [ -n "$TASK_DRAWN" ] && [ -n "$TASK_ACTIVE" ] && [ -z "$ANIM_PID" ] && {
+  # Only a row that is genuinely RUNNING animates: never a [SKIP] row that was
+  # pre-marked (they are ruled out before the run) nor a finished one, so an
+  # animator can never repaint a row's status into something it is not.
+  if [ -n "$TASK_DRAWN" ] && [ -n "$TASK_ACTIVE" ] && [ -z "$ANIM_PID" ]      && [ "${TASK_STATE[$TASK_CUR]:-}" = run ]; then
     _task_anim "$TASK_CUR" & ANIM_PID=$!
-  }
+  fi
 }
 _tasks_draw() {
   local i
@@ -416,14 +389,6 @@ _tasks_draw() {
 }
 task_start() {
   TASK_CUR=$(( TASK_CUR + 1 )); TASK_ACTIVE=1 TASK_ERR= TASK_SKIP=
-  # A reinstall pre-marks rows outside data/ [SKIP] (see _tasks_draw). Such a row
-  # is still walked by the pipeline — its body calls task_reinstall_skip and
-  # returns — but it must NEVER render as [EXEC]: returning here (before the
-  # redraw and the animator) keeps the row's [SKIP] on screen and stops the
-  # animation. The row was already [SKIP] [HH:MM:SS] before this point (stamped
-  # when the block was drawn, see stamp_skips), so there is nothing to re-render;
-  # TASK_SKIP keeps task_end from overwriting it with [DONE], and TASK_ACTIVE
-  # stays set so task_end still stamps the row's time.
   if [ "${TASK_STATE[$TASK_CUR]:-}" = skip ]; then TASK_SKIP=1; return 0; fi
   TASK_STATE[$TASK_CUR]=run
   if [ -n "$TASK_DRAWN" ]; then
@@ -435,10 +400,13 @@ task_start() {
 # checklist then says exactly which work was installed and which was
 # deliberately not (called from inside a task, before task_end). Two callers:
 # a module the operator turned off, and a task outside the reinstall's scope
-# (task_reinstall_skip). Either way the row reads [SKIP] in the status column
-# — the row's [H]/[S]/[B] tag is never rewritten: the tag says which part of the
-# box a task belongs to, at all times.
+# (task_reinstall_skip). Either way the row reads [SKIP] in the status column.
 task_skip() { [ -n "$TASK_ACTIVE" ] && TASK_SKIP=1; return 0; }
+# True when row $1 was marked [SKIP] BEFORE the pipeline reached it (a reinstall
+# pre-marks every row outside data/, and an unchanged resume pre-marks the app
+# step). Such a row was already painted with its own time, so it must not be
+# repainted as if the run had just decided about it.
+task_skip_premark() { [ "${TASK_STATE[${1:-$TASK_CUR}]:-}" = skip ]; }
 task_end() {
   [ -n "$TASK_ACTIVE" ] || return 0
   [ -n "$ANIM_PID" ] && { kill "$ANIM_PID" 2>/dev/null; wait "$ANIM_PID" 2>/dev/null; ANIM_PID=; }
@@ -2961,6 +2929,12 @@ task_hygiene() {
 # past a failure and marks the rest [DONE].
 pause_and_resolve() {
   local tag still
+  # Stop the animator for the whole exchange: the error block and its prompt are
+  # printed BELOW the to-do list, and a live animator would keep repainting the
+  # running row inside the block being written (the 2026-10-16 overlap). Every
+  # exit path takes the matching _task_resume (which wipes the tail and restores
+  # the block), so the checklist always comes back on its own row.
+  _task_pause
   while [ ${#ERR_TAGS[@]} -gt 0 ]; do
     _note ""
     _note "$(printf '%s┌─ [FAIL]%s resolve to continue' "$C_RED" "$C_RST")"
@@ -2971,10 +2945,10 @@ pause_and_resolve() {
     _note "$(printf '%s└──────────────────────────────────────────────%s' "$C_RED" "$C_RST")"
     # No terminal to answer on (piped / cron / CI): the error cannot be resolved
     # here, so stop LOUD instead of running on through the rest of the checklist.
-    if [ ! -t 0 ]; then _tail_clear; return 1; fi
+    if [ ! -t 0 ]; then _tail_clear; _task_resume; return 1; fi
     printf '%s[INFO]%s Fix / complete the items above, then press Enter to re-check (Ctrl-C aborts): ' "$C_GREY" "$C_RST"
     # Aborted (Ctrl-C / EOF) with the error still open → hard stop.
-    read -r _ || { _task_count 1; _tail_clear; return 1; }
+    read -r _ || { _task_count 1; _tail_clear; _task_resume; return 1; }
     _task_count 1
     still=()
     for tag in "${ERR_TAGS[@]}"; do
@@ -2996,6 +2970,7 @@ pause_and_resolve() {
     _tail_clear
     [ ${#ERR_TAGS[@]} -eq 0 ] && { TASK_STATE[$TASK_CUR]=done; _task_update "$TASK_CUR"; }
   done
+  _task_resume
   return 0
 }
 
