@@ -26,6 +26,7 @@
 #   mod_installed <m>       exit 0/1 (from install.state `enabled_modules`)
 #   mod_state <m>           `installed` | `not installed`  (always printed)
 #   mod_note <m>            '' when installed, else `(not installed)` — for rows
+#   mod_roster              every repo container (edge + every declared module)
 #   mod_finished            `true` | `false` | `absent`  (install.state checkpoint)
 #   exposure <host>         `tailnet-only` for tail.$DOMAIN, else `public`
 
@@ -64,3 +65,9 @@ mod_finished() {
   printf '%s' "${f:-absent}"
 }
 exposure()     { case "$1" in tail|tail.*) printf 'tailnet-only' ;; *) printf 'public' ;; esac; }
+
+# mod_roster — every container the REPO declares, in declaration order: the
+# Caddy edge (always present) then each declared module's containers. It is a
+# REPO fact, INDEPENDENT of which modules are enabled, so `make fetch` can show
+# a not-installed module's containers as stopped rather than hiding them.
+mod_roster() { printf '%s' caddy; local m c; for m in $(mod_all); do for c in $(mod_containers "$m"); do printf ' %s' "$c"; done; done; }
