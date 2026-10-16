@@ -969,7 +969,12 @@ task_tailscale() {
   elif [ ! -e /dev/tpmrm0 ]; then
     detail "  no TPM (/dev/tpmrm0): tailscale state encryption unsupported here — left off"
   fi
-  if ! tailscale ip -4 >/dev/null 2>&1; then
+  # A cached IP is NOT proof the node is on the tailnet: once the node is removed
+  # from the tailnet the control server answers "404: node not found" yet
+  # `tailscale ip -4` still prints the stale address, so the old `if ! tailscale
+  # ip -4` guard skipped the join and left the box permanently off-tailnet. Gate
+  # on the live control-plane state (Self.Online) instead.
+  if [ "$(tailscale status --json 2>/dev/null | jq -r '.Self.Online // false')" != "true" ]; then
     # No --hostname: the tailnet node adopts the OS hostname ($NODE_NAME) so the
     # sole entry point is root@$NODE_NAME (MagicDNS).
     tailscale up --authkey="$TS_AUTHKEY" >>"$LOG" 2>&1 || fail tailscale_up
