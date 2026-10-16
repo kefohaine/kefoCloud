@@ -388,8 +388,7 @@ _tasks_draw() {
   for i in $(seq 0 $((TASK_TOTAL - 1))); do
     TASK_STATE[$i]=wait
     if reinstall_unrelated "${TASKS[$i]:-}"; then
-      # Pre-marked [SKIP]: no time yet — it is stamped when the pipeline reaches
-      # the row, like every other row.
+      # Pre-marked [SKIP]: the stamp pass below gives it its time at draw.
       TASK_STATE[$i]=skip
       TASK_TS[$i]=
     fi
@@ -406,6 +405,14 @@ _tasks_draw() {
   for i in $(seq 0 $((TASK_TOTAL - 1))); do printf '\r'; _task_row "$i"; done
   _TAIL=0
   TASK_DRAWN=1
+  # Rows pre-marked [SKIP] are stamped (and redrawn in place) right after the
+  # block appears, so the operator never sees a [WAIT][--:--:--] row that is
+  # already out of scope. Only run the pass when there is such a row.
+  for i in $(seq 0 $((TASK_TOTAL - 1))); do
+    [ "${TASK_STATE[$i]:-}" = skip ] || continue
+    stamp_skips
+    break
+  done
 }
 task_start() {
   TASK_CUR=$(( TASK_CUR + 1 )); TASK_ACTIVE=1 TASK_ERR= TASK_SKIP=
@@ -413,9 +420,10 @@ task_start() {
   # is still walked by the pipeline — its body calls task_reinstall_skip and
   # returns — but it must NEVER render as [EXEC]: returning here (before the
   # redraw and the animator) keeps the row's [SKIP] on screen and stops the
-  # animation. TASK_SKIP is set so task_end records [SKIP] (not [DONE]) even if
-  # the body returns before calling task_skip itself, and TASK_ACTIVE stays set
-  # so task_end still stamps the row's time.
+  # animation. The row was already [SKIP] [HH:MM:SS] before this point (stamped
+  # when the block was drawn, see stamp_skips), so there is nothing to re-render;
+  # TASK_SKIP keeps task_end from overwriting it with [DONE], and TASK_ACTIVE
+  # stays set so task_end still stamps the row's time.
   if [ "${TASK_STATE[$TASK_CUR]:-}" = skip ]; then TASK_SKIP=1; return 0; fi
   TASK_STATE[$TASK_CUR]=run
   if [ -n "$TASK_DRAWN" ]; then
