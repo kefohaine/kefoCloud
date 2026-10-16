@@ -205,7 +205,9 @@ _task_row() {
 # deliberately NO DECSC/DECRC (`\033[s`/`\033[u`): some terminals honour it and
 # some ignore it, and where it is ignored the old relative-move version walked
 # down the screen (2026-10-16, "repository management goes wild").
-# Print one console line below the block, counting it while a task is running.
+# Print one console line below the block, counting it whenever the block is
+# drawn (so a prompt/error printed between tasks is still counted and can be
+# cleared before the checklist resumes).
 # A leading `\r` is NOT decoration: every console write here assumes it starts
 # in column 0, and that assumption only holds if the tty does NL→CRNL (ONLCR).
 # A single subcommand that runs the terminal without ONLCR (or an operator who
@@ -216,7 +218,7 @@ _task_row() {
 # column-independent of the tty's NL policy.
 _note() {
   printf '\r%s\n' "$*"
-  if [ -n "$TASK_ACTIVE" ] && [ -n "$TASK_DRAWN" ]; then
+  if [ -n "$TASK_DRAWN" ]; then
     # Count PHYSICAL rows, not logical lines: _TAIL is the number of screen rows
     # between the cursor and the block's bottom row, so a note wider than the
     # terminal (wrapped to 2+ rows) must count as 2+ or the relative move lands
@@ -230,7 +232,15 @@ _note() {
   return 0
 }
 # Count lines printed by something other than _note (a read prompt's own line).
-_task_count() { [ -n "$TASK_ACTIVE" ] && [ -n "$TASK_DRAWN" ] && _TAIL=$(( ${_TAIL:-0} + ${1:-1} )); return 0; }
+_task_count() { [ -n "$TASK_DRAWN" ] && _TAIL=$(( ${_TAIL:-0} + ${1:-1} )); return 0; }
+# Wipe everything printed below the checklist (the counted tail) whether or not
+# a task is running, leaving the block in place. Used after an error/prompt so
+# the transient block disappears and the to-do list is what remains on screen.
+_tail_clear() {
+  [ -t 1 ] || return 0
+  [ "${_TAIL:-0}" -gt 0 ] && printf '\r\033[%dA\033[J' "${_TAIL}" >/dev/tty
+  _TAIL=0
+}
 # Fancy status lines below the checklist.
 _warn_note() { _note "$(printf '  %s[WARN]%s  %s' "$C_ORANGE" "$C_RST" "$*")"; }
 _err_note()  { _note "$(printf '  %s[ERROR]%s %s' "$C_RED" "$C_RST" "$*")"; }
@@ -2612,12 +2622,56 @@ task_hygiene() {
   task_end
 }
 
-# The ordered task list, in TASK_NAMES order. A task that fails STOPS the run:
-# the checklist halts on its [ERROR] row (later rows stay [WAIT]) instead of
-# running on to the end, and the wizard cannot finish through a failure — the
-# operator resolves it (the post-run re-check, or a resume) before it proceeds.
-# "Smoke Pass" is the last task and is marked from finalize_install — it runs
-# only after the push and the finished checkpoint.
+# Pause the checklist on a failed task and hand the operator the error BELOW the
+# to-do list; once they resolve it, the error block is wiped and the list comes
+# back, and the run continues from the next task. The failed row flips to [DONE]
+# when its tags clear. Any tag still unresolved is left in ERR_TAGS for the final
+# summary; this never stops the run on its own. Non-TTY (piped/cron) cannot
+# answer, so it clears the block and returns — the final summary reports instead.
+pause_and_resolve() {
+  local tag still
+  while [ ${#ERR_TAGS[@]} -gt 0 ]; do
+    _note ""
+    _note "$(printf '%s┌─ [ERROR]%s resolve to continue' "$C_RED" "$C_RST")"
+    for tag in "${ERR_TAGS[@]}"; do
+      _note "$(printf '   %s%s%s — %s%s' "$C_ORANGE" "$tag" "$C_RST" "$(problem "$tag")" "${ERR_DETAIL[$tag]:+ (${ERR_DETAIL[$tag]})}")"
+      _note "$(printf '     %shint:%s %s' "$C_GREY" "$C_RST" "$(hint "$tag")")"
+    done
+    _note "$(printf '%s└──────────────────────────────────────────────%s' "$C_RED" "$C_RST")"
+    if [ ! -t 0 ]; then _tail_clear; return 0; fi
+    printf '%s[INFO]%s Fix / complete the items above, then press Enter to re-check (Ctrl-C aborts): ' "$C_GREY" "$C_RST"
+    read -r _ || { _task_count 1; _tail_clear; return 0; }
+    _task_count 1
+    still=()
+    for tag in "${ERR_TAGS[@]}"; do
+      # Re-run the tag's own idempotent setup first (a recorded setup failure is
+      # not a boolean to probe), then inspect the state it leaves.
+      case "$tag" in
+        dkim_setup) mail_wait_ready 2>/dev/null || true; dkim_setup ;;
+        vaultwarden_setup) vaultwarden_setup ;;
+      esac
+      if recheck "$tag"; then
+        _note "$(printf '   %s✓ solved%s: %s' "$C_GREEN" "$C_RST" "$tag")"
+      else
+        still+=("$tag")
+      fi
+    done
+    ERR_TAGS=("${still[@]}")
+    # Wipe the block (errors + this prompt) and redraw the to-do list before
+    # looping again or continuing to the next task.
+    _tail_clear
+    [ ${#ERR_TAGS[@]} -eq 0 ] && { TASK_STATE[$TASK_CUR]=done; _task_update "$TASK_CUR"; }
+  done
+  return 0
+}
+
+# The ordered task list, in TASK_NAMES order. A task that fails PAUSES the
+# checklist on its [ERROR] row (later rows stay [WAIT]) and hands the error to
+# the operator; once resolved, the block clears, the list returns and the run
+# continues from the next task. The wizard can never finish through an
+# unresolved failure (the final summary still reports anything left). "Smoke
+# Pass" is the last task and is marked from finalize_install — it runs only
+# after the push and the finished checkpoint.
 run_install() {
   local _t
   for _t in task_packages task_ssh task_firewall task_tailscale task_docker \
@@ -2625,7 +2679,7 @@ run_install() {
             task_dns task_certs task_mail task_cloud task_vault task_monitor \
             task_hygiene; do
     "$_t"
-    [ -n "${TASK_ERR:-}" ] && { TASK_ERR=; break; }
+    [ -n "${TASK_ERR:-}" ] && { TASK_ERR=; pause_and_resolve; }
   done
   save_state
 }
