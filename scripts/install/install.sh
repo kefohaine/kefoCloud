@@ -3037,7 +3037,7 @@ finalize_install() {
 # never assumed. It is idempotent — re-running it is a no-op — which is why a
 # re-run of install.sh may offer it again.
 ask_optimize() {
-  local answer rc
+  local answer="" rc
   [ -f "$REPO/scripts/ops/optimize.sh" ] || return 0
   if ! ask_boolean "Also run the machine performance pass (kernel, swap, disk tuning) now?" answer; then
     return 0
