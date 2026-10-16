@@ -413,8 +413,10 @@ task_start() {
   # is still walked by the pipeline — its body calls task_reinstall_skip and
   # returns — but it must NEVER render as [EXEC]: returning here (before the
   # redraw and the animator) keeps the row's [SKIP] on screen and stops the
-  # animation. TASK_ACTIVE stays set so task_end still stamps its time.
-  [ "${TASK_STATE[$TASK_CUR]:-}" = skip ] && return 0
+  # animation. TASK_SKIP is set so task_end records [SKIP] (not [DONE]) even if
+  # the body returns before calling task_skip itself, and TASK_ACTIVE stays set
+  # so task_end still stamps the row's time.
+  if [ "${TASK_STATE[$TASK_CUR]:-}" = skip ]; then TASK_SKIP=1; return 0; fi
   TASK_STATE[$TASK_CUR]=run
   if [ -n "$TASK_DRAWN" ]; then
     _task_update "$TASK_CUR"
