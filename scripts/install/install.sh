@@ -178,13 +178,13 @@ declare -a TASK_STATE=() TASK_TS=()
 TASK_CUR=-1 TASK_ACTIVE= TASK_DRAWN= ANIM_PID= ANIM_POS=0 TASK_ERR=
 _TAIL=0 _ANIM_PAUSE= _COLS=80
 
-# The current task's status column: an 8-wide field with ONE orange `$` that
+# The current task's status column: an 8-wide field with ONE orange `€` that
 # ping-pongs back and forth (0..7..1), inside purple brackets.
 _anim_field() {
   local p=$(( ANIM_POS % 14 )); [ "$p" -gt 7 ] && p=$(( 14 - p ))
   local k out=""
   for k in 0 1 2 3 4 5 6 7; do
-    if [ "$k" = "$p" ]; then out="${out}${C_ORANGE}\$${C_PURPLE}"; else out="${out} "; fi
+    if [ "$k" = "$p" ]; then out="${out}${C_ORANGE}€${C_PURPLE}"; else out="${out} "; fi
   done
   printf '%s' "$out"
 }
@@ -193,10 +193,10 @@ _task_row() {
   local i="$1"
   local st="${TASK_STATE[$i]:-wait}" ts="${TASK_TS[$i]}" name="${TASK_NAMES[$i]}"
   case "$st" in
-    done)  printf '%s[DONE]%s %s %s\n'  "$C_GREEN"  "$C_RST" "$ts" "$name" ;;
-    error) printf '%s[ERROR]%s %s %s\n' "$C_RED"    "$C_RST" "$ts" "$name" ;;
-    run)   printf '%s[TASK]%s %s[%s]%s %s\n' "$C_ORANGE" "$C_RST" "$C_PURPLE" "$(_anim_field)" "$C_RST" "$name" ;;
-    *)     printf '%s[WAIT]%s %s %s\n'  "$C_GREY"   "$C_RST" "$ts" "$name" ;;
+    done)  printf '%s[DONE]%s %s[%s]%s %s\n'  "$C_GREEN"  "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
+    error) printf '%s[ERROR]%s %s[%s]%s %s\n' "$C_RED"    "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
+    run)   printf '%s[TASK]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$(_anim_field)" "$C_RST" "$name" ;;
+    *)     printf '%s[WAIT]%s %s[%s]%s %s\n'  "$C_GREY"   "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
   esac
 }
 # Everything printed below the checklist block is "tail": lines an interactive
