@@ -384,6 +384,9 @@ save_state() {
     printf 'CF_API_TOKEN=%q\n'       "${CF_API_TOKEN:-}"
     printf 'TS_AUTHKEY=%q\n'         "${TS_AUTHKEY:-}"
     printf 'TS_IP=%q\n'              "${TS_IP:-}"
+    # The device's PUBLIC ssh key (safe to store): reuses on resume, re-asked on
+    # a fresh run. Without it here a resume had no record and re-prompted.
+    printf 'SSH_PUBKEY=%q\n'         "${SSH_PUBKEY:-}"
     # The raw module ANSWERS, so a resume reuses the choice (empty once a module
     # has not been asked yet — ask_modules re-asks only the empty ones).
     printf 'MOD_CLOUD=%q\n'          "${MOD_CLOUD:-}"
@@ -495,8 +498,15 @@ ask_modules() {
 ask_ssh_key() {
   local line info
   mkdir -p /root/.ssh && chmod 700 /root/.ssh
-  if [ -s /root/.ssh/authorized_keys ] && grep -q . /root/.ssh/authorized_keys; then
-    detail "  SSH: $(grep -c . /root/.ssh/authorized_keys) key(s) already authorized — paste skipped"
+  # A resumed run reuses the key saved in install.state; a fresh (no-resume) run
+  # has SSH_PUBKEY unset and asks again — the key is a first-class prompted
+  # answer like DOMAIN and the tokens, not an inference from authorized_keys
+  # (2026-10-16: authorized_keys existing was the old skip signal, which also
+  # silenced the prompt on a fresh re-run).
+  if [ -n "${SSH_PUBKEY:-}" ]; then
+    grep -qxF "$SSH_PUBKEY" /root/.ssh/authorized_keys 2>/dev/null \
+      || { printf '%s\n' "$SSH_PUBKEY" >> /root/.ssh/authorized_keys; chmod 600 /root/.ssh/authorized_keys; }
+    detail "  SSH: device key from install.state already authorized — paste skipped"
     return 0
   fi
   printf '\n SSH is key-only (root, no password). On the device you will connect FROM run\n'
@@ -518,6 +528,9 @@ ask_ssh_key() {
     grep -qxF "$line" /root/.ssh/authorized_keys 2>/dev/null \
       || printf '%s\n' "$line" >> /root/.ssh/authorized_keys
     chmod 600 /root/.ssh/authorized_keys
+    # Persist the answer so a resume reuses it and a no-resume re-asks.
+    SSH_PUBKEY="$line"
+    save_state
     detail "  SSH key accepted: $info"
     return 0
   done
@@ -2922,7 +2935,7 @@ main() {
       # Fresh run: IGNORE the previous answers (never take them as valid) but do
       # NOT delete them — a later run can still resume. Everything is re-asked.
       detail "  starting fresh — every value is asked again (saved answers ignored, not deleted)"
-      unset DOMAIN CF_API_TOKEN TS_AUTHKEY TS_IP \
+      unset DOMAIN CF_API_TOKEN TS_AUTHKEY TS_IP SSH_PUBKEY \
             MOD_CLOUD MOD_VAULT MOD_MAIL MOD_MONITOR \
             GH_REMOTE GH_AUTH_OK \
             GITHUB_COMMIT_NAME GITHUB_COMMIT_EMAIL
@@ -2930,7 +2943,7 @@ main() {
   else
     # No previous run: drop whatever instance.sh's fallbacks put in the
     # environment (notably DOMAIN=example.com) so no prompt is silently skipped.
-    unset DOMAIN CF_API_TOKEN TS_AUTHKEY
+    unset DOMAIN CF_API_TOKEN TS_AUTHKEY SSH_PUBKEY
   fi
   ask_inputs
   # The decisions this run is built on — recorded so the log explains itself
