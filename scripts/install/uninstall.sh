@@ -119,6 +119,140 @@ ask() { # ask <var> <question> [ignored]  (ONLY the words yes/no; recorded as tr
 # the literal words yes/no are accepted, and nothing is removed unless the
 # operator answers yes.
 
+# ─────────────── --reinstall: the installer's hand-off mode ───────────────
+# install.sh is ADD-ONLY, so a reinstall hands the removal HERE:
+#   bash scripts/install/uninstall.sh --reinstall
+# Scope is pre-answered and contains NO prompts — a reinstall rebuilds the
+# production stack, so this mode removes exactly the stack and its data:
+#   modules (containers + data dirs) · edge (Caddy + caddy_data/)
+#   every module data dir including ones no module claims (pgdata, talk,
+#   rendered, www, download, mailserver, logs, …) · install.state
+# It NEVER touches the repo clone, the host services, the packages, the
+# operator account or the tailnet membership — those are the framework, and a
+# reinstall keeps them.
+#
+# Exit code is the SAFETY CHECK the installer depends on:
+#   0 = the stack is verifiably gone (every check below passed) → install.sh
+#       proceeds with the reinstall run
+#   1 = something is still there, or a removal failed, or the list could not be
+#       listed → install.sh ABORTS the reinstall (it changes nothing)
+REINSTALL_MODE=false
+for _a in "$@"; do
+  case "$_a" in
+    --reinstall) REINSTALL_MODE=true ;;
+    --mode=*)    UNINSTALL_MODE="${_a#--mode=}" ;;
+  esac
+done
+unset _a
+
+# The stack scope, used by BOTH the removal and the verification so a check can
+# never disagree with what was removed.
+STACK_MODULES="cloud vault mail monitor"
+
+# Everything under data/ that the stack owns. The four module dirs come from
+# module_data_dirs; this adds the dirs no module claims (the edge's caddy_data,
+# the web root, the log namespace, the render output), so "stack gone" also
+# means "data/ really empty". $PROJECT_DIR itself is NOT removed while the
+# installer's carried-over log is being read back — the installer recreates the
+# directory and its fresh log right after this exits.
+stack_data_dirs() {
+  local d
+  local all="$PROJECT_DIR/caddy_data $PROJECT_DIR/cloud $PROJECT_DIR/vault \
+             $PROJECT_DIR/kuma $PROJECT_DIR/mailserver $PROJECT_DIR/pgdata \
+             $PROJECT_DIR/talk $PROJECT_DIR/download $PROJECT_DIR/www \
+             $PROJECT_DIR/rendered $PROJECT_DIR/backups"
+  for d in $all; do
+    [ -e "$d" ] && echo "$d"
+  done
+}
+
+# The verification: is the stack REALLY gone? Runs after the removal in
+# --reinstall mode. Every item below must be clean, so a half-removed stack can
+# never be reinstalled onto. Read-only: it inspects, it never deletes.
+verify_stack_gone() {
+  local t=""
+  local ctn="caddy nextcloud postgresql vaultwarden uptimekuma mailserver roundcube talk-hpb talk-relay"
+  local c d
+
+  for c in $ctn; do
+    if ctn_list | grep -qx "$c"; then
+      t+="container_$c "
+    fi
+  done
+  docker network inspect net >/dev/null 2>&1 && t+="network "
+  # data/ itself counts: the stack owns everything inside it, so a leftover dir
+  # no module claims (rendered/, www/, caddy_data/, …) or a stray file is still
+  # a live stack's data. data/logs holds the installer's and this script's own
+  # logs and is recreated by the installer right after this exits — it is the
+  # one directory allowed to survive, and it is reported when it is all that is
+  # left behind (visible, not silent).
+  for d in "$PROJECT_DIR"/* "$PROJECT_DIR"/.[!.]*; do
+    [ -e "$d" ] || continue
+    [ "$(basename "$d")" = logs ] && continue
+    t+="data_$(basename "$d") "
+  done
+  [ -d "$PROJECT_DIR/logs" ] && log "  note: data/logs kept (holds this teardown's own log; the installer recreates its fresh install.log)"
+  [ -f "$INSTALL_STATE" ] && t+="state "
+  # module compose files are repo-TRACKED and deliberately kept — they are the
+  # framework, not stack state.
+
+  ERR_TAGS=()
+  [ -n "$t" ] && ERR_TAGS=($t)
+  if [ ${#ERR_TAGS[@]} -gt 0 ]; then
+    echo ""
+    echo " Stack NOT verified gone — ${#ERR_TAGS[@]} item(s) still present:"
+    local i
+    for i in "${!ERR_TAGS[@]}"; do
+      echo "   - $(problem "${ERR_TAGS[$i]}")"
+    done
+    echo " Reinstall aborted (install.sh will not rebuild onto a live stack)."
+    log "  reinstall verification FAILED: ${ERR_TAGS[*]}"
+    return 1
+  fi
+  echo ""
+  echo " Stack verified gone: containers, network, data/ and install.state are all clear."
+  log "  reinstall verification passed — nothing of the stack is left"
+  return 0
+}
+
+# Hand the box back to install.sh after a teardown that left it unusable (the
+# stack and its data gone, nothing else touched) — that is exactly the state
+# install.sh's reinstall gate expects, so it rebuilds the production stack with
+# freshly asked values and runs smoke last. Offered, never assumed: only an
+# explicit yes spawns it, and UNS_INSTALLER=yes (set by install.sh's own
+# hand-off, one level down) suppresses it entirely so the two scripts can never
+# bounce the box between each other.
+ask_restore() {
+  local v="${UNINSTALL_RESTORE:-}" a
+  [ "${UNS_INSTALLER:-}" = yes ] && return 0
+  if [ -n "$v" ]; then
+    case "${v,,}" in
+      yes) RESTORE_AFTER=true ;; no) RESTORE_AFTER=false ;; *) v="" ;;
+    esac
+  fi
+  [ -n "$v" ] && return 0
+  while :; do
+    read -rp "Uninstall finished — run install.sh to reinstall the stack now? (yes/no): " a || return 1
+    case "${a,,}" in
+      yes) RESTORE_AFTER=true;  return 0;;
+      no)  RESTORE_AFTER=false; return 0;;
+      *)   echo "   type yes or no.";;
+    esac
+  done
+}
+
+# Start install.sh (never exec: this script's log stays the teardown's own).
+# data/ is gone, so install.sh opens its fresh data/logs/install.log and asks
+# every value at the repair/reinstall gate.
+restore_after_teardown() {
+  [ "${RESTORE_AFTER:-false}" = true ] || return 0
+  echo ""
+  echo "Reinstalling the production stack: bash $REPO/scripts/install/install.sh"
+  echo "   …it will find data/ erased; answer 'reinstall' at its first prompt."
+  bash "$REPO/scripts/install/install.sh"
+  log "  install.sh returned ($?) after the teardown hand-off"
+}
+
 ask_modules() {
   # Reverse of the installer's ask_modules: nothing removed unless explicitly
   # confirmed —
@@ -198,6 +332,19 @@ ask_inputs() {
   for k in cloud vault mail monitor; do
     mod_rm "$k" && ml+="$k "
   done
+  # The real reinstall is the pair: this teardown, then install.sh in reinstall
+  # mode on the emptied box. `any` is false when nothing is selected — an
+  # operator who only wants the stack rebuilt is sent straight to the installer
+  # (it can repair, no teardown needed).
+  if [ "${any_sel:-false}" != true ]; then
+    ask_restore
+  elif [ "${RM_MOD_DATA:-false}" = true ] && [ "${RM_TAILNET:-false}" != true ]; then
+    ask_restore    # data/ is gone but the box stays usable → offer the rebuild
+  else
+    echo ""
+    echo "Reinstall the production stack later with: bash $REPO/scripts/install/install.sh"
+    echo "   …answer 'reinstall' at its first prompt (repairs a running instance instead)."
+  fi
   echo "Teardown summary — modules: ${ml:-none}· edge: ${RM_EDGE:-false} · host: ${RM_HOST:-false} · pkgs: ${RM_PKGS:-false} · user: ${RM_USER:-false} · tailnet: ${RM_TAILNET:-false}"
   echo "Full log: $LOG"
 }
@@ -413,6 +560,11 @@ remove_tailnet() {
 problem() {
   case "$1" in
     rmmod_*)  echo "the ${1#rmmod_} module is not fully removed" ;;
+    # --reinstall verification (install.sh's hand-off): the stack must be gone
+    container_*) echo "container ${1#container_} is still there" ;;
+    network)  echo "the stack's docker network 'net' is still there" ;;
+    data_*)   echo "data/${1#data_} is still there" ;;
+    state)    echo "install.state is still there" ;;
     edge)     echo "the edge (Caddy) is not fully removed" ;;
     host_goose)  echo "host service 'goose' not removed" ;;
     host_ttyd)   echo "host service 'ttyd' not removed (or was skipped — inside-ttyd guard)" ;;
@@ -427,6 +579,10 @@ problem() {
 hint() {
   case "$1" in
     rmmod_*)  echo "run: docker ps -a; docker rm -f <the module's containers>; check $LOG, then re-check" ;;
+    container_*) echo "run: docker rm -f ${1#container_}, then re-run: bash scripts/install/uninstall.sh --reinstall" ;;
+    network)  echo "run: docker network rm net, then re-run: bash scripts/install/uninstall.sh --reinstall" ;;
+    data_*)   echo "run: rm -rf $PROJECT_DIR/${1#data_}, then re-run: bash scripts/install/uninstall.sh --reinstall" ;;
+    state)    echo "run: rm -f $INSTALL_STATE, then re-run: bash scripts/install/uninstall.sh --reinstall" ;;
     edge)     echo "run: docker rm -f <edge container>; docker network rm net; check $LOG, then re-check" ;;
     host_goose|host_dnsmasq) echo "run: systemctl disable --now ${1#host_}; rm -f /etc/systemd/system/${1#host_}.service; systemctl daemon-reload, then re-check" ;;
     host_ttyd) echo "run scripts/install/uninstall.sh from SSH or a local terminal (not the ttyd web shell), then re-check" ;;
@@ -460,6 +616,12 @@ recheck() {
     host_dnsmasq) [ ! -e /etc/dnsmasq.d/10-tailnet.conf ];;
     pkgs)  ! dpkg -s docker.io >/dev/null 2>&1 && ! dpkg -s docker-ce >/dev/null 2>&1 \
            && ! dpkg -s dnsmasq >/dev/null 2>&1 && ! dpkg -s fail2ban >/dev/null 2>&1;;
+    container_*)
+      ctn_list | grep -qx "${1#container_}" && return 1
+      return 0 ;;
+    network)  ! docker network inspect net >/dev/null 2>&1;;
+    data_*)   [ ! -e "$PROJECT_DIR/${1#data_}" ];;
+    state)    [ ! -f "$INSTALL_STATE" ];;
     user)     true ;;   # root is never removed
     tailnet)  ! tailscale status >/dev/null 2>&1;;
     *)        false ;;
@@ -469,6 +631,10 @@ recheck() {
 is_expected() {
   case "$1" in
     host_ttyd) return 0 ;;  # the operator must re-run from outside ttyd — manual
+    # --reinstall verification failures are UNEXPECTED: the teardown's own
+    # removal is supposed to have left nothing behind, so a leftover is a bug in
+    # it, not a manual step for the operator.
+    container_*|network|data_*|state) return 1 ;;
     *)        return 1 ;;
   esac
 }
@@ -580,7 +746,7 @@ summary() {
 }
 trap summary EXIT
 
-# ─────────────────────────────── main ──────────────────────────────────────
+────────────────────────────────────
 
 main() {
   [ "$(id -u)" -eq 0 ] || { echo "Run as root: sudo bash scripts/install/uninstall.sh"; exit 1; }
@@ -596,8 +762,11 @@ main() {
   for v in RM_EDGE RM_HOST RM_PKGS RM_USER RM_TAILNET; do
     [ "${!v:-false}" = true ] && any=true
   done
+  any_sel=$any
   if [ "$any" = false ]; then
     log "nothing selected — every prompt answered keep. Nothing was removed."
+    ask_restore
+    restore_after_teardown
     exit 0
   fi
   for k in cloud vault mail monitor; do
@@ -626,6 +795,7 @@ main() {
     log "  install.state: enabled_modules='${keep% }' finished=false"
   fi
   resolve_errors
+  restore_after_teardown
   # the repo clone LAST and only after this script exits — bash reads the
   # script from disk; deleting it mid-run can truncate execution
   if [ "${RM_REPO:-false}" = true ]; then
