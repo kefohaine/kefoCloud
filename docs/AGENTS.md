@@ -125,7 +125,7 @@ Follow these on every edit to any `.md` file in this repo.
 3. **No duplicated prose within a file.** If a paragraph repeats what another section already said, delete one.
 4. **Prose over code blocks.** Use a code block only for commands the reader will run, or a structure that genuinely needs monospace (a directory tree, an architecture diagram). Everything else is prose.
 5. **One source of truth.** If a detail appears in two files, pick one and delete the other. Prefer the executable source (compose file, Makefile, config) as truth; docs summarize it.
-6. **No runtime snapshots.** Don't write "all three currently running" or "healthy" — it drifts the moment a service stops. Describe the steady-state config, not the current transient state.
+6. **No runtime snapshots.** Don't write "all three currently running" or "healthy" — it drifts the moment a service stops. Describe the steady-state config, not the current transient state. The same goes for counted tallies — commit / contributor / monitor / user / mailbox counts, LOC figures — they change with use; describe the setup, never the numbers.
 7. **Keep it short.** Every line should answer "would an agent miss this without help?" If not, cut it. No filler, no restating the obvious, no generic advice.
 8. **Verify before writing.** Don't describe a path, port, or behaviour you haven't checked in the actual file. Stale docs are worse than missing docs.
 9. **Preserve verified useful guidance.** When editing an existing `.md`, keep what's accurate and high-signal; only delete fluff, duplicates, stale claims, and volatile state. Don't rewrite blindly.
