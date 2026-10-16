@@ -256,7 +256,7 @@ _task_row() {
     run)   printf '%s[TASK]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$(_anim_field)" "$C_RST" "$name" ;;
     # A pending row has no time yet: the placeholder stands until the task
     # starts (then it is the [TASK] marker) and finishes (a real HH:MM:SS).
-    *)     printf '%s[WAIT]%s %s[%s]%s %s\n'  "$C_GREY"   "$C_RST" "$C_PURPLE" "—:—:—" "$C_RST" "$name" ;;
+    *)     printf '%s[WAIT]%s %s[%s]%s %s\n'  "$C_GREY"   "$C_RST" "$C_PURPLE" "[--:--:--]" "$C_RST" "$name" ;;
   esac
 }
 # Everything printed below the checklist block is "tail": lines an interactive
