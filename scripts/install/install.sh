@@ -9,7 +9,7 @@
 # domain, modules (one space-separated line). Every affirmation takes only the
 # literal words `yes`/`no` (no shortcut, no default); the answer is recorded as
 # the boolean true/false. Then it runs unattended as a fixed 11-task checklist
-# (grey [WAIT] -> animated orange [TASK] -> green [DONE] / red [ERROR]; a failed
+# (grey [WAIT] -> animated orange [EXEC] -> green [DONE] / red [FAIL]; a failed
 # task is marked, the run continues to the end, and the errors are reported
 # after): host services, docker, tailscale, the full stack — Nextcloud (app +
 # PostgreSQL + Redis + Talk HPB/TURN), Caddy, Vaultwarden, Uptime Kuma, Docker
@@ -160,9 +160,9 @@ ERR_WARN_TAGS=()
 
 # ─────────────────────── the installation task checklist ───────────────────
 # One fixed list, printed once as a live checklist. Each row starts as [WAIT]
-# (grey), becomes an animated [TASK] (orange) while it runs, and ends as [DONE]
-# (green), [SKIP] (orange, a module that is off) or [ERROR] (red). A failed task
-# HARD-STOPS the run: the checklist pauses on its [ERROR] row and hands the error
+# (grey), becomes an animated [EXEC] (orange) while it runs, and ends as [DONE]
+# (green), [SKIP] (orange, a module that is off) or [FAIL] (red). A failed task
+# HARD-STOPS the run: the checklist pauses on its [FAIL] row and hands the error
 # to the operator; once resolved the row flips to [DONE] and the run continues,
 # but if it stays unresolved (or there is no terminal) the remaining tasks are
 # left [WAIT] and the installer stops — it never runs on past a failure and marks
@@ -252,10 +252,10 @@ _task_row() {
     skip)  printf '%s[SKIP]%s %s[%s]%s %s%s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$ts" "$C_RST" \
              "$(printf '%s' "$name" | sed -E 's/^\[[A-Z]+\](\+\[[A-Z]+\])?/[SKIP]/')" \
              "${REINSTALL_SKIP_NOTE:- — deliberately not run}" ;;
-    error) printf '%s[ERROR]%s %s[%s]%s %s\n' "$C_RED"    "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
-    run)   printf '%s[TASK]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$(_anim_field)" "$C_RST" "$name" ;;
+    error) printf '%s[FAIL]%s %s[%s]%s %s\n'  "$C_RED"    "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
+    run)   printf '%s[EXEC]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$(_anim_field)" "$C_RST" "$name" ;;
     # A pending row has no time yet: the placeholder stands until the task
-    # starts (then it is the [TASK] marker) and finishes (a real HH:MM:SS).
+    # starts (then it is the [EXEC] marker) and finishes (a real HH:MM:SS).
     *)     printf '%s[WAIT]%s %s[%s]%s %s\n'  "$C_GREY"   "$C_RST" "$C_PURPLE" "[--:--:--]" "$C_RST" "$name" ;;
   esac
 }
@@ -273,7 +273,7 @@ _task_row() {
 # A single subcommand that runs the terminal without ONLCR (or an operator who
 # turned it off) otherwise leaves the cursor mid-line, so each following row is
 # appended after the previous one and rows concatenate — `Repository
-# Management[   [...] [TASK] Repository Management[...]` (2026-10-16, "repo
+# Management[   [...] [EXEC] Repository Management[...]` (2026-10-16, "repo
 # management goes wild"). Emitting CR explicitly makes every write
 # column-independent of the tty's NL policy.
 _note() {
@@ -303,7 +303,7 @@ _tail_clear() {
 }
 # Fancy status lines below the checklist.
 _warn_note() { _note "$(printf '  %s[WARN]%s  %s' "$C_ORANGE" "$C_RST" "$*")"; }
-_err_note()  { _note "$(printf '  %s[ERROR]%s %s' "$C_RED" "$C_RST" "$*")"; }
+_err_note()  { _note "$(printf '  %s[FAIL]%s %s' "$C_RED" "$C_RST" "$*")"; }
 # A colored titled section rule (used to frame the post-install error/warn blocks).
 _section() { _note ""; _note "$(printf '%s── %s ──────────────────────────────────%s' "$2" "$1" "$C_RST")"; }
 # Redraw row $1 in place: stand on the last block row (stepping over the tail),
@@ -1144,7 +1144,7 @@ github_access() {
 # ───────────────────────────── Phase 1 (root) ─────────────────────────────
 # One function per checklist task, in checklist (TASK_NAMES) order. Each opens
 # with task_start and closes with task_end, so a `fail` inside marks its row
-# [ERROR] and the run continues through the remaining tasks.
+# [FAIL] and the run continues through the remaining tasks.
 
 # System Packages: log relocation, hostname, base apt packages.
 task_packages() {
@@ -1708,7 +1708,7 @@ host_services() {
 }
 
 containers_up() {
-  # The checklist's own [TASK] animation is the progress indicator, so the Caddy
+  # The checklist's own [EXEC] animation is the progress indicator, so the Caddy
   # build prints nothing here (its verbose output goes to $LOG). The dok-recreate
   # recipe already falls back to docker build + compose up when compose's buildx
   # is too old (Debian trixie).
@@ -2868,7 +2868,7 @@ pause_and_resolve() {
   local tag still
   while [ ${#ERR_TAGS[@]} -gt 0 ]; do
     _note ""
-    _note "$(printf '%s┌─ [ERROR]%s resolve to continue' "$C_RED" "$C_RST")"
+    _note "$(printf '%s┌─ [FAIL]%s resolve to continue' "$C_RED" "$C_RST")"
     for tag in "${ERR_TAGS[@]}"; do
       _note "$(printf '   %s%s%s — %s%s' "$C_ORANGE" "$tag" "$C_RST" "$(problem "$tag")" "${ERR_DETAIL[$tag]:+ (${ERR_DETAIL[$tag]})}")"
       _note "$(printf '     %shint:%s %s' "$C_GREY" "$C_RST" "$(hint "$tag")")"
@@ -2905,7 +2905,7 @@ pause_and_resolve() {
 }
 
 # The ordered task list, in TASK_NAMES order. A task that fails PAUSES the
-# checklist on its [ERROR] row (later rows stay [WAIT]) and hands the error to
+# checklist on its [FAIL] row (later rows stay [WAIT]) and hands the error to
 # the operator; once resolved, the block clears, the list returns and the run
 # continues from the next task. An unresolved failure HARD-STOPS the run
 # (returns non-zero) instead of continuing — the wizard can never finish through
