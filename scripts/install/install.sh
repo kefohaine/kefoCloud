@@ -203,9 +203,6 @@ TASK_NAMES=(
 # not touch data/ is marked [SKIP] on a reinstall run (see task_reinstall_skip),
 # and Smoke Pass stays mandatory last, exactly as on a normal install.
 REINSTALL=false
-# Shown once, at the end of every [SKIP] row: a repair skips nothing (empty),
-# a reinstall names why the row did not run. Set in main() with the mode.
-REINSTALL_SKIP_NOTE=
 # Which task functions DO touch data/ (kept live on a reinstall): Stack Config
 # (rendered/, instance.conf, seeds), Containers Up (the stack and its volumes),
 # Mail / Nextcloud / Vaultwarden / Monitoring Setup (their data dirs). Every
@@ -269,11 +266,9 @@ _task_row() {
   case "$st" in
     done)  printf '%s[DONE]%s %s[%s]%s %s\n'  "$C_GREEN"  "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
     # A skipped task keeps its scope tag ([H]/[S]/[B] — the tag says which part
-    # of the box the task belongs to, ALWAYS) and says [SKIP] in the status
-    # column plus the reason at the end of the line, so the row can never be
-    # mistaken for a task that ran.
-    skip)  printf '%s[SKIP]%s %s[%s]%s %s%s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$ts" "$C_RST" \
-             "$name" "${REINSTALL_SKIP_NOTE:- — deliberately not run}" ;;
+    # of the box the task belongs to, ALWAYS) and is marked [SKIP] in the status
+    # column, so the row can never be mistaken for a task that ran.
+    skip)  printf '%s[SKIP]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
     error) printf '%s[FAIL]%s %s[%s]%s %s\n'  "$C_RED"    "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
     run)   printf '%s[EXEC]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$(_anim_field)" "$C_RST" "$name" ;;
     # A pending row has no time yet: the placeholder stands until the task
@@ -385,8 +380,8 @@ _tasks_draw() {
   # A row's time is set when it ends (task_end); a [WAIT] row shows the
   # placeholder instead, so nothing is pre-filled here — except the rows this
   # mode will never run: a reinstall marks every task outside data/ [SKIP] the
-  # moment the block is drawn, so the run says what it will not do up front
-  # instead of leaving those rows [WAIT] until the pipeline walks past them.
+  # moment the block is drawn, instead of leaving those rows [WAIT] until the
+  # pipeline walks past them.
   for i in $(seq 0 $((TASK_TOTAL - 1))); do
     TASK_STATE[$i]=wait
     if reinstall_unrelated "${TASKS[$i]:-}"; then
@@ -3487,10 +3482,6 @@ main() {
         exit 0
       fi
       detail "  reinstall — production stack only: data/ is erased, everything else is skipped"
-      # The checklist is NEVER shortened: every row is always drawn, for a repair
-      # and a reinstall alike. A reinstall only marks the rows it does not run,
-      # and this note (appended to each of them) says why once, on the row.
-      REINSTALL_SKIP_NOTE=" — [SKIP]: outside the reinstall's scope"
       REINSTALL=true
       if ! reinstall_handoff "$@"; then
         # The hand-off refused (or uninstall.sh failed): STOP — a reinstall on
