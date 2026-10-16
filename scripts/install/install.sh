@@ -614,14 +614,15 @@ github_push() {
          GIT_AUTHOR_NAME="$GITHUB_COMMIT_NAME" GIT_AUTHOR_EMAIL="$GITHUB_COMMIT_EMAIL"
   local url="git@github.com:$GITHUB_USER/$REPO_NAME.git"
 
-  # Idempotent by construction: no persistent remote is created or rewritten.
+  # Idempotent by construction: the push itself creates no persistent remote.
   # `temppush` is a one-shot URL remote — added, pushed, removed — and it is
   # removed BEFORE the push (run both steps, then clean up on every exit path),
   # so a re-run after an abort finds nothing stale to collide with. Git with no
   # origin falls back to the COMMAND-LINE url, which is what a clone whose
-  # origin was never set needs; on this instance an origin from upstream is
-  # preserved and the installer push goes nowhere near it. Every piece of
-  # identity is passed with `-c`, so the run does not write shared repo config.
+  # origin was never set needs; origin is separately pointed at the SSH URL by
+  # github_set_origin once the key is authorized (so the operator can push
+  # without a login). Every piece of identity is passed with `-c`, so the run
+  # does not write shared repo config.
   git -C "$REPO" remote remove temppush 2>/dev/null || true
   local push_out rc
   push_out="$(git -C "$REPO" -c user.name="$GITHUB_COMMIT_NAME" -c user.email="$GITHUB_COMMIT_EMAIL" \
@@ -642,6 +643,22 @@ github_push() {
   return 1
 }
 
+# Point origin at the SSH URL once the GitHub key is authorized, so the OPERATOR
+# can `git push` themselves with no GitHub login (this host has no HTTPS token).
+# The installer's own push is a one-shot `temppush` URL remote and does not need
+# origin — but the success block and any later manual push do, and origin stayed
+# HTTPS while the push was rejected, leaving `git push` to prompt for a username
+# (observed 2026-10-15). Only ever after authorization, so a non-collaborator's
+# HTTPS origin is never rewritten.
+github_set_origin() {
+  local want="git@github.com:$GITHUB_USER/$REPO_NAME.git" cur
+  cur="$(git -C "$REPO" remote get-url origin 2>/dev/null || true)"
+  [ "$cur" = "$want" ] && return 0
+  git -C "$REPO" remote set-url origin "$want" 2>/dev/null \
+    || git -C "$REPO" remote add origin "$want" 2>/dev/null || return 0
+  detail "  origin set to $want (push without a GitHub login)"
+}
+
 github_access() {
   [ "${GH_REMOTE:-false}" = "true" ] || { log "  GitHub remote access: not requested — skipped"; return 0; }
   if [ -z "${GITHUB_USER:-}" ] || [ "${GITHUB_USER:-}" = "exampleuser" ]; then
@@ -655,6 +672,7 @@ github_access() {
   # logged in for the life of the key pair).
   if [ -s "$GH_KEY" ] && github_auth_ok; then
     GH_AUTH_OK=1
+    github_set_origin
     detail "  GitHub key authorized (ssh -T git@github.com) — the push runs at the end"
     save_state
     return
@@ -675,6 +693,7 @@ github_access() {
     [ $(( _waited % 15 )) -eq 0 ] && log "  GitHub: key not authorized yet (${_waited}s) — paste the line above; verification is automatic."
   done
   GH_AUTH_OK=1
+  github_set_origin
   save_state
   detail "  GitHub key authorized (ssh -T git@github.com) — the push runs at the end"
 }

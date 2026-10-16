@@ -384,3 +384,4 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Docker `net` created only when missing** — `docker network create net || true` logged a phantom "network with name net already exists" on every re-run.
 - **Nextcloud DB + app brought up in one compose invocation** — the app file's `--remove-orphans` deleted the just-started postgresql, so `occ maintenance:install` failed SQLSTATE[08006] "No route to host".
 - **`make install-config` created a literal `{{LOG_DIR}}` directory** — the Makefile is not a rendered template; the log dir is now `$(REPO)/data/logs`.
+- **Installer points `origin` at the SSH URL once the key is authorized** — a rejected push left origin on HTTPS (this host has no token), so the operator's own `git push` prompted for a GitHub login; `github_set_origin` now switches it (never before authorization).
