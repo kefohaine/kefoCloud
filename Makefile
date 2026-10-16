@@ -468,7 +468,7 @@ sudo chmod 0644 /etc/cron.d/nextcloud
 # config/docker/daemon.json (10m x3); no journald drop-in exists —
 # caps — nothing here logs unboundedly, and nothing uses chronicle-style
 # per-event logging.
-sudo install -d -m 0755 {{LOG_DIR}}
+sudo install -d -m 0755 $(REPO)/data/logs
 sudo cp $(RENDER_DIR)/config/logrotate/instance /etc/logrotate.d/instance
 sudo chmod 0644 /etc/logrotate.d/instance
 sudo systemctl enable --now fail2ban
