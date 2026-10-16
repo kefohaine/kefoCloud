@@ -18,6 +18,8 @@ bash scripts/install/install.sh
 
 ![Repository Banner](.github/images/modules.png)
 
+Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Caddy, Vaultwarden, Uptime Kuma and the Docker Mailserver + Roundcube platform behind Cloudflare with tailscale, ttyd, dnsmasq and goose as host services.
+
 | name | app | note |
 |---|---|---|
 | **Cloud** | Nextcloud | app choices in `config/cloud/apps.conf` |
