@@ -172,19 +172,24 @@ ERR_WARN_TAGS=()
 # Each row is tagged with the part of the box it touches, and the tag is the
 # SAME split a reinstall uses (reinstall_unrelated): [HOST] = the machine itself
 # (packages, ssh, firewall, tailnet, docker, goose, the repo clone, host
-# services, DNS/edge certs, repo hygiene) — a reinstall never touches it, so its
+# services, DNS records, repo hygiene) — a reinstall never touches it, so its
 # row reads [SKIP]; [STACK] = the production stack and the data/ it reads (stack
-# config, containers, mail/nextcloud/vaultwarden/monitoring setup) — what a
-# reinstall rebuilds. Smoke Pass is the verdict on both, hence [BOTH].
+# config, containers, the LE certs Caddy issues from those vhosts, and the
+# mail/nextcloud/vaultwarden/monitoring setup) — what a reinstall rebuilds.
+# Smoke Pass is the verdict on both, hence [BOTH].
+# Rows are grouped HOST → STACK → BOTH, and run_install follows this order: the
+# stack needs the host ready first (docker, goose, host services, DNS records),
+# and the one step that needs the stack up — SSL Certificates, which Caddy can
+# only issue once containers_up has started the edge — sits after Containers Up.
 TASK_NAMES=(
   "[HOST] System Packages" "[HOST] SSH Hardening" "[HOST] Firewall Rules"
   "[HOST] Tailscale Connectivity" "[HOST] Docker Engine" "[HOST] Goose CLI"
-  "[STACK] Stack Config" "[STACK] Containers Up"
   "[HOST] Repository Setup" "[HOST] Host Services" "[HOST] DNS Records"
-  "[HOST] SSL Certificates"
+  "[HOST] Repo Hygiene"
+  "[STACK] Stack Config" "[STACK] Containers Up" "[STACK] SSL Certificates"
   "[STACK] Mail Setup" "[STACK] Nextcloud Setup" "[STACK] Vaultwarden Setup"
   "[STACK] Monitoring Setup"
-  "[HOST] Repo Hygiene" "[BOTH] Smoke Pass"
+  "[BOTH] Smoke Pass"
 )
 # Reinstall = the PRODUCTION STACK only. data/ is erased and the stack is
 # rebuilt from freshly asked values; NOTHING outside data/ is touched — no repo
@@ -200,7 +205,7 @@ REINSTALL=false
 reinstall_unrelated() {   # reinstall_unrelated <task-function-name>
   [ "${REINSTALL:-false}" = true ] || return 1
   case "$1" in
-    task_stackcfg|task_containers|task_mail|task_cloud|task_vault|task_monitor) return 1 ;;
+    task_stackcfg|task_containers|task_certs|task_mail|task_cloud|task_vault|task_monitor) return 1 ;;
     *) return 0 ;;
   esac
 }
@@ -2813,7 +2818,6 @@ task_dns() {
 # SSL Certificates: trigger + verify LE issuance for every vhost.
 task_certs() {
   task_start
-  task_reinstall_skip task_certs && return 0
   issue_certs
   task_end
 }
@@ -2905,10 +2909,14 @@ pause_and_resolve() {
 # push and the finished checkpoint.
 run_install() {
   local _t
+  # Same order as TASK_NAMES: every [HOST] step first, then the [STACK] steps,
+  # then the [BOTH] verdict (smoke). Nothing in the list depends on a later
+  # step, except that the stack needs the host ready (docker, goose, DNS, certs)
+  # — which is exactly why the host half comes first.
   for _t in task_packages task_ssh task_firewall task_tailscale task_docker \
-            task_goose task_stackcfg task_containers task_repo task_host \
-            task_dns task_certs task_mail task_cloud task_vault task_monitor \
-            task_hygiene; do
+            task_goose task_repo task_host task_dns task_hygiene \
+            task_stackcfg task_containers task_certs task_mail task_cloud \
+            task_vault task_monitor; do
     "$_t"
     [ -n "${TASK_ERR:-}" ] && { TASK_ERR=; pause_and_resolve || return 1; }
   done
