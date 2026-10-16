@@ -175,7 +175,7 @@ ERR_WARN_TAGS=()
 # services, DNS/edge certs, repo hygiene) — a reinstall never touches it, so its
 # row reads [SKIP]; [STACK] = the production stack and the data/ it reads (stack
 # config, containers, mail/nextcloud/vaultwarden/monitoring setup) — what a
-# reinstall rebuilds. Smoke Pass is the verdict on both, hence [HOST]+[STACK].
+# reinstall rebuilds. Smoke Pass is the verdict on both, hence [BOTH].
 TASK_NAMES=(
   "[HOST] System Packages" "[HOST] SSH Hardening" "[HOST] Firewall Rules"
   "[HOST] Tailscale Connectivity" "[HOST] Docker Engine" "[HOST] Goose CLI"
@@ -184,7 +184,7 @@ TASK_NAMES=(
   "[HOST] SSL Certificates"
   "[STACK] Mail Setup" "[STACK] Nextcloud Setup" "[STACK] Vaultwarden Setup"
   "[STACK] Monitoring Setup"
-  "[HOST] Repo Hygiene" "[HOST]+[STACK] Smoke Pass"
+  "[HOST] Repo Hygiene" "[BOTH] Smoke Pass"
 )
 # Reinstall = the PRODUCTION STACK only. data/ is erased and the stack is
 # rebuilt from freshly asked values; NOTHING outside data/ is touched — no repo
