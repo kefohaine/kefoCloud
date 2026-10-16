@@ -316,6 +316,15 @@ else
   say "ok   host-units — ttyd, dnsmasq, goose all active"
 fi
 
+# git hooks — the repo guards must be installed (pre-commit: identity + edge
+# stub guard; pre-push: smoke + history-rewrite warning). A missing hook means
+# the guards are silently absent — the identity/edge protection is gone.
+if [ -x "$ROOT/.git/hooks/pre-commit" ] && [ -x "$ROOT/.git/hooks/pre-push" ]; then
+  say "ok   git-hooks — pre-commit + pre-push installed"
+else
+  say "FAIL git-hooks: pre-commit/pre-push not installed (run: make install-hooks)"; bad
+fi
+
 ufw_state="$(sudo ufw status 2>/dev/null | head -1)"
 if [[ "$ufw_state" != *"Status: active"* ]]; then
   say "FAIL ufw: firewall not active ('$(sudo ufw status 2>/dev/null | head -1)')"; bad
