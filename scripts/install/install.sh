@@ -388,9 +388,9 @@ _tasks_draw() {
   for i in $(seq 0 $((TASK_TOTAL - 1))); do
     TASK_STATE[$i]=wait
     if reinstall_unrelated "${TASKS[$i]:-}"; then
+      # Pre-marked [SKIP]: no time yet — it is stamped when the pipeline reaches
+      # the row, like every other row.
       TASK_STATE[$i]=skip
-      # A skipped row never runs, so it has no end time: show the placeholder
-      # like any other row that has not reported, not a fabricated clock.
       TASK_TS[$i]=
     fi
   done
@@ -409,9 +409,11 @@ _tasks_draw() {
 }
 task_start() {
   TASK_CUR=$(( TASK_CUR + 1 )); TASK_ACTIVE=1 TASK_ERR= TASK_SKIP=
-  # A reinstall pre-marks rows outside data/ [SKIP] (see _tasks_draw); the task
-  # body then calls task_reinstall_skip and returns without doing anything, so
-  # the row must not flicker through [EXEC] on the way.
+  # A reinstall pre-marks rows outside data/ [SKIP] (see _tasks_draw). Such a row
+  # is still walked by the pipeline — its body calls task_reinstall_skip and
+  # returns — but it must NEVER render as [EXEC]: returning here (before the
+  # redraw and the animator) keeps the row's [SKIP] on screen and stops the
+  # animation. TASK_ACTIVE stays set so task_end still stamps its time.
   [ "${TASK_STATE[$TASK_CUR]:-}" = skip ] && return 0
   TASK_STATE[$TASK_CUR]=run
   if [ -n "$TASK_DRAWN" ]; then
@@ -429,15 +431,14 @@ task_start() {
 task_skip() { [ -n "$TASK_ACTIVE" ] && TASK_SKIP=1; return 0; }
 task_end() {
   [ -n "$TASK_ACTIVE" ] || return 0
-  # TASK_CUR is the row just run; a task_reinstall_skip already recorded it as
-  # [SKIP] in task_start, so keep that state and timestamp-free placeholder.
   [ -n "$ANIM_PID" ] && { kill "$ANIM_PID" 2>/dev/null; wait "$ANIM_PID" 2>/dev/null; ANIM_PID=; }
+  # The row's time is stamped whenever the pipeline REACHED it — including a
+  # [SKIP] row (the run did walk past it and decided not to run it). Only rows
+  # the run never reached keep the [--:--:--] placeholder.
+  TASK_TS[$TASK_CUR]=$(date +%H:%M:%S)
   if   [ -n "${TASK_ERR:-}" ];  then TASK_STATE[$TASK_CUR]=error
   elif [ -n "${TASK_SKIP:-}" ]; then TASK_STATE[$TASK_CUR]=skip
-  elif [ "${TASK_STATE[$TASK_CUR]:-}" = skip ]; then :   # pre-marked: no time
   else                               TASK_STATE[$TASK_CUR]=done; fi
-  # A [SKIP] row has no end time at all (it never ran): the placeholder stands.
-  if [ "${TASK_STATE[$TASK_CUR]:-}" != skip ]; then TASK_TS[$TASK_CUR]=$(date +%H:%M:%S); fi
   if [ -n "$TASK_DRAWN" ]; then _task_update "$TASK_CUR"; else _task_row "$TASK_CUR"; fi
   # TASK_ERR is deliberately NOT cleared here: run_install reads it right after
   # task_end to decide whether to pause on the failed row (task_start resets it).
@@ -2962,6 +2963,13 @@ pause_and_resolve() {
 # smoke (run_finalize's last row), which run_install does not call because it
 # runs from finalize_install after the checkpoint: the list is the checklist's
 # row map first, and the run order second.
+# The last checklist row. run_smoke is the body; the row is started and ended
+# around it so a smoke failure shows as this row's [FAIL].
+task_smoke() {
+  task_start
+  run_smoke || TASK_ERR=1
+  task_end
+}
 TASKS=(
   task_packages task_ssh task_firewall task_tailscale task_docker task_goose
   task_repo task_host task_dns task_hygiene
@@ -3231,23 +3239,20 @@ finalize_install() {
   write_state
   # 4-5: smoke's exit code is the verdict. Pass → the checkpoint we just wrote
   # stands (finished=true). Fail → this script writes finished=false and stops.
-  # "Smoke Pass" is the last checklist row, marked here because smoke only runs
-  # after the push and the finished checkpoint. task_smoke exists so the row has
-  # an entry in TASKS like every other row (the checklist maps rows to tasks by
-  # index); this is the only place it is called.
-  task_start
-  if ! run_smoke; then
-    TASK_ERR=1
+  # "Smoke Pass" is the last checklist row, started here because smoke only runs
+  # after the push and the finished checkpoint — the row and its body (task_smoke)
+  # live in finalize_install rather than in run_install.
+  task_smoke
+  if [ -n "${TASK_ERR:-}" ]; then
+    TASK_ERR=
     FINISHED=false
     write_state
     CHECKPOINT_OPEN=
-    task_end
     echo ""
     msg " NOT FINISHED — install.state is recorded pending (finished=false)."
     echo " Fix the failure above, then re-run the installer to finish."
     return 0
   fi
-  task_end
   CHECKPOINT_OPEN=
   success_block
   ask_optimize
