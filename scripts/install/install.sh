@@ -2899,6 +2899,24 @@ trap _exit_trap EXIT
 # the instance.conf a run writes once the prompts are answered.
 previous_install() { [ -s "${INSTALL_STATE:-}" ] || [ -s "$DATA/instance.conf" ]; }
 
+# The fail-fast zone gate in main() runs BEFORE task_packages installs the base
+# packages, yet it needs curl + jq. On a fresh host neither was present, so the
+# jq pipe produced nothing and the gate reported a bogus "zone not found" while
+# the token and zone were both valid (2026-10-16). Install just those two here,
+# up front; task_packages re-installs them harmlessly later. Returns non-zero
+# only if the install failed, so the caller can report a real (apt) error rather
+# than misblame the zone.
+ensure_cli_deps() {
+  local missing=()
+  command -v curl >/dev/null 2>&1 || missing+=(curl)
+  command -v jq   >/dev/null 2>&1 || missing+=(jq)
+  [ "${#missing[@]}" -eq 0 ] && return 0
+  detail "  installing CLI prerequisites: ${missing[*]}"
+  DEBIAN_FRONTEND=noninteractive apt-get update -qq >>"$LOG" 2>&1 || true
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${missing[@]}" >>"$LOG" 2>&1 || true
+  command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1
+}
+
 main() {
   if [ "$(id -u)" -ne 0 ]; then
     msg "Run as root: root@$NODE_NAME is the only entry point (no sudo hand-off)."; exit 1
@@ -2955,6 +2973,11 @@ main() {
 
   # Fail fast: the Cloudflare zone must already exist (the script cannot create
   # one — that needs nameservers pointing at Cloudflare).
+  # This gate runs BEFORE task_packages installs the base packages (curl, jq),
+  # so bring them in first — otherwise the `| jq` yields nothing on a fresh host
+  # and the gate falsely reports "zone not found" for a valid token+zone
+  # (2026-10-16). A failure to install them is a real apt error, not a zone one.
+  ensure_cli_deps || { fail apt "install curl and jq (apt-get install -y curl jq), then re-run"; exit 1; }
   if [ -z "$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
         "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" | jq -r '.result[0].id // empty')" ]; then
     fail zone "create the zone in the CF dashboard (point your nameservers there), then re-run"
