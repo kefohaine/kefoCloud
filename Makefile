@@ -186,7 +186,7 @@ systemd-log:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: fetch fetch-more render ttyd-devices ttyd-add ttyd-rm smoke gh-web-health install-hooks clean-docker clean-apt update apt-upgrade install-config kuma-import help talk-gen
+.PHONY: fetch fetch-more render ttyd-devices ttyd-add ttyd-rm smoke gh-web-health install-hooks clean-docker clean-apt update apt-upgrade install-config kuma-import help talk-gen vaultwarden-list-users vaultwarden-add-user vaultwarden-del-user
 .PHONY: deploy backup nc-data nc-datadir-nfs import-backups
 
 # Per-tailnet-device web-terminal sessions: one named tmux session each, served
@@ -387,6 +387,22 @@ kuma-del-user:
 # Import an adapted Uptime Kuma db from another host (KUMA_DB=/path).
 kuma-import:
 >sudo scripts/modules/kuma-import.sh $(KUMA_DB)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Vaultwarden accounts (no CLI — scripts/modules/vaultwarden-user.sh recreates
+# Bitwarden's client crypto and writes vault/data/db.sqlite3; the plaintext
+# never leaves the process and is never written down)
+# ─────────────────────────────────────────────────────────────────────────────
+vaultwarden-list-users:
+>@bash scripts/modules/vaultwarden-user.sh list
+
+vaultwarden-add-user:
+>@[ -n "$(EMAIL)" ] && [ -n "$(PASS)" ] || { scripts/lib/mklog error "Usage: make vaultwarden-add-user EMAIL=<addr> PASS=<password>"; exit 1; }
+>@bash scripts/modules/vaultwarden-user.sh add "$(EMAIL)" "$(PASS)"
+
+vaultwarden-del-user:
+>@[ -n "$(EMAIL)" ] || { scripts/lib/mklog error "Usage: make vaultwarden-del-user EMAIL=<addr>"; exit 1; }
+>@bash scripts/modules/vaultwarden-user.sh del "$(EMAIL)"
 
 # Generate the Nextcloud-stack secrets + Talk service configs (idempotent).
 # Creates modules/nextcloud/.env entries (DB, Redis, signaling, TURN, SMTP)
