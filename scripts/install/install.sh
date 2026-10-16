@@ -176,15 +176,17 @@ TASK_NAMES=(
 TASK_TOTAL=${#TASK_NAMES[@]}
 declare -a TASK_STATE=() TASK_TS=()
 TASK_CUR=-1 TASK_ACTIVE= TASK_DRAWN= ANIM_PID= ANIM_POS=0 TASK_ERR=
-_TAIL=0 _ANIM_PAUSE= _COLS=80
+_TAIL=0 _ANIM_PAUSE= _COLS=80 ANIM_SYM='$'
 
-# The current task's status column: an 8-wide field with ONE orange `€` that
-# ping-pongs back and forth (0..7..1), inside purple brackets.
+# The current task's status column: an 8-wide field with ONE orange marker that
+# ping-pongs back and forth (0..7..1), inside purple brackets. The marker is the
+# operator's currency sign (ANIM_SYM, set by ask_locale from the locale country;
+# `$` when that country has no single-column sign — a silent design choice).
 _anim_field() {
   local p=$(( ANIM_POS % 14 )); [ "$p" -gt 7 ] && p=$(( 14 - p ))
   local k out=""
   for k in 0 1 2 3 4 5 6 7; do
-    if [ "$k" = "$p" ]; then out="${out}${C_ORANGE}€${C_PURPLE}"; else out="${out} "; fi
+    if [ "$k" = "$p" ]; then out="${out}${C_ORANGE}${ANIM_SYM:-\$}${C_PURPLE}"; else out="${out} "; fi
   done
   printf '%s' "$out"
 }
@@ -628,16 +630,51 @@ github_cred_inputs() {
 # timezone is applied immediately and exported, so EVERY timestamp the run prints
 # (the checklist rows, msg lines) is in the operator's local time. Asked FIRST,
 # before any other input, so no timestamp is printed in the host's zone.
-country_timezone() {
-  local q="$1" code tz
-  [ -e "/usr/share/zoneinfo/$q" ] && { printf '%s' "$q"; return 0; }
-  code=$(awk -v q="${q^^}" '$1==q{print $1; exit}' /usr/share/zoneinfo/iso3166.tab 2>/dev/null)
+# Resolve the operator's answer (an ISO-3166 alpha-2 code, a country name, or an
+# IANA zone like Europe/Paris) to an alpha-2 country code — from the system's own
+# iso3166.tab / zone.tab, never a hardcoded list.
+country_code() {
+  local q="$1" code=
+  case "$q" in
+    */*) code=$(awk -v tz="$q" '$3==tz{print $1; exit}' /usr/share/zoneinfo/zone.tab 2>/dev/null) ;;
+  esac
+  [ -n "$code" ] || code=$(awk -v q="${q^^}" '$1==q{print $1; exit}' /usr/share/zoneinfo/iso3166.tab 2>/dev/null)
   [ -n "$code" ] || code=$(awk -F'\t' -v q="$q" 'tolower($2)==tolower(q){print $1; exit}' \
                             /usr/share/zoneinfo/iso3166.tab 2>/dev/null)
   [ -n "$code" ] || return 1
+  printf '%s' "$code"
+}
+country_timezone() {
+  local q="$1" code tz
+  [ -e "/usr/share/zoneinfo/$q" ] && { printf '%s' "$q"; return 0; }
+  code=$(country_code "$q") || return 1
   tz=$(awk -v c="$code" '$1==c{print $3; exit}' /usr/share/zoneinfo/zone.tab 2>/dev/null)
   [ -n "$tz" ] || return 1
   printf '%s' "$tz"
+}
+# The currency sign used as the checklist's animated marker: read glibc's own
+# monetary data (the first locale for the territory that defines
+# currency_symbol), keep only single-column glyphs, and fall back to `$` when the
+# sign is wide or multi-character (e.g. Sweden's "kr", Switzerland's "CHF",
+# Japan's full-width ￥) or the country is unknown. Silent design choice — never
+# announced; purely cosmetic.
+currency_symbol() {
+  local cc="${1:-}" n sym w
+  [ -n "$cc" ] || { printf '%s' '$'; return 0; }
+  cc="${cc^^}"
+  for n in $(awk -v cc="$cc" '{split($1,a,"[_.]"); if (substr(a[2],1,2)==cc){print $1}}' \
+               /usr/share/i18n/SUPPORTED 2>/dev/null); do
+    n="${n%%.*}"; n="${n%%@*}"
+    sym=$(awk -F'"' '/^currency_symbol[[:space:]]/{print $2; exit}' \
+            "/usr/share/i18n/locales/$n" 2>/dev/null)
+    [ -n "$sym" ] || continue
+    w=$(printf '%s' "$sym" | LC_ALL=C.UTF-8 wc -L 2>/dev/null)
+    [ "${w:-0}" -eq 1 ] 2>/dev/null && { printf '%s' "$sym"; return 0; }
+  done
+  case "$cc" in
+    JP|CN) printf '%s' '¥' ;;   # glibc ships the 2-column full-width ￥; use the narrow sign
+    *)     printf '%s' '$' ;;
+  esac
 }
 ask_locale() {
   while :; do
@@ -650,7 +687,9 @@ ask_locale() {
       export TZ="$tz"
       timedatectl set-timezone "$tz" >>"$LOG" 2>&1 \
         || log "  timedatectl set-timezone $tz failed (TZ exported for this run only)"
-      detail "  locale country '$LOCALE_COUNTRY' -> timezone $tz"
+      # The checklist marker follows the country too (silent, cosmetic).
+      ANIM_SYM=$(currency_symbol "$(country_code "$LOCALE_COUNTRY" 2>/dev/null || true)")
+      detail "  locale country '$LOCALE_COUNTRY' -> timezone $tz, marker '$ANIM_SYM'"
       return 0
     fi
     echo "   unknown country: $LOCALE_COUNTRY (name or ISO 3166 code, e.g. France / FR)"
