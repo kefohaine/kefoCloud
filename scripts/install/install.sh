@@ -3065,13 +3065,16 @@ success_block() {
   printf ' %s%s%s\n' "$C_GREEN" "$R" "$C_RST"
   printf '  %s[SUCCESS]%s the stack is up\n' "$C_GREEN" "$C_RST"
   printf ' %s%s%s\n' "$C_GREEN" "$R" "$C_RST"
-  printf '  %sNextcloud%s    https://cloud.%s    %sadmin / %s%s\n' \
+  # Only the enabled modules' sites are listed — a site the operator chose not
+  # to install (and so will not answer) must not appear. Shell (the tailnet
+  # door) and the machine's own addresses are always part of the stack.
+  mod_on cloud && printf '  %sNextcloud%s    https://cloud.%s    %sadmin / %s%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${NEXTCLOUD_ADMIN_PASSWORD:-<see modules/nextcloud/.env>}" "$C_RST"
-  printf '  %sVaultwarden%s  https://vault.%s    %s%s / %s%s\n' \
+  mod_on vault && printf '  %sVaultwarden%s  https://vault.%s    %s%s / %s%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${VAULTWARDEN_ADMIN_USER:-admin@$DOMAIN}" "${VAULTWARDEN_ADMIN_PASSWORD:-<see modules/vaultwarden/.env>}" "$C_RST"
-  printf '  %sUptime Kuma%s  https://kuma.%s    %sadmin / %s%s\n' \
+  mod_on monitor && printf '  %sUptime Kuma%s  https://kuma.%s    %sadmin / %s%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${KUMA_PASS:-(already set — rotate with: make kuma-passwd USER=admin PASS=…)}" "$C_RST"
-  printf '  %sWebmail%s      https://mail.%s    %s(mailboxes via make mail-gen)%s\n' \
+  mod_on mail && printf '  %sWebmail%s      https://mail.%s    %s(mailboxes via make mail-gen)%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
   printf '  %sShell%s        https://tail.%s   %s(tailnet-only)%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
@@ -3101,14 +3104,21 @@ success_block() {
   fi
   n=$((n+1)); printf '   %d. Tailscale split-DNS: admin console -> DNS -> add %s -> %s\n' "$n" "$DOMAIN" "${TS_IP:-<tailscale IP>}"
   printf '      %sso tail.%s resolves for tailnet devices (dnsmasq on the machine already answers it)%s\n' "$C_GREY" "$DOMAIN" "$C_RST"
-  n=$((n+1)); printf '   %d. %s(optional)%s Cloudflare WAF rule skip for cloud.%s (desktop sync)\n' "$n" "$C_GREY" "$C_RST" "$DOMAIN"
+  if mod_on cloud; then
+    n=$((n+1)); printf '   %d. %s(optional)%s Cloudflare WAF rule skip for cloud.%s (desktop sync)\n' "$n" "$C_GREY" "$C_RST" "$DOMAIN"
+  fi
   n=$((n+1)); if [ "${GH_REMOTE:-false}" = "true" ]; then
     printf '   %d. GitHub remote access: origin is git@github.com:%s/%s.git, key /root/.ssh/github_key\n' "$n" "$GITHUB_USER" "$REPO_NAME"
   else
     printf '   %d. %sNo GitHub remote access%s (declined at the last prompt) — re-run and answer true to mint the push key\n' "$n" "$C_GREY" "$C_RST"
   fi
-  n=$((n+1)); printf '   %d. Mailboxes: make mail-gen MAIL=name@%s (or bare make mail-gen for a disposable);\n' "$n" "$DOMAIN"
-  printf '      %sthe nextcloud@%s and vaultwarden@%s SMTP sender mailboxes are created automatically%s\n' "$C_GREY" "$DOMAIN" "$DOMAIN" "$C_RST"
+  if mod_on mail; then
+    n=$((n+1)); printf '   %d. Mailboxes: make mail-gen MAIL=name@%s (or bare make mail-gen for a disposable)\n' "$n" "$DOMAIN"
+    local senders=""
+    mod_on cloud && senders+=" nextcloud@$DOMAIN"
+    mod_on vault && senders+=" vaultwarden@$DOMAIN"
+    [ -n "$senders" ] && printf '      %sthe app SMTP sender mailboxes are created automatically:%s%s\n' "$C_GREY" "$senders" "$C_RST"
+  fi
   printf ' %s%s%s\n\n' "$C_GREEN" "$R" "$C_RST"
 }
 
