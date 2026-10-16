@@ -219,14 +219,26 @@ _err_note()  { _note "$(printf '  %s[ERROR]%s %s' "$C_RED" "$C_RST" "$*")"; }
 _section() { _note ""; _note "$(printf '%s── %s ──────────────────────────────────%s' "$2" "$1" "$C_RST")"; }
 # Redraw row $1 in place: stand on the last block row (stepping over the tail),
 # step up to the row, rewrite, step back to the tail bottom.
+#
+# Emitted as ONE printf (one write to the tty): the whole move-up + row +
+# move-back travels as a single frame, so the terminal never paints an
+# intermediate state (2026-10-16: separate writes flushed the erase before the
+# rewrite, flickering the row ~10x/s). There is deliberately no `\033[K`: every
+# state of a row is exactly the same width (the status field is always 8 wide —
+# an HH:MM:SS ts or the 8-cell anim field), so the new row overwrites the old
+# in place and clearing the line — the other half of the flicker — is
+# unnecessary. Zero-count moves (`\033[0A`, treated as 1 by some terminals) are
+# never emitted.
 _task_update() {
   { [ -n "$TASK_DRAWN" ] && [ -t 1 ]; } || return 0
   local i="$1" t="${_TAIL:-0}"
   local d=$(( TASK_TOTAL - i ))
-  [ "$t" -gt 0 ] && printf '\033[%dA' "$t" >/dev/tty
-  printf '\033[%dA\033[K' "$d" >/dev/tty
-  _task_row "$i" >/dev/tty
-  printf '\033[%dB' "$(( d - 1 + t ))" >/dev/tty
+  local up=$(( t + d )) back=$(( d - 1 + t ))
+  local mup="" mback="" row
+  [ "$up"   -gt 0 ] && mup=$'\033['"$up"$'A'
+  [ "$back" -gt 0 ] && mback=$'\033['"$back"$'B'
+  row=$(_task_row "$i")
+  printf '%s%s\n%s' "$mup" "$row" "$mback" >/dev/tty
 }
 # Background animator for the running row (TTY only).
 _task_anim() {
