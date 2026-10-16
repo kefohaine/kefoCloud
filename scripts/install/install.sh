@@ -558,6 +558,10 @@ save_state() {
     printf 'GH_AUTH_OK=%q\n'         "${GH_AUTH_OK:-0}"
     printf 'GITHUB_COMMIT_NAME=%q\n' "${GITHUB_COMMIT_NAME:-}"
     printf 'GITHUB_COMMIT_EMAIL=%q\n' "${GITHUB_COMMIT_EMAIL:-}"
+    # The app-actions fingerprint that was APPLIED (see ask_nc_apps): a resume
+    # whose config/cloud/apps.conf still hashes the same never re-asks, because
+    # the actions are already in the instance. Empty until they are applied.
+    printf 'NC_APPS_APPLIED=%q\n'    "${NC_APPS_APPLIED:-}"
     printf 'ERR_TAGS=(%s)\n'         "$(printf '%q ' "${ERR_TAGS[@]}")"
   } > "$tmp"
   chmod 600 "$tmp"
@@ -1950,6 +1954,18 @@ ask_nc_apps() {
   # No config → nothing to do (fresh installs get image defaults only).
   [ -f "$conf" ] || return 0
 
+  # Already applied, and the config has not changed since: nothing to do. A
+  # re-run (resume/repair) reaches this task again, and re-asking would be
+  # useless — the actions are in the instance, and the same answers would apply
+  # the same actions again. The fingerprint is the config's content hash, so an
+  # edited apps.conf asks again (that is the operator's way to change their mind).
+  local _sum
+  _sum=$(sha256sum "$conf" 2>/dev/null | awk '{print $1}')
+  if [ -n "${NC_APPS_APPLIED:-}" ] && [ -n "$_sum" ] && [ "$NC_APPS_APPLIED" = "$_sum" ]; then
+    detail "  config/cloud/apps.conf unchanged since it was applied — nothing to ask"
+    return 0
+  fi
+
   # ---------- parse the config ----------
   # Valid verbs: install&enable=, install&disable=, disable=, remove=.
   # Multi-action lines are supported (split on whitespace); bare verbs /
@@ -2193,6 +2209,11 @@ ask_nc_apps() {
       | grep -oE '^  - [^:]+' | sed -E 's/^  - ([^:]+).*/\1/'
   } > "$MANIFEST_DIR/apps.txt"
   detail "  recorded enabled apps ($MANIFEST_DIR/apps.txt): $(wc -l < "$MANIFEST_DIR/apps.txt" | tr -d ' ')"
+  # Record what was applied: on a re-run with the SAME config the prompt is
+  # skipped (see the top of this function), so a resume is not asked twice about
+  # actions that are already in the instance. Written only after a clean apply.
+  NC_APPS_APPLIED="$_sum"
+  save_state
   return 0
 }
 # outbound SMTP (nextcloud@$DOMAIN sender mailbox), background cron. All
@@ -3510,7 +3531,8 @@ main() {
             LOCALE_COUNTRY \
             MOD_CLOUD MOD_VAULT MOD_MAIL MOD_MONITOR \
             GH_REMOTE GH_AUTH_OK \
-            GITHUB_COMMIT_NAME GITHUB_COMMIT_EMAIL
+            GITHUB_COMMIT_NAME GITHUB_COMMIT_EMAIL \
+            NC_APPS_APPLIED
     elif [ "$_mode" = "repair" ]; then
       REPAIR=true
       detail "  repairing — every saved value is reused; only missing ones are asked"
@@ -3525,7 +3547,7 @@ main() {
   else
     # No previous run: drop whatever instance.sh's fallbacks put in the
     # environment (notably DOMAIN=example.com) so no prompt is silently skipped.
-    unset DOMAIN CF_API_TOKEN TS_AUTHKEY SSH_PUBKEY
+    unset DOMAIN CF_API_TOKEN TS_AUTHKEY SSH_PUBKEY NC_APPS_APPLIED
   fi
   ask_inputs
   # The decisions this run is built on — recorded so the log explains itself
