@@ -161,12 +161,14 @@ ERR_WARN_TAGS=()
 # ─────────────────────── the installation task checklist ───────────────────
 # One fixed list, printed once as a live checklist. Each row starts as [WAIT]
 # (grey), becomes an animated [TASK] (orange) while it runs, and ends as [DONE]
-# (green), [SKIP] (orange, a module that is off) or [ERROR] (red). A failed
-# task is marked, the run CONTINUES through
-# the remaining tasks, and every error is reported at the end. Nothing prints
-# between the task rows (msg is muted while TASK_ACTIVE is set); each step's own
-# output goes to $LOG. On a non-TTY run the animation is skipped and each row is
-# printed once, when it finishes.
+# (green), [SKIP] (orange, a module that is off) or [ERROR] (red). A failed task
+# HARD-STOPS the run: the checklist pauses on its [ERROR] row and hands the error
+# to the operator; once resolved the row flips to [DONE] and the run continues,
+# but if it stays unresolved (or there is no terminal) the remaining tasks are
+# left [WAIT] and the installer stops — it never runs on past a failure and marks
+# the rest [DONE]. Nothing prints between the task rows (msg is muted while
+# TASK_ACTIVE is set); each step's own output goes to $LOG. On a non-TTY run the
+# animation is skipped and each row is printed once, when it finishes.
 TASK_NAMES=(
   "System Packages" "SSH Hardening" "Firewall Rules" "Tailscale Connectivity"
   "Docker Engine" "Goose CLI" "Stack Config" "Containers Up"
@@ -338,7 +340,9 @@ task_end() {
   elif [ -n "${TASK_SKIP:-}" ]; then TASK_STATE[$TASK_CUR]=skip
   else                               TASK_STATE[$TASK_CUR]=done; fi
   if [ -n "$TASK_DRAWN" ]; then _task_update "$TASK_CUR"; else _task_row "$TASK_CUR"; fi
-  TASK_ACTIVE= TASK_ERR= TASK_SKIP=
+  # TASK_ERR is deliberately NOT cleared here: run_install reads it right after
+  # task_end to decide whether to pause on the failed row (task_start resets it).
+  TASK_ACTIVE= TASK_SKIP=
 }
 
 # ───────────────────── fresh log for this run ──────────────────────────────
@@ -2672,9 +2676,10 @@ task_hygiene() {
 # Pause the checklist on a failed task and hand the operator the error BELOW the
 # to-do list; once they resolve it, the error block is wiped and the list comes
 # back, and the run continues from the next task. The failed row flips to [DONE]
-# when its tags clear. Any tag still unresolved is left in ERR_TAGS for the final
-# summary; this never stops the run on its own. Non-TTY (piped/cron) cannot
-# answer, so it clears the block and returns — the final summary reports instead.
+# when its tags clear. If a tag is still unresolved (or there is no terminal to
+# re-check on) the function returns non-zero and run_install HARD-STOPS: the
+# remaining tasks are left [WAIT] and the installer stops — it never runs on
+# past a failure and marks the rest [DONE].
 pause_and_resolve() {
   local tag still
   while [ ${#ERR_TAGS[@]} -gt 0 ]; do
@@ -2685,9 +2690,12 @@ pause_and_resolve() {
       _note "$(printf '     %shint:%s %s' "$C_GREY" "$C_RST" "$(hint "$tag")")"
     done
     _note "$(printf '%s└──────────────────────────────────────────────%s' "$C_RED" "$C_RST")"
-    if [ ! -t 0 ]; then _tail_clear; return 0; fi
+    # No terminal to answer on (piped / cron / CI): the error cannot be resolved
+    # here, so stop LOUD instead of running on through the rest of the checklist.
+    if [ ! -t 0 ]; then _tail_clear; return 1; fi
     printf '%s[INFO]%s Fix / complete the items above, then press Enter to re-check (Ctrl-C aborts): ' "$C_GREY" "$C_RST"
-    read -r _ || { _task_count 1; _tail_clear; return 0; }
+    # Aborted (Ctrl-C / EOF) with the error still open → hard stop.
+    read -r _ || { _task_count 1; _tail_clear; return 1; }
     _task_count 1
     still=()
     for tag in "${ERR_TAGS[@]}"; do
@@ -2705,7 +2713,7 @@ pause_and_resolve() {
     done
     ERR_TAGS=("${still[@]}")
     # Wipe the block (errors + this prompt) and redraw the to-do list before
-    # looping again or continuing to the next task.
+    # looping again (still unresolved) or continuing (resolved).
     _tail_clear
     [ ${#ERR_TAGS[@]} -eq 0 ] && { TASK_STATE[$TASK_CUR]=done; _task_update "$TASK_CUR"; }
   done
@@ -2715,10 +2723,11 @@ pause_and_resolve() {
 # The ordered task list, in TASK_NAMES order. A task that fails PAUSES the
 # checklist on its [ERROR] row (later rows stay [WAIT]) and hands the error to
 # the operator; once resolved, the block clears, the list returns and the run
-# continues from the next task. The wizard can never finish through an
-# unresolved failure (the final summary still reports anything left). "Smoke
-# Pass" is the last task and is marked from finalize_install — it runs only
-# after the push and the finished checkpoint.
+# continues from the next task. An unresolved failure HARD-STOPS the run
+# (returns non-zero) instead of continuing — the wizard can never finish through
+# an unresolved failure, and never marks the tasks after it [DONE]. "Smoke Pass"
+# is the last task and is marked from finalize_install — it runs only after the
+# push and the finished checkpoint.
 run_install() {
   local _t
   for _t in task_packages task_ssh task_firewall task_tailscale task_docker \
@@ -2726,7 +2735,7 @@ run_install() {
             task_dns task_certs task_mail task_cloud task_vault task_monitor \
             task_hygiene; do
     "$_t"
-    [ -n "${TASK_ERR:-}" ] && { TASK_ERR=; pause_and_resolve; }
+    [ -n "${TASK_ERR:-}" ] && { TASK_ERR=; pause_and_resolve || return 1; }
   done
   save_state
 }
@@ -3247,7 +3256,17 @@ main() {
   printf '%s[INFO]%s %s %sStarting installation..%s\n' \
     "$C_GREY" "$C_RST" "$(_tstamp)" "$C_WHITE" "$C_RST"
   _tasks_draw
-  run_install
+  if ! run_install; then
+    # A task failed and stayed unresolved: stop here, LOUD. The remaining rows
+    # are still [WAIT] — never [DONE] — and the run is not finished.
+    log "  HALTED at '${TASK_NAMES[$TASK_CUR]:-?}' — the tasks after it did not run"
+    FINISHED=false
+    write_state
+    echo ""
+    msg " HALTED — '${TASK_NAMES[$TASK_CUR]:-?}' failed and was not resolved; the tasks after it did not run."
+    msg " Resolve it, then re-run the installer (every step is idempotent)."
+    return 1
+  fi
   resolve_errors
 }
 
