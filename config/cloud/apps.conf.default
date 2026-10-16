@@ -1,0 +1,24 @@
+# apps.conf.default — the TEMPLATE install.sh seeds config/cloud/apps.conf from
+# when that file is missing (a fresh clone has none: apps.conf is gitignored and
+# untracked because it is the operator's own app selection, and editing it must
+# never alter the repo). Copy it in place, then edit the copy.
+# One action per line, in order. Valid verbs: install&enable=, install&disable=,
+# disable=, remove=.
+# Multi-action form allowed:  install&enable=spreed disable=app_api
+#
+# Semantics (install.sh applies these against the live occ state):
+#   install&enable=  install if absent, then enable. Already enabled → skip.
+#   install&disable= install if absent, then make sure it is disabled (present
+#                    but off). Already present either way → just disabled.
+#   disable=         installed app → disable it (config is the intent, no prompt).
+#                    NOT installed → warns and asks: install&disable, or drop.
+#   remove=          installed+enabled → remove silently (deletes app data).
+#                    Not installed or already disabled → skip silently.
+# The same app with two different verbs warns and prompts (proceed / abort the
+# install). An unknown verb warns and is ignored. Satisfied actions are skipped
+# silently, so re-runs are idempotent and unattended.
+#
+# shipped defaults (Nextcloud image already contains spreed):
+install&enable=spreed
+# AppAPI is not used on this host — keep it disabled:
+disable=app_api
