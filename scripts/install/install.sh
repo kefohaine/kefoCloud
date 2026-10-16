@@ -1518,7 +1518,7 @@ ask_nc_apps() {
         install\&disable) install_dis["$key"]=1; seen["$key"]=1 ;;
         disable)          disable["$key"]=1; seen["$key"]=1 ;;
         remove)           remove["$key"]=1; seen["$key"]=1 ;;
-        *) echo "  WARN: config/cloud/apps.conf: unknown verb '$verb' in '$tok' — ignored" >&2 ;;
+        *) _note "$(printf '  %sWARN%s config/cloud/apps.conf: unknown verb %s in %s — ignored' "$C_ORANGE" "$C_RST" "'$verb'" "'$tok'")" ;;
       esac
     done
   done < "$conf"
@@ -1534,19 +1534,21 @@ ask_nc_apps() {
   local conflicted="${!conflict[*]}"
   if [ -n "$conflicted" ]; then
     _task_pause
-    echo "  ERROR: same app has two different verbs:" >&2
+    _note ""
+    _note "$(printf '%s┌─ ERROR%s %ssame app has two different verbs%s' "$C_RED" "$C_RST" "$C_GREY" "$C_RST")"
     for key in $conflicted; do
-      [ "${install["$key"]:-}" = "1" ] && echo "    $key: install&enable" >&2
-      [ "${install_dis["$key"]:-}" = "1" ] && echo "    $key: install&disable" >&2
-      [ "${disable["$key"]:-}" = "1" ] && echo "    $key: disable" >&2
-      [ "${remove["$key"]:-}" = "1" ] && echo "    $key: remove" >&2
+      [ "${install["$key"]:-}" = "1" ] && _note "$(printf '  %s%s%s  install&enable' "$C_RED" "$key" "$C_RST")"
+      [ "${install_dis["$key"]:-}" = "1" ] && _note "$(printf '  %s%s%s  install&disable' "$C_RED" "$key" "$C_RST")"
+      [ "${disable["$key"]:-}" = "1" ] && _note "$(printf '  %s%s%s  disable' "$C_RED" "$key" "$C_RST")"
+      [ "${remove["$key"]:-}" = "1" ] && _note "$(printf '  %s%s%s  remove' "$C_RED" "$key" "$C_RST")"
     done
+    _note "$(printf '%s└──────────────────────────────────────────────%s' "$C_RED" "$C_RST")"
     local _abort
     if ! ask_boolean "abort the install?" _abort; then
-      echo "  no terminal input — aborting"; exit 1
+      _note "no terminal input — aborting"; exit 1
     fi
     [ "$_abort" = "true" ] && exit 1
-    echo "  dropping conflicting actions and continuing" >&2
+    _note "$(printf '%sdropping conflicting actions and continuing%s' "$C_ORANGE" "$C_RST")"
     _task_resume
   fi
 
@@ -1557,17 +1559,18 @@ ask_nc_apps() {
   dis=$(printf '%s\n' "${!disable[@]}" | paste -sd', ' -)
   rem=$(printf '%s\n' "${!remove[@]}" | paste -sd', ' -)
   _task_pause
-  echo ""
-  msg "  Nextcloud apps (config/cloud/apps.conf):"
-  [ -n "$ipl" ] && echo "    will install/enable:  $ipl"
-  [ -n "$ids" ] && echo "    will install/disable: $ids"
-  [ -n "$dis" ] && echo "    will disable:         $dis"
-  [ -n "$rem" ] && echo "    will remove:          $rem"
+  _note ""
+  _note "$(printf '%s┌─ Nextcloud apps%s  %s(config/cloud/apps.conf)%s' "$C_ORANGE" "$C_RST" "$C_GREY" "$C_RST")"
+  [ -n "$ipl" ] && _note "$(printf '  %swill install/enable%s   %s' "$C_GREY" "$C_RST" "$ipl")"
+  [ -n "$ids" ] && _note "$(printf '  %swill install/disable%s  %s' "$C_GREY" "$C_RST" "$ids")"
+  [ -n "$dis" ] && _note "$(printf '  %swill disable%s          %s' "$C_GREY" "$C_RST" "$dis")"
+  [ -n "$rem" ] && _note "$(printf '  %swill remove%s           %s' "$C_GREY" "$C_RST" "$rem")"
+  _note "$(printf '%s└─────────────────────────────────────────────────────%s' "$C_ORANGE" "$C_RST")"
   # An empty plan means the config has no actionable lines → nothing to do.
 
   local _confirm
   if ! ask_boolean "Apply configured app actions?" _confirm; then
-    msg "  app actions skipped (not confirmed)"
+    _note "app actions skipped (not confirmed)"
     _task_resume
     return 0
   fi
@@ -1604,7 +1607,7 @@ ask_nc_apps() {
     elif in_list "$app" $disabled_ids; then
       # Enabled already in the image but reported disabled → operator request wins.
       if ! docker exec -u www-data nextcloud php occ app:enable "$app" >/dev/null 2>&1; then
-        echo "  ERROR: occ app:enable $app failed — see $LOG" >&2
+        _err_note "occ app:enable $app failed — see $LOG"
         fail ask_nc_apps "occ app:enable $app failed"
         continue
       fi
@@ -1615,11 +1618,11 @@ ask_nc_apps() {
     # Failures are logged and dropped silently; the plan above is authoritative.
     detail "  install&enable='$app' — not present in occ; installing then enabling"
     if ! timeout 120 docker exec -u www-data nextcloud php occ app:install "$app" >>"$LOG" 2>&1; then
-      echo "  WARN: occ app:install $app failed — app not in the appstore and no local app dir; action dropped" >&2
+      _warn_note "occ app:install $app failed — app not in the appstore and no local app dir; action dropped"
       continue
     fi
     if ! timeout 120 docker exec -u www-data nextcloud php occ app:enable "$app" >>"$LOG" 2>&1; then
-      echo "  WARN: occ app:enable $app failed after install; action dropped" >&2
+      _warn_note "occ app:enable $app failed after install; action dropped"
       continue
     fi
     # If still not in the enabled list after install/enable, retry once (occ
@@ -1644,13 +1647,13 @@ ask_nc_apps() {
     else
       detail "  install&disable='$app' — not present in occ; installing then disabling"
       if ! timeout 120 docker exec -u www-data nextcloud php occ app:install "$app" >>"$LOG" 2>&1; then
-        echo "  WARN: occ app:install $app failed — app not in the appstore and no local app dir; action dropped" >&2
+        _warn_note "occ app:install $app failed — app not in the appstore and no local app dir; action dropped"
         continue
       fi
     fi
     if in_list "$app" $enabled_ids; then
       if ! docker exec -u www-data nextcloud php occ app:disable "$app" >/dev/null 2>&1; then
-        echo "  ERROR: occ app:disable $app failed — see $LOG" >&2
+        _err_note "occ app:disable $app failed — see $LOG"
         fail ask_nc_apps "occ app:disable $app failed"
         continue
       fi
@@ -1669,36 +1672,39 @@ ask_nc_apps() {
     elif in_list "$app" $enabled_ids; then
       # Installed and enabled → apply the config's intent without prompting.
       if ! docker exec -u www-data nextcloud php occ app:disable "$app" >/dev/null 2>&1; then
-        echo "  ERROR: occ app:disable $app failed — see $LOG" >&2
+        _err_note "occ app:disable $app failed — see $LOG"
         fail ask_nc_apps "occ app:disable $app failed"
       fi
       continue
     fi
     # Not installed → nothing to disable. Warn and offer to install&disable.
     _task_pause
-    msg "  WARN: disable='$app' but it is not installed"
-    echo "    live state:  not installed"
-    echo "    choices:"
-    echo "      install&disable — install $app, then disable it (keeps it present but off)"
-    echo "      drop            — skip this action (leave nothing)"
+    _note ""
+    _note "$(printf '%s┌─ WARN%s %sdisable=%s but it is not installed%s' "$C_ORANGE" "$C_RST" "$C_GREY" "$app" "$C_RST")"
+    _note "$(printf '  live state:  %snot installed%s' "$C_GREY" "$C_RST")"
+    _note "  choices:"
+    _note "$(printf '    %sinstall&disable%s — install %s, then disable it (keeps it present but off)' "$C_GREEN" "$C_RST" "$app")"
+    _note "$(printf '    %sdrop%s            — skip this action (leave nothing)' "$C_GREY" "$C_RST")"
+    _note "$(printf '%s└──────────────────────────────────────────────%s' "$C_ORANGE" "$C_RST")"
     local choice
     while true; do
-      read -r choice || { echo "  no terminal input — dropping action"; break; }
+      read -r choice || { _note "no terminal input — dropping action"; _task_count 1; break; }
+      _task_count 1
       case "${choice,,}" in
         install\&disable|install|yes) break ;;
         drop|skip|no) break ;;
-        *) echo "    unknown choice: $choice" ;;
+        *) _note "  unknown choice: $choice" ;;
       esac
     done
     _task_resume
     case "${choice,,}" in
       install\&disable|install|yes)
         if ! timeout 120 docker exec -u www-data nextcloud php occ app:install "$app" >>"$LOG" 2>&1; then
-          echo "  WARN: occ app:install $app failed — app not in the appstore and no local app dir; action dropped" >&2
+          _warn_note "occ app:install $app failed — app not in the appstore and no local app dir; action dropped"
           continue
         fi
         if ! docker exec -u www-data nextcloud php occ app:disable "$app" >/dev/null 2>&1; then
-          echo "  ERROR: occ app:disable $app failed — see $LOG" >&2
+          _err_note "occ app:disable $app failed — see $LOG"
           fail ask_nc_apps "occ app:disable $app failed"
           continue
         fi
@@ -1718,7 +1724,7 @@ ask_nc_apps() {
     fi
     # Installed+enabled: remove silently per config intent.
     if ! docker exec -u www-data nextcloud php occ app:remove "$app" >/dev/null 2>&1; then
-      echo "  ERROR: occ app:remove $app failed — see $LOG" >&2
+      _err_note "occ app:remove $app failed — see $LOG"
       fail ask_nc_apps "occ app:remove $app failed"
       continue
     fi
@@ -2498,38 +2504,38 @@ is_expected() {
 resolve_errors() {
   local remaining=("${ERR_TAGS[@]}")
   while [ ${#remaining[@]} -gt 0 ]; do
-    echo ""
     local exp=() unexp=()
     for tag in "${remaining[@]}"; do
       if is_expected "$tag"; then exp+=("$tag"); else unexp+=("$tag"); fi
     done
     if [ ${#exp[@]} -gt 0 ]; then
-      echo " Manual steps (expected):"
+      _section "Manual steps (expected)" "$C_ORANGE"
       for i in "${!exp[@]}"; do
-        echo "   $((i+1)). ${exp[$i]}"
-        echo "      problem: $(problem "${exp[$i]}")${ERR_DETAIL[${exp[$i]}]:+ (${ERR_DETAIL[${exp[$i]}]})}"
-        echo "      hint: $(hint "${exp[$i]}")"
+        _note "$(printf '  %s%d.%s %s%s%s' "$C_ORANGE" "$((i+1))" "$C_RST" "$C_ORANGE" "${exp[$i]}" "$C_RST")"
+        _note "$(printf '     %sproblem:%s %s%s' "$C_GREY" "$C_RST" "$(problem "${exp[$i]}")" "${ERR_DETAIL[${exp[$i]}]:+ (${ERR_DETAIL[${exp[$i]}]})}")"
+        _note "$(printf '     %shint:%s %s' "$C_GREY" "$C_RST" "$(hint "${exp[$i]}")")"
       done
     fi
     if [ ${#unexp[@]} -gt 0 ]; then
-      echo " Unexpected errors (${#unexp[@]}):"
+      _section "Unexpected errors (${#unexp[@]})" "$C_RED"
       for i in "${!unexp[@]}"; do
-        echo "   $((i+1)). ${unexp[$i]}"
-        echo "      problem: $(problem "${unexp[$i]}")${ERR_DETAIL[${unexp[$i]}]:+ (${ERR_DETAIL[${unexp[$i]}]})}"
-        echo "      hint: $(hint "${unexp[$i]}")"
+        _note "$(printf '  %s%d.%s %s%s%s' "$C_RED" "$((i+1))" "$C_RST" "$C_RED" "${unexp[$i]}" "$C_RST")"
+        _note "$(printf '     %sproblem:%s %s%s' "$C_GREY" "$C_RST" "$(problem "${unexp[$i]}")" "${ERR_DETAIL[${unexp[$i]}]:+ (${ERR_DETAIL[${unexp[$i]}]})}")"
+        _note "$(printf '     %shint:%s %s' "$C_GREY" "$C_RST" "$(hint "${unexp[$i]}")")"
       done
     fi
     if [ ! -t 0 ]; then
       # No terminal to answer on (piped/cron/CI run): a re-check prompt would
       # park the run forever with no way to proceed. Record the pending state
       # and stop LOUD instead — the errors above are already printed.
-      echo "No terminal to re-check on — recording finished=false and stopping."
+      _note "No terminal to re-check on — recording finished=false and stopping."
       FINISHED=false
       write_state
       exit 1
     fi
-    read -rp "Fix / complete the items above, then press Enter to re-check (Ctrl-C aborts): " input \
-      || { echo "No terminal input — aborting."; exit 1; }
+    printf '%s[INFO]%s Fix / complete the items above, then press Enter to re-check (Ctrl-C aborts): ' "$C_GREY" "$C_RST"
+    read -r input \
+      || { _note "No terminal input — aborting."; exit 1; }
     local still=()
     for tag in "${remaining[@]}"; do
       # A recorded setup failure is not a boolean to probe — re-RUN its setup
@@ -2544,7 +2550,7 @@ resolve_errors() {
         dkim_setup) mail_wait_ready 2>/dev/null || true; dkim_setup;;
       esac
       if recheck "$tag"; then
-        echo "   ✓ solved: $tag — $(problem "$tag")"
+        _note "$(printf '   %s✓ solved%s: %s — %s' "$C_GREEN" "$C_RST" "$tag" "$(problem "$tag")")"
       else
         still+=("$tag")
       fi
@@ -2735,41 +2741,40 @@ success_block() {
 
 summary() {
   if [ ${#ERR_TAGS[@]} -gt 0 ]; then
-    echo ""
-    msg " ERROR(S) — no success until every item below is resolved:"
+    log "  ERROR(S) — no success until every item below is resolved"
+    _section "ERROR(S) — no success until every item below is resolved" "$C_RED"
     local exp=() unexp=()
     for tag in "${ERR_TAGS[@]}"; do
       if is_expected "$tag"; then exp+=("$tag"); else unexp+=("$tag"); fi
     done
     if [ ${#exp[@]} -gt 0 ]; then
-      echo " Manual steps (expected):"
+      _note "$(printf '  %sManual steps (expected):%s' "$C_ORANGE" "$C_RST")"
       for i in "${!exp[@]}"; do
-        echo "   $((i+1)). ${exp[$i]}"
-        echo "      problem: $(problem "${exp[$i]}")${ERR_DETAIL[${exp[$i]}]:+ (${ERR_DETAIL[${exp[$i]}]})}"
-        echo "      hint: $(hint "${exp[$i]}")"
+        _note "$(printf '    %s%d.%s %s%s' "$C_ORANGE" "$((i+1))" "$C_RST" "${exp[$i]}" "$C_RST")"
+        _note "$(printf '       %sproblem:%s %s%s' "$C_GREY" "$C_RST" "$(problem "${exp[$i]}")" "${ERR_DETAIL[${exp[$i]}]:+ (${ERR_DETAIL[${exp[$i]}]})}")"
+        _note "$(printf '       %shint:%s %s' "$C_GREY" "$C_RST" "$(hint "${exp[$i]}")")"
       done
     fi
     if [ ${#unexp[@]} -gt 0 ]; then
-      echo " Unexpected errors (${#unexp[@]}):"
+      _note "$(printf '  %sUnexpected errors (%s):%s' "$C_RED" "${#unexp[@]}" "$C_RST")"
       for i in "${!unexp[@]}"; do
-        echo "   $((i+1)). ${unexp[$i]}"
-        echo "      problem: $(problem "${unexp[$i]}")${ERR_DETAIL[${unexp[$i]}]:+ (${ERR_DETAIL[${unexp[$i]}]})}"
-        echo "      hint: $(hint "${unexp[$i]}")"
+        _note "$(printf '    %s%d.%s %s' "$C_RED" "$((i+1))" "$C_RST" "${unexp[$i]}")"
+        _note "$(printf '       %sproblem:%s %s%s' "$C_GREY" "$C_RST" "$(problem "${unexp[$i]}")" "${ERR_DETAIL[${unexp[$i]}]:+ (${ERR_DETAIL[${unexp[$i]}]})}")"
+        _note "$(printf '       %shint:%s %s' "$C_GREY" "$C_RST" "$(hint "${unexp[$i]}")")"
       done
     fi
   fi
   if [ ${#ERR_WARN_TAGS[@]} -gt 0 ]; then
-    echo ""
-    msg " WARNINGS (no success block — see $LOG):"
+    _section "WARNINGS (no success block — see $LOG)" "$C_ORANGE"
     local wt
     for i in "${!ERR_WARN_TAGS[@]}"; do
       wt="${ERR_WARN_TAGS[$i]}"
       # Print the problem AND the recorded reason (ERR_DETAIL), like the error
       # blocks: a bare tag with an empty hint told the operator nothing about
       # WHY the push failed (2026-10-15).
-      echo "   $((i+1)). $wt"
-      echo "      problem: $(problem "$wt")${ERR_DETAIL[$wt]:+ (${ERR_DETAIL[$wt]})}"
-      echo "      hint: $(hint "$wt")"
+      _note "$(printf '    %s%d.%s %s' "$C_ORANGE" "$((i+1))" "$C_RST" "$wt")"
+      _note "$(printf '       %sproblem:%s %s%s' "$C_GREY" "$C_RST" "$(problem "$wt")" "${ERR_DETAIL[$wt]:+ (${ERR_DETAIL[$wt]})}")"
+      _note "$(printf '       %shint:%s %s' "$C_GREY" "$C_RST" "$(hint "$wt")")"
     done
   fi
 }
