@@ -2821,6 +2821,15 @@ main() {
     ask_boolean "'install.state' detected - Apply previous answers?" _res || _res=false
     if [ "$_res" = "true" ]; then
       detail "  resuming — every saved value is reused; only missing ones are asked"
+      # A resume is a full pipeline re-run, not a skip: every step is idempotent
+      # (containers are recreated, DNS records upserted, setup steps re-applied),
+      # so a re-run after a green install works but does the work again. Say so,
+      # because "resume" reads like "continue from where it stopped" (2026-10-16).
+      if [ "${FINISHED:-false}" = "true" ]; then
+        msg "  previous run finished successfully — a resume re-runs the whole (idempotent) pipeline, it does not skip completed steps."
+      else
+        msg "  previous run did not finish — resuming re-runs the (idempotent) pipeline to complete it."
+      fi
     else
       # Fresh run: IGNORE the previous answers (never take them as valid) but do
       # NOT delete them — a later run can still resume. Everything is re-asked.
