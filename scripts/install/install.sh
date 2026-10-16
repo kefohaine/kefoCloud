@@ -236,7 +236,12 @@ _task_row() {
   local st="${TASK_STATE[$i]:-wait}" ts="${TASK_TS[$i]:-}" name="${TASK_NAMES[$i]:-}"
   case "$st" in
     done)  printf '%s[DONE]%s %s[%s]%s %s\n'  "$C_GREEN"  "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
-    skip)  printf '%s[SKIP]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
+    # A skipped task says so in the NAME too, not only in the status column: the
+    # row's [HOST]/[STACK]/[BOTH] tag is replaced by [SKIP], whichever part of
+    # the box the task belongs to, so a skipped row can never read like a task
+    # that ran (tasker_location is irrelevant to a skip).
+    skip)  printf '%s[SKIP]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$ts" "$C_RST" \
+             "$(printf '%s' "$name" | sed -E 's/^\[[A-Z]+\](\+\[[A-Z]+\])?/[SKIP]/')" ;;
     error) printf '%s[ERROR]%s %s[%s]%s %s\n' "$C_RED"    "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
     run)   printf '%s[TASK]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$(_anim_field)" "$C_RST" "$name" ;;
     # A pending row has no time yet: the placeholder stands until the task
@@ -369,9 +374,12 @@ task_start() {
     _task_anim "$TASK_CUR" & ANIM_PID=$!
   fi
 }
-# A task whose module is off marks its row [SKIP] instead of [DONE] — the
-# checklist then says exactly which modules were installed and which were
-# deliberately not (called from inside a task, before task_end).
+# A task that does not run marks its row [SKIP] instead of [DONE] — the
+# checklist then says exactly which work was installed and which was
+# deliberately not (called from inside a task, before task_end). Two callers:
+# a module the operator turned off, and a task outside the reinstall's scope
+# (task_reinstall_skip). Either way the row reads [SKIP] in the status column
+# AND in place of the task's [HOST]/[STACK]/[BOTH] tag.
 task_skip() { [ -n "$TASK_ACTIVE" ] && TASK_SKIP=1; return 0; }
 task_end() {
   [ -n "$TASK_ACTIVE" ] || return 0
