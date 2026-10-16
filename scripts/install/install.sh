@@ -1108,7 +1108,11 @@ seed_stack() {
 }
 
 docker_net() {
-  docker network create net --subnet=172.22.0.0/16 >>"$LOG" 2>&1 || true
+  # Create the bridge only when it is missing: the plain `create ... || true`
+  # logged "Error response from daemon: network with name net already exists"
+  # on every re-run, which reads like a failure in install.log for a no-op.
+  docker network inspect net >/dev/null 2>&1 \
+    || docker network create net --subnet=172.22.0.0/16 >>"$LOG" 2>&1 || true
 }
 
 caddy_data() {
