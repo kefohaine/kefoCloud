@@ -217,14 +217,17 @@ else
   row mail "${D}module not installed${N}"
 fi
 
-# tailnet
-if command -v tailscale >/dev/null 2>&1 && ts_out=$(tailscale status 2>/dev/null); then
-  tsip=$(echo "$ts_out" | head -1 | awk '{print $1}')
-  peers=$(echo "$ts_out" | tail -n +2)
-  non=$(echo "$peers" | grep -cw 'idle\|active' || true)
-  noff=$(echo "$peers" | grep -cw 'offline' || true)
-  pnames=$(echo "$peers" | awk '{print $2}' | head -4 | tr '\n' ' ')
-  row tailnet "${tsip} · ${G}${non:-0} up${N} · ${D}${noff:-0} offline${N} · ${pnames}"
+# tailnet — read the JSON, not the columnar `tailscale status`: its human
+# output marks an ONLINE node with "-" (not "idle"/"active"), so the old
+# grep-for-idle/active count read a healthy net as "0 up", and its first line is
+# this host (self), which the old `tail -n +2` dropped — the machine never
+# listed itself. Self counts as an up device and is listed first.
+if command -v tailscale >/dev/null 2>&1 && ts_json=$(tailscale status --json 2>/dev/null) && [ -n "$ts_json" ]; then
+  tsip=$(printf '%s' "$ts_json" | jq -r '.Self.TailscaleIPs[0] // empty' 2>/dev/null)
+  up=$(printf '%s' "$ts_json" | jq -r '[.Self, (.Peer[]?)] | map(select(.Online == true)) | length' 2>/dev/null)
+  noff=$(printf '%s' "$ts_json" | jq -r '[.Peer[]?] | map(select(.Online != true)) | length' 2>/dev/null)
+  pnames=$(printf '%s' "$ts_json" | jq -r '[.Self.HostName, (.Peer[]?.HostName)] | .[:5] | join(" ")' 2>/dev/null)
+  row tailnet "${tsip} · ${G}${up:-0} up${N} · ${D}${noff:-0} offline${N} · ${pnames}"
 else
   row tailnet "${D}tailscale unavailable${N}"
 fi
