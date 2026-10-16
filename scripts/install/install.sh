@@ -211,13 +211,11 @@ task_reinstall_skip() {   # task_reinstall_skip <task-function-name>
   reinstall_unrelated "$1" || return 1
   detail "  outside data/ — skipped (a reinstall rebuilds the production stack only)"
   task_skip
-  # A pre-marked row is already on screen as [SKIP]; only its time is written,
-  # and only when the draw did not stamp it (see stamp_skips) — never a repaint
-  # of the status column.
-  if [ "${TASK_DRAWN:-}" = "1" ] && [ -z "${TASK_TS[$TASK_CUR]:-}" ]; then
-    TASK_TS[$TASK_CUR]=$(date +%H:%M:%S)
-    _task_update "$TASK_CUR"
-  fi
+  # A pre-marked row's STATUS is already on screen as [SKIP] and is never
+  # repainted; only its time column is written, by the phase-3 refresh of the
+  # running row (never a row-by-row repaint of the list, which would scatter
+  # frames across the block).
+  TASK_TS[$TASK_CUR]=$(date +%H:%M:%S)
   return 0
 }
 TASK_TOTAL=${#TASK_NAMES[@]}
@@ -233,9 +231,19 @@ _anim_field() {
   local p=$(( ANIM_POS % 14 )); [ "$p" -gt 7 ] && p=$(( 14 - p ))
   local k out=""
   for k in 0 1 2 3 4 5 6 7; do
-    if [ "$k" = "$p" ]; then out="${out}${C_ORANGE}${ANIM_SYM:-\$}${C_PURPLE}"; else out="${out} "; fi
+    # The marker carries its own orange (and a return to purple for the columns
+    # after it), so the status column stays one colour on the [EXEC] row.
+    if [ "$k" = "$p" ]; then out="${out}${C_ORANGE}${ANIM_SYM:-\$}${C_RST}"; else out="${out} "; fi
   done
   printf '%s' "$out"
+}
+# The waiting placeholder of the RUNNING row's time column: the operator's
+# currency sign (ANIM_SYM), orange like the marker on the [EXEC] row, in place of
+# the `--:--:--` a pending row shows. Falls back to the placeholder when there is
+# no single-column sign.
+_exec_ts() {
+  if [ -t 1 ] && [ -n "${ANIM_SYM:-}" ]; then printf '%s%s%s' "$C_ORANGE" "$ANIM_SYM" "$C_RST"
+  else printf '%s' '--:--:--'; fi
 }
 # One newline-terminated row for task $1.
 _task_row() {
@@ -250,6 +258,9 @@ _task_row() {
     # be mistaken for a task that ran.
     skip)  printf '%s[SKIP]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
     error) printf '%s[FAIL]%s %s[%s]%s %s\n'  "$C_RED"    "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
+    # The running row paints its whole time column orange: the marker is the
+    # operator's currency sign ping-ponging across it, so that sign (and never a
+    # `$` unless that IS the sign) is what the operator sees while it runs.
     run)   printf '%s[EXEC]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$(_anim_field)" "$C_RST" "$name" ;;
     # A pending row has no time yet: the placeholder stands until the task
     # starts (then it is the [EXEC] marker) and finishes (a real HH:MM:SS).
@@ -365,13 +376,14 @@ _tasks_draw() {
   # placeholder instead, so nothing is pre-filled here — except the rows this
   # mode will never run: a reinstall marks every task outside data/ [SKIP] the
   # moment the block is drawn, instead of leaving those rows [WAIT] until the
-  # pipeline walks past them.
+  # pipeline walks past them. Such a row is OUT OF SCOPE before the run starts,
+  # so it gets its own time at draw too: a [SKIP] row never shows the
+  # [--:--:--] placeholder the operator is still waiting on.
   for i in $(seq 0 $((TASK_TOTAL - 1))); do
     TASK_STATE[$i]=wait
     if reinstall_unrelated "${TASKS[$i]:-}"; then
-      # Pre-marked [SKIP]: the stamp pass below gives it its time at draw.
       TASK_STATE[$i]=skip
-      TASK_TS[$i]=
+      TASK_TS[$i]=$(date +%H:%M:%S)
     fi
   done
   [ -t 1 ] || return 0
@@ -386,18 +398,10 @@ _tasks_draw() {
   for i in $(seq 0 $((TASK_TOTAL - 1))); do printf '\r'; _task_row "$i"; done
   _TAIL=0
   TASK_DRAWN=1
-  # Rows pre-marked [SKIP] are stamped (and redrawn in place) right after the
-  # block appears, so the operator never sees a [WAIT][--:--:--] row that is
-  # already out of scope. Only run the pass when there is such a row.
-  for i in $(seq 0 $((TASK_TOTAL - 1))); do
-    [ "${TASK_STATE[$i]:-}" = skip ] || continue
-    stamp_skips
-    break
-  done
 }
 task_start() {
   TASK_CUR=$(( TASK_CUR + 1 )); TASK_ACTIVE=1 TASK_ERR= TASK_SKIP=
-  # A row that is ALREADY [SKIP] (pre-marked at draw: see _tasks_draw/stamp_skips)
+  # A row that is ALREADY [SKIP] (pre-marked at draw: see _tasks_draw)
   # never becomes a running row: the row is not repainted and the animator is not
   # started, so no [EXEC] can ever appear for work that was ruled out before the
   # run began — TASK_DRAWN is also cleared for it, so nothing later (task_end,
@@ -425,11 +429,6 @@ task_skip() { [ -n "$TASK_ACTIVE" ] && TASK_SKIP=1; return 0; }
 # pre-marks everything outside data/). Such a row is already on screen as [SKIP]
 # with its own time, so it must never be reopened as a running row.
 task_skip_premark() { [ "${TASK_STATE[${1:-$TASK_CUR}]:-}" = skip ]; }
-# True when row $1 was marked [SKIP] BEFORE the pipeline reached it (a reinstall
-# pre-marks every row outside data/, and an unchanged resume pre-marks the app
-# step). Such a row was already painted with its own time, so it must not be
-# repainted as if the run had just decided about it.
-task_skip_premark() { [ "${TASK_STATE[${1:-$TASK_CUR}]:-}" = skip ]; }
 task_end() {
   [ -n "$TASK_ACTIVE" ] || return 0
   [ -n "$ANIM_PID" ] && { kill "$ANIM_PID" 2>/dev/null; wait "$ANIM_PID" 2>/dev/null; ANIM_PID=; }
@@ -440,10 +439,13 @@ task_end() {
   if   [ -n "${TASK_ERR:-}" ];  then TASK_STATE[$TASK_CUR]=error
   elif [ -n "${TASK_SKIP:-}" ]; then TASK_STATE[$TASK_CUR]=skip
   else                               TASK_STATE[$TASK_CUR]=done; fi
-  # A [SKIP] row was already painted (with its time) when it was ruled out, so it
-  # is not repainted here: nothing in the run can turn a skipped row into an
-  # [EXEC] flash.
-  if [ "${TASK_STATE[$TASK_CUR]}" = skip ]; then
+  # A pre-marked [SKIP] row (a reinstall rules it out before the run) was painted
+  # with its own time when the block was drawn, so it is not repainted here —
+  # nothing in the run can turn it into an [EXEC] flash. A row skipped DURING the
+  # run (a module the operator turned off) was painted [EXEC] by task_start, so it
+  # IS repainted: otherwise the frozen [EXEC] marker would be left on a row that
+  # never ran.
+  if task_skip_premark && [ "${TASK_STATE[$TASK_CUR]}" = skip ]; then
     :
   elif [ -n "$TASK_DRAWN" ]; then _task_update "$TASK_CUR"
   else _task_row "$TASK_CUR"; fi
