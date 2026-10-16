@@ -238,8 +238,18 @@ else
 fi
 check_tls "talk.$DOMAIN"
 
-# coturn listeners: TURN (udp 3478) + TURNS (tcp 5349) must be bound.
-if ss -lun 2>/dev/null | grep -q ':3478 ' && ss -ltn 2>/dev/null | grep -q ':5349 '; then
+# coturn listeners: TURN (udp 3478) + TURNS (tcp 5349) must be bound. A re-run
+# recreates the containers and smoke runs right after, so the relay may still be
+# binding its ports — poll briefly (30 s) before failing, or a working install
+# reports talk-ports on every re-run.
+coturn_ok=""
+for _ in $(seq 1 15); do
+  if ss -lun 2>/dev/null | grep -q ':3478 ' && ss -ltn 2>/dev/null | grep -q ':5349 '; then
+    coturn_ok=1; break
+  fi
+  sleep 2
+done
+if [ -n "$coturn_ok" ]; then
   say "ok   talk-ports — coturn listening on 3478/udp + 5349/tcp"
 else
   say "FAIL talk-ports: coturn not listening on 3478/udp + 5349/tcp (is talk-relay up?)"; bad
