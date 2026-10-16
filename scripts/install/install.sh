@@ -176,6 +176,33 @@ TASK_NAMES=(
   "Mail Setup" "Nextcloud Setup" "Vaultwarden Setup" "Monitoring Setup"
   "Repo Hygiene" "Smoke Pass"
 )
+# Reinstall = the PRODUCTION STACK only. data/ is erased and the stack is
+# rebuilt from freshly asked values; NOTHING outside data/ is touched — no repo
+# framework, no host (packages, ssh, firewall, tailnet, docker engine, goose,
+# host services), no DNS/edge cert work, no repo hygiene. Every task that does
+# not touch data/ is marked [SKIP] on a reinstall run (see task_reinstall_skip),
+# and Smoke Pass stays mandatory last, exactly as on a normal install.
+REINSTALL=false
+# Which task functions DO touch data/ (kept live on a reinstall): Stack Config
+# (rendered/, instance.conf, seeds), Containers Up (the stack and its volumes),
+# Mail / Nextcloud / Vaultwarden / Monitoring Setup (their data dirs). Every
+# other task is unrelated by default.
+reinstall_unrelated() {   # reinstall_unrelated <task-function-name>
+  [ "${REINSTALL:-false}" = true ] || return 1
+  case "$1" in
+    task_stackcfg|task_containers|task_mail|task_cloud|task_vault|task_monitor) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+# Called at the very top of each unrelated task body: on a reinstall the row is
+# recorded [SKIP] and NONE of the task's code runs — the blast radius of a
+# reinstall is exactly data/ and the stack that reads it.
+task_reinstall_skip() {   # task_reinstall_skip <task-function-name>
+  reinstall_unrelated "$1" || return 1
+  detail "  outside data/ — skipped (a reinstall rebuilds the production stack only)"
+  task_skip
+  return 0
+}
 TASK_TOTAL=${#TASK_NAMES[@]}
 declare -a TASK_STATE=() TASK_TS=()
 TASK_CUR=-1 TASK_ACTIVE= TASK_DRAWN= ANIM_PID= ANIM_POS=0 TASK_ERR= TASK_SKIP=
@@ -496,6 +523,7 @@ ensure_runtime_dirs() {
   install -d -m 0700 "$DATA"
 }
 
+
 # Module prompts are ALWAYS asked — there is no answer-sheet defaults file, and
 # every prompt is asked on every run except when a resume supplies the answer.
 # Yes/no affirmation: ONLY the literal words yes / no are accepted — no
@@ -507,6 +535,32 @@ ask_boolean() {   # ask_boolean <question> <variable>
   local rc=$?
   _task_resume
   return $rc
+}
+# Same contract as ask_boolean, but for a literal-word choice: only the listed
+# words are accepted (no shorthand, no default) and the word itself is stored in
+# the named variable. Used by the repair/reinstall gate.
+ask_choice() {   # ask_choice <question> <variable> <word...>
+  _task_pause
+  local rc
+  _ask_choice_raw "$@"; rc=$?
+  _task_resume
+  return $rc
+}
+_ask_choice_raw() {
+  local q="$1" var="$2"; shift 2; local words=("$@") answer w
+  while :; do
+    printf '%s[INFO]%s %s' "$C_GREY" "$C_RST" "$q"
+    read -r answer || { _task_count 1; return 1; }
+    _task_count 1
+    for w in "${words[@]}"; do
+      if [ "${answer,,}" = "$w" ]; then printf -v "$var" '%s' "$w"; return 0; fi
+    done
+    echo "   type $(
+      printf '%s' "${words[0]}"
+      [ "${#words[@]}" -gt 1 ] && printf ' or %s' "${words[1]}"
+    )."
+    _task_count 1
+  done
 }
 _ask_boolean_raw() {
   local q="$1" var="$2" answer
@@ -1005,6 +1059,7 @@ github_access() {
 # System Packages: log relocation, hostname, base apt packages.
 task_packages() {
   task_start
+  task_reinstall_skip task_packages && return 0
   # Log may contain host/secret-adjacent output — root-readable only, never 666.
   # One-time relocation off the legacy /var/log paths (never drop the old log).
   if [ ! -f "$LOG" ]; then
@@ -1035,6 +1090,7 @@ task_packages() {
 # SSH Hardening: single operator account + key-only root sshd.
 task_ssh() {
   task_start
+  task_reinstall_skip task_ssh && return 0
   # Single operator account: root. The provider image may ship a login-capable
   # account (e.g. the cloud-init 'debian' user) — remove every non-root account
   # with a real UID so root@$NODE_NAME is genuinely the only way in.
@@ -1088,6 +1144,7 @@ task_ssh() {
 # Firewall Restriction: ufw (tailnet SSH, public 80/443, mail + Talk ports).
 task_firewall() {
   task_start
+  task_reinstall_skip task_firewall && return 0
   ufw allow from 100.64.0.0/10 to any port 22 proto tcp >/dev/null 2>&1
   # Remove stale installer-session SSH rules from prior runs (tailnet rule stays).
   while IFS= read -r _ip; do
@@ -1130,6 +1187,7 @@ task_firewall() {
 # Tailscale Connectivity: install, encrypt state at rest, join, read the IP.
 task_tailscale() {
   task_start
+  task_reinstall_skip task_tailscale && return 0
   if ! command -v tailscale >/dev/null 2>&1; then
     # Output goes to the LOG, never the console: tailscale's install.sh runs with
     # `set -x` and calls apt, so piping it to the tty dumps a trace + apt chatter
@@ -1182,6 +1240,7 @@ task_tailscale() {
 # Docker Engine: docker + compose plugin, daemon config, start.
 task_docker() {
   task_start
+  task_reinstall_skip task_docker && return 0
   # Debian packages first (bookworm ships docker-compose-plugin); trixie does
   # not, so fall back to Docker's official repo (docker-ce). Skip the whole step
   # when a working docker + compose plugin already exists: on an already-
@@ -1232,6 +1291,7 @@ EOF
 # Goose CLI: install the agent binary (needs the bzip2 apt dep above).
 task_goose() {
   task_start
+  task_reinstall_skip task_goose && return 0
   if ! command -v goose >/dev/null 2>&1 && [ ! -x /usr/local/bin/goose ]; then
     # Official installer (release archive, .tar.bz2 — hence the bzip2 apt dep
     # above). Output goes to the log, so a failure is diagnosable.
@@ -2645,6 +2705,7 @@ task_containers() {
 # Repository Setup: clone/present the repo, pin the commit identity, install hooks.
 task_repo() {
   task_start
+  task_reinstall_skip task_repo && return 0
   ensure_repo
   github_set_identity
   install_hooks
@@ -2655,6 +2716,7 @@ task_repo() {
 # two benign permanently-failed distro units.
 task_host() {
   task_start
+  task_reinstall_skip task_host && return 0
   host_services
   disable_benign_failed_units
   task_end
@@ -2663,6 +2725,7 @@ task_host() {
 # DNS Records: Cloudflare A/MX/SPF/DKIM/DMARC + SSL mode.
 task_dns() {
   task_start
+  task_reinstall_skip task_dns && return 0
   cf_dns
   task_end
 }
@@ -2670,6 +2733,7 @@ task_dns() {
 # SSL Certificates: trigger + verify LE issuance for every vhost.
 task_certs() {
   task_start
+  task_reinstall_skip task_certs && return 0
   issue_certs
   task_end
 }
@@ -2699,6 +2763,7 @@ task_monitor() {
 # Repo Hygiene: no stale references to the old project name in the tree.
 task_hygiene() {
   task_start
+  task_reinstall_skip task_hygiene && return 0
   sweep
   task_end
 }
@@ -2955,7 +3020,15 @@ resolve_errors() {
   done
   ERR_TAGS=()
   write_state
-  finalize_hardening
+  # Host hardening is a HOST concern, not part of the production stack: a
+  # reinstall leaves sshd, ufw and the installer's temporary SSH rule exactly as
+  # they were (task_firewall/task_ssh were skipped, so finalize_hardening would
+  # otherwise re-apply host config for a run that deliberately did not touch it).
+  if [ "${REINSTALL:-false}" != "true" ]; then
+    finalize_hardening
+  else
+    detail "  reinstall — host hardening left untouched (production stack only)"
+  fi
   finalize_install
 }
 
@@ -3250,26 +3323,38 @@ main() {
 
   if previous_install; then
     echo ""
-    local _res
-    ask_boolean "'install.state' detected - Apply previous answers?" _res || _res=false
-    if [ "$_res" = "true" ]; then
-      detail "  resuming — every saved value is reused; only missing ones are asked"
-      # A resume is a full pipeline re-run, not a skip: every step is idempotent
-      # (containers are recreated, DNS records upserted, setup steps re-applied),
-      # so a re-run after a green install works but does the work again. Say so,
-      # because "resume" reads like "continue from where it stopped" (2026-10-16).
-      if [ "${FINISHED:-false}" = "true" ]; then
-        msg "  previous run finished successfully — a resume re-runs the whole (idempotent) pipeline, it does not skip completed steps."
+    local _mode
+    ask_choice "kefoCloud is already installed - Do you want to repair or to reinstall it? (repair/reinstall): " _mode repair reinstall || _mode=repair
+    if [ "$_mode" = "reinstall" ]; then
+      # Last confirmation before anything is touched: this is destructive and
+      # irreversible (the production stack's data is deleted, not migrated).
+      local _wipe
+      ask_boolean "'data/' will be erased and new values will be asked. Do you wish to proceed?" _wipe || _wipe=false
+      if [ "$_wipe" != "true" ]; then
+        log "  reinstall declined at the confirmation prompt — nothing was changed"
+        echo ""
+        msg " Reinstall cancelled — nothing was changed."
+        exit 0
       fi
-    else
-      # Fresh run: IGNORE the previous answers (never take them as valid) but do
-      # NOT delete them — a later run can still resume. Everything is re-asked.
-      detail "  starting fresh — every value is asked again (saved answers ignored, not deleted)"
+      detail "  reinstall — production stack only: data/ is erased, everything else is skipped"
+      REINSTALL=true
+      # Every value is re-asked from scratch: the state the previous instance
+      # held was erased with data/, and a reinstall never inherits the previous
+      # instance's answers.
       unset DOMAIN CF_API_TOKEN TS_AUTHKEY TS_IP SSH_PUBKEY \
             LOCALE_COUNTRY \
             MOD_CLOUD MOD_VAULT MOD_MAIL MOD_MONITOR \
             GH_REMOTE GH_AUTH_OK \
             GITHUB_COMMIT_NAME GITHUB_COMMIT_EMAIL
+    elif [ "$_mode" = "repair" ]; then
+      detail "  repairing — every saved value is reused; only missing ones are asked"
+      # A repair is a full pipeline re-run, not a skip: every step is idempotent
+      # (containers are recreated, DNS records upserted, setup steps re-applied),
+      # so a re-run after a green install works but does the work again. Say so,
+      # because "repair" reads like "continue from where it stopped" (2026-10-16).
+      if [ "${FINISHED:-false}" = "true" ]; then
+        msg "  previous run finished successfully — a repair re-runs the whole (idempotent) pipeline, it does not skip completed steps."
+      fi
     fi
   else
     # No previous run: drop whatever instance.sh's fallbacks put in the
