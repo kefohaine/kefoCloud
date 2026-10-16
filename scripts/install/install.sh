@@ -211,10 +211,8 @@ task_reinstall_skip() {   # task_reinstall_skip <task-function-name>
   reinstall_unrelated "$1" || return 1
   detail "  outside data/ — skipped (a reinstall rebuilds the production stack only)"
   task_skip
-  # A pre-marked row's STATUS is already on screen as [SKIP] and is never
-  # repainted; only its time column is written, by the phase-3 refresh of the
-  # running row (never a row-by-row repaint of the list, which would scatter
-  # frames across the block).
+  # The row's status column is painted by task_end (it ends on [SKIP]); its time
+  # is recorded here so the whole run reached it at this moment.
   TASK_TS[$TASK_CUR]=$(date +%H:%M:%S)
   return 0
 }
@@ -223,27 +221,19 @@ declare -a TASK_STATE=() TASK_TS=()
 TASK_CUR=-1 TASK_ACTIVE= TASK_DRAWN= ANIM_PID= ANIM_POS=0 TASK_ERR= TASK_SKIP=
 _TAIL=0 _ANIM_PAUSE= _COLS=80 ANIM_SYM='$'
 
-# The current task's status column: an 8-wide field with ONE orange marker that
-# ping-pongs back and forth (0..7..1), inside purple brackets. The marker is the
-# operator's currency sign (ANIM_SYM, set by ask_locale from the locale country;
-# `$` when that country has no single-column sign — a silent design choice).
+# The RUNNING row's time column: an 8-wide field whose bracket and EMPTY columns
+# are purple, with ONE orange marker (the operator's currency sign, ANIM_SYM, set
+# by ask_locale from the locale country; `$` when that country has no
+# single-column sign — a silent design choice) ping-ponging across it (0..7..1).
+# The sign is ALWAYS orange and the closing bracket is ALWAYS purple, so the
+# marker never leaks its colour into the bracket the row ends with.
 _anim_field() {
   local p=$(( ANIM_POS % 14 )); [ "$p" -gt 7 ] && p=$(( 14 - p ))
   local k out=""
   for k in 0 1 2 3 4 5 6 7; do
-    # The marker carries its own orange (and a return to purple for the columns
-    # after it), so the status column stays one colour on the [EXEC] row.
-    if [ "$k" = "$p" ]; then out="${out}${C_ORANGE}${ANIM_SYM:-\$}${C_RST}"; else out="${out} "; fi
+    if [ "$k" = "$p" ]; then out="${out}${C_ORANGE}${ANIM_SYM:-\$}${C_PURPLE}"; else out="${out} "; fi
   done
-  printf '%s' "$out"
-}
-# The waiting placeholder of the RUNNING row's time column: the operator's
-# currency sign (ANIM_SYM), orange like the marker on the [EXEC] row, in place of
-# the `--:--:--` a pending row shows. Falls back to the placeholder when there is
-# no single-column sign.
-_exec_ts() {
-  if [ -t 1 ] && [ -n "${ANIM_SYM:-}" ]; then printf '%s%s%s' "$C_ORANGE" "$ANIM_SYM" "$C_RST"
-  else printf '%s' '--:--:--'; fi
+  printf '%s%s' "${C_PURPLE}${out}" "$C_RST"
 }
 # One newline-terminated row for task $1.
 _task_row() {
@@ -258,10 +248,9 @@ _task_row() {
     # be mistaken for a task that ran.
     skip)  printf '%s[SKIP]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
     error) printf '%s[FAIL]%s %s[%s]%s %s\n'  "$C_RED"    "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
-    # The running row paints its whole time column orange: the marker is the
-    # operator's currency sign ping-ponging across it, so that sign (and never a
-    # `$` unless that IS the sign) is what the operator sees while it runs.
-    run)   printf '%s[EXEC]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$(_anim_field)" "$C_RST" "$name" ;;
+    # The running row shows the animated field (orange sign, purple bracket);
+    # the field paints its own colours, so no colour is passed here.
+    run)   printf '%s[EXEC]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "" "$(_anim_field)" "" "$name" ;;
     # A pending row has no time yet: the placeholder stands until the task
     # starts (then it is the [EXEC] marker) and finishes (a real HH:MM:SS).
     *)     printf '%s[WAIT]%s %s[%s]%s %s\n'  "$C_GREY"   "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
@@ -362,9 +351,8 @@ _task_resume() {
     _TAIL=0
     _task_update "$TASK_CUR"
   fi
-  # Only a row that is genuinely RUNNING animates: never a [SKIP] row that was
-  # pre-marked (they are ruled out before the run) nor a finished one, so an
-  # animator can never repaint a row's status into something it is not.
+  # Only a row that is genuinely RUNNING animates: never a finished or skipped
+  # one, so an animator can never repaint a row's status into something it is not.
   if [ -n "$TASK_DRAWN" ] && [ -n "$TASK_ACTIVE" ] && [ -z "$ANIM_PID" ] \
      && [ "${TASK_STATE[$TASK_CUR]:-}" = run ]; then
     _task_anim "$TASK_CUR" & ANIM_PID=$!
@@ -373,18 +361,10 @@ _task_resume() {
 _tasks_draw() {
   local i
   # A row's time is set when it ends (task_end); a [WAIT] row shows the
-  # placeholder instead, so nothing is pre-filled here — except the rows this
-  # mode will never run: a reinstall marks every task outside data/ [SKIP] the
-  # moment the block is drawn, instead of leaving those rows [WAIT] until the
-  # pipeline walks past them. Such a row is OUT OF SCOPE before the run starts,
-  # so it gets its own time at draw too: a [SKIP] row never shows the
-  # [--:--:--] placeholder the operator is still waiting on.
+  # placeholder instead, so nothing is pre-filled here.
   for i in $(seq 0 $((TASK_TOTAL - 1))); do
     TASK_STATE[$i]=wait
-    if reinstall_unrelated "${TASKS[$i]:-}"; then
-      TASK_STATE[$i]=skip
-      TASK_TS[$i]=$(date +%H:%M:%S)
-    fi
+    TASK_TS[$i]=
   done
   [ -t 1 ] || return 0
   # Learn the terminal width (for _note's physical-row counting) and re-assert
@@ -401,17 +381,6 @@ _tasks_draw() {
 }
 task_start() {
   TASK_CUR=$(( TASK_CUR + 1 )); TASK_ACTIVE=1 TASK_ERR= TASK_SKIP=
-  # A row that is ALREADY [SKIP] (pre-marked at draw: see _tasks_draw)
-  # never becomes a running row: the row is not repainted and the animator is not
-  # started, so no [EXEC] can ever appear for work that was ruled out before the
-  # run began — TASK_DRAWN is also cleared for it, so nothing later (task_end,
-  # _task_resume) repaints it either. The body still runs its guard, so the code
-  # is skipped as usual; TASK_SKIP keeps task_end from calling it [DONE].
-  if [ "${TASK_STATE[$TASK_CUR]:-}" = skip ]; then
-    TASK_SKIP=1
-    TASK_DRAWN=
-    return 0
-  fi
   TASK_STATE[$TASK_CUR]=run
   if [ -n "$TASK_DRAWN" ]; then
     _task_update "$TASK_CUR"
@@ -424,11 +393,6 @@ task_start() {
 # a module the operator turned off, and a task outside the reinstall's scope
 # (task_reinstall_skip). Either way the row reads [SKIP] in the status column.
 task_skip() { [ -n "$TASK_ACTIVE" ] && TASK_SKIP=1; return 0; }
-# True when row $1 (default: the current one) was marked [SKIP] BEFORE the run
-# reached it: the draw marks every row the mode will never run (a reinstall
-# pre-marks everything outside data/). Such a row is already on screen as [SKIP]
-# with its own time, so it must never be reopened as a running row.
-task_skip_premark() { [ "${TASK_STATE[${1:-$TASK_CUR}]:-}" = skip ]; }
 task_end() {
   [ -n "$TASK_ACTIVE" ] || return 0
   [ -n "$ANIM_PID" ] && { kill "$ANIM_PID" 2>/dev/null; wait "$ANIM_PID" 2>/dev/null; ANIM_PID=; }
@@ -439,15 +403,11 @@ task_end() {
   if   [ -n "${TASK_ERR:-}" ];  then TASK_STATE[$TASK_CUR]=error
   elif [ -n "${TASK_SKIP:-}" ]; then TASK_STATE[$TASK_CUR]=skip
   else                               TASK_STATE[$TASK_CUR]=done; fi
-  # A pre-marked [SKIP] row (a reinstall rules it out before the run) was painted
-  # with its own time when the block was drawn, so it is not repainted here —
-  # nothing in the run can turn it into an [EXEC] flash. A row skipped DURING the
-  # run (a module the operator turned off) was painted [EXEC] by task_start, so it
-  # IS repainted: otherwise the frozen [EXEC] marker would be left on a row that
-  # never ran.
-  if task_skip_premark && [ "${TASK_STATE[$TASK_CUR]}" = skip ]; then
-    :
-  elif [ -n "$TASK_DRAWN" ]; then _task_update "$TASK_CUR"
+  # The row is repainted with what it turned out to be: [DONE], [FAIL] or
+  # [SKIP] — a [SKIP] row is painted here, not at task_skip, so a skipped task
+  # only ever ends on [SKIP] (the [EXEC] it showed while its body ran is
+  # replaced), and a task the run never reached keeps its [WAIT] row.
+  if [ -n "$TASK_DRAWN" ]; then _task_update "$TASK_CUR"
   else _task_row "$TASK_CUR"; fi
   # TASK_ERR is deliberately NOT cleared here: run_install reads it right after
   # task_end to decide whether to pause on the failed row (task_start resets it).
@@ -3013,8 +2973,8 @@ pause_and_resolve() {
 # an unresolved failure, and never marks the tasks after it [DONE]. "Smoke Pass"
 # is the last task and is marked from finalize_install — it runs only after the
 # push and the finished checkpoint.
-# The run order, in ONE place: the checklist (which pre-marks the rows a
-# reinstall will skip) and run_install both read it, so the two can never drift.
+# The run order, in ONE place: the checklist (TASK_NAMES) and run_install both
+# read it, so the two can never drift.
 # Same order as TASK_NAMES: every [HOST] step first, then the [STACK] steps,
 # then the [BOTH] verdict (smoke). Nothing in the list depends on a later step,
 # except that the stack needs the host ready (docker, goose, DNS, certs) — which
@@ -3027,11 +2987,6 @@ pause_and_resolve() {
 # around it so a smoke failure shows as this row's [FAIL].
 task_smoke() {
   task_start
-  # The row may be one the draw already ruled out (a reinstall still shows Smoke
-  # Pass, marked [SKIP]): smoke then does NOT run, and the gate is checked before
-  # it — otherwise the row would be started and its [EXEC] marker would replace
-  # the [SKIP] the operator was already shown.
-  if task_skip_premark; then task_skip; task_end; return 0; fi
   run_smoke || TASK_ERR=1
   task_end
 }
