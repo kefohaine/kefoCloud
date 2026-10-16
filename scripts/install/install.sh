@@ -2095,20 +2095,22 @@ resolve_errors() {
 #      no `finished=true` is ever recorded for it. github_push returns 0
 #      immediately when NOT opted in.
 #   3. record the install: enabled_modules + finished=true, via write_state.
-#   4. make smoke — the "is everything actually done?" source. The gate it
+#   4. ONE `make smoke` — the "is everything actually done?" source. The gate it
 #      enforces (install.state finished=true) is why the checkpoint is written
-#      FIRST; smoke then writes the VERDICT back itself (make smoke-record, the
-#      one caller authorized to do so): core + enabled modules are the verdict,
-#      a not-installed module's checks are informational only.
+#      FIRST; its EXIT CODE is the verdict (core + enabled modules decide it, a
+#      not-installed module's checks are informational only).
 #   5. finished=false + stop, no success block, when smoke fails. Fail LOUD.
+# Nothing but this script ever writes install.state: `make smoke` only reports,
+# and install.sh records the verdict of the single call it makes.
 # CHECKPOINT_OPEN guards the window between step 3 and the last decision: if the
 # run is interrupted there, the EXIT trap reverts finished to false.
 run_smoke() {
   log "  running the live edge smoke test (make smoke) — the last check"
-  # SMOKE_STATE=1 authorizes smoke to record its own verdict as install.state
-  # `finished` (make smoke-record). It is set ONLY here: an operator's own
-  # `make smoke` and the pre-push hook never rewrite state.
-  if SMOKE_STATE=1 make -C "$REPO" smoke >>"$LOG" 2>&1; then
+  # ONE call, ONE source of truth: `make smoke`'s exit code. smoke itself never
+  # writes install.state — this script reads the code and records the verdict
+  # (that is what keeps install.sh the sole writer, and what lets an operator's
+  # own `make smoke`, and the pre-push hook, only report).
+  if make -C "$REPO" smoke >>"$LOG" 2>&1; then
     log "  smoke passed — the edge and every enabled module answer"
     return 0
   fi
@@ -2132,13 +2134,12 @@ finalize_install() {
     echo " Fix it, then re-run the installer to finish."
     return 0
   fi
-  # 3: the checkpoint opens; smoke below writes its verdict back through it.
+  # 3: the checkpoint opens; smoke's exit code below decides whether it stands.
   FINISHED=true
   CHECKPOINT_OPEN=1
   write_state
-  # 4-5: smoke is the verdict. It records finished=true on its own when it
-  # passes; on failure it records finished=false, and we revert here as well
-  # (idempotent) so the state is pending even if smoke could not write.
+  # 4-5: smoke's exit code is the verdict. Pass → the checkpoint we just wrote
+  # stands (finished=true). Fail → this script writes finished=false and stops.
   if ! run_smoke; then
     FINISHED=false
     write_state
