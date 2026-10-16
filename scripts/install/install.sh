@@ -3,16 +3,19 @@
 #
 # ALL inputs are collected up front, in one fixed order, before any install
 # work, and each is persisted immediately (so an abort mid-run leaves the
-# answers for a resume). Order: GitHub collaborator opt-in, GitHub remote-access
-# opt-in (+ commit identity + automatic key verification), device SSH key,
-# Tailscale auth key, Cloudflare API token, domain, modules. Every affirmation
-# takes only the literal words `yes`/`no` (no shortcut, no default); the answer
-# is recorded as the boolean true/false. Then it runs unattended: host services,
-# docker, tailscale, the full stack — Nextcloud (app + PostgreSQL + Redis + Talk
-# HPB/TURN), Caddy, Vaultwarden, Uptime Kuma, Docker Mailserver + Roundcube —
-# Cloudflare DNS records, and LE cert issuance. The repo already carries the
-# canonical <domain> naming (modules/<domain>/, vhosts/<host>.caddy); no legacy
-# renames are applied.
+# answers for a resume). Order: continue-gate, apply-previous-answers (only when
+# state exists), GitHub collaborator opt-in (+ commit identity + automatic key
+# verification), device SSH key, Tailscale auth key, Cloudflare API token,
+# domain, modules (one space-separated line). Every affirmation takes only the
+# literal words `yes`/`no` (no shortcut, no default); the answer is recorded as
+# the boolean true/false. Then it runs unattended as a fixed 11-task checklist
+# (grey [WAIT] -> animated orange [TASK] -> green [DONE] / red [ERROR]; a failed
+# task is marked, the run continues to the end, and the errors are reported
+# after): host services, docker, tailscale, the full stack — Nextcloud (app +
+# PostgreSQL + Redis + Talk HPB/TURN), Caddy, Vaultwarden, Uptime Kuma, Docker
+# Mailserver + Roundcube — Cloudflare DNS records, and LE cert issuance. The repo
+# already carries the canonical <domain> naming (modules/<domain>/,
+# vhosts/<host>.caddy); no legacy renames are applied.
 #
 # Fully autonomous: the Kuma admin account is created
 # automatically (the admin passwords are printed once in the final summary —
@@ -73,7 +76,7 @@ fi
 
 # Canonical node name for this project: the repo is kefoCloud and the sole login
 # is root@<the machine name>. This installer is the ONLY place the machine is
-# renamed — it sets the static hostname to $NODE_NAME (phase_host) and writes
+# renamed — it sets the static hostname to $NODE_NAME (task_packages) and writes
 # HOSTNAME=$NODE_NAME into data/instance.conf, so every other script derives the
 # name from there rather than hardcoding it. Hardcoded here exceptionally; the
 # tailnet node adopts this hostname automatically, so no explicit rename is needed.
@@ -124,23 +127,25 @@ declare -A ERR_DETAIL=()
 # file always describes exactly one run. Timestamps are purple on a TTY; the
 # persistent status bar's seconds/phase are orange. Both are plain when the
 # output is not a terminal or NO_COLOR is set (pipes, cron, CI).
-C_PURPLE=$'\033[35m' C_ORANGE=$'\033[33m' C_DIM=$'\033[2m' C_RST=$'\033[0m'
-if [ ! -t 1 ] || [ -n "${NO_COLOR:-}" ]; then C_PURPLE= C_ORANGE= C_DIM= C_RST=; fi
+C_PURPLE=$'\033[35m' C_ORANGE=$'\033[33m' C_GREEN=$'\033[32m' C_RED=$'\033[31m' C_GREY=$'\033[90m' C_RST=$'\033[0m'
+if [ ! -t 1 ] || [ -n "${NO_COLOR:-}" ]; then C_PURPLE= C_ORANGE= C_GREEN= C_RED= C_GREY= C_RST=; fi
 _tstamp() { printf '%s[%s]%s' "$C_PURPLE" "$(date +%H:%M:%S)" "$C_RST"; }
 log()    { printf '%s %s\n' "$(_tstamp)" "$*" >>"$LOG"; }
 detail() { log "$@"; }
 # msg never uses `tee`: the purple escapes must land on the console but NOT in
 # the log file (a log full of escape codes is unreadable and un-greppable).
+# While the live task checklist owns the screen, msg is log-only — nothing may
+# print between the task rows.
 msg() {
-  _bar_before_print
-  printf '%s %s\n' "$(_tstamp)" "$*"
   printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*" >>"$LOG"
-  _bar_after_print
+  [ -n "${TASK_ACTIVE:-}" ] && return 0
+  printf '%s %s\n' "$(_tstamp)" "$*"
 }
 fail() {
   local t
   for t in "${ERR_TAGS[@]:-}"; do [ "$t" = "$1" ] && return 0; done  # no duplicates across runs
   ERR_TAGS+=("$1"); ERR_DETAIL[$1]="${2:-}"
+  TASK_ERR=1
   log "  ERROR: $(problem "$1")${2:+ ($2)}"
 }
 
@@ -153,42 +158,82 @@ warn() {
 
 ERR_WARN_TAGS=()
 
-# ──────────────────────── the persistent status bar ────────────────────────
-# ONE line, always the LAST line of the console: a ping-pong bar (the same
-# design the Caddy image build uses), the elapsed seconds, then the CURRENT
-# phase title. Prints go above it because every print first erases the bar,
-# writes itself, and redraws the bar below — so the bar follows the newest line
-# down the screen without ever being scrolled into the history. TTY only; on a
-# pipe/cron run it emits nothing at all.
-#
-# It is deliberately NOT a `&` background process: a background bar interleaves
-# with foreground prints (the exact corruption the Caddy bar avoids only because
-# nothing else prints during a build). Here the bar is re-drawn by the print
-# path, so it can never split a line.
-BAR_ON=; BAR_PHASE=; BAR_START=0 BAR_LAST=0
-_bar_render() {
-  local head tail
-  head=$(( BAR_TICK % 22 )); [ "$head" -gt 11 ] && head=$(( 22 - head ))
-  tail=$(( 11 - head )); [ "$tail" -lt 0 ] && tail=0
-  printf '\r\033[K  %s[%s%s%s]%s  %s%02ds%s  %s%s%s' \
-    "$C_ORANGE" "$(printf '%*s' "$head" '' | tr ' ' '#')" \
-    "$(printf '%*s' "$tail" '' | tr ' ' ' ')" "$C_ORANGE" "$C_RST" \
-    "$C_ORANGE" "$(( $(date +%s) - BAR_START ))" "$C_RST" "$C_DIM" "$BAR_PHASE" "$C_RST" \
-    >/dev/tty 2>/dev/null
+# ─────────────────────── the installation task checklist ───────────────────
+# One fixed list, printed once as a live checklist. Each row starts as [WAIT]
+# (grey), becomes an animated [TASK] (orange) while it runs, and ends as [DONE]
+# (green) or [ERROR] (red). A failed task is marked, the run CONTINUES through
+# the remaining tasks, and every error is reported at the end. Nothing prints
+# between the task rows (msg is muted while TASK_ACTIVE is set); each step's own
+# output goes to $LOG. On a non-TTY run the animation is skipped and each row is
+# printed once, when it finishes.
+TASK_NAMES=(
+  "Dependent Packages" "SSH Hardening" "Firewall Restriction"
+  "Tailscale Connectivity" "Docker Framework" "Docker Containers"
+  "Repository Management" "DNS Records" "SSL Certificates"
+  "Module Contents" "Smoke Pass"
+)
+TASK_TOTAL=${#TASK_NAMES[@]}
+declare -a TASK_STATE=() TASK_TS=()
+TASK_CUR=-1 TASK_ACTIVE= TASK_DRAWN= ANIM_PID= ANIM_POS=0 TASK_ERR=
+
+# The current task's status column: an 8-wide field with ONE green `$` that
+# ping-pongs back and forth (0..7..1), inside purple brackets.
+_anim_field() {
+  local p=$(( ANIM_POS % 14 )); [ "$p" -gt 7 ] && p=$(( 14 - p ))
+  local k out=""
+  for k in 0 1 2 3 4 5 6 7; do
+    if [ "$k" = "$p" ]; then out="${out}${C_GREEN}\$${C_PURPLE}"; else out="${out} "; fi
+  done
+  printf '%s' "$out"
 }
-_bar_begin() {  # _bar_begin <phase title>
+# One newline-terminated row for task $1.
+_task_row() {
+  local i="$1"
+  local st="${TASK_STATE[$i]:-wait}" ts="${TASK_TS[$i]}" name="${TASK_NAMES[$i]}"
+  case "$st" in
+    done)  printf '%s[%s]%s %s[DONE]%s %s\n'  "$C_PURPLE" "$ts" "$C_RST" "$C_GREEN" "$C_RST" "$name" ;;
+    error) printf '%s[%s]%s %s[ERROR]%s %s\n' "$C_PURPLE" "$ts" "$C_RST" "$C_RED"   "$C_RST" "$name" ;;
+    run)   printf '%s[%s]%s %s[TASK]%s %s\n'  "$C_PURPLE" "$(_anim_field)" "$C_RST" "$C_ORANGE" "$C_RST" "$name" ;;
+    *)     printf '%s[%s]%s %s[WAIT]%s %s\n'  "$C_PURPLE" "$ts" "$C_RST" "$C_GREY"  "$C_RST" "$name" ;;
+  esac
+}
+# Redraw row $1 in place: from below the block, up to its row, rewrite, back.
+_task_update() {
+  { [ -n "$TASK_DRAWN" ] && [ -t 1 ]; } || return 0
+  local i="$1"
+  local up=$(( TASK_TOTAL - i ))
+  printf '\033[%dA\033[K' "$up" >/dev/tty
+  _task_row "$i" >/dev/tty
+  printf '\033[%dB' "$(( up - 1 ))" >/dev/tty
+}
+# Background animator for the running row (TTY only).
+_task_anim() {
+  local i="$1" pos=0
+  while :; do pos=$(( (pos + 1) % 14 )); ANIM_POS=$pos; _task_update "$i"; sleep 0.1; done
+}
+_tasks_draw() {
+  local i
+  for i in $(seq 0 $((TASK_TOTAL - 1))); do TASK_STATE[$i]=wait; TASK_TS[$i]=$(date +%H:%M:%S); done
   [ -t 1 ] || return 0
-  BAR_ON=1 BAR_PHASE="$1" BAR_START=$(date +%s) BAR_TICK=0 BAR_LAST=$BAR_START
-  _bar_render
+  for i in $(seq 0 $((TASK_TOTAL - 1))); do _task_row "$i"; done
+  TASK_DRAWN=1
 }
-_bar_stop() { [ -n "$BAR_ON" ] && printf '\r\033[K' >/dev/tty 2>/dev/null; BAR_ON=; }
-# Called by msg()/log()'s console side, so a print always lands ABOVE the bar
-# and the bar comes back underneath it.
-_bar_before_print() {
-  [ -n "$BAR_ON" ] || return 0
-  printf '\r\033[K' >/dev/tty 2>/dev/null
+task_start() {
+  TASK_CUR=$(( TASK_CUR + 1 )); TASK_ACTIVE=1 TASK_ERR=
+  TASK_STATE[$TASK_CUR]=run
+  if [ -n "$TASK_DRAWN" ]; then
+    _task_update "$TASK_CUR"
+    _task_anim "$TASK_CUR" & ANIM_PID=$!
+  fi
 }
-_bar_after_print() { [ -n "$BAR_ON" ] && _bar_render; }
+task_end() {
+  [ -n "$TASK_ACTIVE" ] || return 0
+  [ -n "$ANIM_PID" ] && { kill "$ANIM_PID" 2>/dev/null; wait "$ANIM_PID" 2>/dev/null; ANIM_PID=; }
+  TASK_TS[$TASK_CUR]=$(date +%H:%M:%S)
+  [ -n "${TASK_ERR:-}" ] && TASK_STATE[$TASK_CUR]=error || TASK_STATE[$TASK_CUR]=done
+  if [ -n "$TASK_DRAWN" ]; then _task_update "$TASK_CUR"; else _task_row "$TASK_CUR"; fi
+  TASK_ACTIVE= TASK_ERR=
+}
 
 # ───────────────────── fresh log for this run ──────────────────────────────
 # install.log describes ONE run: truncate it the moment the run starts, then
@@ -203,27 +248,27 @@ init_log() {
 }
 
 banner() {
-  _bar_before_print
 cat <<'EOF'
-██╗  ██╗ ██████╗ ███╗   ███╗███████╗██╗      █████╗ ██████╗
-██║  ██║██╔═══██╗████╗ ████║██╔════╝██║     ██╔══██╗██╔══██╗
-███████║██║   ██║██╔████╔██║█████╗  ██║     ███████║██████╔╝
-██╔══██║██║   ██║██║╚██╔╝██║██╔══╝  ██║     ██╔══██║██╔══██╗
-██║  ██║╚██████╔╝██║ ╚═╝ ██║███████╗███████╗██║  ██║██████╔╝
-╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝╚═════╝
+ ██ ▄█▀▓█████   █████▒▒█████   ▄████▄   ██▓     ▒█████   █    ██ ▓█████▄ 
+ ██▄█▒ ▓█   ▀ ▓██   ▒▒██▒  ██▒▒██▀ ▀█  ▓██▒    ▒██▒  ██▒ ██  ▓██▒▒██▀ ██▌
+▓███▄░ ▒███   ▒████ ░▒██░  ██▒▒▓█    ▄ ▒██░    ▒██░  ██▒▓██  ▒██░░██   █▌
+▓██ █▄ ▒▓█  ▄ ░▓█▒  ░▒██   ██░▒▓▓▄ ▄██▒▒██░    ▒██   ██░▓▓█  ░██░░▓█▄   ▌
+▒██▒ █▄░▒████▒░▒█░   ░ ████▓▒░▒ ▓███▀ ░░██████▒░ ████▓▒░▒▒█████▓ ░▒████▓ 
+▒ ▒▒ ▓▒░░ ▒░ ░ ▒ ░   ░ ▒░▒░▒░ ░ ░▒ ▒  ░░ ▒░▓  ░░ ▒░▒░▒░ ░▒▓▒ ▒ ▒  ▒▒▓  ▒ 
+░ ░▒ ▒░ ░ ░  ░ ░       ░ ▒ ▒░   ░  ▒   ░ ░ ▒  ░  ░ ▒ ▒░ ░░▒░ ░ ░  ░ ▒  ▒ 
+░ ░░ ░    ░    ░ ░   ░ ░ ░ ▒  ░          ░ ░   ░ ░ ░ ▒   ░░░ ░ ░  ░ ░  ░ 
+░  ░      ░  ░           ░ ░  ░ ░          ░  ░    ░ ░     ░        ░    
+                              ░                                   ░      
 
-  One-shot setup for a fresh Debian machine: Nextcloud (app + PostgreSQL +
-  Redis + Talk HPB/TURN), Caddy, Vaultwarden, Uptime Kuma
-  and the Docker Mailserver + Roundcube platform (named after your
-  domain) behind Cloudflare, with tailscale, ttyd, dnsmasq and goose
-  as host services. Prompts once (domain, Cloudflare API token,
-  Tailscale auth key), then runs unattended — errors are listed with
-  a hint each and re-checked until resolved, and success prints only
-  when all are green.
-
-WARNING: SSH (port 22) is tailnet-only — your current session stays alive, but the next login must come from a Tailscale device.
 EOF
-  _bar_after_print
+  printf '%s[WELCOME]%s Modular installation wizard for https://github.com/%s/%s\n\n' \
+    "$C_GREEN" "$C_RST" "${GITHUB_USER:-?}" "${REPO_NAME:-?}"
+  printf '%s[WARN]%s Operating kefoCloud before completing installation is highly discouraged\n' \
+    "$C_ORANGE" "$C_RST"
+  printf '%s[WARN]%s SSH will be exclusive to the connected tailnet — current session stays alive\n' \
+    "$C_ORANGE" "$C_RST"
+  printf '%s[WARN]%s Full logs at '\''%s'\'' - overridden at each run\n\n' \
+    "$C_ORANGE" "$C_RST" "$LOG"
 }
 
 load_state() {
@@ -339,7 +384,8 @@ ensure_runtime_dirs() {
 ask_boolean() {   # ask_boolean <question> <variable>
   local q="$1" var="$2" answer
   while :; do
-    read -rp "$q (yes/no): " answer || return 1
+    printf '%s[INFO]%s %s (yes/no): ' "$C_GREY" "$C_RST" "$q"
+    read -r answer || return 1
     case "${answer,,}" in
       yes) printf -v "$var" '%s' true;  return 0 ;;
       no)  printf -v "$var" '%s' false; return 0 ;;
@@ -348,12 +394,30 @@ ask_boolean() {   # ask_boolean <question> <variable>
   done
 }
 
+# ONE prompt for the whole module set, space-separated (multiple spaces / commas
+# tolerated, any order). Every name not listed becomes false. On a resume, when
+# all four answers are already saved, the prompt is skipped.
 ask_modules() {
-  local k var
+  local k name all=1 ans ok
   for k in cloud vault mail monitor; do
-    var="MOD_${k^^}"
-    [ -n "${!var:-}" ] && continue        # already answered (resume)
-    ask_boolean "Set up the $k module?" "$var" || exit 1
+    name="MOD_${k^^}"; [ -n "${!name:-}" ] || all=
+  done
+  [ -n "$all" ] && return 0
+  while :; do
+    printf '%s[INFO]%s Modules to install, separated by spaces (cloud mail vault monitor): ' \
+      "$C_GREY" "$C_RST"
+    read -r ans || exit 1
+    ans="${ans,,}"; ans="${ans//,/ }"
+    ok=1
+    for k in $ans; do
+      case "$k" in cloud|vault|mail|monitor) ;; *) echo "   unknown module: $k"; ok= ;; esac
+    done
+    [ -n "$ok" ] || continue
+    for k in cloud vault mail monitor; do
+      name="MOD_${k^^}"
+      case " $ans " in *" $k "*) printf -v "$name" '%s' true ;; *) printf -v "$name" '%s' false ;; esac
+    done
+    return 0
   done
 }
 
@@ -411,7 +475,7 @@ github_cred_inputs() {
   fi
   if [ "${GH_AUTH_OK:-0}" != "1" ]; then
     unset GH_REMOTE
-    ask_boolean "Configure remote access to your own GitHub account's repositories?" GH_REMOTE || exit 1
+    ask_boolean "Are you a collaborator of $REPO_NAME?" GH_REMOTE || exit 1
   fi
   save_state
   [ "${GH_REMOTE}" = "true" ] || return 0
@@ -420,7 +484,8 @@ github_cred_inputs() {
   if [ -z "${GITHUB_COMMIT_NAME:-}" ] || [ -z "${GITHUB_COMMIT_EMAIL:-}" ]; then
     local line
     while :; do
-      read -rp "GitHub commit identity (name email): " line \
+      printf '%s[INFO]%s GitHub commit identity, separated by spaces (name email): ' "$C_GREY" "$C_RST"
+      read -r line \
         || { echo "A commit identity is required when pushing is enabled."; exit 1; }
       line="$(printf '%s' "$line" | tr -d '\r' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
       # The email is the LAST token, the name is everything before it — so a
@@ -434,6 +499,7 @@ github_cred_inputs() {
     done
   fi
   save_state
+  printf '\n## Github SSH Key Prompt\n\n'
   github_access
 }
 
@@ -450,33 +516,34 @@ ask_inputs() {
   # 3 — device SSH public key (strict, required).
   ask_ssh_key
 
-  # 4 — Tailscale auth key.
+  # 4 — Tailscale auth key (input hidden).
   if [ -z "${TS_AUTHKEY:-}" ]; then
-    read -rsp "Tailscale auth key (tskey-...): " TS_AUTHKEY; echo
+    printf '%s[INFO]%s Tailscale Authentication Key: ' "$C_GREY" "$C_RST"
+    read -rsp "" TS_AUTHKEY; echo
   fi
   [ -n "$TS_AUTHKEY" ] || { echo "Auth key required."; exit 1; }
   save_state
 
-  # 5 — Cloudflare API token.
+  # 5 — Cloudflare API token (input hidden).
   if [ -z "${CF_API_TOKEN:-}" ]; then
-    read -rsp "Cloudflare API token (Zone > DNS > Edit): " CF_API_TOKEN; echo
+    printf '%s[INFO]%s Cloudflare API Token: ' "$C_GREY" "$C_RST"
+    read -rsp "" CF_API_TOKEN; echo
   fi
   [ -n "$CF_API_TOKEN" ] || { echo "Token required."; exit 1; }
   save_state
 
   # 6 — domain.
   if [ -z "${DOMAIN:-}" ]; then
-    read -rp "Domain (e.g. example.com): " DOMAIN
+    printf '%s[INFO]%s Domain Name: ' "$C_GREY" "$C_RST"
+    read -r DOMAIN
   fi
   DOMAIN="${DOMAIN,,}"
   [[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]] || { echo "Invalid domain: $DOMAIN"; exit 1; }
   save_state
 
-  # 7 — modules.
+  # 7 — modules (one space-separated prompt).
   ask_modules
   save_state
-
-  msg "Installing for $DOMAIN. Full log: $LOG"
 }
 
 # write_state records the install in $INSTALL_STATE (the enabled modules + the
@@ -700,8 +767,14 @@ github_access() {
 
 # ───────────────────────────── Phase 1 (root) ─────────────────────────────
 
-phase_host() {
-  msg "Phase 1 (host): packages, ssh, docker, tailscale, firewall"
+# ───────────────────────────── Phase 1 (root) ─────────────────────────────
+# One function per checklist task, in checklist (TASK_NAMES) order. Each opens
+# with task_start and closes with task_end, so a `fail` inside marks its row
+# [ERROR] and the run continues through the remaining tasks.
+
+# Dependent Packages: log relocation, hostname, base apt packages.
+task_packages() {
+  task_start
   # Log may contain host/secret-adjacent output — root-readable only, never 666.
   # One-time relocation off the legacy /var/log paths (never drop the old log).
   if [ ! -f "$LOG" ]; then
@@ -712,9 +785,7 @@ phase_host() {
   fi
   touch "$LOG" && chmod 640 "$LOG"
 
-  # Canonical machine name: the machine name and root@$NODE_NAME must
-  # all be '$NODE_NAME'. Set the static hostname so they agree even on a provider
-  # image whose hostname is a throwaway (vps-xxxxxxxx).
+  # Canonical machine name: root@$NODE_NAME must agree with the OS hostname.
   if [ "$(hostname -s 2>/dev/null)" != "$NODE_NAME" ]; then
     hostnamectl set-hostname "$NODE_NAME" >>"$LOG" 2>&1 || true
     detail "  hostname set to $NODE_NAME (tailnet node will be $NODE_NAME)"
@@ -725,37 +796,15 @@ phase_host() {
   # bzip2 the extraction fails and goose lands in the error list as a phantom
   # "unexpected error" whose real cause is a missing extractor.
   # dnsutils = dig: the dkim_setup re-check and its hint query the zone's
-  # nameserver directly ("dig +short TXT mail._domainkey.$DOMAIN @<zone NS>"),
-  # so without it that re-check could never pass and the installer looped on a
-  # dkim tag whose only fault was a missing tool (2026-09-25).
+  # nameserver directly ("dig +short TXT mail._domainkey.$DOMAIN @<zone NS>").
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     git curl make sudo dnsmasq ufw jq apache2-utils fail2ban sqlite3 python3-yaml tmux bzip2 dnsutils >>"$LOG" 2>&1 || fail apt
-  # Docker: Debian packages first (bookworm ships docker-compose-plugin).
-  # trixie does not, so fall back to Docker's official repo (docker-ce).
-  # Skip the whole step when a working docker + compose plugin already exists:
-  # on an already-provisioned box the distro install first REMOVES the working
-  # docker-ce packages (to satisfy `docker.io`) and then aborts on the
-  # docker-buildx / docker-buildx-plugin file conflict (observed 2026-10-15:
-  # dpkg "trying to overwrite '/usr/libexec/docker/cli-plugins/docker-buildx'",
-  # E: Sub-process /usr/bin/dpkg returned an error code (1)), forcing a full
-  # docker-ce reinstall that briefly leaves the host with no runtime mid-install.
-  if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
-    if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io docker-compose-plugin >>"$LOG" 2>&1; then
-      detail "  docker-compose-plugin not in distro — installing docker-ce from Docker's repo"
-      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates curl gnupg >>"$LOG" 2>&1
-      install -m 0755 -d /etc/apt/keyrings
-      curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --yes --dearmor -o /etc/apt/keyrings/docker.gpg 2>>"$LOG"
-      chmod a+r /etc/apt/keyrings/docker.gpg
-      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
-        > /etc/apt/sources.list.d/docker.list
-      DEBIAN_FRONTEND=noninteractive apt-get update -qq >>"$LOG" 2>&1
-      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >>"$LOG" 2>&1 || fail apt
-    fi
-  else
-    detail "  docker + compose plugin already installed — package install skipped"
-  fi
-  command -v docker >/dev/null 2>&1 || fail apt
+  task_end
+}
 
+# SSH Hardening: single operator account + key-only root sshd.
+task_ssh() {
+  task_start
   # Single operator account: root. The provider image may ship a login-capable
   # account (e.g. the cloud-init 'debian' user) — remove every non-root account
   # with a real UID so root@$NODE_NAME is genuinely the only way in.
@@ -781,8 +830,7 @@ phase_host() {
     chmod 600 /root/.ssh/authorized_keys
     # Restart sshd ONLY when the config actually changed: a restart drops every
     # in-flight session, and a re-run that rewrites byte-identical files must not
-    # disconnect the operator mid-install. The digest is taken before and after
-    # the rewrite, so a genuine hardening change still takes effect immediately.
+    # disconnect the operator mid-install.
     local ssh_before ssh_after
     ssh_before=$(cat /etc/ssh/sshd_config.d/50-cloud-init.conf /etc/ssh/sshd_config 2>/dev/null | sha256sum)
     printf 'PasswordAuthentication no\nPermitRootLogin prohibit-password\nAllowUsers root\n' \
@@ -804,6 +852,97 @@ phase_host() {
     fail ssh_keys
     log "no SSH key in /root/.ssh/authorized_keys (ask_ssh_key should have installed one) — add a pubkey, then re-check; sshd stays password-capable until then"
   fi
+  task_end
+}
+
+# Firewall Restriction: ufw (tailnet SSH, public 80/443, mail + Talk ports).
+task_firewall() {
+  task_start
+  ufw allow from 100.64.0.0/10 to any port 22 proto tcp >/dev/null 2>&1
+  # Remove stale installer-session SSH rules from prior runs (tailnet rule stays).
+  while IFS= read -r _ip; do
+    [ "$_ip" = "100.64.0.0/10" ] && continue
+    ufw --force delete allow from "$_ip" to any port 22 proto tcp >/dev/null 2>&1 || true
+  done < <(ufw status numbered 2>/dev/null | grep '22/tcp' | awk '{print $NF}')
+  # Keep the current SSH client reachable even before it joins the tailnet, so
+  # enabling ufw never locks the operator out mid-install. TEMPORARY rule for
+  # the installer session only: finalize_hardening deletes it once the run
+  # succeeds (a permanent rule for a consumer IP would be a standing hole).
+  INSTALLER_SSH_IP="${SSH_CLIENT:+$(echo "$SSH_CLIENT" | awk '{print $1}')}"
+  if [ -n "$INSTALLER_SSH_IP" ]; then
+    ufw allow from "$INSTALLER_SSH_IP" to any port 22 proto tcp >/dev/null 2>&1 || true
+  fi
+  ufw allow 80/tcp >/dev/null 2>&1
+  ufw allow 443/tcp >/dev/null 2>&1
+  # Self-hosted mail (Docker Mailserver): SMTP + submission + IMAPS.
+  ufw allow 25/tcp >/dev/null 2>&1
+  ufw allow 465/tcp >/dev/null 2>&1
+  ufw allow 587/tcp >/dev/null 2>&1
+  ufw allow 993/tcp >/dev/null 2>&1
+  # Nextcloud Talk: TURN/STUN + relay range (talk.$DOMAIN must stay DNS-only).
+  ufw allow 3478/udp >/dev/null 2>&1
+  ufw allow 3478/tcp >/dev/null 2>&1
+  ufw allow 5349/tcp >/dev/null 2>&1
+  ufw allow 49160:49200/udp >/dev/null 2>&1
+  ufw allow 49160:49200/tcp >/dev/null 2>&1
+  echo y | ufw enable >/dev/null 2>&1 || true
+  task_end
+}
+
+# Tailscale Connectivity: install, encrypt state at rest, join, read the IP.
+task_tailscale() {
+  task_start
+  if ! command -v tailscale >/dev/null 2>&1; then
+    curl -fsSL https://tailscale.com/install.sh | sh || fail tailscale
+  fi
+  # Encrypt the tailscaled state file at rest. On Linux the flag NEEDS a TPM
+  # (/dev/tpmrm0): on a box without one, forcing `--encrypt-state` makes
+  # tailscaled fail to start and takes the node offline, so enable it only when
+  # the device exists — and start tailscaled fresh with it before joining.
+  if [ -e /dev/tpmrm0 ] && [ -f /etc/default/tailscaled ]; then
+    if ! grep -q -- '--encrypt-state' /etc/default/tailscaled; then
+      sed -i -E 's|^FLAGS=.*|FLAGS="--encrypt-state"|' /etc/default/tailscaled
+      systemctl restart tailscaled >>"$LOG" 2>&1 || log "tailscaled restart failed after enabling --encrypt-state"
+      detail "  tailscale state encryption enabled (FLAGS=--encrypt-state, TPM present)"
+    fi
+  elif [ ! -e /dev/tpmrm0 ]; then
+    detail "  no TPM (/dev/tpmrm0): tailscale state encryption unsupported here — left off"
+  fi
+  if ! tailscale ip -4 >/dev/null 2>&1; then
+    # No --hostname: the tailnet node adopts the OS hostname ($NODE_NAME) so the
+    # sole entry point is root@$NODE_NAME (MagicDNS).
+    tailscale up --authkey="$TS_AUTHKEY" >>"$LOG" 2>&1 || fail tailscale_up
+  fi
+  TS_IP=$(tailscale ip -4 2>/dev/null | head -1)
+  [ -n "$TS_IP" ] && log "tailscale IP: $TS_IP" || fail ts_ip
+  task_end
+}
+
+# Docker Framework: docker engine (+ daemon config), then goose.
+task_docker() {
+  task_start
+  # Debian packages first (bookworm ships docker-compose-plugin); trixie does
+  # not, so fall back to Docker's official repo (docker-ce). Skip the whole step
+  # when a working docker + compose plugin already exists: on an already-
+  # provisioned box the distro install removes the working docker-ce packages
+  # and aborts on the docker-buildx / docker-buildx-plugin file conflict
+  # (2026-10-15), forcing a full docker-ce reinstall.
+  if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
+    if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io docker-compose-plugin >>"$LOG" 2>&1; then
+      detail "  docker-compose-plugin not in distro — installing docker-ce from Docker's repo"
+      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates curl gnupg >>"$LOG" 2>&1
+      install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --yes --dearmor -o /etc/apt/keyrings/docker.gpg 2>>"$LOG"
+      chmod a+r /etc/apt/keyrings/docker.gpg
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+        > /etc/apt/sources.list.d/docker.list
+      DEBIAN_FRONTEND=noninteractive apt-get update -qq >>"$LOG" 2>&1
+      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >>"$LOG" 2>&1 || fail apt
+    fi
+  else
+    detail "  docker + compose plugin already installed — package install skipped"
+  fi
+  command -v docker >/dev/null 2>&1 || fail apt
 
   systemctl enable --now docker >>"$LOG" 2>&1 || log "docker enable/start failed (re-checks will catch it)"
   mkdir -p /etc/docker
@@ -829,8 +968,7 @@ EOF
 
   if ! command -v goose >/dev/null 2>&1 && [ ! -x /usr/local/bin/goose ]; then
     # Official installer (release archive, .tar.bz2 — hence the bzip2 apt dep
-    # above). Its output goes to the log, not /dev/null, so a failure is
-    # diagnosable instead of surfacing as a bare "goose binary not installed".
+    # above). Output goes to the log, so a failure is diagnosable.
     curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh \
       | CONFIGURE=false GOOSE_BIN_DIR=/usr/local/bin bash >>"$LOG" 2>&1 || true
   fi
@@ -843,65 +981,7 @@ EOF
     install -m 0755 "$HOME/.local/bin/goose" /usr/local/bin/goose || true
   fi
   command -v goose >/dev/null 2>&1 || [ -x /usr/local/bin/goose ] || fail goose
-
-  if ! command -v tailscale >/dev/null 2>&1; then
-    curl -fsSL https://tailscale.com/install.sh | sh || fail tailscale
-  fi
-  # Encrypt the tailscaled state file at rest (the console's tsStateEncrypted).
-  # On Linux the flag NEEDS a TPM (/dev/tpmrm0): on a box without one, forcing
-  # `--encrypt-state` makes tailscaled fail to start and takes the node offline,
-  # so enable it only when the device exists — and start tailscaled fresh with
-  # it before joining, so the state is encrypted from the first write.
-  if [ -e /dev/tpmrm0 ] && [ -f /etc/default/tailscaled ]; then
-    if ! grep -q -- '--encrypt-state' /etc/default/tailscaled; then
-      sed -i -E 's|^FLAGS=.*|FLAGS="--encrypt-state"|' /etc/default/tailscaled
-      systemctl restart tailscaled >>"$LOG" 2>&1 || log "tailscaled restart failed after enabling --encrypt-state"
-      detail "  tailscale state encryption enabled (FLAGS=--encrypt-state, TPM present)"
-    fi
-  elif [ ! -e /dev/tpmrm0 ]; then
-    detail "  no TPM (/dev/tpmrm0): tailscale state encryption unsupported here — left off"
-  fi
-  if ! tailscale ip -4 >/dev/null 2>&1; then
-    # No --hostname: the tailnet node adopts the OS hostname ($NODE_NAME, set in
-    # phase_host) automatically, so the sole entry point is root@$NODE_NAME (MagicDNS).
-    tailscale up --authkey="$TS_AUTHKEY" >>"$LOG" 2>&1 || fail tailscale_up
-  fi
-  TS_IP=$(tailscale ip -4 2>/dev/null | head -1)
-  [ -n "$TS_IP" ] && log "tailscale IP: $TS_IP" || fail ts_ip
-
-  ufw allow from 100.64.0.0/10 to any port 22 proto tcp >/dev/null 2>&1
-  # Remove stale installer-session SSH rules from prior runs (tailnet rule is kept).
-  while IFS= read -r _ip; do
-    [ "$_ip" = "100.64.0.0/10" ] && continue
-    ufw --force delete allow from "$_ip" to any port 22 proto tcp >/dev/null 2>&1 || true
-  done < <(ufw status numbered 2>/dev/null | grep '22/tcp' | awk '{print $NF}')
-  # Keep the current SSH client reachable even before it joins the tailnet, so
-  # enabling ufw never locks the operator out mid-install. This is a TEMPORARY
-  # rule for the installer session only: the IP is remembered and the rule is
-  # deleted once the run succeeds (finalize_hardening) — a permanent rule for a
-  # consumer/dynamic IP would be a standing hole.
-  INSTALLER_SSH_IP="${SSH_CLIENT:+$(echo "$SSH_CLIENT" | awk '{print $1}')}"
-  if [ -n "$INSTALLER_SSH_IP" ]; then
-    ufw allow from "$INSTALLER_SSH_IP" to any port 22 proto tcp >/dev/null 2>&1 || true
-  fi
-  ufw allow 80/tcp >/dev/null 2>&1
-  ufw allow 443/tcp >/dev/null 2>&1
-  # Self-hosted mail (Docker Mailserver): SMTP + submission + IMAPS. Inbound 25
-  # can be provider-blocked on some machines — these are open so mail works the
-  # moment the provider allows it.
-  ufw allow 25/tcp >/dev/null 2>&1
-  ufw allow 465/tcp >/dev/null 2>&1
-  ufw allow 587/tcp >/dev/null 2>&1
-  ufw allow 993/tcp >/dev/null 2>&1
-  # Nextcloud Talk: TURN/STUN + relay range (talk.$DOMAIN must stay DNS-only).
-  ufw allow 3478/udp >/dev/null 2>&1
-  ufw allow 3478/tcp >/dev/null 2>&1
-  ufw allow 5349/tcp >/dev/null 2>&1
-  ufw allow 49160:49200/udp >/dev/null 2>&1
-  ufw allow 49160:49200/tcp >/dev/null 2>&1
-  echo y | ufw enable >/dev/null 2>&1 || true
-
-  save_state
+  task_end
 }
 
 # ────────────────────────────── Phase 2 (stack) ───────────────────────────
@@ -1172,48 +1252,13 @@ host_services() {
 }
 
 containers_up() {
-  detail "  building Caddy image (caddy:local)"
-  export BUILD_START="$(date +%s)"
-  # Live loading bar, TTY only (the full verbose build output goes to $LOG). A
-  # background ping-pong bar sweeps a block left↔right; the elapsed seconds are
-  # appended each tick, so the one visible line is '<bar> <n>s'. *Whole*
-  # strings are printed (no `cut -c` / substring slicing, which split the
-  # multi-byte glyph under the C locale into '?'). Skipped when stdout is not
-  # a TTY.
-  local spinner_pid=""
-  if [ -t 1 ]; then
-    {
-      local MAX=11 R=0 RSP LSP
-      while true; do
-        for (( R = 0; R < MAX; R++ )); do
-          RSP=$(( MAX - R )); [ $RSP -gt $MAX ] && RSP=$MAX
-          LSP=$(( MAX - RSP ))
-          printf '  %s%s%s' "[" "$(printf '%*s' $LSP '' | tr ' ' ' ')" '#####'
-          printf '%s' "$(printf '%*s' $RSP '' | tr ' ' ' ')"
-          printf ']  %02ds\r' "$(( $(date +%s) - BUILD_START ))"
-          sleep 0.08
-        done
-        for (( R = MAX - 1; R > 0; R-- )); do
-          RSP=$(( MAX - R )); [ $RSP -ge $MAX ] && RSP=$MAX
-          printf '  %s%s%s' "[" "$(printf '%*s' $R '' | tr ' ' ' ')" '#####'
-          printf '%s' "$(printf '%*s' $RSP '' | tr ' ' ' ')"
-          printf ']  %02ds\r' "$(( $(date +%s) - BUILD_START ))"
-          sleep 0.08
-        done
-      done
-    } >/dev/tty 2>/dev/tty &
-    spinner_pid=$!
-  fi
-  # The dok-recreate recipe already falls back to docker build + compose up
-  # when compose's buildx is too old (Debian trixie), so no manual fallback
-  # is needed here.
+  # The checklist's own [TASK] animation is the progress indicator, so the Caddy
+  # build prints nothing here (its verbose output goes to $LOG). The dok-recreate
+  # recipe already falls back to docker build + compose up when compose's buildx
+  # is too old (Debian trixie).
   log "  recreate: caddy (image build)"
   make dok-recreate-caddy >>"$LOG" 2>&1 || fail caddy
-  local took=$(($(date +%s) - BUILD_START))
-  [ -n "$spinner_pid" ] && { kill "$spinner_pid" >/dev/tty 2>&1; wait "$spinner_pid" >/dev/null 2>&1; }
-  # A newline clears the last bar tick before the closing line is printed.
-  [ -t 1 ] && printf '\n' >/dev/tty 2>/dev/null
-  detail "  Caddy image built (${took}s)"
+  detail "  Caddy image built"
   # PostgreSQL first — the nextcloud entrypoint's fresh install needs the DB
   # reachable (POSTGRES_HOST from .env, set by talk-gen above). Caddy's
   # DNS-01 issuance runs at startup, so the mail/turn certs the talk stack
@@ -2196,30 +2241,47 @@ sweep() {
   [ -z "$(sweep_hits)" ] || fail sweep
 }
 
-phase_stack() {
-  msg "Phase 2 (stack): repo, host config, containers, DNS, certs"
-  # Fail fast: the Cloudflare zone must already exist (the script cannot
-  # create one — that needs nameservers pointing at Cloudflare).
-  if [ -z "$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
-        "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" | jq -r '.result[0].id // empty')" ]; then
-    fail zone "create the zone in the CF dashboard (point your nameservers there), then re-run"
-    exit 1
-  fi
-  ensure_repo
-  install_hooks
-  prep_dirs
-  seed_stack
+# ── Phase 2 (stack) — one function per checklist task, in checklist order ──
+
+# Docker Containers: render + secrets + prep dirs, then bring the stack up.
+task_containers() {
+  task_start
+  cd "$REPO" || exit 1
   docker_net
   caddy_data
-  cf_dns
-  host_services
+  prep_dirs
+  write_instance_conf
+  seed_stack
   containers_up
-  # Per-module setup in dependency order (default: everything ON). The mail
-  # stack comes FIRST when it is enabled: both SMTP sender mailboxes
-  # (nextcloud@, vaultwarden@) need a mailserver that is past its own boot, and
-  # the DKIM publish needs the same container — running the mail work first is
-  # what keeps a slow DMS boot from surfacing as a mailbox failure halfway
-  # through the run (2026-10-15).
+  task_end
+}
+
+# Repository Management: repo identity + host services (make install-config).
+task_repo() {
+  task_start
+  ensure_repo
+  install_hooks
+  host_services
+  task_end
+}
+
+# DNS Records: Cloudflare A/MX/SPF/DKIM/DMARC + SSL mode.
+task_dns() {
+  task_start
+  cf_dns
+  task_end
+}
+
+# SSL Certificates: trigger + verify LE issuance for every vhost.
+task_certs() {
+  task_start
+  issue_certs
+  task_end
+}
+
+# Module Contents: per-module setup (mail/DKIM, Nextcloud, Vaultwarden, Kuma).
+task_modules() {
+  task_start
   if mod_on mail; then
     mail_wait_ready
     dkim_setup
@@ -2228,9 +2290,25 @@ phase_stack() {
     nextcloud_setup
   fi
   mod_on vault && vaultwarden_setup
-  issue_certs
   mod_on monitor && kuma_seed
   sweep
+  task_end
+}
+
+# The ordered task list. "Smoke Pass" is the last task and is marked from
+# finalize_install — it runs only after the push and the finished checkpoint.
+run_install() {
+  task_packages
+  task_ssh
+  task_firewall
+  task_tailscale
+  task_docker
+  task_containers
+  task_repo
+  task_dns
+  task_certs
+  task_modules
+  save_state
 }
 
 # ──────────────────────── error problems + hints ──────────────────────────
@@ -2472,15 +2550,21 @@ finalize_install() {
   write_state
   # 4-5: smoke's exit code is the verdict. Pass → the checkpoint we just wrote
   # stands (finished=true). Fail → this script writes finished=false and stops.
+  # "Smoke Pass" is the last checklist row, marked here because smoke only runs
+  # after the push and the finished checkpoint.
+  task_start
   if ! run_smoke; then
+    TASK_ERR=1
     FINISHED=false
     write_state
     CHECKPOINT_OPEN=
+    task_end
     echo ""
     msg " NOT FINISHED — install.state is recorded pending (finished=false)."
     echo " Fix the failure above, then re-run the installer to finish."
     return 0
   fi
+  task_end
   CHECKPOINT_OPEN=
   success_block
   ask_optimize
@@ -2514,7 +2598,7 @@ ask_optimize() {
 finalize_hardening() {
   # Runs once every error is resolved: if a key exists now, harden sshd
   # (phase 1 skipped it when no key was present at install time). Same
-  # change-detection as phase_host — a re-run that writes identical config does
+  # change-detection as task_ssh — a re-run that writes identical config does
   # not restart sshd, so an operator's session is never dropped for nothing.
   if [ -s /root/.ssh/authorized_keys ]; then
     local before after
@@ -2551,6 +2635,7 @@ success_block() {
   echo "   machine IP ${HOST_IP:-?}   Tailscale IP ${TS_IP:-?}"
   echo ""
   echo " SSH: root@$NODE_NAME is the only entry point (key-only, tailnet-only, port 22)."
+  echo " new ssh command is ssh root@$NODE_NAME"
   echo ""
   echo " ── SSH ACCESS ───────────────────────────────────────────────────────────"
   if [ -s /root/.ssh/authorized_keys ]; then
@@ -2649,17 +2734,25 @@ main() {
   migrate_state             # one-time legacy setup.state import (before load)
   banner
   load_state
+
+  # Consent gate: nothing is touched until the operator says yes.
+  local _go
+  ask_boolean "Do you wish to continue?" _go || _go=false
+  if [ "$_go" != "true" ]; then
+    log "  aborted at the continue prompt — nothing was changed"
+    exit 0
+  fi
+
   if previous_install; then
     echo ""
-    msg "A previous installation was detected."
     local _res
-    ask_boolean "Resume the previous installation?" _res || _res=false
+    ask_boolean "'install.state' detected - Apply previous answers?" _res || _res=false
     if [ "$_res" = "true" ]; then
-      msg "Resuming — every value already saved is reused; only missing ones are asked."
+      detail "  resuming — every saved value is reused; only missing ones are asked"
     else
       # Fresh run: IGNORE the previous answers (never take them as valid) but do
       # NOT delete them — a later run can still resume. Everything is re-asked.
-      msg "Starting fresh — every value is asked again (saved answers ignored, not deleted)."
+      detail "  starting fresh — every value is asked again (saved answers ignored, not deleted)"
       unset DOMAIN CF_API_TOKEN TS_AUTHKEY TS_IP \
             MOD_CLOUD MOD_VAULT MOD_MAIL MOD_MONITOR \
             GH_REMOTE GH_AUTH_OK \
@@ -2677,18 +2770,17 @@ main() {
   detail "  answers: cloudflare_token=$([ -n "${CF_API_TOKEN:-}" ] && echo present || echo MISSING) tailscale_key=$([ -n "${TS_AUTHKEY:-}" ] && echo present || echo MISSING) github_remote=${GH_REMOTE:-false}"
   save_state
 
-  write_instance_conf
-  # The bar carries the CURRENT phase, so each phase opens it and every later
-  # print lands above it. Stopped before the summary so the closing blocks are
-  # not overwritten by a redrawn line.
-  msg "=== phase 1/2 — host"
-  _bar_begin "phase 1/2 — host: packages, ssh, docker, tailscale, firewall"
-  phase_host
-  msg "=== phase 2/2 — stack"
-  detail "  modules enabled: $(enabled_modules_list) (per-module: cloud=$(mod_on cloud && echo on || echo off) vault=$(mod_on vault && echo on || echo off) mail=$(mod_on mail && echo on || echo off) monitor=$(mod_on monitor && echo on || echo off))"
-  _bar_begin "phase 2/2 — stack: repo, containers, DNS, certs, modules, smoke"
-  phase_stack
-  _bar_stop
+  # Fail fast: the Cloudflare zone must already exist (the script cannot create
+  # one — that needs nameservers pointing at Cloudflare).
+  if [ -z "$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
+        "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" | jq -r '.result[0].id // empty')" ]; then
+    fail zone "create the zone in the CF dashboard (point your nameservers there), then re-run"
+    exit 1
+  fi
+
+  msg "Starting installation.."
+  _tasks_draw
+  run_install
   resolve_errors
 }
 
