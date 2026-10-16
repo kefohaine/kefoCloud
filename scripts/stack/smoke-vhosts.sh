@@ -7,6 +7,10 @@
 # source, not a diagnostic for a host mid-install — and there is NO bypass
 # (a pre-push hook on an unfinished host therefore always fails: intentional).
 #
+# CHECKPOINT: the verdict is written back as install.state `finished` — FAILED
+# records false, PASSED records true (through `make smoke-record`, only when
+# install.sh invoked us: the pre-push hook never rewrites state).
+#
 # Module awareness: the roster comes from config/modules.conf; the enabled set
 # from data/install.state via scripts/lib/modules.sh — the ONE accessor. Every
 # check still runs factually. The CORE sections (edge, host) and every
@@ -339,15 +343,29 @@ fi
 end_sec
 
 echo ""
-# Disabled modules: their failures are shown ONCE here, listed but not counted.
-if [ -n "$IGNORED" ]; then
-  echo "== Not installed / ignored ($ignored_total failing check(s) in modules not installed — not counted) =="
+# Every module not installed gets ONE shared section at the end, ALWAYS printed
+# (informational only): its checks are listed, never counted toward the exit.
+# The point is that a pending/failed install shows WHY in one place instead of
+# scattering red across the report.
+absent=""
+for m in $mods_absent; do absent="$absent${absent:+, }$m"; done
+if [ -n "${mods_absent:-}" ]; then
+  echo "== Not installed / ignored — module(s) not installed: ${mods_absent% } =="
+  echo "   informational only, never counted — these modules are ABSENT (no container, no route)."
   printf '%s' "$IGNORED"
+  echo "   $ignored_total failing check(s) here, ${fails} failing check(s) in core / enabled modules."
   echo ""
 fi
+# The checkpoint follows the VERDICT: a failing core/enabled check records
+# finished=false, a pass records finished=true. The write goes through
+# `make smoke-record`, which needs SMOKE_STATE=1 — set by install.sh and by
+# nobody else, so an operator's own `make smoke` and the pre-push hook only
+# report and never rewrite state.
 if [ "$fails" -gt 0 ]; then
   echo "SMOKE FAILED — $fails failing check(s) in core / enabled modules. Fix before committing/pushing."
+  SMOKE_STATE=1 make -C "$ROOT" -s smoke-record FIN=false 2>/dev/null || true
   exit 1
 fi
+SMOKE_STATE=1 make -C "$ROOT" -s smoke-record FIN=true 2>/dev/null || true
 echo "SMOKE PASSED — core + every enabled module serves its real app."
 exit 0
