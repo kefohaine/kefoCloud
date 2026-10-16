@@ -51,16 +51,22 @@ compose-file-of = $(REPO)/$(COMPOSE_FILE_$1)
 # buildx 0.13.1, which is too old for `compose ... --build` (needs >= 0.17).
 # Try the compose build first and fall back to plain `docker build` + compose
 # up (the install.sh pattern) so `make dok-recreate-caddy` works everywhere.
+# --remove-orphans on every recreate: a container left over from a RENAMED or
+# REMOVED service in the same compose file keeps running with the old name and
+# the old config, and compose only warns ("Found orphan containers (...)"). The
+# installer then probes the name it expects, finds nothing serving, and reports a
+# failure on a stack that is actually healthy. Recreate is the one place the
+# operator has asked for "this file, exactly as written", so the orphans go.
 define dok_recreate_rule
 dok-recreate-$1:
 >@if [ "$1" = "caddy" ]; then \
-    if ! $(COMPOSE) $(call compose-file-of,$1) up -d --force-recreate --build; then \
+    if ! $(COMPOSE) $(call compose-file-of,$1) up -d --force-recreate --remove-orphans --build; then \
       scripts/lib/mklog warn "compose build unavailable (buildx < 0.17 on trixie) — falling back to docker build + compose up"; \
       docker build -t caddy:local $(REPO)/modules/caddy \
-        && $(COMPOSE) $(call compose-file-of,$1) up -d --force-recreate; \
+        && $(COMPOSE) $(call compose-file-of,$1) up -d --force-recreate --remove-orphans; \
     fi; \
   else \
-    $(COMPOSE) $(call compose-file-of,$1) up -d --force-recreate; \
+    $(COMPOSE) $(call compose-file-of,$1) up -d --force-recreate --remove-orphans; \
   fi
 endef
 $(foreach s,$(CONTAINERS),$(eval $(call dok_recreate_rule,$s)))
@@ -91,13 +97,13 @@ $(foreach s,$(CONTAINERS),$(eval $(call dok_logs_rule,$s)))
 define dok_recreate_all_cmds
 @for f in $(REPO)/modules/*/docker-compose.yml; do \
     if [ "$$f" = "$(REPO)/modules/caddy/docker-compose.yml" ]; then \
-      if ! $(COMPOSE) "$$f" up -d --force-recreate --build; then \
+      if ! $(COMPOSE) "$$f" up -d --force-recreate --remove-orphans --build; then \
         scripts/lib/mklog warn "compose build unavailable (buildx < 0.17 on trixie) — falling back to docker build + compose up"; \
         docker build -t caddy:local $(REPO)/modules/caddy \
-          && $(COMPOSE) "$$f" up -d --force-recreate; \
+          && $(COMPOSE) "$$f" up -d --force-recreate --remove-orphans; \
       fi; \
     else \
-      $(COMPOSE) "$$f" up -d --force-recreate; \
+      $(COMPOSE) "$$f" up -d --force-recreate --remove-orphans; \
     fi; \
   done
 endef
@@ -564,7 +570,7 @@ install-cron:
 # ─────────────────────────────────────────────────────────────────────────────
 
 dok-recreate-nextcloud-db:
->$(COMPOSE) $(REPO)/modules/nextcloud/docker-compose.db.yml up -d --force-recreate
+>$(COMPOSE) $(REPO)/modules/nextcloud/docker-compose.db.yml up -d --force-recreate --remove-orphans
 
 dok-restart-nextcloud-db:
 >$(COMPOSE) $(REPO)/modules/nextcloud/docker-compose.db.yml restart
