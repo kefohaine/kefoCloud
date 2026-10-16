@@ -885,7 +885,11 @@ github_set_identity() {
   [ -n "${GITHUB_COMMIT_NAME:-}" ] && [ -n "${GITHUB_COMMIT_EMAIL:-}" ] || return 0
   git -C "$REPO" config user.name  "$GITHUB_COMMIT_NAME" || true
   git -C "$REPO" config user.email "$GITHUB_COMMIT_EMAIL" || true
-  detail "  git identity set to '$GITHUB_COMMIT_NAME <$GITHUB_COMMIT_EMAIL>' (repo-local)"
+  # Never let git invent an identity: with useConfigOnly set, an unset name/email
+  # is a hard error instead of the silent root@<host> fallback that put root
+  # commits in this history. The repo-local config above IS the identity.
+  git -C "$REPO" config user.useConfigOnly true || true
+  detail "  git identity set to '$GITHUB_COMMIT_NAME <$GITHUB_COMMIT_EMAIL>' (repo-local, no invented fallback)"
 }
 
 github_access() {
