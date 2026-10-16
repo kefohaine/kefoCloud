@@ -6,10 +6,7 @@
 # run (exit 1) before checking anything. smoke is the LAST "is everything done?"
 # source, not a diagnostic for a host mid-install — and there is NO bypass
 # (a pre-push hook on an unfinished host therefore always fails: intentional).
-#
-# CHECKPOINT: the verdict is written back as install.state `finished` — FAILED
-# records false, PASSED records true (through `make smoke-record`, only when
-# install.sh invoked us: the pre-push hook never rewrites state).
+
 #
 # Module awareness: the roster comes from config/modules.conf; the enabled set
 # from data/install.state via scripts/lib/modules.sh — the ONE accessor. Every
@@ -356,16 +353,12 @@ if [ -n "${mods_absent:-}" ]; then
   echo "   $ignored_total failing check(s) here, ${fails} failing check(s) in core / enabled modules."
   echo ""
 fi
-# The checkpoint follows the VERDICT: a failing core/enabled check records
-# finished=false, a pass records finished=true. The write goes through
-# `make smoke-record`, which needs SMOKE_STATE=1 — set by install.sh and by
-# nobody else, so an operator's own `make smoke` and the pre-push hook only
-# report and never rewrite state.
+# smoke never touches install.state: its exit code IS the verdict, and the ONLY
+# thing that may act on that verdict is install.sh (the sole writer of
+# install.state). An operator's `make smoke` and the pre-push hook just report.
 if [ "$fails" -gt 0 ]; then
   echo "SMOKE FAILED — $fails failing check(s) in core / enabled modules. Fix before committing/pushing."
-  SMOKE_STATE=1 make -C "$ROOT" -s smoke-record FIN=false 2>/dev/null || true
   exit 1
 fi
-SMOKE_STATE=1 make -C "$ROOT" -s smoke-record FIN=true 2>/dev/null || true
 echo "SMOKE PASSED — core + every enabled module serves its real app."
 exit 0
