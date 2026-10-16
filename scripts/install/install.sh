@@ -202,7 +202,9 @@ _task_row() {
     skip)  printf '%s[SKIP]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
     error) printf '%s[ERROR]%s %s[%s]%s %s\n' "$C_RED"    "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
     run)   printf '%s[TASK]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$(_anim_field)" "$C_RST" "$name" ;;
-    *)     printf '%s[WAIT]%s %s[%s]%s %s\n'  "$C_GREY"   "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
+    # A pending row has no time yet: the placeholder stands until the task
+    # starts (then it is the [TASK] marker) and finishes (a real HH:MM:SS).
+    *)     printf '%s[WAIT]%s %s[%s]%s %s\n'  "$C_GREY"   "$C_RST" "$C_PURPLE" "—:—:—" "$C_RST" "$name" ;;
   esac
 }
 # Everything printed below the checklist block is "tail": lines an interactive
@@ -306,7 +308,9 @@ _task_resume() {
 }
 _tasks_draw() {
   local i
-  for i in $(seq 0 $((TASK_TOTAL - 1))); do TASK_STATE[$i]=wait; TASK_TS[$i]=$(date +%H:%M:%S); done
+  # A row's time is set when it ends (task_end); a [WAIT] row shows the
+  # placeholder instead, so nothing is pre-filled here.
+  for i in $(seq 0 $((TASK_TOTAL - 1))); do TASK_STATE[$i]=wait; done
   [ -t 1 ] || return 0
   # Learn the terminal width (for _note's physical-row counting) and re-assert
   # the tty's NL policy before the block exists: any earlier subcommand that ran
