@@ -211,6 +211,13 @@ task_reinstall_skip() {   # task_reinstall_skip <task-function-name>
   reinstall_unrelated "$1" || return 1
   detail "  outside data/ — skipped (a reinstall rebuilds the production stack only)"
   task_skip
+  # A pre-marked row is already on screen as [SKIP]; only its time is written,
+  # and only when the draw did not stamp it (see stamp_skips) — never a repaint
+  # of the status column.
+  if [ "${TASK_DRAWN:-}" = "1" ] && [ -z "${TASK_TS[$TASK_CUR]:-}" ]; then
+    TASK_TS[$TASK_CUR]=$(date +%H:%M:%S)
+    _task_update "$TASK_CUR"
+  fi
   return 0
 }
 TASK_TOTAL=${#TASK_NAMES[@]}
@@ -344,12 +351,9 @@ _task_resume() {
     _TAIL=0
     _task_update "$TASK_CUR"
   fi
-  # Only a row that is genuinely RUNNING animates: never a [SKIP] row that was
-  # pre-marked (they are ruled out before the run) nor a finished one, so an
-  # animator can never repaint a row's status into something it is not.
-  if [ -n "$TASK_DRAWN" ] && [ -n "$TASK_ACTIVE" ] && [ -z "$ANIM_PID" ]      && [ "${TASK_STATE[$TASK_CUR]:-}" = run ]; then
+  [ -n "$TASK_DRAWN" ] && [ -n "$TASK_ACTIVE" ] && [ -z "$ANIM_PID" ] && {
     _task_anim "$TASK_CUR" & ANIM_PID=$!
-  fi
+  }
 }
 _tasks_draw() {
   local i
@@ -389,7 +393,17 @@ _tasks_draw() {
 }
 task_start() {
   TASK_CUR=$(( TASK_CUR + 1 )); TASK_ACTIVE=1 TASK_ERR= TASK_SKIP=
-  if [ "${TASK_STATE[$TASK_CUR]:-}" = skip ]; then TASK_SKIP=1; return 0; fi
+  # A row that is ALREADY [SKIP] (pre-marked at draw: see _tasks_draw/stamp_skips)
+  # never becomes a running row: the row is not repainted and the animator is not
+  # started, so no [EXEC] can ever appear for work that was ruled out before the
+  # run began — TASK_DRAWN is also cleared for it, so nothing later (task_end,
+  # _task_resume) repaints it either. The body still runs its guard, so the code
+  # is skipped as usual; TASK_SKIP keeps task_end from calling it [DONE].
+  if [ "${TASK_STATE[$TASK_CUR]:-}" = skip ]; then
+    TASK_SKIP=1
+    TASK_DRAWN=
+    return 0
+  fi
   TASK_STATE[$TASK_CUR]=run
   if [ -n "$TASK_DRAWN" ]; then
     _task_update "$TASK_CUR"
@@ -402,6 +416,11 @@ task_start() {
 # a module the operator turned off, and a task outside the reinstall's scope
 # (task_reinstall_skip). Either way the row reads [SKIP] in the status column.
 task_skip() { [ -n "$TASK_ACTIVE" ] && TASK_SKIP=1; return 0; }
+# True when row $1 (default: the current one) was marked [SKIP] BEFORE the run
+# reached it: the draw marks every row the mode will never run (a reinstall
+# pre-marks everything outside data/). Such a row is already on screen as [SKIP]
+# with its own time, so it must never be reopened as a running row.
+task_skip_premark() { [ "${TASK_STATE[${1:-$TASK_CUR}]:-}" = skip ]; }
 # True when row $1 was marked [SKIP] BEFORE the pipeline reached it (a reinstall
 # pre-marks every row outside data/, and an unchanged resume pre-marks the app
 # step). Such a row was already painted with its own time, so it must not be
@@ -417,7 +436,13 @@ task_end() {
   if   [ -n "${TASK_ERR:-}" ];  then TASK_STATE[$TASK_CUR]=error
   elif [ -n "${TASK_SKIP:-}" ]; then TASK_STATE[$TASK_CUR]=skip
   else                               TASK_STATE[$TASK_CUR]=done; fi
-  if [ -n "$TASK_DRAWN" ]; then _task_update "$TASK_CUR"; else _task_row "$TASK_CUR"; fi
+  # A [SKIP] row was already painted (with its time) when it was ruled out, so it
+  # is not repainted here: nothing in the run can turn a skipped row into an
+  # [EXEC] flash.
+  if [ "${TASK_STATE[$TASK_CUR]}" = skip ]; then
+    :
+  elif [ -n "$TASK_DRAWN" ]; then _task_update "$TASK_CUR"
+  else _task_row "$TASK_CUR"; fi
   # TASK_ERR is deliberately NOT cleared here: run_install reads it right after
   # task_end to decide whether to pause on the failed row (task_start resets it).
   TASK_ACTIVE= TASK_SKIP=
@@ -2929,12 +2954,6 @@ task_hygiene() {
 # past a failure and marks the rest [DONE].
 pause_and_resolve() {
   local tag still
-  # Stop the animator for the whole exchange: the error block and its prompt are
-  # printed BELOW the to-do list, and a live animator would keep repainting the
-  # running row inside the block being written (the 2026-10-16 overlap). Every
-  # exit path takes the matching _task_resume (which wipes the tail and restores
-  # the block), so the checklist always comes back on its own row.
-  _task_pause
   while [ ${#ERR_TAGS[@]} -gt 0 ]; do
     _note ""
     _note "$(printf '%s┌─ [FAIL]%s resolve to continue' "$C_RED" "$C_RST")"
@@ -2945,10 +2964,10 @@ pause_and_resolve() {
     _note "$(printf '%s└──────────────────────────────────────────────%s' "$C_RED" "$C_RST")"
     # No terminal to answer on (piped / cron / CI): the error cannot be resolved
     # here, so stop LOUD instead of running on through the rest of the checklist.
-    if [ ! -t 0 ]; then _tail_clear; _task_resume; return 1; fi
+    if [ ! -t 0 ]; then _tail_clear; return 1; fi
     printf '%s[INFO]%s Fix / complete the items above, then press Enter to re-check (Ctrl-C aborts): ' "$C_GREY" "$C_RST"
     # Aborted (Ctrl-C / EOF) with the error still open → hard stop.
-    read -r _ || { _task_count 1; _tail_clear; _task_resume; return 1; }
+    read -r _ || { _task_count 1; _tail_clear; return 1; }
     _task_count 1
     still=()
     for tag in "${ERR_TAGS[@]}"; do
@@ -2970,7 +2989,6 @@ pause_and_resolve() {
     _tail_clear
     [ ${#ERR_TAGS[@]} -eq 0 ] && { TASK_STATE[$TASK_CUR]=done; _task_update "$TASK_CUR"; }
   done
-  _task_resume
   return 0
 }
 
@@ -2996,6 +3014,11 @@ pause_and_resolve() {
 # around it so a smoke failure shows as this row's [FAIL].
 task_smoke() {
   task_start
+  # The row may be one the draw already ruled out (a reinstall still shows Smoke
+  # Pass, marked [SKIP]): smoke then does NOT run, and the gate is checked before
+  # it — otherwise the row would be started and its [EXEC] marker would replace
+  # the [SKIP] the operator was already shown.
+  if task_skip_premark; then task_skip; task_end; return 0; fi
   run_smoke || TASK_ERR=1
   task_end
 }
