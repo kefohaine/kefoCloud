@@ -3234,6 +3234,12 @@ main() {
   banner
   load_state
 
+  # Each run starts UNFINISHED: whatever a previous run recorded (even
+  # finished=true) is cleared here, so an interrupted run can never leave a
+  # stale finished=true that a reader (smoke, modules.sh) would trust.
+  FINISHED=false
+  save_state
+
   # Consent gate: nothing is touched until the operator says yes.
   local _go
   ask_boolean "Do you wish to continue?" _go || _go=false
