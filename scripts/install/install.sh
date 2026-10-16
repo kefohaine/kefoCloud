@@ -2624,14 +2624,12 @@ finalize_install() {
 ask_optimize() {
   local answer rc
   [ -f "$REPO/scripts/ops/optimize.sh" ] || return 0
-  while :; do
-    read -rp "Also run the machine performance pass (kernel, swap, disk tuning) now? (yes/no): " answer || return 0
-    case "${answer,,}" in
-      yes) break ;;
-      no)  log "  optimize.sh skipped — run it later: bash $REPO/scripts/ops/optimize.sh"; return 0 ;;
-      *)   echo "   type yes or no." ;;
-    esac
-  done
+  if ! ask_boolean "Also run the machine performance pass (kernel, swap, disk tuning) now?" answer; then
+    return 0
+  fi
+  if [ "$answer" != "true" ]; then
+    log "  optimize.sh skipped — run it later: bash $REPO/scripts/ops/optimize.sh"; return 0
+  fi
   detail "  running scripts/ops/optimize.sh --yes (its output goes to $LOG)"
   bash "$REPO/scripts/ops/optimize.sh" --yes 2>&1 | tee -a "$LOG"
   rc=${PIPESTATUS[0]}
@@ -2671,46 +2669,55 @@ finalize_hardening() {
 }
 
 success_block() {
+  local R="──────────────────────────────────────────────────────────────────"
+  log "  SUCCESS — the stack is up (success block shown)"
   echo ""
-  echo "=============================================================="
-  msg " SUCCESS — the stack is up:"
-  echo "   Nextcloud    https://cloud.$DOMAIN      admin / ${NEXTCLOUD_ADMIN_PASSWORD:-<see modules/nextcloud/.env>}"
-  echo "   Vaultwarden  https://vault.$DOMAIN"
-  echo "   Uptime Kuma  https://kuma.$DOMAIN       admin / ${KUMA_PASS:-(already set — rotate with: make kuma-passwd USER=admin PASS=…)}"
-  echo "   Webmail      https://mail.$DOMAIN       (mailboxes via make mail-gen)"
-  echo "   Shell        https://tail.$DOMAIN      (tailnet-only)"
-  echo "   machine IP ${HOST_IP:-?}   Tailscale IP ${TS_IP:-?}"
+  printf ' %s%s%s\n' "$C_GREEN" "$R" "$C_RST"
+  printf '  %s[SUCCESS]%s the stack is up\n' "$C_GREEN" "$C_RST"
+  printf ' %s%s%s\n' "$C_GREEN" "$R" "$C_RST"
+  printf '  %sNextcloud%s    https://cloud.%s    %sadmin / %s%s\n' \
+    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${NEXTCLOUD_ADMIN_PASSWORD:-<see modules/nextcloud/.env>}" "$C_RST"
+  printf '  %sVaultwarden%s  https://vault.%s\n' "$C_PURPLE" "$C_RST" "$DOMAIN"
+  printf '  %sUptime Kuma%s  https://kuma.%s    %sadmin / %s%s\n' \
+    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${KUMA_PASS:-(already set — rotate with: make kuma-passwd USER=admin PASS=…)}" "$C_RST"
+  printf '  %sWebmail%s      https://mail.%s    %s(mailboxes via make mail-gen)%s\n' \
+    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
+  printf '  %sShell%s        https://tail.%s   %s(tailnet-only)%s\n' \
+    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
+  printf '  %smachine IP%s %s    %sTailscale IP%s %s\n' \
+    "$C_GREY" "$C_RST" "${HOST_IP:-?}" "$C_GREY" "$C_RST" "${TS_IP:-?}"
   echo ""
-  echo " SSH: root@$NODE_NAME is the only entry point (key-only, tailnet-only, port 22)."
-  echo " new ssh command is ssh root@$NODE_NAME"
+  printf '  %sSSH%s root@%s is the only entry point (key-only, tailnet-only, port 22)\n' "$C_GREY" "$C_RST" "$NODE_NAME"
+  printf '  %snew ssh command is ssh root@%s%s\n' "$C_GREEN" "$NODE_NAME" "$C_RST"
   echo ""
-  echo " ── SSH ACCESS ───────────────────────────────────────────────────────────"
+  printf ' %s── SSH ACCESS %s%s\n' "$C_PURPLE" "${R:0:$(( ${#R} - 4 ))}" "$C_RST"
   if [ -s /root/.ssh/authorized_keys ]; then
-    echo "  Hardening IS applied: $(grep -c . /root/.ssh/authorized_keys) key(s) authorized,"
-    echo "  password auth off, root key-only. Re-run the installer to add another."
+    printf '  %sHardening IS applied:%s %s key(s) authorized, password auth off, root key-only.\n' \
+      "$C_GREEN" "$C_RST" "$(grep -c . /root/.ssh/authorized_keys)"
+    printf '  %sRe-run the installer to add another.%s\n' "$C_GREY" "$C_RST"
   else
-    echo "  WARNING: no key in /root/.ssh/authorized_keys, so hardening is NOT applied"
-    echo "  (password auth stays on). Re-run the installer and paste your device's pubkey."
+    printf '  %sWARNING:%s no key in /root/.ssh/authorized_keys, so hardening is NOT applied\n' "$C_RED" "$C_RST"
+    printf '  %s(password auth stays on). Re-run the installer and paste your device pubkey.%s\n' "$C_GREY" "$C_RST"
   fi
-  echo " ─────────────────────────────────────────────────────────────────────────"
+  printf ' %s%s%s\n' "$C_PURPLE" "$R" "$C_RST"
   echo ""
-  echo " Follow-ups (none block the install):"
+  printf '  %sFollow-ups (none block the install):%s\n' "$C_GREY" "$C_RST"
   if mod_on mail; then
-    echo "   Additional step — configure a PTR (rDNS) record with your VPS provider:"
-    echo "     ${HOST_IP:-<machine IP>}  ->  mail.$DOMAIN"
-    echo "     (only your provider can create it; SPF/DKIM/DMARC alone won't stop rejects)"
+    printf '   %sAdditional step%s — configure a PTR (rDNS) record with your VPS provider:\n' "$C_ORANGE" "$C_RST"
+    printf '     %s  ->  mail.%s\n' "${HOST_IP:-<machine IP>}" "$DOMAIN"
+    printf '     %s(only your provider can create it; SPF/DKIM/DMARC alone won'"'"'t stop rejects)%s\n' "$C_GREY" "$C_RST"
   fi
-  echo "   1. Tailscale split-DNS: admin console -> DNS -> add $DOMAIN -> ${TS_IP:-<tailscale IP>}"
-  echo "      so tail.$DOMAIN resolves for tailnet devices (dnsmasq on the machine already answers it)"
-  echo "   2. (optional) Cloudflare WAF rule skip for cloud.$DOMAIN (desktop sync)"
+  printf '   1. Tailscale split-DNS: admin console -> DNS -> add %s -> %s\n' "$DOMAIN" "${TS_IP:-<tailscale IP>}"
+  printf '      %sso tail.%s resolves for tailnet devices (dnsmasq on the machine already answers it)%s\n' "$C_GREY" "$DOMAIN" "$C_RST"
+  printf '   2. %s(optional)%s Cloudflare WAF rule skip for cloud.%s (desktop sync)\n' "$C_GREY" "$C_RST" "$DOMAIN"
   if [ "${GH_REMOTE:-false}" = "true" ]; then
-    echo "   3. GitHub remote access: origin is git@github.com:$GITHUB_USER/$REPO_NAME.git, key /root/.ssh/github_key"
+    printf '   3. GitHub remote access: origin is git@github.com:%s/%s.git, key /root/.ssh/github_key\n' "$GITHUB_USER" "$REPO_NAME"
   else
-    echo "   3. No GitHub remote access (declined at the last prompt) — re-run the installer and answer true to mint the push key"
+    printf '   3. %sNo GitHub remote access%s (declined at the last prompt) — re-run and answer true to mint the push key\n' "$C_GREY" "$C_RST"
   fi
-  echo "   4. Mailboxes: make mail-gen MAIL=name@$DOMAIN (or bare make mail-gen for a disposable);"
-  echo "      the nextcloud@$DOMAIN and vaultwarden@$DOMAIN SMTP sender mailboxes are created automatically"
-  echo "=============================================================="
+  printf '   4. Mailboxes: make mail-gen MAIL=name@%s (or bare make mail-gen for a disposable);\n' "$DOMAIN"
+  printf '      %sthe nextcloud@%s and vaultwarden@%s SMTP sender mailboxes are created automatically%s\n' "$C_GREY" "$DOMAIN" "$DOMAIN" "$C_RST"
+  printf ' %s%s%s\n\n' "$C_GREEN" "$R" "$C_RST"
 }
 
 summary() {
