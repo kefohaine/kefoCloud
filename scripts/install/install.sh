@@ -178,7 +178,7 @@ TASK_NAMES=(
   "Tailscale Connectivity" "Docker Engine" "Goose CLI"
   "Repository Setup" "Host Services" "DNS Records"
   "Repo Hygiene"
-  "Stack Config" "Containers Up" "SSL Certificates"
+  "Stack Config" "Docker Containers" "SSL Certificates"
   "Mail Setup" "Nextcloud Setup" "Vaultwarden Setup"
   "Monitoring Setup"
   "Smoke Pass"
@@ -194,7 +194,7 @@ REINSTALL=false
 # line names (a fresh install sets neither).
 REPAIR=
 # Which task functions DO touch data/ (kept live on a reinstall): Stack Config
-# (rendered/, instance.conf, seeds), Containers Up (the stack and its volumes),
+# (rendered/, instance.conf, seeds), Docker Containers (the stack and its volumes),
 # Mail / Nextcloud / Vaultwarden / Monitoring Setup (their data dirs). Every
 # other task is unrelated by default.
 reinstall_unrelated() {   # reinstall_unrelated <task-function-name>
@@ -2838,7 +2838,7 @@ task_stackcfg() {
   task_end
 }
 
-# Containers Up: bring the compose stack up and re-check every container.
+# Docker Containers: bring the compose stack up and re-check every container.
 task_containers() {
   task_start
   cd "$REPO" || exit 1
@@ -3488,14 +3488,13 @@ main() {
 
   # Consent gate: nothing is touched until the operator says yes.
   local _go
-  ask_boolean "Do you wish to continue?" _go || _go=false
+  ask_boolean "Do you want to continue?" _go || _go=false
   if [ "$_go" != "true" ]; then
     log "  aborted at the continue prompt — nothing was changed"
     exit 0
   fi
 
   if previous_install; then
-    echo ""
     local _mode
     printf '%s[WARN]%s kefoCloud is already installed\n' "$C_ORANGE" "$C_RST"
     ask_choice "Do you want to repair or to reinstall it? (repair/reinstall): " _mode repair reinstall || _mode=repair
@@ -3503,11 +3502,11 @@ main() {
       # Last confirmation before anything is touched: this is destructive and
       # irreversible (the production stack's data is deleted, not migrated).
       local _wipe
-      ask_boolean "'data/' will be erased and new values will be asked. Do you wish to proceed?" _wipe || _wipe=false
+      printf "%s[WARN]%s 'kefoCloud/data/' & 'install.state' planned for deletion\n" "$C_ORANGE" "$C_RST"
+      ask_boolean "Do you wish to proceed?" _wipe || _wipe=false
       if [ "$_wipe" != "true" ]; then
         log "  reinstall declined at the confirmation prompt — nothing was changed"
-        echo ""
-        msg " Reinstall cancelled — nothing was changed."
+        msg "Reinstall cancelled — nothing was changed."
         exit 0
       fi
       detail "  reinstall — production stack only: data/ is erased, everything else is skipped"
@@ -3569,6 +3568,7 @@ main() {
   # The start-of-run banner line: orange [WARN], purple [HH:MM:SS], white text —
   # printed once, just above the checklist (msg is log-only once a task is live).
   # The verb names what THIS run does: Installing / Repairing / Reinstalling.
+  echo ""
   local _verb="Installing"
   [ "${REINSTALL:-false}" = true ] && _verb="Reinstalling"
   [ -n "${REPAIR:-}" ] && _verb="Repairing"
