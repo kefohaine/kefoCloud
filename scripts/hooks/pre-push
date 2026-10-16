@@ -31,16 +31,19 @@ fi
 while read -r lref lsha rref rsha; do
   [ "$lsha" = "0000000000000000000000000000000000000000" ] && continue  # deletion
   [ "$lsha" = "$rsha" ] && continue                                   # nothing new
-  # Identity guard: refuse to push any commit authored/committed as root. The
-  # history must never carry root@<host> commits (AGENTS rule 12) — GitHub
-  # cannot attribute them, and on a fresh host git defaults to root because no
-  # identity is configured. install.sh sets the real identity at deploy time.
+  # Identity guard: refuse to push any commit whose author/committer is not a
+  # GitHub identity. Root (`root@<host>`, the no-identity fallback) and any
+  # invented/non-GitHub address are non-attributable and must never reach the
+  # remote (AGENTS rule 12); install.sh sets the real identity at deploy time.
   # Runs before the fast-forward test so a NEW branch is scanned whole (rsha=0s).
   range="$lsha"; [ "$rsha" != "0000000000000000000000000000000000000000" ] && range="$rsha..$lsha"
-  if git log --format='%ae%n%ce' "$range" 2>/dev/null | grep -q 'root@'; then
-    echo "pre-push: refusing to push — the range $range contains commits authored or committed as root."
+  bad=$(git log --format='%ae%n%ce' "$range" 2>/dev/null \
+        | grep -vE '(@users\.noreply\.github\.com|noreply@github\.com)$' | sort -u)
+  if [ -n "$bad" ]; then
+    echo "pre-push: refusing to push — the range $range has non-GitHub identities:"
+    printf '  %s\n' $bad
     echo "  Fix the identity (git config user.name/user.email) and rewrite those commits, then push again."
-    echo "  Inspect: git log --format='%h %ae %ce' $range | grep root"
+    echo "  Inspect: git log --format='%h %ae %ce' $range"
     exit 1
   fi
   [ "$rsha" = "0000000000000000000000000000000000000000" ] && continue  # new branch: no rewrite warning

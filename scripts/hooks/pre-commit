@@ -16,15 +16,21 @@ set -uo pipefail
 staged=$(git diff --cached --name-only)
 [ -z "$staged" ] && exit 0
 
-# 0. Identity guard: a commit must never be authored as root. A fresh host has
-#    no git identity, so git silently falls back to `root@<host>`, poisoning the
-#    history with non-attributable commits (AGENTS rule 12). Fail loud and say
-#    exactly how to fix it; install.sh writes the real identity at deploy time.
+# 0. Identity guard: a commit must use the operator's logged-in GitHub identity,
+#    never root and never an invented fallback. A fresh host has no git identity,
+#    so git silently falls back to `root@<host>` (AGENTS rule 12) — and any other
+#    non-GitHub address is not attributable either. Only a GitHub identity is
+#    accepted: the account-noreply form git maps to the account
+#    (`<id>+<login>@users.noreply.github.com`) or GitHub's own web-commit form
+#    (`noreply@github.com`). Fail loud and say exactly how to fix it; install.sh
+#    writes the real identity (and user.useConfigOnly) at deploy time.
 ident=$(git var GIT_AUTHOR_IDENT 2>/dev/null || true)
-case "$ident" in
-  *"root@"*|"root <"*)
-    echo "pre-commit: refusing to commit as root — identity is '$ident'"
-    echo "  Set the account-noreply identity first, e.g.:"
+email=$(printf '%s' "$ident" | sed -n 's/^.*<\(.*\)>.*$/\1/p')
+case "$email" in
+  *@users.noreply.github.com|noreply@github.com) ;;
+  *)
+    echo "pre-commit: refusing to commit — identity '$ident' is not a GitHub identity."
+    echo "  Commits must use the logged-in GitHub account (no root, no invented creds):"
     echo "    git config user.name  <github-login>"
     echo "    git config user.email <account-id>+<github-login>@users.noreply.github.com"
     exit 1
