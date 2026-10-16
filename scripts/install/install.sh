@@ -1394,6 +1394,25 @@ caddy_data() {
   sudo chmod 0644 $ROOT/data/caddy_data/CF_API_TOKEN
 }
 
+# Two host units the distro ships are permanently 'failed' on this box without
+# changing anything: openipmi starts the IPMI driver a machine with no IPMI
+# hardware cannot load, and systemd-networkd-wait-online waits on networkd
+# (which is not managing the links here). They show up in `make fetch` as
+# "2 failed" forever. Disable them and clear the failed state. Idempotent, and
+# every other unit is left untouched (never blanket-reset failed units — that
+# would hide a real one).
+disable_benign_failed_units() {
+  local u
+  for u in openipmi.service systemd-networkd-wait-online.service; do
+    systemctl cat "$u" >/dev/null 2>&1 || continue
+    if systemctl is-enabled --quiet "$u" 2>/dev/null; then
+      systemctl disable "$u" >>"$LOG" 2>&1 || true
+      detail "  disabled $u (fails every boot without the hardware/daemon it expects)"
+    fi
+    systemctl reset-failed "$u" >>"$LOG" 2>&1 || true
+  done
+}
+
 host_services() {
   [ -n "${TS_IP:-}" ] || fail ts_ip
   # The tracked 10-tailnet.conf keeps a PLACEHOLDER address — install-config
