@@ -169,12 +169,22 @@ ERR_WARN_TAGS=()
 # the rest [DONE]. Nothing prints between the task rows (msg is muted while
 # TASK_ACTIVE is set); each step's own output goes to $LOG. On a non-TTY run the
 # animation is skipped and each row is printed once, when it finishes.
+# Each row is tagged with the part of the box it touches, and the tag is the
+# SAME split a reinstall uses (reinstall_unrelated): [HOST] = the machine itself
+# (packages, ssh, firewall, tailnet, docker, goose, the repo clone, host
+# services, DNS/edge certs, repo hygiene) — a reinstall never touches it, so its
+# row reads [SKIP]; [STACK] = the production stack and the data/ it reads (stack
+# config, containers, mail/nextcloud/vaultwarden/monitoring setup) — what a
+# reinstall rebuilds. Smoke Pass is the verdict on both, hence [HOST]+[STACK].
 TASK_NAMES=(
-  "System Packages" "SSH Hardening" "Firewall Rules" "Tailscale Connectivity"
-  "Docker Engine" "Goose CLI" "Stack Config" "Containers Up"
-  "Repository Setup" "Host Services" "DNS Records" "SSL Certificates"
-  "Mail Setup" "Nextcloud Setup" "Vaultwarden Setup" "Monitoring Setup"
-  "Repo Hygiene" "Smoke Pass"
+  "[HOST] System Packages" "[HOST] SSH Hardening" "[HOST] Firewall Rules"
+  "[HOST] Tailscale Connectivity" "[HOST] Docker Engine" "[HOST] Goose CLI"
+  "[STACK] Stack Config" "[STACK] Containers Up"
+  "[HOST] Repository Setup" "[HOST] Host Services" "[HOST] DNS Records"
+  "[HOST] SSL Certificates"
+  "[STACK] Mail Setup" "[STACK] Nextcloud Setup" "[STACK] Vaultwarden Setup"
+  "[STACK] Monitoring Setup"
+  "[HOST] Repo Hygiene" "[HOST]+[STACK] Smoke Pass"
 )
 # Reinstall = the PRODUCTION STACK only. data/ is erased and the stack is
 # rebuilt from freshly asked values; NOTHING outside data/ is touched — no repo
