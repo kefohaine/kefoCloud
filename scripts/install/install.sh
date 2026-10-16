@@ -175,7 +175,7 @@ TASK_NAMES=(
 TASK_TOTAL=${#TASK_NAMES[@]}
 declare -a TASK_STATE=() TASK_TS=()
 TASK_CUR=-1 TASK_ACTIVE= TASK_DRAWN= ANIM_PID= ANIM_POS=0 TASK_ERR=
-_TAIL=0 _ANIM_PAUSE=
+_TAIL=0 _ANIM_PAUSE= _COLS=80
 
 # The current task's status column: an 8-wide field with ONE orange `$` that
 # ping-pongs back and forth (0..7..1), inside purple brackets.
@@ -205,9 +205,27 @@ _task_row() {
 # some ignore it, and where it is ignored the old relative-move version walked
 # down the screen (2026-10-16, "repository management goes wild").
 # Print one console line below the block, counting it while a task is running.
+# A leading `\r` is NOT decoration: every console write here assumes it starts
+# in column 0, and that assumption only holds if the tty does NL→CRNL (ONLCR).
+# A single subcommand that runs the terminal without ONLCR (or an operator who
+# turned it off) otherwise leaves the cursor mid-line, so each following row is
+# appended after the previous one and rows concatenate — `Repository
+# Management[   [...] [TASK] Repository Management[...]` (2026-10-16, "repo
+# management goes wild"). Emitting CR explicitly makes every write
+# column-independent of the tty's NL policy.
 _note() {
-  printf '%s\n' "$*"
-  [ -n "$TASK_ACTIVE" ] && [ -n "$TASK_DRAWN" ] && _TAIL=$(( ${_TAIL:-0} + 1 ))
+  printf '\r%s\n' "$*"
+  if [ -n "$TASK_ACTIVE" ] && [ -n "$TASK_DRAWN" ]; then
+    # Count PHYSICAL rows, not logical lines: _TAIL is the number of screen rows
+    # between the cursor and the block's bottom row, so a note wider than the
+    # terminal (wrapped to 2+ rows) must count as 2+ or the relative move lands
+    # one row too high and every later row shifts (the wrap half of the same
+    # 2026-10-16 drift). ANSI escapes have zero width, so strip them first.
+    local plain len cols="${_COLS:-80}"
+    plain=$(printf '%s' "$*" | sed 's/\x1b\[[0-9;]*m//g')
+    len=${#plain}; [ "$len" -lt 1 ] && len=1
+    _TAIL=$(( ${_TAIL:-0} + (len + cols - 1) / cols ))
+  fi
   return 0
 }
 # Count lines printed by something other than _note (a read prompt's own line).
@@ -238,7 +256,9 @@ _task_update() {
   [ "$up"   -gt 0 ] && mup=$'\033['"$up"$'A'
   [ "$back" -gt 0 ] && mback=$'\033['"$back"$'B'
   row=$(_task_row "$i")
-  printf '%s%s\n%s' "$mup" "$row" "$mback" >/dev/tty
+  # Leading `\r`: start the frame in column 0 whatever the tty's NL policy is
+  # (see _note); without it a row is appended after the previous one.
+  printf '\r%s%s\n%s' "$mup" "$row" "$mback" >/dev/tty
 }
 # Background animator for the running row (TTY only).
 _task_anim() {
@@ -259,7 +279,7 @@ _task_resume() {
   _ANIM_PAUSE=$(( ${_ANIM_PAUSE:-1} - 1 )); [ "$_ANIM_PAUSE" -lt 0 ] && _ANIM_PAUSE=0
   [ "$_ANIM_PAUSE" -gt 0 ] && return 0
   if [ -n "$TASK_DRAWN" ] && [ -n "$TASK_ACTIVE" ] && [ -t 1 ]; then
-    [ "${_TAIL:-0}" -gt 0 ] && printf '\033[%dA\033[J' "${_TAIL}" >/dev/tty
+    [ "${_TAIL:-0}" -gt 0 ] && printf '\r\033[%dA\033[J' "${_TAIL}" >/dev/tty
     _TAIL=0
     _task_update "$TASK_CUR"
   fi
@@ -271,7 +291,15 @@ _tasks_draw() {
   local i
   for i in $(seq 0 $((TASK_TOTAL - 1))); do TASK_STATE[$i]=wait; TASK_TS[$i]=$(date +%H:%M:%S); done
   [ -t 1 ] || return 0
-  for i in $(seq 0 $((TASK_TOTAL - 1))); do _task_row "$i"; done
+  # Learn the terminal width (for _note's physical-row counting) and re-assert
+  # the tty's NL policy before the block exists: any earlier subcommand that ran
+  # the terminal without ONLCR/ICRNL would otherwise leave \n mid-column. Done
+  # once here; _note/_task_update also emit CR explicitly so even a later
+  # toggler can't concatenate rows.
+  _COLS=$(stty size </dev/tty 2>/dev/null | awk '{print $2}')
+  [ "${_COLS:-0}" -gt 0 ] 2>/dev/null || _COLS=80
+  stty onlcr icrnl </dev/tty 2>/dev/null || true
+  for i in $(seq 0 $((TASK_TOTAL - 1))); do printf '\r'; _task_row "$i"; done
   _TAIL=0
   TASK_DRAWN=1
 }
@@ -922,7 +950,7 @@ task_ssh() {
     grep -q '^AllowUsers' /etc/ssh/sshd_config || echo 'AllowUsers root' >> /etc/ssh/sshd_config
     ssh_after=$(cat /etc/ssh/sshd_config.d/50-cloud-init.conf /etc/ssh/sshd_config 2>/dev/null | sha256sum)
     if [ "$ssh_before" != "$ssh_after" ]; then
-      systemctl restart sshd
+      systemctl restart sshd >>"$LOG" 2>&1 || true
       detail "  sshd hardened: key-only root login (AllowUsers root)"
     else
       detail "  sshd already hardened (unchanged) — not restarted"
