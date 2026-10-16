@@ -175,6 +175,7 @@ TASK_NAMES=(
 TASK_TOTAL=${#TASK_NAMES[@]}
 declare -a TASK_STATE=() TASK_TS=()
 TASK_CUR=-1 TASK_ACTIVE= TASK_DRAWN= ANIM_PID= ANIM_POS=0 TASK_ERR=
+_TAIL=0 _ANIM_PAUSE=
 
 # The current task's status column: an 8-wide field with ONE green `$` that
 # ping-pongs back and forth (0..7..1), inside purple brackets.
@@ -197,46 +198,57 @@ _task_row() {
     *)     printf '%s[%s]%s %s[WAIT]%s %s\n'  "$C_PURPLE" "$ts" "$C_RST" "$C_GREY"  "$C_RST" "$name" ;;
   esac
 }
-# Return to the checklist's anchor: the empty line just below the block, saved
-# with DECSC (`\033[s`) when the block was drawn. Every redraw starts here, so a
-# redraw can never drift no matter what else printed to the console in between
-# (2026-10-16: the old relative-move version desynced by one line whenever a
-# task emitted output, which made the checklist flicker across the wrong rows).
-_task_home() { printf '\033[u' >/dev/tty; }
-# Redraw row $1 in place: home to the anchor, up to the row, rewrite, back home.
+# Everything printed below the checklist block is "tail": lines an interactive
+# prompt or an error printed while a task ran. _TAIL counts them so the animator
+# can find its way back to the block with relative moves only. There is
+# deliberately NO DECSC/DECRC (`\033[s`/`\033[u`): some terminals honour it and
+# some ignore it, and where it is ignored the old relative-move version walked
+# down the screen (2026-10-16, "repository management goes wild").
+# Print one console line below the block, counting it while a task is running.
+_note() {
+  printf '%s\n' "$*"
+  [ -n "$TASK_ACTIVE" ] && [ -n "$TASK_DRAWN" ] && _TAIL=$(( ${_TAIL:-0} + 1 ))
+  return 0
+}
+# Count lines printed by something other than _note (a read prompt's own line).
+_task_count() { [ -n "$TASK_ACTIVE" ] && [ -n "$TASK_DRAWN" ] && _TAIL=$(( ${_TAIL:-0} + ${1:-1} )); return 0; }
+# Fancy status lines below the checklist.
+_warn_note() { _note "$(printf '  %s[WARN]%s  %s' "$C_ORANGE" "$C_RST" "$*")"; }
+_err_note()  { _note "$(printf '  %s[ERROR]%s %s' "$C_RED" "$C_RST" "$*")"; }
+# A colored titled section rule (used to frame the post-install error/warn blocks).
+_section() { _note ""; _note "$(printf '%s── %s ──────────────────────────────────%s' "$2" "$1" "$C_RST")"; }
+# Redraw row $1 in place: stand on the last block row (stepping over the tail),
+# step up to the row, rewrite, step back to the tail bottom.
 _task_update() {
   { [ -n "$TASK_DRAWN" ] && [ -t 1 ]; } || return 0
-  local i="$1"
-  local up=$(( TASK_TOTAL - i ))
-  _task_home
-  printf '\033[%dA\033[K' "$up" >/dev/tty
+  local i="$1" t="${_TAIL:-0}"
+  local d=$(( TASK_TOTAL - i ))
+  [ "$t" -gt 0 ] && printf '\033[%dA' "$t" >/dev/tty
+  printf '\033[%dA\033[K' "$d" >/dev/tty
   _task_row "$i" >/dev/tty
-  printf '\033[%dB' "$up" >/dev/tty
+  printf '\033[%dB' "$(( d - 1 + t ))" >/dev/tty
 }
 # Background animator for the running row (TTY only).
 _task_anim() {
   local i="$1" pos=0
   while :; do pos=$(( (pos + 1) % 14 )); ANIM_POS=$pos; _task_update "$i"; sleep 0.1; done
 }
-# Stop the running-row animator while an interactive prompt owns the tty, and
-# park the cursor at the anchor so the prompt prints on a clean line below the
-# checklist. The animator would otherwise redraw a row every 0.1s over whatever
-# was printed below the block (2026-10-16: the Nextcloud app-action list and its
-# yes/no prompt were unreadable). Ref-counted so nested prompts work.
+# Stop the animator while an interactive prompt owns the tty, so it cannot redraw
+# over the prompt. Ref-counted so nested prompts work.
 _task_pause() {
   _ANIM_PAUSE=$(( ${_ANIM_PAUSE:-0} + 1 ))
   [ "$_ANIM_PAUSE" -gt 1 ] && return 0
   [ -n "$ANIM_PID" ] && { kill "$ANIM_PID" 2>/dev/null; wait "$ANIM_PID" 2>/dev/null; ANIM_PID=; }
-  [ -n "$TASK_DRAWN" ] && [ -n "$TASK_ACTIVE" ] && [ -t 1 ] && _task_home
 }
-# Wipe everything printed below the block since the pause, redraw the running
-# row, and restart the animator — so a prompt's output vanishes and the
+# Wipe the tail (the prompt/output printed below the block), redraw the running
+# row, and restart the animator — so a prompt's app list/prompt vanishes and the
 # checklist resumes on its own row instead of a duplicate being appended after it.
 _task_resume() {
   _ANIM_PAUSE=$(( ${_ANIM_PAUSE:-1} - 1 )); [ "$_ANIM_PAUSE" -lt 0 ] && _ANIM_PAUSE=0
   [ "$_ANIM_PAUSE" -gt 0 ] && return 0
   if [ -n "$TASK_DRAWN" ] && [ -n "$TASK_ACTIVE" ] && [ -t 1 ]; then
-    printf '\033[u\033[J' >/dev/tty
+    [ "${_TAIL:-0}" -gt 0 ] && printf '\033[%dA\033[J' "${_TAIL}" >/dev/tty
+    _TAIL=0
     _task_update "$TASK_CUR"
   fi
   [ -n "$TASK_DRAWN" ] && [ -n "$TASK_ACTIVE" ] && [ -z "$ANIM_PID" ] && {
@@ -248,7 +260,7 @@ _tasks_draw() {
   for i in $(seq 0 $((TASK_TOTAL - 1))); do TASK_STATE[$i]=wait; TASK_TS[$i]=$(date +%H:%M:%S); done
   [ -t 1 ] || return 0
   for i in $(seq 0 $((TASK_TOTAL - 1))); do _task_row "$i"; done
-  printf '\033[s' >/dev/tty     # anchor: the empty line below the block
+  _TAIL=0
   TASK_DRAWN=1
 }
 task_start() {
@@ -425,11 +437,12 @@ _ask_boolean_raw() {
   local q="$1" var="$2" answer
   while :; do
     printf '%s[INFO]%s %s (yes/no): ' "$C_GREY" "$C_RST" "$q"
-    read -r answer || return 1
+    read -r answer || { _task_count 1; return 1; }
+    _task_count 1
     case "${answer,,}" in
       yes) printf -v "$var" '%s' true;  return 0 ;;
       no)  printf -v "$var" '%s' false; return 0 ;;
-      *)   echo "   type yes or no." ;;
+      *)   echo "   type yes or no."; _task_count 1 ;;
     esac
   done
 }
