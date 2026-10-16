@@ -1257,6 +1257,18 @@ seed_stack() {
   vwset SMTP_FROM "vaultwarden@$DOMAIN"
   vwset SMTP_FROM_NAME Vaultwarden
   vwset SMTP_AUTH_MECHANISM Login
+  # Default vault account (the one the success block prints). Vaultwarden has
+  # no user CLI and signups are closed (SIGNUPS_ALLOWED=false), so the account
+  # is seeded straight into its SQLite DB by scripts/modules/vaultwarden-user.sh
+  # — the same "no CLI, write the DB" pattern as Uptime Kuma. Stored PER KEY
+  # (like NEXTCLOUD_ADMIN_*) so a re-run prints the SAME password, never a
+  # freshly generated value that was never written.
+  vwset VAULTWARDEN_ADMIN_USER "admin@$DOMAIN"
+  if ! grep -q '^VAULTWARDEN_ADMIN_PASSWORD=.' "$vwenv"; then
+    vwset VAULTWARDEN_ADMIN_PASSWORD "$(openssl rand -base64 18 | tr -d '/+=' | head -c 20)"
+  fi
+  VAULTWARDEN_ADMIN_USER=$(sed -n 's/^VAULTWARDEN_ADMIN_USER=//p' "$vwenv" | tail -1)
+  VAULTWARDEN_ADMIN_PASSWORD=$(sed -n 's/^VAULTWARDEN_ADMIN_PASSWORD=//p' "$vwenv" | tail -1)
 }
 
 docker_net() {
@@ -2048,6 +2060,34 @@ vaultwarden_setup() {
     || fail vaultwarden_setup "mailbox vaultwarden@$DOMAIN not created"
 }
 
+# Create the default Vaultwarden account (the one the success block prints).
+# Vaultwarden has no user CLI, so — like Uptime Kuma — the account is written
+# into its SQLite DB by scripts/modules/vaultwarden-user.sh (Bitwarden's client
+# crypto: master-key hash, the encrypted user key and an RSA key pair). This
+# step only runs once the container has made the DB + schema; a re-run leaves an
+# existing account untouched (never resets it), so an operator's vault survives.
+vaultwarden_admin() {
+  cd "$REPO" || exit 1
+  . modules/vaultwarden/.env
+  if [ -z "${VAULTWARDEN_ADMIN_USER:-}" ] || [ -z "${VAULTWARDEN_ADMIN_PASSWORD:-}" ]; then
+    fail vaultwarden_admin "VAULTWARDEN_ADMIN_* missing from modules/vaultwarden/.env"
+    return
+  fi
+  # The container creates db.sqlite3 (and the users table) on first boot — poll
+  # for both, not just the file (an empty file is not a usable schema).
+  local i=0
+  while [ $i -lt 150 ]; do
+    bash scripts/modules/vaultwarden-user.sh list >/dev/null 2>&1 && break
+    sleep 2; i=$((i+2))
+  done
+  if ! bash scripts/modules/vaultwarden-user.sh list >/dev/null 2>&1; then
+    fail vaultwarden_admin "vault db has no users schema after 5 min"
+    return
+  fi
+  bash scripts/modules/vaultwarden-user.sh ensure "$VAULTWARDEN_ADMIN_USER" "$VAULTWARDEN_ADMIN_PASSWORD" \
+    >>"$LOG" 2>&1 || fail vaultwarden_admin
+}
+
 # Publish the mailserver's DKIM key as a TXT record via the Cloudflare API —
 # the whole mail-authentication stack (SPF/DKIM/DMARC + PTR) then only needs
 # the operator's provider-side PTR. Runs after the mailserver is up
@@ -2356,6 +2396,7 @@ task_modules() {
     nextcloud_setup
   fi
   mod_on vault && vaultwarden_setup
+  mod_on vault && vaultwarden_admin
   mod_on monitor && kuma_seed
   sweep
   task_end
@@ -2410,6 +2451,7 @@ problem() {
     dkim_setup)      echo "DKIM key / mail._domainkey TXT record not published" ;;
     dns_mail_txt)   echo "one or more mail records (MX, SPF, wildcard DKIM placeholder, DMARC) are missing" ;;
     vaultwarden_setup) echo "Vaultwarden SMTP sender mailbox missing (vaultwarden@$DOMAIN)" ;;
+    vaultwarden_admin) echo "the default vaultwarden account is missing" ;;
     clone)          echo "repo clone failed" ;;
     hooks)          echo "git hooks are not installed in $REPO/.git/hooks" ;;
     github_key)     echo "the GitHub key could not be created" ;;
@@ -2449,6 +2491,7 @@ hint() {
     dkim_setup)      echo "run: docker exec mailserver setup config dkim domain $DOMAIN; ensure ENABLE_OPENDKIM=0 in the mailserver compose (Rspamd signs); verify the CF token has Zone > DNS > Edit; then dig @<zone NS> TXT mail._domainkey.$DOMAIN" ;;
     dns_mail_txt)   echo "the installer retries the MX, SPF, wildcard DKIM placeholder and DMARC records on re-check; verify the token has Zone > DNS > Edit and inspect Cloudflare DNS for $DOMAIN (MX -> mail.$DOMAIN, TXT v=spf1 a:mail.$DOMAIN mx -all, *._domainkey, _dmarc)" ;;
     vaultwarden_setup) echo "the mail step waits for the mailserver's account API (mail_wait_ready) then retries the add — a repeat failure means SMTP_PASSWORD is missing from modules/vaultwarden/.env; verify the mail module is enabled (else this step is skipped) and that the mailserver container is healthy (make smoke), then re-check" ;;
+    vaultwarden_admin) echo "run: make vaultwarden-list-users / vaultwarden-add-user EMAIL=… PASS=… (scripts/modules/vaultwarden-user.sh); the account needs the vaultwarden container's DB, then re-check" ;;
     clone)          echo "the clone is HTTPS (the repo is public) — check network/DNS, then re-check" ;;
     hooks)          echo "run: make install-hooks in $REPO (re-run it after editing a hook)" ;;
     github_key)     echo "check /root/.ssh is writable (mkdir -p /root/.ssh && chmod 700 /root/.ssh), then re-check" ;;
@@ -2490,6 +2533,7 @@ recheck() {
     dkim_setup)      dig +short TXT "mail._domainkey.$DOMAIN" @"$(dig +short NS "$DOMAIN" | head -1)" 2>/dev/null | grep -qE 'p=[A-Za-z0-9+/=]{100,}' ;;
     dns_mail_txt) mod_on mail || return 0; cf_mail_dns; local records; records=$(curl -fsS -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" 2>/dev/null) || return 1; printf '%s' "$records" | jq -e --arg d "$DOMAIN" --arg s "v=spf1 a:mail.$DOMAIN mx -all" --arg k 'v=DKIM1; p=' --arg m 'v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s;' '[.result[] | {type,name,content}] as $r | [[$d,"MX"],["*._domainkey."+$d,"TXT"],["_dmarc."+$d,"TXT"]] as $fs | [($fs[] | . as $x | any($r[]; .type==$x[1] and .name==$x[0])), any($r[]; .type=="TXT" and .name==$d and .content==$s)] | all' >/dev/null ;;
     vaultwarden_setup) if mod_on mail; then . modules/vaultwarden/.env 2>/dev/null; mailbox_add "vaultwarden@$DOMAIN" "${SMTP_PASSWORD:-}" >/dev/null 2>&1; mailbox_exists "vaultwarden@$DOMAIN"; else false; fi ;;
+    vaultwarden_admin) [ -n "${VAULTWARDEN_ADMIN_USER:-}" ] && bash "$REPO/scripts/modules/vaultwarden-user.sh" list 2>/dev/null | grep -qF "$VAULTWARDEN_ADMIN_USER" ;;
     *) false ;;
   esac
 }
@@ -2696,7 +2740,8 @@ success_block() {
   printf ' %s%s%s\n' "$C_GREEN" "$R" "$C_RST"
   printf '  %sNextcloud%s    https://cloud.%s    %sadmin / %s%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${NEXTCLOUD_ADMIN_PASSWORD:-<see modules/nextcloud/.env>}" "$C_RST"
-  printf '  %sVaultwarden%s  https://vault.%s\n' "$C_PURPLE" "$C_RST" "$DOMAIN"
+  printf '  %sVaultwarden%s  https://vault.%s    %s%s / %s%s\n' \
+    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${VAULTWARDEN_ADMIN_USER:-admin@$DOMAIN}" "${VAULTWARDEN_ADMIN_PASSWORD:-<see modules/vaultwarden/.env>}" "$C_RST"
   printf '  %sUptime Kuma%s  https://kuma.%s    %sadmin / %s%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${KUMA_PASS:-(already set — rotate with: make kuma-passwd USER=admin PASS=…)}" "$C_RST"
   printf '  %sWebmail%s      https://mail.%s    %s(mailboxes via make mail-gen)%s\n' \
