@@ -539,7 +539,6 @@ github_cred_inputs() {
     done
   fi
   save_state
-  printf '\n## Github SSH Key Prompt\n\n'
   github_access
 }
 
@@ -787,12 +786,13 @@ github_access() {
   # Not authorized yet: print the public key, then verify it AUTOMATICALLY —
   # poll ssh until GitHub accepts it. No manual "press Enter to re-check" step;
   # Ctrl-C aborts the installer.
-  printf '\n ── GitHub key — paste this once, the installer verifies it automatically ─\n'
-  printf '   GitHub → Settings → SSH and GPG keys → New SSH key → paste this line:\n\n'
-  printf '   %s\n\n' "$(cat "$GH_KEY.pub")"
-  printf '   (Settings is under the avatar menu, top right; "New SSH key" is the\n'
-  printf '    green button in the SSH keys box — name it after this host.)\n'
-  printf ' ───────────────────────────────────────────────────────────────────────\n\n'
+  printf '\n %s── Github SSH Key Prompt %s────────────────────────────────────────%s\n' "$C_GREEN" "$C_GREY" "$C_RST"
+  printf '  %sPaste this public key once — the installer verifies it automatically.%s\n' "$C_GREY" "$C_RST"
+  printf '  GitHub → Settings → SSH and GPG keys → New SSH key → paste this line:\n\n'
+  printf '    %s\n\n' "$(cat "$GH_KEY.pub")"
+  printf '  %sSettings is under the avatar menu (top right); "New SSH key" is the%s\n' "$C_GREY" "$C_RST"
+  printf '  %sgreen button in the SSH keys box — name it after this host.%s\n' "$C_GREY" "$C_RST"
+  printf ' %s─────────────────────────────────────────────────────────────────────%s\n\n' "$C_GREY" "$C_RST"
   local _waited=0
   until github_auth_ok; do
     sleep 5
