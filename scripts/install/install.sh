@@ -263,6 +263,9 @@ _task_row() {
   local i="$1"
   local st="${TASK_STATE[$i]:-wait}" ts="${TASK_TS[$i]:-}" name="${TASK_NAMES[$i]:-}"
   name="$(_task_name_colored "$name")"
+  # Only a task that ENDED has a clock: everything else (pending, and a row
+  # skipped before it could run) shows the [--:--:--] placeholder.
+  [ -n "$ts" ] || ts="--:--:--"
   case "$st" in
     done)  printf '%s[DONE]%s %s[%s]%s %s\n'  "$C_GREEN"  "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
     # A skipped task keeps its scope tag ([H]/[S]/[B] — the tag says which part
@@ -275,7 +278,7 @@ _task_row() {
     run)   printf '%s[EXEC]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$(_anim_field)" "$C_RST" "$name" ;;
     # A pending row has no time yet: the placeholder stands until the task
     # starts (then it is the [EXEC] marker) and finishes (a real HH:MM:SS).
-    *)     printf '%s[WAIT]%s %s[%s]%s %s\n'  "$C_GREY"   "$C_RST" "$C_PURPLE" "--:--:--" "$C_RST" "$name" ;;
+    *)     printf '%s[WAIT]%s %s[%s]%s %s\n'  "$C_GREY"   "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
   esac
 }
 # Everything printed below the checklist block is "tail": lines an interactive
