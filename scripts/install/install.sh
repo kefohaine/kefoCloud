@@ -938,6 +938,14 @@ task_firewall() {
   ufw allow 5349/tcp >/dev/null 2>&1
   ufw allow 49160:49200/udp >/dev/null 2>&1
   ufw allow 49160:49200/tcp >/dev/null 2>&1
+  # Default-deny incoming, set explicitly: some base images ship ufw's
+  # DEFAULT_INPUT_POLICY as "ACCEPT" (this one did), and with that `ufw enable`
+  # plus the allow rules above restrict nothing — every port, 22 included, stays
+  # world-open and the rules are cosmetic. The tailnet rule and the temporary
+  # installer rule above cover the must-stay-reachable paths, and ts-input
+  # accepts the tailscale0 interface before the ufw chains, so tailnet DNS/SSH
+  # are unaffected.
+  ufw default deny incoming >/dev/null 2>&1 || true
   echo y | ufw enable >/dev/null 2>&1 || true
   task_end
 }
