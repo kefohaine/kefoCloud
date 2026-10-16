@@ -1951,6 +1951,13 @@ ask_nc_apps() {
   # Cloud must be desired; the configured actions then apply.
   mod_on cloud || return 0
 
+  # A fresh clone has no conf: it is the operator's own file (gitignored and
+  # untracked, so editing it can never alter the repo). Seed it once from the
+  # tracked template, so the shipped defaults still apply on a new host.
+  if [ ! -f "$conf" ] && [ -f "$conf.default" ]; then
+    cp "$conf.default" "$conf" 2>/dev/null && detail "  seeded $conf from config/cloud/apps.conf.default"
+  fi
+
   # No config → nothing to do (fresh installs get image defaults only).
   [ -f "$conf" ] || return 0
 
