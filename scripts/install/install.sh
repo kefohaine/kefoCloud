@@ -1202,8 +1202,19 @@ containers_up() {
   # the install-time choice (default: everything ON).
   if mod_on cloud; then
     log "  recreate: nextcloud-db + nextcloud"
-    make dok-recreate-nextcloud-db >>"$LOG" 2>&1 || fail nextcloud_db
-    make dok-recreate-nextcloud   >>"$LOG" 2>&1 || fail nextcloud
+    # ONE compose invocation for BOTH files. They live in the same directory
+    # (modules/nextcloud/), so compose treats them as one project — and running
+    # `up --remove-orphans` on either file ALONE sees the other file's containers
+    # as orphans and DELETES them. That is exactly what happened on 2026-10-15:
+    # the app recreate removed the just-started postgresql, nextcloud could not
+    # reach 172.22.0.15:5432, and `occ maintenance:install` died with
+    # SQLSTATE[08006] "No route to host". Naming both -f files keeps every
+    # service in the project, so nothing is ever an orphan.
+    docker compose \
+      -f "$REPO/modules/nextcloud/docker-compose.db.yml" \
+      -f "$REPO/modules/nextcloud/docker-compose.yml" \
+      up -d --force-recreate --remove-orphans >>"$LOG" 2>&1 \
+      || { fail nextcloud_db; fail nextcloud; }
   fi
   mod_on vault && { log "  recreate: vaultwarden"; make dok-recreate-vaultwarden >>"$LOG" 2>&1 || fail vaultwarden; }
   mod_on monitor && { log "  recreate: uptimekuma";  make dok-recreate-uptimekuma  >>"$LOG" 2>&1 || fail kuma; }
