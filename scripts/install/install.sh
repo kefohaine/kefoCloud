@@ -265,17 +265,17 @@ _task_row() {
   name="$(_task_name_colored "$name")"
   case "$st" in
     done)  printf '%s[DONE]%s %s[%s]%s %s\n'  "$C_GREEN"  "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
-    # A skipped task says so on BOTH sides of the row: the row's [H]/[S]/[B]
-    # tag becomes an orange [SKIP] and the name is suffixed with the reason,
-    # whichever part of the box the task belongs to.
+    # A skipped task keeps its scope tag ([H]/[S]/[B] — the tag says which part
+    # of the box the task belongs to, ALWAYS) and says [SKIP] in the status
+    # column plus the reason at the end of the line, so the row can never be
+    # mistaken for a task that ran.
     skip)  printf '%s[SKIP]%s %s[%s]%s %s%s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$ts" "$C_RST" \
-             "$(printf '%s' "$name" | sed -E "s/^(\x1b\[[0-9;]*m)*\[[HSB]\]/${C_ORANGE}[SKIP]${C_RST}/")" \
-             "${REINSTALL_SKIP_NOTE:- — deliberately not run}" ;;
+             "$name" "${REINSTALL_SKIP_NOTE:- — deliberately not run}" ;;
     error) printf '%s[FAIL]%s %s[%s]%s %s\n'  "$C_RED"    "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
     run)   printf '%s[EXEC]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$(_anim_field)" "$C_RST" "$name" ;;
     # A pending row has no time yet: the placeholder stands until the task
     # starts (then it is the [EXEC] marker) and finishes (a real HH:MM:SS).
-    *)     printf '%s[WAIT]%s %s[%s]%s %s\n'  "$C_GREY"   "$C_RST" "$C_PURPLE" "[--:--:--]" "$C_RST" "$name" ;;
+    *)     printf '%s[WAIT]%s %s[%s]%s %s\n'  "$C_GREY"   "$C_RST" "$C_PURPLE" "--:--:--" "$C_RST" "$name" ;;
   esac
 }
 # Everything printed below the checklist block is "tail": lines an interactive
