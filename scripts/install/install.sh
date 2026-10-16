@@ -128,7 +128,11 @@ declare -A ERR_DETAIL=()
 # persistent status bar's seconds/phase are orange. Both are plain when the
 # output is not a terminal or NO_COLOR is set (pipes, cron, CI).
 C_PURPLE=$'\033[35m' C_ORANGE=$'\033[33m' C_GREEN=$'\033[32m' C_RED=$'\033[31m' C_GREY=$'\033[90m' C_WHITE=$'\033[37m' C_RST=$'\033[0m'
-if [ ! -t 1 ] || [ -n "${NO_COLOR:-}" ]; then C_PURPLE= C_ORANGE= C_GREEN= C_RED= C_GREY= C_WHITE= C_RST=; fi
+# The checklist's scope tag is coloured per part: HOST blue, STACK yellow,
+# BOTH (smoke) green — brackets included, so the colour is the tag's background
+# marker. Plain like every other colour when not a TTY / NO_COLOR is set.
+C_BLUE=$'\033[34m' C_YELLOW=$'\033[33m'
+if [ ! -t 1 ] || [ -n "${NO_COLOR:-}" ]; then C_PURPLE= C_ORANGE= C_GREEN= C_RED= C_GREY= C_WHITE= C_BLUE= C_YELLOW= C_RST=; fi
 _tstamp() { printf '%s[%s]%s' "$C_PURPLE" "$(date +%H:%M:%S)" "$C_RST"; }
 log()    { printf '%s %s\n' "$(_tstamp)" "$*" >>"$LOG"; }
 detail() { log "$@"; }
@@ -170,26 +174,27 @@ ERR_WARN_TAGS=()
 # TASK_ACTIVE is set); each step's own output goes to $LOG. On a non-TTY run the
 # animation is skipped and each row is printed once, when it finishes.
 # Each row is tagged with the part of the box it touches, and the tag is the
-# SAME split a reinstall uses (reinstall_unrelated): [HOST] = the machine itself
+# SAME split a reinstall uses (reinstall_unrelated): [H] (HOST, blue) = the
+# machine itself
 # (packages, ssh, firewall, tailnet, docker, goose, the repo clone, host
 # services, DNS records, repo hygiene) — a reinstall never touches it, so its
-# row reads [SKIP]; [STACK] = the production stack and the data/ it reads (stack
+# row reads [SKIP]; [S] (STACK, yellow) = the production stack and the data/ it reads (stack
 # config, containers, the LE certs Caddy issues from those vhosts, and the
 # mail/nextcloud/vaultwarden/monitoring setup) — what a reinstall rebuilds.
-# Smoke Pass is the verdict on both, hence [BOTH].
+# Smoke Pass is the verdict on both, hence [B] (BOTH, green).
 # Rows are grouped HOST → STACK → BOTH, and run_install follows this order: the
 # stack needs the host ready first (docker, goose, host services, DNS records),
 # and the one step that needs the stack up — SSL Certificates, which Caddy can
 # only issue once containers_up has started the edge — sits after Containers Up.
 TASK_NAMES=(
-  "[HOST] System Packages" "[HOST] SSH Hardening" "[HOST] Firewall Rules"
-  "[HOST] Tailscale Connectivity" "[HOST] Docker Engine" "[HOST] Goose CLI"
-  "[HOST] Repository Setup" "[HOST] Host Services" "[HOST] DNS Records"
-  "[HOST] Repo Hygiene"
-  "[STACK] Stack Config" "[STACK] Containers Up" "[STACK] SSL Certificates"
-  "[STACK] Mail Setup" "[STACK] Nextcloud Setup" "[STACK] Vaultwarden Setup"
-  "[STACK] Monitoring Setup"
-  "[BOTH] Smoke Pass"
+  "[H] System Packages" "[H] SSH Hardening" "[H] Firewall Rules"
+  "[H] Tailscale Connectivity" "[H] Docker Engine" "[H] Goose CLI"
+  "[H] Repository Setup" "[H] Host Services" "[H] DNS Records"
+  "[H] Repo Hygiene"
+  "[S] Stack Config" "[S] Containers Up" "[S] SSL Certificates"
+  "[S] Mail Setup" "[S] Nextcloud Setup" "[S] Vaultwarden Setup"
+  "[S] Monitoring Setup"
+  "[B] Smoke Pass"
 )
 # Reinstall = the PRODUCTION STACK only. data/ is erased and the stack is
 # rebuilt from freshly asked values; NOTHING outside data/ is touched — no repo
@@ -238,19 +243,35 @@ _anim_field() {
   done
   printf '%s' "$out"
 }
+# Colour the leading scope tag of a task name, brackets included: [H] blue
+# (host), [S] yellow (stack), [B] green (both). Only the first tag is coloured —
+# the task text keeps the row's own colour. Pure string work: no colour is ever
+# stored in TASK_NAMES, so a log/plain run needs no stripping.
+_task_name_colored() {   # _task_name_colored <task name>
+  local n="$1" c=""
+  case "$n" in
+    "[H]"*) c="$C_BLUE" ;;
+    "[S]"*) c="$C_YELLOW" ;;
+    "[B]"*) c="$C_GREEN" ;;
+    *) printf '%s' "$n"; return 0 ;;
+  esac
+  # $n starts with "[X] <text>" (X is one character); recolour that prefix.
+  printf '%s%s%s%s' "$c" "${n:0:3}" "$C_RST" "${n:3}"
+}
 # One newline-terminated row for task $1.
 _task_row() {
   local i="$1"
   local st="${TASK_STATE[$i]:-wait}" ts="${TASK_TS[$i]:-}" name="${TASK_NAMES[$i]:-}"
+  name="$(_task_name_colored "$name")"
   case "$st" in
     done)  printf '%s[DONE]%s %s[%s]%s %s\n'  "$C_GREEN"  "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
     # A skipped task says so on BOTH sides of the row, not only in the status
-    # column: the row's [HOST]/[STACK]/[BOTH] tag becomes [SKIP] and the name is
+    # column: the row's [H]/[S]/[B] tag becomes an orange [SKIP] and the name is
     # suffixed [SKIP] — whichever part of the box the task belongs to, so a
     # skipped row can never be mistaken for a task that ran, and the reason (the
     # reinstall's scope) is spelled out at the end of the line.
     skip)  printf '%s[SKIP]%s %s[%s]%s %s%s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$ts" "$C_RST" \
-             "$(printf '%s' "$name" | sed -E 's/^\[[A-Z]+\](\+\[[A-Z]+\])?/[SKIP]/')" \
+             "$(printf '%s' "$name" | sed -E "s/^(\x1b\[[0-9;]*m)*\[[HSB]\]/${C_ORANGE}[SKIP]${C_RST}/")" \
              "${REINSTALL_SKIP_NOTE:- — deliberately not run}" ;;
     error) printf '%s[FAIL]%s %s[%s]%s %s\n'  "$C_RED"    "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
     run)   printf '%s[EXEC]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$(_anim_field)" "$C_RST" "$name" ;;
