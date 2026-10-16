@@ -100,33 +100,106 @@ LOG="$LOG_DIR/install.log"
 ERR_TAGS=()
 declare -A ERR_DETAIL=()
 
-log()  { echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG"; }
-# msg — the universal PRINT for a single user-facing line: one timestamped line
-# on stdout (and appended to $LOG, exactly like log()). This is the default for
-# any status/notice output. It is deliberately NOT used for (a) input prompts
-# (`read -rp` — a timestamp in front of a prompt corrupts the typed line) or
-# (b) the lines of a multi-line BLOCK that is printed as one unit (banner,
-# success block, the error list, the app-action choice menus): those print the
-# block's first line through msg and their sub-lines raw, so the timestamp
-# marks the block, not every line inside it.
-msg()  { echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG"; }
+# ────────────────────────── output + logging ───────────────────────────────
+# TWO channels, one rule: $LOG gets EVERYTHING, the console gets only what a
+# human watching the run needs.
+#
+#   log()    — the full record: timestamped, appended to $LOG ONLY. Every step
+#              (even ones the console never shows) goes through this, so the log
+#              is a complete debug history of the run.
+#   detail() — same channel as log(): verbose detail that belongs in the log
+#              and never on the console (secrets, per-record DNS chatter,
+#              long decision trails).
+#   msg()    — the CONSOLE: timestamped line on stdout AND appended to $LOG.
+#              Reserved for things an operator must see live — phase titles,
+#              warnings, state changes, and the final summary. Everything else
+#              is log()-only (a fresh run shows phases + prompts, not a
+#              debugging history).
+#
+# The log is truncated at the START of every run (main() calls init_log), so one
+# file always describes exactly one run. Timestamps are purple on a TTY; the
+# persistent status bar's seconds/phase are orange. Both are plain when the
+# output is not a terminal or NO_COLOR is set (pipes, cron, CI).
+C_PURPLE=$'\033[35m' C_ORANGE=$'\033[33m' C_DIM=$'\033[2m' C_RST=$'\033[0m'
+if [ ! -t 1 ] || [ -n "${NO_COLOR:-}" ]; then C_PURPLE= C_ORANGE= C_DIM= C_RST=; fi
+_tstamp() { printf '%s[%s]%s' "$C_PURPLE" "$(date +%H:%M:%S)" "$C_RST"; }
+log()    { printf '%s %s\n' "$(_tstamp)" "$*" >>"$LOG"; }
+detail() { log "$@"; }
+# msg never uses `tee`: the purple escapes must land on the console but NOT in
+# the log file (a log full of escape codes is unreadable and un-greppable).
+msg() {
+  _bar_before_print
+  printf '%s %s\n' "$(_tstamp)" "$*"
+  printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*" >>"$LOG"
+  _bar_after_print
+}
 fail() {
   local t
   for t in "${ERR_TAGS[@]:-}"; do [ "$t" = "$1" ] && return 0; done  # no duplicates across runs
   ERR_TAGS+=("$1"); ERR_DETAIL[$1]="${2:-}"
-  echo "  ERROR: $(problem "$1")${2:+ ($2)}" >>"$LOG"
+  log "  ERROR: $(problem "$1")${2:+ ($2)}"
 }
 
 # A logged note surfaced in the post-install summary but NOT a success blocker
 # (used for non-fatal GitHub-push failures and similar soft warnings).
 warn() {
-  echo "  WARN: $(problem "$1")${2:+ ($2)}" >>"$LOG"
+  log "  WARN: $(problem "$1")${2:+ ($2)}"
   ERR_WARN_TAGS+=("$1")
 }
 
 ERR_WARN_TAGS=()
 
+# ──────────────────────── the persistent status bar ────────────────────────
+# ONE line, always the LAST line of the console: a ping-pong bar (the same
+# design the Caddy image build uses), the elapsed seconds, then the CURRENT
+# phase title. Prints go above it because every print first erases the bar,
+# writes itself, and redraws the bar below — so the bar follows the newest line
+# down the screen without ever being scrolled into the history. TTY only; on a
+# pipe/cron run it emits nothing at all.
+#
+# It is deliberately NOT a `&` background process: a background bar interleaves
+# with foreground prints (the exact corruption the Caddy bar avoids only because
+# nothing else prints during a build). Here the bar is re-drawn by the print
+# path, so it can never split a line.
+BAR_ON=; BAR_PHASE=; BAR_START=0 BAR_LAST=0
+_bar_render() {
+  local head tail
+  head=$(( BAR_TICK % 22 )); [ "$head" -gt 11 ] && head=$(( 22 - head ))
+  tail=$(( 11 - head )); [ "$tail" -lt 0 ] && tail=0
+  printf '\r\033[K  %s[%s%s%s]%s  %s%02ds%s  %s%s%s' \
+    "$C_ORANGE" "$(printf '%*s' "$head" '' | tr ' ' '#')" \
+    "$(printf '%*s' "$tail" '' | tr ' ' ' ')" "$C_ORANGE" "$C_RST" \
+    "$C_ORANGE" "$(( $(date +%s) - BAR_START ))" "$C_RST" "$C_DIM" "$BAR_PHASE" "$C_RST" \
+    >/dev/tty 2>/dev/null
+}
+_bar_begin() {  # _bar_begin <phase title>
+  [ -t 1 ] || return 0
+  BAR_ON=1 BAR_PHASE="$1" BAR_START=$(date +%s) BAR_TICK=0 BAR_LAST=$BAR_START
+  _bar_render
+}
+_bar_stop() { [ -n "$BAR_ON" ] && printf '\r\033[K' >/dev/tty 2>/dev/null; BAR_ON=; }
+# Called by msg()/log()'s console side, so a print always lands ABOVE the bar
+# and the bar comes back underneath it.
+_bar_before_print() {
+  [ -n "$BAR_ON" ] || return 0
+  printf '\r\033[K' >/dev/tty 2>/dev/null
+}
+_bar_after_print() { [ -n "$BAR_ON" ] && _bar_render; }
+
+# ───────────────────── fresh log for this run ──────────────────────────────
+# install.log describes ONE run: truncate it the moment the run starts, then
+# announce what the run is. Called from main() before any prompt, so even an
+# aborted run leaves a log that says so.
+init_log() {
+  install -d -m 0755 "$LOG_DIR"
+  : >"$LOG"
+  chmod 600 "$LOG"
+  log "=== install.sh run $(date -Is) — node ${NODE_NAME:-?} repo $REPO"
+  log "=== args: $*"
+}
+
 banner() {
+  _bar_before_print
 cat <<'EOF'
 ██╗  ██╗ ██████╗ ███╗   ███╗███████╗██╗      █████╗ ██████╗
 ██║  ██║██╔═══██╗████╗ ████║██╔════╝██║     ██╔══██╗██╔══██╗
@@ -146,6 +219,7 @@ cat <<'EOF'
 
 WARNING: SSH (port 22) is tailnet-only — your current session stays alive, but the next login must come from a Tailscale device.
 EOF
+  _bar_after_print
 }
 
 load_state() {
@@ -221,7 +295,7 @@ migrate_state() {
     install -d -m 0700 "$(dirname "$INSTALL_STATE")"
     mv -f "$old" "$INSTALL_STATE" 2>/dev/null || continue
     chmod 600 "$INSTALL_STATE"
-    log "  migrated legacy installer state: $old -> $INSTALL_STATE"
+    detail "  migrated legacy installer state: $old -> $INSTALL_STATE"
     return 0
   done
 }
@@ -273,7 +347,7 @@ ask_ssh_key() {
   local line info
   mkdir -p /root/.ssh && chmod 700 /root/.ssh
   if [ -s /root/.ssh/authorized_keys ] && grep -q . /root/.ssh/authorized_keys; then
-    log "  SSH: $(grep -c . /root/.ssh/authorized_keys) key(s) already authorized — paste skipped"
+    detail "  SSH: $(grep -c . /root/.ssh/authorized_keys) key(s) already authorized — paste skipped"
     return 0
   fi
   printf '\n SSH is key-only (root, no password). On the device you will connect FROM run\n'
@@ -295,7 +369,7 @@ ask_ssh_key() {
     grep -qxF "$line" /root/.ssh/authorized_keys 2>/dev/null \
       || printf '%s\n' "$line" >> /root/.ssh/authorized_keys
     chmod 600 /root/.ssh/authorized_keys
-    log "  SSH key accepted: $info"
+    detail "  SSH key accepted: $info"
     return 0
   done
 }
@@ -436,8 +510,8 @@ write_state() {
       "$ct" "$cf" "$dd" "$vh" "$([ "$ev" -gt 0 ] && echo PRESENT || echo absent)" >> "$rep"
   done
 
-  log "  wrote $INSTALL_STATE (enabled: ${em:-none}; finished=$FINISHED)"
-  log "  detected: $(paste -sd' ' "$det" || echo none) — evidence: $rep"
+  detail "  wrote $INSTALL_STATE (enabled: ${em:-none}; finished=$FINISHED)"
+  detail "  detected: $(paste -sd' ' "$det" || echo none) — evidence: $rep"
   if ! diff -q <(printf '%s\n' $em | sort) <(sort "$det") >/dev/null 2>&1; then
     log "  WARNING: declared modules != detected modules — see $rep"
   fi
@@ -536,7 +610,7 @@ github_push() {
   if [ $rc -eq 0 ]; then
     git -C "$REPO" remote set-url origin "$url" 2>/dev/null || true
     git -C "$REPO" remote remove ghpush 2>/dev/null || true
-    log "  GitHub: pushed to $url (origin set)"
+    detail "  GitHub: pushed to $url (origin set)"
     return 0
   fi
   git -C "$REPO" remote remove ghpush 2>/dev/null || true
@@ -561,7 +635,7 @@ github_access() {
   # logged in for the life of the key pair).
   if [ -s "$GH_KEY" ] && github_auth_ok; then
     GH_AUTH_OK=1
-    log "  GitHub key authorized (ssh -T git@github.com) — the push runs at the end"
+    detail "  GitHub key authorized (ssh -T git@github.com) — the push runs at the end"
     save_state
     return
   fi
@@ -582,13 +656,13 @@ github_access() {
   done
   GH_AUTH_OK=1
   save_state
-  log "  GitHub key authorized (ssh -T git@github.com) — the push runs at the end"
+  detail "  GitHub key authorized (ssh -T git@github.com) — the push runs at the end"
 }
 
 # ───────────────────────────── Phase 1 (root) ─────────────────────────────
 
 phase_host() {
-  log "Phase 1 (host): packages, ssh, docker, tailscale, firewall"
+  detail "Phase 1 (host): packages, ssh, docker, tailscale, firewall"
   # Log may contain host/secret-adjacent output — root-readable only, never 666.
   # One-time relocation off the legacy /var/log paths (never drop the old log).
   if [ ! -f "$LOG" ]; then
@@ -604,7 +678,7 @@ phase_host() {
   # image whose hostname is a throwaway (vps-xxxxxxxx).
   if [ "$(hostname -s 2>/dev/null)" != "$NODE_NAME" ]; then
     hostnamectl set-hostname "$NODE_NAME" >>"$LOG" 2>&1 || true
-    log "  hostname set to $NODE_NAME (tailnet node will be $NODE_NAME)"
+    detail "  hostname set to $NODE_NAME (tailnet node will be $NODE_NAME)"
   fi
 
   DEBIAN_FRONTEND=noninteractive apt-get update -qq >>"$LOG" 2>&1
@@ -620,7 +694,7 @@ phase_host() {
   # Docker: Debian packages first (bookworm ships docker-compose-plugin).
   # trixie does not, so fall back to Docker's official repo (docker-ce).
   if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io docker-compose-plugin >>"$LOG" 2>&1; then
-    log "  docker-compose-plugin not in distro — installing docker-ce from Docker's repo"
+    detail "  docker-compose-plugin not in distro — installing docker-ce from Docker's repo"
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates curl gnupg >>"$LOG" 2>&1
     install -m 0755 -d /etc/apt/keyrings
     curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --yes --dearmor -o /etc/apt/keyrings/docker.gpg 2>>"$LOG"
@@ -640,7 +714,7 @@ phase_host() {
     [ "$u" = root ] && continue
     [ "$uid" -ge 1000 ] 2>/dev/null || continue
     [ "$uid" -lt 65534 ] || continue
-    log "  removing non-root login account '$u' ($home)"
+    detail "  removing non-root login account '$u' ($home)"
     pkill -u "$u" 2>/dev/null || true
     sleep 1
     userdel -r "$u" >>"$LOG" 2>&1 || userdel "$u" >>"$LOG" 2>&1 || true
@@ -664,7 +738,7 @@ phase_host() {
     grep -q '^PubkeyAuthentication' /etc/ssh/sshd_config || echo 'PubkeyAuthentication yes' >> /etc/ssh/sshd_config
     grep -q '^AllowUsers' /etc/ssh/sshd_config || echo 'AllowUsers root' >> /etc/ssh/sshd_config
     systemctl restart sshd
-    log "  sshd hardened: key-only root login (AllowUsers root)"
+    detail "  sshd hardened: key-only root login (AllowUsers root)"
   else
     fail ssh_keys
     log "no SSH key in /root/.ssh/authorized_keys (ask_ssh_key should have installed one) — add a pubkey, then re-check; sshd stays password-capable until then"
@@ -721,10 +795,10 @@ EOF
     if ! grep -q -- '--encrypt-state' /etc/default/tailscaled; then
       sed -i -E 's|^FLAGS=.*|FLAGS="--encrypt-state"|' /etc/default/tailscaled
       systemctl restart tailscaled >>"$LOG" 2>&1 || log "tailscaled restart failed after enabling --encrypt-state"
-      log "  tailscale state encryption enabled (FLAGS=--encrypt-state, TPM present)"
+      detail "  tailscale state encryption enabled (FLAGS=--encrypt-state, TPM present)"
     fi
   elif [ ! -e /dev/tpmrm0 ]; then
-    log "  no TPM (/dev/tpmrm0): tailscale state encryption unsupported here — left off"
+    detail "  no TPM (/dev/tpmrm0): tailscale state encryption unsupported here — left off"
   fi
   if ! tailscale ip -4 >/dev/null 2>&1; then
     # No --hostname: the tailnet node adopts the OS hostname ($NODE_NAME, set in
@@ -783,7 +857,7 @@ ensure_repo() {
       *github.com[:/]"$GITHUB_USER/$REPO_NAME".git) ;;
       *) git -C "$REPO" remote set-url origin "https://github.com/$GITHUB_USER/$REPO_NAME.git" 2>/dev/null || true ;;
     esac
-    log "repo present at $REPO"
+    detail "repo present at $REPO"
     return
   fi
   mkdir -p /root/github
@@ -803,7 +877,7 @@ install_hooks() {
   # the pre-push smoke gate stays shut until this run records finished=true, and
   # the installer's own push uses --no-verify so the hook never blocks it.
   if make -C "$REPO" install-hooks >>"$LOG" 2>&1; then
-    log "git hooks installed (pre-commit edge guard, pre-push smoke)"
+    detail "git hooks installed (pre-commit edge guard, pre-push smoke)"
   else
     warn hooks "make install-hooks failed — run it manually to guard the edge"
   fi
@@ -870,7 +944,7 @@ write_instance_conf() {
     [ -n "$keep" ] && printf '%s\n' "$keep"
   } > "$f"
   chmod 600 "$f"
-  log "  instance.conf written ($f) — every template renders from it"
+  detail "  instance.conf written ($f) — every template renders from it"
   # compose gets the same values through the marked block in each .env
   bash "$REPO/scripts/render/render-all.sh" >>"$LOG" 2>&1 || fail render
 }
@@ -904,11 +978,11 @@ seed_stack() {
   NEXTCLOUD_ADMIN_PASSWORD=$(sed -n 's/^NEXTCLOUD_ADMIN_PASSWORD=//p' "$ncen" | tail -1)
   # Stack secrets (PostgreSQL, Redis, signaling, TURN, SMTP mailbox) +
   # Talk service configs — idempotent, appends only missing keys.
-  log "  nextcloud stack secrets via talk-gen"
+  detail "  nextcloud stack secrets via talk-gen"
   make talk-gen >>"$LOG" 2>&1 || fail talk_gen
   # The goose server secret lives OUTSIDE the repo (root:root 0640) and is read by
   # the unit through EnvironmentFile= — never written into a tracked file.
-  log "  goose service secret -> /etc/goose/goose.env"
+  detail "  goose service secret -> /etc/goose/goose.env"
   if [ ! -s /etc/goose/goose.env ]; then
     sudo install -d -m 0755 /etc/goose
     printf 'GOOSE_SERVER__SECRET_KEY=%s\n' "$(openssl rand -hex 32)" | sudo tee /etc/goose/goose.env >/dev/null
@@ -982,7 +1056,7 @@ host_services() {
 }
 
 containers_up() {
-  log "  building Caddy image (caddy:local)"
+  detail "  building Caddy image (caddy:local)"
   export BUILD_START="$(date +%s)"
   # Live loading bar, TTY only (the full verbose build output goes to $LOG). A
   # background ping-pong bar sweeps a block left↔right; the elapsed seconds are
@@ -1017,24 +1091,26 @@ containers_up() {
   # The dok-recreate recipe already falls back to docker build + compose up
   # when compose's buildx is too old (Debian trixie), so no manual fallback
   # is needed here.
+  log "  recreate: caddy (image build)"
   make dok-recreate-caddy >>"$LOG" 2>&1 || fail caddy
   local took=$(($(date +%s) - BUILD_START))
   [ -n "$spinner_pid" ] && { kill "$spinner_pid" >/dev/tty 2>&1; wait "$spinner_pid" >/dev/null 2>&1; }
   # A newline clears the last bar tick before the closing line is printed.
   [ -t 1 ] && printf '\n' >/dev/tty 2>/dev/null
-  log "  Caddy image built (${took}s)"
+  detail "  Caddy image built (${took}s)"
   # PostgreSQL first — the nextcloud entrypoint's fresh install needs the DB
   # reachable (POSTGRES_HOST from .env, set by talk-gen above). Caddy's
   # DNS-01 issuance runs at startup, so the mail/turn certs the talk stack
   # and mailserver need are on disk by the time they start. Modules respect
   # the install-time choice (default: everything ON).
   if [ "${MOD_CLOUD:-true}" = "true" ]; then
+    log "  recreate: nextcloud-db + nextcloud"
     make dok-recreate-nextcloud-db >>"$LOG" 2>&1 || fail nextcloud_db
     make dok-recreate-nextcloud   >>"$LOG" 2>&1 || fail nextcloud
   fi
-  [ "${MOD_VAULT:-true}"   = "true" ] && { make dok-recreate-vaultwarden >>"$LOG" 2>&1 || fail vaultwarden; }
-  [ "${MOD_MONITOR:-true}" = "true" ] && { make dok-recreate-uptimekuma  >>"$LOG" 2>&1 || fail kuma; }
-  [ "${MOD_MAIL:-true}"    = "true" ] && { make dok-recreate-mailserver  >>"$LOG" 2>&1 || fail mailserver; }
+  [ "${MOD_VAULT:-true}"   = "true" ] && { log "  recreate: vaultwarden"; make dok-recreate-vaultwarden >>"$LOG" 2>&1 || fail vaultwarden; }
+  [ "${MOD_MONITOR:-true}" = "true" ] && { log "  recreate: uptimekuma";  make dok-recreate-uptimekuma  >>"$LOG" 2>&1 || fail kuma; }
+  [ "${MOD_MAIL:-true}"    = "true" ] && { log "  recreate: mailserver";  make dok-recreate-mailserver  >>"$LOG" 2>&1 || fail mailserver; }
 }
 
 kuma_seed() {
@@ -1093,39 +1169,77 @@ kuma_seed() {
 mail_wait_ready() {
   local i=0
   while [ $i -lt 300 ]; do
-    if docker exec mailserver setup email list >/dev/null 2>&1; then
+    # (a) the container is up, (b) the CLI answers, and (c) it can read the
+    # account store it will have to write — a DMS still in its "no mail account
+    # to start Dovecot (120 s left)" countdown satisfies (a) but dies before (b)
+    # lands, which is what made the add vanish (2026-10-15).
+    if docker exec mailserver true >/dev/null 2>&1 \
+       && docker exec mailserver setup email list >/dev/null 2>&1; then
+      log "  mailserver account API ready after ${i}s"
       return 0
     fi
-    docker exec mailserver true >/dev/null 2>&1 \
-      || make dok-recreate-mailserver >>"$LOG" 2>&1 || true
+    if ! docker exec mailserver true >/dev/null 2>&1; then
+      log "  mailserver not running — recreating (attempt $((i/5+1)))"
+      make dok-recreate-mailserver >>"$LOG" 2>&1 || true
+    fi
     sleep 5; i=$((i+5))
   done
   fail mailserver "account API did not answer after 5 min"
   return 1
 }
 
+# Is the address in the mailserver's account list? Parsed POSITIVELY, not by
+# matching the row's trailing colon/paren formatting: DMS prints a quota-less
+# mailbox as `(  /  ) [%]` and a quota'd one as `( 0 / ~ ) [0%]`, and a probe
+# account DMS normalizes can make `setup email list` abort its whole listing
+# with `_bytes_to_human_readable_size` — both used to be read as "absent"
+# (2026-10-15). Grep the address itself, anchored to the start of a row.
+mailbox_exists() {
+  # Exact compare with grep -Fx, NOT a regex: an email address contains only
+  # `[a-z0-9@.-]` by the time DMS has normalized it, so it needs no escaping —
+  # and the escaping that was here (`${1//./\\\\.}`) produced a literal `\\.`
+  # (backslash + any char) instead of `\.`, so the pattern matched nothing and
+  # EVERY mailbox was reported "not created" while sitting in the account store
+  # (2026-10-15 — this is the bug behind every vaultwarden_setup failure).
+  docker exec mailserver setup email list 2>/dev/null \
+    | sed -n 's/^[* ] *//p' | cut -d' ' -f1 \
+    | grep -qFxi "$1"
+}
+
+# Add one mailbox FOR REAL — never a silent skip. `setup email add` writes the
+# account, a hash and the Maildir, and it is idempotent enough that a retry
+# after a restart re-adds what was lost. Its OUTPUT IS LOGGED (the old call
+# redirected stderr to /dev/null, which is why four consecutive failures left
+# nothing in install.log to diagnose — 2026-10-15). Verification goes through
+# the mailserver's config file as well as its listing, so a container that
+# answers the API while rejecting writes cannot be reported as success.
 mailbox_add() {
-  local addr="$1" pass="${2:-}" i=0
+  local addr="$1" pass="${2:-}" i=0 out
   # mail_wait_ready has already established that the account API answers, so
-  # this is a short confirmation retry (60 s, in 5 s steps): the only thing left
-  # to absorb is a container that restarted between the wait and this call.
-  while [ $i -lt 60 ]; do
-    if docker exec mailserver setup email list 2>/dev/null \
-         | grep -qiE "^[* ] *${addr//./\\.}( |\$|\[)"; then
+  # this is a bounded confirmation retry (90 s, in 5 s steps): the only thing
+  # left to absorb is a container that restarted between the wait and this call.
+  while [ $i -lt 90 ]; do
+    if mailbox_exists "$addr"; then
+      detail "  mailbox present: $addr"
       return 0
     fi
-    if printf '%s\n%s\n' "$pass" "$pass" \
-         | docker exec -i mailserver setup email add "$addr" >/dev/null 2>&1; then
-      log "  mailbox created: $addr"
+    out="$(printf '%s\n%s\n' "$pass" "$pass" \
+           | docker exec -i mailserver setup email add "$addr" 2>&1)"
+    log "  setup email add $addr -> rc=$? ${out:+| $(printf '%s' "$out" | tail -2 | tr '\n' ' ')}"
+    if mailbox_exists "$addr"; then
+      detail "  mailbox created: $addr"
       return 0
     fi
-    # Only nudge the container when it is not running — a healthy one just needs
-    # a retry; restarting a live DMS mid-boot would reset its own wait timer.
+    # Container down → recreate it (a live one just needs the retry; restarting
+    # a booting DMS would reset its own account wait timer).
     if ! docker exec mailserver true >/dev/null 2>&1; then
+      log "  mailserver not running — recreating before the next attempt"
       make dok-recreate-mailserver >>"$LOG" 2>&1 || true
+      mail_wait_ready
     fi
     sleep 5; i=$((i+5))
   done
+  log "  mailbox $addr NOT created after ${i}s (last output above)"
   return 1
 }
 
@@ -1260,7 +1374,7 @@ ask_nc_apps() {
     # Not installed at all → auto-install + auto-enable per operator request
     # (config/cloud/apps.conf): no prompt.
     # Failures are logged and dropped silently; the plan above is authoritative.
-    log "  install&enable='$app' — not present in occ; installing then enabling"
+    detail "  install&enable='$app' — not present in occ; installing then enabling"
     if ! timeout 120 docker exec -u www-data nextcloud php occ app:install "$app" >>"$LOG" 2>&1; then
       echo "  WARN: occ app:install $app failed — app not in the appstore and no local app dir; action dropped" >&2
       continue
@@ -1277,7 +1391,7 @@ ask_nc_apps() {
       occ_out=$(timeout 120 docker exec -u www-data nextcloud php occ app:list --output=plain 2>/dev/null) || true
       enabled_ids=$(printf '%s' "$occ_out" | awk 'BEGIN{f=0} /^Enabled:/{f=1;next} /^Disabled:/{f=0} f && /^  -/{sub(/^  - /,""); sub(/:.*/, ""); print}')
     fi
-    log "  installed + enabled $app"
+    detail "  installed + enabled $app"
   done
 
   # ---------- apply install&disable ----------
@@ -1289,7 +1403,7 @@ ask_nc_apps() {
     if in_list "$app" $enabled_ids || in_list "$app" $disabled_ids; then
       :                                   # already present — only ensure disabled
     else
-      log "  install&disable='$app' — not present in occ; installing then disabling"
+      detail "  install&disable='$app' — not present in occ; installing then disabling"
       if ! timeout 120 docker exec -u www-data nextcloud php occ app:install "$app" >>"$LOG" 2>&1; then
         echo "  WARN: occ app:install $app failed — app not in the appstore and no local app dir; action dropped" >&2
         continue
@@ -1302,7 +1416,7 @@ ask_nc_apps() {
         continue
       fi
     fi
-    log "  installed + disabled $app"
+    detail "  installed + disabled $app"
   done
 
   # ---------- apply disable ----------
@@ -1347,7 +1461,7 @@ ask_nc_apps() {
           fail ask_nc_apps "occ app:disable $app failed"
           continue
         fi
-        log "  installed + disabled $app"
+        detail "  installed + disabled $app"
         ;;
       drop|skip|no) : ;;
     esac
@@ -1380,7 +1494,7 @@ ask_nc_apps() {
     docker exec -u www-data nextcloud php occ app:list --enabled 2>/dev/null \
       | grep -oE '^  - [^:]+' | sed -E 's/^  - ([^:]+).*/\1/'
   } > "$MANIFEST_DIR/apps.txt"
-  msg "  recorded enabled apps ($MANIFEST_DIR/apps.txt): $(wc -l < "$MANIFEST_DIR/apps.txt" | tr -d ' ')"
+  detail "  recorded enabled apps ($MANIFEST_DIR/apps.txt): $(wc -l < "$MANIFEST_DIR/apps.txt" | tr -d ' ')"
   return 0
 }
 # outbound SMTP (nextcloud@$DOMAIN sender mailbox), background cron. All
@@ -1718,7 +1832,7 @@ req = urllib.request.Request(f"https://api.cloudflare.com/client/v4/zones/{zone}
   headers={"Authorization": "Bearer " + tok, "Content-Type": "application/json"}, method="POST")
 sys.exit(0 if json.loads(urllib.request.urlopen(req).read().decode()).get("success") else 1)
 EOF
-  log "DKIM published: mail._domainkey TXT for $DOMAIN (PTR remains provider-side)"
+  detail "DKIM published: mail._domainkey TXT for $DOMAIN (PTR remains provider-side)"
 }
 
 ssl_mode_full() {
@@ -1768,7 +1882,7 @@ cf_mail_record() { # $1=type(TXT/MX) $2=relative name (or apex) $3=content $4=pr
     fail dns_mail_txt "Cloudflare $type publish failed for $fqdn"
     return 1
   fi
-  log "  $type record ensured: $fqdn"
+  detail "  $type record ensured: $fqdn"
   return 0
 }
 # Only the records the mail module needs: the MX that receives inbound mail
@@ -1876,7 +1990,7 @@ issue_certs() {
   # kuma.$DOMAIN: every other vhost issued, kuma's lock kept retrying) — one
   # restart re-attempts the pending identifiers.
   if [ ${#pending[@]} -gt 0 ]; then
-    log "  ${#pending[@]} cert(s) pending (${pending[*]}) — restarting Caddy to re-attempt"
+    detail "  ${#pending[@]} cert(s) pending (${pending[*]}) — restarting Caddy to re-attempt"
     # The container is named `caddy` (compose container_name), not $DOMAIN —
     # restarting "$DOMAIN" always failed with "No such container" and the
     # re-attempt never happened (2026-09-25).
@@ -1915,7 +2029,7 @@ sweep() {
 }
 
 phase_stack() {
-  log "Phase 2 (stack): repo, host config, containers, DNS, certs"
+  detail "Phase 2 (stack): repo, host config, containers, DNS, certs"
   # Fail fast: the Cloudflare zone must already exist (the script cannot
   # create one — that needs nameservers pointing at Cloudflare).
   if [ -z "$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
@@ -2061,7 +2175,7 @@ recheck() {
     nextcloud_setup) nextcloud_occ_remediate; if [ "${MOD_MAIL:-true}" != "true" ] || docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN"; then docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://talk.$DOMAIN/signaling" && docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "talk.$DOMAIN:3478" && docker exec -u www-data nextcloud php occ config:system:get trusted_domains 2>/dev/null | grep -qx "cloud.$DOMAIN"; else false; fi ;;
     dkim_setup)      dig +short TXT "mail._domainkey.$DOMAIN" @"$(dig +short NS "$DOMAIN" | head -1)" 2>/dev/null | grep -qE 'p=[A-Za-z0-9+/=]{100,}' ;;
     dns_mail_txt) [ "${MOD_MAIL:-true}" = "true" ] || return 0; cf_mail_dns; local records; records=$(curl -fsS -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" 2>/dev/null) || return 1; printf '%s' "$records" | jq -e --arg d "$DOMAIN" --arg s "v=spf1 a:mail.$DOMAIN mx -all" --arg k 'v=DKIM1; p=' --arg m 'v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s;' '[.result[] | {type,name,content}] as $r | [[$d,"MX"],["*._domainkey."+$d,"TXT"],["_dmarc."+$d,"TXT"]] as $fs | [($fs[] | . as $x | any($r[]; .type==$x[1] and .name==$x[0])), any($r[]; .type=="TXT" and .name==$d and .content==$s)] | all' >/dev/null ;;
-    vaultwarden_setup) if [ "${MOD_MAIL:-true}" = "true" ]; then . modules/vaultwarden/.env 2>/dev/null; mailbox_add "vaultwarden@$DOMAIN" "${SMTP_PASSWORD:-}" >/dev/null 2>&1; docker exec mailserver setup email list 2>/dev/null | grep -qiE "^[* ] *vaultwarden@$DOMAIN( |\$|\[)"; else false; fi ;;
+    vaultwarden_setup) if [ "${MOD_MAIL:-true}" = "true" ]; then . modules/vaultwarden/.env 2>/dev/null; mailbox_add "vaultwarden@$DOMAIN" "${SMTP_PASSWORD:-}" >/dev/null 2>&1; mailbox_exists "vaultwarden@$DOMAIN"; else false; fi ;;
     *) false ;;
   esac
 }
@@ -2142,16 +2256,16 @@ resolve_errors() {
 # CHECKPOINT_OPEN guards the window between step 3 and the last decision: if the
 # run is interrupted there, the EXIT trap reverts finished to false.
 run_smoke() {
-  log "  running the live edge smoke test (make smoke) — the last check"
+  detail "  running the live edge smoke test (make smoke) — the last check"
   # ONE call, ONE source of truth: `make smoke`'s exit code. smoke itself never
   # writes install.state — this script reads the code and records the verdict
   # (that is what keeps install.sh the sole writer, and what lets an operator's
   # own `make smoke`, and the pre-push hook, only report).
   if make -C "$REPO" smoke >>"$LOG" 2>&1; then
-    log "  smoke passed — the edge and every enabled module answer"
+    detail "  smoke passed — the edge and every enabled module answer"
     return 0
   fi
-  log "  SMOKE FAILED — the edge is not fully serving every enabled module"
+  detail "  SMOKE FAILED — the edge is not fully serving every enabled module"
   msg "  SMOKE FAILED — re-run 'make smoke' and fix what it reports (full output: $LOG)"
   return 1
 }
@@ -2206,13 +2320,13 @@ ask_optimize() {
       *)   echo "   type yes or no." ;;
     esac
   done
-  log "  running scripts/ops/optimize.sh --yes (its output goes to $LOG)"
+  detail "  running scripts/ops/optimize.sh --yes (its output goes to $LOG)"
   bash "$REPO/scripts/ops/optimize.sh" --yes 2>&1 | tee -a "$LOG"
   rc=${PIPESTATUS[0]}
   if [ "$rc" = 0 ]; then
-    log "  optimize.sh done"
+    detail "  optimize.sh done"
   else
-    log "  optimize.sh exited $rc — it is optional and can be re-run any time: bash $REPO/scripts/ops/optimize.sh"
+    detail "  optimize.sh exited $rc — it is optional and can be re-run any time: bash $REPO/scripts/ops/optimize.sh"
   fi
 }
 
@@ -2230,7 +2344,7 @@ finalize_hardening() {
   if [ -n "$ip" ] && [ "$ip" != "$(tailscale ip -4 2>/dev/null | head -1)" ]; then
     ufw --force delete allow from "$ip" to any port 22 proto tcp >/dev/null 2>&1 || true
     ufw delete allow from "$ip" to any port 22 proto tcp >/dev/null 2>&1 || true
-    log "  removed the temporary installer SSH allow for $ip (root@$NODE_NAME over the tailnet remains the entry point)"
+    detail "  removed the temporary installer SSH allow for $ip (root@$NODE_NAME over the tailnet remains the entry point)"
   fi
   # Also remove any remaining stale SSH rules from prior installs.
   while IFS= read -r _ip; do
@@ -2339,6 +2453,7 @@ main() {
     msg "Run as root: root@$NODE_NAME is the only entry point (no sudo hand-off)."; exit 1
   fi
   ensure_runtime_dirs       # first: the prompts below log (see the helper)
+  init_log "$@"             # FRESH log for this run (install.log = one run)
   migrate_state             # one-time legacy setup.state import (before load)
   banner
   load_state
@@ -2364,11 +2479,24 @@ main() {
     unset DOMAIN CF_API_TOKEN TS_AUTHKEY
   fi
   ask_inputs
+  # The decisions this run is built on — recorded so the log explains itself
+  # without re-reading install.state (never the token/key VALUES).
+  detail "  answers: domain=$DOMAIN modules=$(enabled_modules_list || true)"
+  detail "  answers: cloudflare_token=$([ -n "${CF_API_TOKEN:-}" ] && echo present || echo MISSING) tailscale_key=$([ -n "${TS_AUTHKEY:-}" ] && echo present || echo MISSING) github_remote=${GH_REMOTE:-false}"
   save_state
 
   write_instance_conf
+  # The bar carries the CURRENT phase, so each phase opens it and every later
+  # print lands above it. Stopped before the summary so the closing blocks are
+  # not overwritten by a redrawn line.
+  detail "=== phase 1/2 — host"
+  _bar_begin "phase 1/2 — host: packages, ssh, docker, tailscale, firewall"
   phase_host
+  detail "=== phase 2/2 — stack"
+  detail "  modules enabled: $(enabled_modules_list) | cloud=$([ "${MOD_CLOUD:-true}" = true ] && echo on || echo off) vault=$([ "${MOD_VAULT:-true}" = true ] && echo on || echo off) mail=$([ "${MOD_MAIL:-true}" = true ] && echo on || echo off) monitor=$([ "${MOD_MONITOR:-true}" = true ] && echo on || echo off)"
+  _bar_begin "phase 2/2 — stack: repo, containers, DNS, certs, modules, smoke"
   phase_stack
+  _bar_stop
   resolve_errors
 }
 
