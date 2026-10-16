@@ -93,6 +93,10 @@ MANIFEST_DIR="$DATA/cloud/recovery"
 # checkpoint); every reader (make smoke / make fetch / scripts/lib/modules.sh)
 # only reads it.
 LOG_DIR="$DATA/logs"
+# INSTALL_STATE is the ONE artefact every reader uses, and this script is its
+# sole writer. Sourcing this file for a harness (`bash -c '. install.sh'`) used
+# to make its save_state calls write the LIVE state — which is what recorded a
+# finished install as pending. Tests must point INSTALL_STATE somewhere else.
 INSTALL_STATE="${INSTALL_STATE:-$DATA/install.state}"
 FINISHED=false
 CHECKPOINT_OPEN=
