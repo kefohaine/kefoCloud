@@ -186,7 +186,7 @@ systemd-log:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: fetch fetch-more render ttyd-devices ttyd-add ttyd-rm smoke gh-web-health install-hooks clean-docker clean-apt update apt-upgrade install-config kuma-import help talk-gen vaultwarden-list-users vaultwarden-add-user vaultwarden-del-user
+.PHONY: fetch fetch-more render ttyd-devices ttyd-add ttyd-rm smoke gh-web-health install-hooks update apt-upgrade install-config kuma-import help talk-gen vaultwarden-list-users vaultwarden-add-user vaultwarden-del-user
 .PHONY: deploy backup nc-data nc-datadir-nfs import-backups
 
 # Per-tailnet-device web-terminal sessions: one named tmux session each, served
@@ -226,19 +226,6 @@ fetch:
 # DNS probes, ufw, git, module/vhost truth and TLS expiry. Read-only.
 fetch-more:
 >@bash scripts/info/fetch-more.sh
-
-# Shared bodies for the granular clean-* recipes. cleanup is the umbrella
-# recipe and inlines all three bodies — no chained make targets.
-define clean_docker_cmds
-@docker builder prune -af
-@docker image prune -af
-@docker container prune -f
-endef
-
-define clean_apt_cmds
-@sudo apt-get -qq autoremove -y
-@sudo apt-get clean
-endef
 
 # apt is its own recipe, on purpose. A full `apt-get upgrade` is the
 # riskiest line in the toolbox — a debconf/postinst/needrestart hiccup exits
