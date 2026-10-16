@@ -180,7 +180,7 @@ systemd-log:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: fetch fetch-more render ttyd-devices ttyd-add ttyd-rm smoke gh-web-health install-hooks clean-docker clean-apt update apt-upgrade install-config kuma-import help talk-gen
+.PHONY: fetch fetch-more render ttyd-devices ttyd-add ttyd-rm smoke smoke-record gh-web-health install-hooks clean-docker clean-apt update apt-upgrade install-config kuma-import help talk-gen
 .PHONY: deploy backup nc-data nc-datadir-nfs import-backups
 
 # Per-tailnet-device web-terminal sessions: one named tmux session each, served
@@ -259,6 +259,19 @@ update:
 # `docker restart caddy`. The pre-push hook runs this automatically.
 smoke:
 >@bash scripts/stack/smoke-vhosts.sh
+
+# smoke-record — write the smoke verdict back into install.state `finished`
+# (FIN=true|false), for the ONE caller smoke owns its state through: install.sh
+# sets SMOKE_STATE=1 when it runs `make smoke`, so the live suite's result lands
+# as the install checkpoint. Without that flag NOTHING is written (the pre-push
+# hook's `make smoke`, and an operator running `make smoke`, only report) —
+# install.sh remains the sole writer, and it never rewrites state behind the
+# operator's back.
+smoke-record:
+>@if [ "$${SMOKE_STATE:-}" != 1 ]; then scripts/lib/mklog warn "smoke-record needs SMOKE_STATE=1 (only install.sh sets it)"; exit 1; fi
+>@if [ "$${FIN:-}" != true ] && [ "$${FIN:-}" != false ]; then scripts/lib/mklog error "smoke-record: FIN must be true or false"; exit 1; fi
+>@umask 077; sed -i "s/^finished=.*/finished=${FIN}/" $(REPO)/data/install.state 2>/dev/null || true
+>@scripts/lib/mklog info "install.state finished=${FIN} (smoke verdict)"
 
 # GitHub web git-data health (see scripts/info/gh-web-health.sh). Run after any
 # full-history rewrite + force-push: a rewritten history can leave the GitHub
