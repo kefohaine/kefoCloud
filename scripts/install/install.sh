@@ -580,18 +580,18 @@ ask_inputs() {
   # 3 — device SSH public key (strict, required).
   ask_ssh_key
 
-  # 4 — Tailscale auth key (input hidden).
+  # 4 — Tailscale auth key (input visible).
   if [ -z "${TS_AUTHKEY:-}" ]; then
     printf '%s[INFO]%s Tailscale Authentication Key: ' "$C_GREY" "$C_RST"
-    read -rsp "" TS_AUTHKEY; echo
+    read -r TS_AUTHKEY
   fi
   [ -n "$TS_AUTHKEY" ] || { echo "Auth key required."; exit 1; }
   save_state
 
-  # 5 — Cloudflare API token (input hidden).
+  # 5 — Cloudflare API token (input visible).
   if [ -z "${CF_API_TOKEN:-}" ]; then
     printf '%s[INFO]%s Cloudflare API Token: ' "$C_GREY" "$C_RST"
-    read -rsp "" CF_API_TOKEN; echo
+    read -r CF_API_TOKEN
   fi
   [ -n "$CF_API_TOKEN" ] || { echo "Token required."; exit 1; }
   save_state
