@@ -177,13 +177,13 @@ declare -a TASK_STATE=() TASK_TS=()
 TASK_CUR=-1 TASK_ACTIVE= TASK_DRAWN= ANIM_PID= ANIM_POS=0 TASK_ERR=
 _TAIL=0 _ANIM_PAUSE=
 
-# The current task's status column: an 8-wide field with ONE green `$` that
+# The current task's status column: an 8-wide field with ONE orange `$` that
 # ping-pongs back and forth (0..7..1), inside purple brackets.
 _anim_field() {
   local p=$(( ANIM_POS % 14 )); [ "$p" -gt 7 ] && p=$(( 14 - p ))
   local k out=""
   for k in 0 1 2 3 4 5 6 7; do
-    if [ "$k" = "$p" ]; then out="${out}${C_GREEN}\$${C_PURPLE}"; else out="${out} "; fi
+    if [ "$k" = "$p" ]; then out="${out}${C_ORANGE}\$${C_PURPLE}"; else out="${out} "; fi
   done
   printf '%s' "$out"
 }
