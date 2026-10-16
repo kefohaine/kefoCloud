@@ -183,6 +183,13 @@ make kuma-passwd|rotate a password — USER=<name> PASS=<new>
 make kuma-del-user|delete a user + their monitors/notifications (USER=<name>)
 EOF
 
+  sec "vault accounts (Vaultwarden)"
+  rows <<'EOF'
+make vaultwarden-list-users|list vault accounts
+make vaultwarden-add-user|add an account — EMAIL=<addr> PASS=<password>
+make vaultwarden-del-user|delete an account + its vault data (EMAIL=<addr>)
+EOF
+
   sec "nextcloud occ (runs as www-data inside the container)"
   rows <<'EOF'
 make nc-occ CMD=<occ args>|any occ command verbatim — the escape hatch
