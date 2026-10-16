@@ -1,5 +1,14 @@
 # kefoCloud
 
+'
+ __           _____      _________ .__                   .___
+|  | __ _____/ ____\____ \_   ___ \|  |   ____  __ __  __| _/
+|  |/ // __ \   __\/  _ \/    \  \/|  |  /  _ \|  |  \/ __ | 
+|    <\  ___/|  | (  <_> )     \___|  |_(  <_> )  |  / /_/ | 
+|__|_ \\___  >__|  \____/ \______  /____/\____/|____/\____ | 
+     \/    \/                    \/                       \/ 
+'
+
 ![Repository Banner](.github/images/banner.png)
 
 One repo that turns any Debian system into your own self-hosted server stack — cloud, mail, monitoring and more — with one command and a few prompts.
