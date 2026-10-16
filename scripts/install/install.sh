@@ -1944,8 +1944,11 @@ mailbox_add() {
 }
 
 # nextcloud_setup()'s app-selection entry: a config-driven app set for the
-# cloud module, driven by config/cloud/apps.conf (shipped with sane defaults:
-# spreed install&enable, app_api disable). The config is the *intent*; this
+# cloud module, driven by config/cloud/apps.conf (optional, operator-owned, empty
+# by default: only the operator's own extra apps, read on a fresh install).
+# spreed (install&enable) and app_api (install&disable) are ENFORCED in code —
+# never asked, never shown in the plan, applied silently and logged only. The
+# config is the *intent*; this
 # reads the live instance once (occ app:list) and applies actions against real
 # state — an action already satisfied is skipped silently (idempotent,
 # unattended re-runs). The only prompted cases are the ones where the config and
@@ -2043,26 +2046,35 @@ ask_nc_apps() {
   fi
 
   # ---------- print the plan ----------
+  # The enforced apps are applied SILENTLY (logged, never printed): the operator
+  # cannot change them here (they live on the Nextcloud Apps page), so asking
+  # about them would be a question with only one answer. Only the operator's own
+  # apps.conf entries are shown and confirmed — and when the config holds none,
+  # there is no plan to show and no prompt to answer.
   local ipl ids dis rem
-  ipl=$(printf '%s\n' "${!install[@]}" | paste -sd', ' -)
-  ids=$(printf '%s\n' "${!install_dis[@]}" | paste -sd', ' -)
-  dis=$(printf '%s\n' "${!disable[@]}" | paste -sd', ' -)
-  rem=$(printf '%s\n' "${!remove[@]}" | paste -sd', ' -)
+  ipl=$(printf '%s\n' "${!install[@]}"     | grep -vx -e spreed    | paste -sd', ' -)
+  ids=$(printf '%s\n' "${!install_dis[@]}" | grep -vx -e app_api   | paste -sd', ' -)
+  dis=$(printf '%s\n' "${!disable[@]}"     | paste -sd', ' -)
+  rem=$(printf '%s\n' "${!remove[@]}"      | paste -sd', ' -)
+  detail "  enforced (not configurable, applied silently): install&enable='spreed' install&disable='app_api'"
   _task_pause
   _note ""
-  _note "$(printf '%s┌─ Nextcloud apps%s  %s(config/cloud/apps.conf)%s' "$C_ORANGE" "$C_RST" "$C_GREY" "$C_RST")"
-  [ -n "$ipl" ] && _note "$(printf '  %swill install/enable%s   %s' "$C_GREY" "$C_RST" "$ipl")"
-  [ -n "$ids" ] && _note "$(printf '  %swill install/disable%s  %s' "$C_GREY" "$C_RST" "$ids")"
-  [ -n "$dis" ] && _note "$(printf '  %swill disable%s          %s' "$C_GREY" "$C_RST" "$dis")"
-  [ -n "$rem" ] && _note "$(printf '  %swill remove%s           %s' "$C_GREY" "$C_RST" "$rem")"
-  _note "$(printf '%s└─────────────────────────────────────────────────────%s' "$C_ORANGE" "$C_RST")"
-  # An empty plan means the config has no actionable lines → nothing to do.
+  if [ -n "$ipl$ids$dis$rem" ]; then
+    _note "$(printf '%s┌─ Nextcloud apps%s  %s(config/cloud/apps.conf)%s' "$C_ORANGE" "$C_RST" "$C_GREY" "$C_RST")"
+    [ -n "$ipl" ] && _note "$(printf '  %swill install/enable%s   %s' "$C_GREY" "$C_RST" "$ipl")"
+    [ -n "$ids" ] && _note "$(printf '  %swill install/disable%s  %s' "$C_GREY" "$C_RST" "$ids")"
+    [ -n "$dis" ] && _note "$(printf '  %swill disable%s          %s' "$C_GREY" "$C_RST" "$dis")"
+    [ -n "$rem" ] && _note "$(printf '  %swill remove%s           %s' "$C_GREY" "$C_RST" "$rem")"
+    _note "$(printf '%s└─────────────────────────────────────────────────────%s' "$C_ORANGE" "$C_RST")"
+  fi
 
   local _confirm
-  if ! ask_boolean "Apply configured app actions?" _confirm; then
-    _note "app actions skipped (not confirmed)"
-    _task_resume
-    return 0
+  if [ -n "$ipl$ids$dis$rem" ]; then
+    if ! ask_boolean "Apply configured app actions?" _confirm; then
+      _note "app actions skipped (not confirmed)"
+      _task_resume
+      return 0
+    fi
   fi
   _task_resume
 

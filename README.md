@@ -26,7 +26,7 @@ Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Caddy, Vaultwarden, Uptime
 
 | name | app | note |
 |---|---|---|
-| **Cloud** | Nextcloud | app choices in `config/cloud/apps.conf` |
+| **Cloud** | Nextcloud | app choices in `config/cloud/apps.conf` (untracked, empty by default; `spreed`/`app_api` are enforced in code, never asked) |
 | **Mail** | Docker Mailserver + Roundcube | SMTP/IMAPS, DKIM/SPF/DMARC on your own domain |
 | **Vault** | Vaultwarden | any Bitwarden client, server included |
 | **Monitor** | Uptime Kuma | watches public *and* tailnet-only doors |
