@@ -228,20 +228,28 @@ _TAIL=0 _ANIM_PAUSE= _COLS=80 ANIM_SYM='$'
 # The sign is ALWAYS orange and the closing bracket is ALWAYS purple, so the
 # marker never leaks its colour into the bracket the row ends with.
 _anim_field() {
-  local p=$(( ANIM_POS % 14 )); [ "$p" -gt 7 ] && p=$(( 14 - p ))
-  local k out=""
-  for k in 0 1 2 3 4 5 6 7; do
-    if [ "$k" = "$p" ]; then out="${out}${C_ORANGE}${ANIM_SYM:-\$}${C_PURPLE}"; else out="${out} "; fi
+  local p=$(( ANIM_POS % 14 ))
+  (( p > 7 )) && p=$(( 14 - p ))
+
+  # Rainbow colors: red, orange, yellow, green, cyan, blue, indigo, violet
+  local -a rainbow=(196 208 226 46 51 21 54 93)
+  local k sym=${ANIM_SYM:-\$}
+
+  for k in {0..7}; do
+    if (( k == p )); then
+      printf '\033[38;5;%sm%s\033[39m' "${rainbow[p]}" "$sym"
+    else
+      printf ' '
+    fi
   done
-  printf '%s%s' "${C_PURPLE}${out}" "$C_RST"
 }
 # One newline-terminated row for task $1.
 _task_row() {
   local i="$1"
   local st="${TASK_STATE[$i]:-wait}" ts="${TASK_TS[$i]:-}" name="${TASK_NAMES[$i]:-}"
   # Only a task that ENDED has a clock: everything else (pending, and a row
-  # skipped before it could run) shows the [--:--:--] placeholder.
-  [ -n "$ts" ] || ts="--:--:--"
+  # skipped before it could run) shows the timestamp placeholder.
+  [ -n "$ts" ] || ts="XX:XX:XX"
   case "$st" in
     done)  printf '%s[DONE]%s %s[%s]%s %s\n'  "$C_GREEN"  "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
     # A skipped task is marked [SKIP] in the status column, so the row can never
@@ -250,10 +258,10 @@ _task_row() {
     error) printf '%s[FAIL]%s %s[%s]%s %s\n'  "$C_RED"    "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
     # The running row shows the animated field (orange sign, purple bracket);
     # the field paints its own colours, so no colour is passed here.
-    run)   printf '%s[EXEC]%s %s[%s]%s %s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$(_anim_field)" "$C_PURPLE" "$name" ;;
+    run)   printf '%s[EXEC]%s %s[%s%s] %s%s%s\n'  "$C_ORANGE" "$C_RST" "$C_PURPLE" "$(_anim_field)" "$C_PURPLE" "$C_ORANGE" "$C_RST" "$name" ;;
     # A pending row has no time yet: the placeholder stands until the task
     # starts (then it is the [EXEC] marker) and finishes (a real HH:MM:SS).
-    *)     printf '%s[WAIT]%s %s[%s]%s %s\n'  "$C_GREY"   "$C_RST" "$C_PURPLE" "$ts" "$C_RST" "$name" ;;
+    *)     printf '%s[WAIT] [%s] %s\n'  "$C_GREY" "$ts" "$name" ;;
   esac
 }
 # Everything printed below the checklist block is "tail": lines an interactive
@@ -398,7 +406,7 @@ task_end() {
   [ -n "$ANIM_PID" ] && { kill "$ANIM_PID" 2>/dev/null; wait "$ANIM_PID" 2>/dev/null; ANIM_PID=; }
   # The row's time is stamped whenever the pipeline REACHED it — including a
   # [SKIP] row (the run did walk past it and decided not to run it). Only rows
-  # the run never reached keep the [--:--:--] placeholder.
+  # the run never reached keep the timestamp placeholder.
   TASK_TS[$TASK_CUR]=$(date +%H:%M:%S)
   if   [ -n "${TASK_ERR:-}" ];  then TASK_STATE[$TASK_CUR]=error
   elif [ -n "${TASK_SKIP:-}" ]; then TASK_STATE[$TASK_CUR]=skip
