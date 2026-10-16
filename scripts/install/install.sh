@@ -1668,10 +1668,10 @@ nextcloud_setup() {
   # Then wait for a usable instance: a cold cache (fresh image pull + the
   # ~3 min Caddy build hogging the box) blew the old 3-minute budget, so every
   # occ step below — Talk signaling/TURN, SMTP, cron — silently never ran
-  # (2026-09-25). 24 minutes now, with a secondary HTTP probe to cloud.$DOMAIN
+  # (2026-09-25). 30 minutes now, with a secondary HTTP probe to cloud.$DOMAIN
   # and a per-call occ timeout so a hanging occ never stalls the loop.
   local i=0
-  while [ $i -lt 720 ]; do
+  while [ $i -lt 1800 ]; do
     if timeout 20 docker exec -u www-data nextcloud php occ status 2>/dev/null | grep -q "installed: true"; then
       break
     fi
@@ -1682,7 +1682,7 @@ nextcloud_setup() {
     sleep 2; i=$((i+2))
   done
   if ! timeout 20 docker exec -u www-data nextcloud php occ status 2>/dev/null | grep -q "installed: true"; then
-    fail nextcloud_setup "nextcloud not installed/ready after 24 min"
+    fail nextcloud_setup "nextcloud not installed/ready after 30 min"
     return
   fi
 
@@ -1835,28 +1835,41 @@ nextcloud_setup() {
 
   # Verify what the smoke/operational docs assert. `occ` can be flaky for a few
   # seconds right after a container start (DB warm-up), so retry each check
-  # five times (2 s apart) before treating it as a real failure.
+  # before treating it as a real failure.
   occ_check() {
     local pattern="$1"; shift
     local attempt=0 rc=1
-    # 5 attempts x 2 s covers the occ DB warm-up window after a container
-    # restart (occ status can return fast while a talk:turn:list hit a transient
-    # lock), so a warm-up race never kills the install.
-    while [ $attempt -lt 5 ]; do
+    # 30 attempts x 2 s (60 s) covers the occ DB warm-up window after a
+    # container restart (occ status can return fast while a talk:turn:list hit a
+    # transient lock), so a warm-up race never kills the install.
+    while [ $attempt -lt 30 ]; do
       if "$@" | grep -q "$pattern"; then rc=0; break; fi
-      attempt=$((attempt+1)); [ $attempt -lt 5 ] && sleep 2
+      attempt=$((attempt+1)); [ $attempt -lt 30 ] && sleep 2
     done
     return $rc
   }
-  # SMTP is only wired when the mail module is enabled (see the mailbox step).
-  if mod_on mail; then
-    occ_check "mail.$DOMAIN" docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null \
-      || fail nextcloud_setup "mail_smtphost not set"
+  # The wiring only counts as done once ALL of it is visible. A slow boot is a
+  # matter of TIME, not an error: verify, and if the wiring is simply not visible
+  # yet, re-apply it (idempotent) and wait again — never surface the timeout as
+  # an error tag that then clears on a re-check (2026-10-15: 'occ wiring
+  # incomplete' was raised, then solved itself; that is a race, not a fault).
+  nc_wiring_ok() {
+    # SMTP is only wired when the mail module is enabled (see the mailbox step).
+    if mod_on mail; then
+      occ_check "mail.$DOMAIN" docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null \
+        || return 1
+    fi
+    occ_check "https://talk.$DOMAIN/signaling" docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null \
+      || return 1
+    occ_check "talk.$DOMAIN:3478" docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null \
+      || return 1
+    return 0
+  }
+  if ! nc_wiring_ok; then
+    log "  nextcloud occ wiring not confirmed yet — re-applying it and waiting"
+    nextcloud_occ_remediate
+    nc_wiring_ok || fail nextcloud_setup "occ wiring not confirmed after re-apply"
   fi
-  occ_check "https://talk.$DOMAIN/signaling" docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null \
-    || fail nextcloud_setup "talk signaling not registered"
-  occ_check "talk.$DOMAIN:3478" docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null \
-    || fail nextcloud_setup "talk turn not registered"
 }
 
 # Automated remediation for a nextcloud_setup failure: re-apply the idempotent
