@@ -49,7 +49,12 @@
 # are grouped as expected; real failures as unexpected.
 #
 # Usage (root on the box, from the repo checkout):
-#   sudo bash scripts/install/uninstall.sh
+#   sudo bash scripts/install/uninstall.sh              # interactive teardown
+#   sudo bash scripts/install/uninstall.sh --reinstall  # stack-only teardown,
+#     no prompts, install.state dropped, then a VERIFICATION that the stack is
+#     really gone. Exit 0 = verified gone, 1 = something is left. This is the
+#     hand-off install.sh calls for a reinstall (install.sh only adds; every
+#     removal lives here).
 #
 # Full log: $LOG_DIR/uninstall.log
 
@@ -215,8 +220,16 @@ verify_stack_gone() {
   return 0
 }
 
+# Hand the box back to install.sh after a teardown that left it unusable (the
+# stack and its data gone, nothing else touched) — that is exactly the state
+# install.sh's reinstall gate expects, so it rebuilds the production stack with
+# freshly asked values and runs smoke last. Offered, never assumed: only an
+# explicit yes spawns it, and UNS_INSTALLER=yes (set by install.sh's own
+# hand-off, one level down) suppresses it entirely so the two scripts can never
+# bounce the box between each other.
 ask_restore() {
   local v="${UNINSTALL_RESTORE:-}" a
+  [ "${UNS_INSTALLER:-}" = yes ] && return 0
   if [ -n "$v" ]; then
     case "${v,,}" in
       yes) RESTORE_AFTER=true ;; no) RESTORE_AFTER=false ;; *) v="" ;;
@@ -738,13 +751,64 @@ summary() {
 }
 trap summary EXIT
 
-────────────────────────────────────
+# ─────────────────────── --reinstall: stack only ──────────────────────────
+# No prompts: install.sh already asked, and this mode is the installer's hand-off.
+# Removes the production stack and its data, verifies the box is clean, and
+# returns the verdict as its exit code (0 = gone, 1 = something is left).
+reinstall_stack_only() {
+  local k
+  log "=== uninstall.sh --reinstall — production stack only (no host, no repo, no tailnet)"
+  echo ""
+  echo "Uninstalling the production stack (hand-off from install.sh):"
+  for k in $STACK_MODULES; do
+    mod_rm "$k" && { echo "   remove     $k"; }
+  done
+  echo "   remove     edge (Caddy) + caddy_data/"
+  echo "   remove     data/ (module data, rendered config, logs, install.state)"
+  echo "   keep       the repo clone, host services, packages, root account, tailnet"
+  echo ""
+
+  # Containers first (their bind mounts are about to disappear), then the edge,
+  # then every data dir the stack owns — including dirs no module claims.
+  for k in $STACK_MODULES; do
+    mod_rm "$k" && remove_module "$k"
+  done
+  local f
+  f=$(edge_compose_file)
+  if [ -n "$f" ]; then
+    docker compose -f "$f" down --remove-orphans >>"$LOG" 2>&1 || fail edge "compose down failed"
+    local c
+    for c in $(ctn_of_module "$f"); do
+      ctn_list | grep -qx "$c" && docker rm -f "$c" >>"$LOG" 2>&1 || true
+    done
+  fi
+  docker network rm net >>"$LOG" 2>&1 || true
+
+  local d
+  for d in $(stack_data_dirs); do
+    rm -rf "$d" >>"$LOG" 2>&1 || fail "data_$(basename "$d")" "$d not deleted"
+  done
+  # install.state lives in data/ and is written by install.sh alone — this is
+  # the documented teardown exception: drop the record WITH its data, so no
+  # reader can see a finished install for a stack that no longer exists.
+  [ -f "$INSTALL_STATE" ] && rm -f "$INSTALL_STATE" >>"$LOG" 2>&1
+
+  resolve_errors || return 1
+  verify_stack_gone || return 1
+  return 0
+}
+
+# ─────────────────────────────── main ──────────────────────────────────────
 
 main() {
   [ "$(id -u)" -eq 0 ] || { echo "Run as root: sudo bash scripts/install/uninstall.sh"; exit 1; }
   install -d -m 0755 "$LOG_DIR"
   touch "$LOG" && chmod 640 "$LOG"
   banner
+  if [ "${REINSTALL_MODE:-false}" = true ]; then
+    reinstall_stack_only
+    exit $?
+  fi
   ask_inputs
   # nothing selected = nothing to do (all defaults are safe/keep)
   local any=false k
