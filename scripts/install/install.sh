@@ -410,6 +410,9 @@ save_state() {
   # otherwise inject on the next run).
   {
     printf 'DOMAIN=%q\n'             "${DOMAIN:-}"
+    # The operator's locale country (resolved to a timezone at each run, so the
+    # run's timestamps are in their local time; a resume reuses it).
+    printf 'LOCALE_COUNTRY=%q\n'     "${LOCALE_COUNTRY:-}"
     printf 'CF_API_TOKEN=%q\n'       "${CF_API_TOKEN:-}"
     printf 'TS_AUTHKEY=%q\n'         "${TS_AUTHKEY:-}"
     printf 'TS_IP=%q\n'              "${TS_IP:-}"
@@ -610,12 +613,51 @@ github_cred_inputs() {
   github_access
 }
 
+# Locale: the operator's country, resolved to an IANA timezone from the system's
+# zoneinfo (no hardcoded map — iso3166.tab names/codes + zone.tab zones). The
+# timezone is applied immediately and exported, so EVERY timestamp the run prints
+# (the checklist rows, msg lines) is in the operator's local time. Asked FIRST,
+# before any other input, so no timestamp is printed in the host's zone.
+country_timezone() {
+  local q="$1" code tz
+  [ -e "/usr/share/zoneinfo/$q" ] && { printf '%s' "$q"; return 0; }
+  code=$(awk -v q="${q^^}" '$1==q{print $1; exit}' /usr/share/zoneinfo/iso3166.tab 2>/dev/null)
+  [ -n "$code" ] || code=$(awk -F'\t' -v q="$q" 'tolower($2)==tolower(q){print $1; exit}' \
+                            /usr/share/zoneinfo/iso3166.tab 2>/dev/null)
+  [ -n "$code" ] || return 1
+  tz=$(awk -v c="$code" '$1==c{print $3; exit}' /usr/share/zoneinfo/zone.tab 2>/dev/null)
+  [ -n "$tz" ] || return 1
+  printf '%s' "$tz"
+}
+ask_locale() {
+  while :; do
+    if [ -z "${LOCALE_COUNTRY:-}" ]; then
+      printf '%s[INFO]%s Locale country (name or ISO code, e.g. France / FR): ' "$C_GREY" "$C_RST"
+      read -r LOCALE_COUNTRY || exit 1
+    fi
+    local tz
+    if tz=$(country_timezone "$LOCALE_COUNTRY"); then
+      export TZ="$tz"
+      timedatectl set-timezone "$tz" >>"$LOG" 2>&1 \
+        || log "  timedatectl set-timezone $tz failed (TZ exported for this run only)"
+      detail "  locale country '$LOCALE_COUNTRY' -> timezone $tz"
+      return 0
+    fi
+    echo "   unknown country: $LOCALE_COUNTRY (name or ISO 3166 code, e.g. France / FR)"
+    LOCALE_COUNTRY=
+  done
+}
+
 ask_inputs() {
   # Inputs are collected in ONE fixed order, all before any install work, and
   # each is persisted immediately (save_state) so an abort mid-run leaves the
-  # answers for a resume. Order: github-remote-access (+ identity), device-ssh,
-  # tailscale, cloudflare, domain, modules. The resume question precedes all of
-  # these (it decides whether saved answers are reused).
+  # answers for a resume. Order: locale country (sets local time first),
+  # github-remote-access (+ identity), device-ssh, tailscale, cloudflare, domain,
+  # modules. The resume question precedes all of these (it decides whether saved
+  # answers are reused).
+
+  # 1 — locale country: resolved to a timezone and applied before any timestamp.
+  ask_locale
 
   # 2 — GitHub remote access: opt-in, then identity + key authorization.
   github_cred_inputs
