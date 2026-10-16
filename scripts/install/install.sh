@@ -211,6 +211,22 @@ _task_anim() {
   local i="$1" pos=0
   while :; do pos=$(( (pos + 1) % 14 )); ANIM_POS=$pos; _task_update "$i"; sleep 0.1; done
 }
+# Stop the running-row animator while an interactive prompt owns the tty. The
+# animator rewrites the row by moving the cursor up over whatever was printed
+# below the checklist, so any prompt/output printed during a task got clobbered
+# every 0.1s — the Nextcloud app-action list and its yes/no prompt were
+# unreadable and unanswerable (2026-10-16). Pause before the prompt, resume
+# after the read completes.
+_task_pause() {
+  _ANIM_PAUSE=$(( ${_ANIM_PAUSE:-0} + 1 ))
+  [ -n "$ANIM_PID" ] && { kill "$ANIM_PID" 2>/dev/null; wait "$ANIM_PID" 2>/dev/null; ANIM_PID=; }
+}
+_task_resume() {
+  _ANIM_PAUSE=$(( ${_ANIM_PAUSE:-1} - 1 )); [ "$_ANIM_PAUSE" -lt 0 ] && _ANIM_PAUSE=0
+  [ "$_ANIM_PAUSE" -eq 0 ] && [ -n "$TASK_DRAWN" ] && [ -n "$TASK_ACTIVE" ] && [ -z "$ANIM_PID" ] && {
+    _task_anim "$TASK_CUR" & ANIM_PID=$!
+  }
+}
 _tasks_draw() {
   local i
   for i in $(seq 0 $((TASK_TOTAL - 1))); do TASK_STATE[$i]=wait; TASK_TS[$i]=$(date +%H:%M:%S); done
@@ -382,6 +398,13 @@ ensure_runtime_dirs() {
 # y/n/Enter shorthand, no default (a typo is re-asked). The answer is RECORDED
 # as the boolean true / false in the named variable, never as what was typed.
 ask_boolean() {   # ask_boolean <question> <variable>
+  _task_pause
+  _ask_boolean_raw "$@"
+  local rc=$?
+  _task_resume
+  return $rc
+}
+_ask_boolean_raw() {
   local q="$1" var="$2" answer
   while :; do
     printf '%s[INFO]%s %s (yes/no): ' "$C_GREY" "$C_RST" "$q"
@@ -1480,6 +1503,7 @@ ask_nc_apps() {
   done
   local conflicted="${!conflict[*]}"
   if [ -n "$conflicted" ]; then
+    _task_pause
     echo "  ERROR: same app has two different verbs:" >&2
     for key in $conflicted; do
       [ "${install["$key"]:-}" = "1" ] && echo "    $key: install&enable" >&2
@@ -1493,6 +1517,7 @@ ask_nc_apps() {
     fi
     [ "$_abort" = "true" ] && exit 1
     echo "  dropping conflicting actions and continuing" >&2
+    _task_resume
   fi
 
   # ---------- print the plan ----------
@@ -1501,6 +1526,7 @@ ask_nc_apps() {
   ids=$(printf '%s\n' "${!install_dis[@]}" | paste -sd', ' -)
   dis=$(printf '%s\n' "${!disable[@]}" | paste -sd', ' -)
   rem=$(printf '%s\n' "${!remove[@]}" | paste -sd', ' -)
+  _task_pause
   echo ""
   msg "  Nextcloud apps (config/cloud/apps.conf):"
   [ -n "$ipl" ] && echo "    will install/enable:  $ipl"
@@ -1512,8 +1538,10 @@ ask_nc_apps() {
   local _confirm
   if ! ask_boolean "Apply configured app actions?" _confirm; then
     msg "  app actions skipped (not confirmed)"
+    _task_resume
     return 0
   fi
+  _task_resume
 
   # ---------- pre-flight: read the live app state exactly once ----------
   # occ app:list: "Enabled:" / "Disabled:" sections, lines "  - id: version";
@@ -1617,6 +1645,7 @@ ask_nc_apps() {
       continue
     fi
     # Not installed → nothing to disable. Warn and offer to install&disable.
+    _task_pause
     msg "  WARN: disable='$app' but it is not installed"
     echo "    live state:  not installed"
     echo "    choices:"
@@ -1631,6 +1660,7 @@ ask_nc_apps() {
         *) echo "    unknown choice: $choice" ;;
       esac
     done
+    _task_resume
     case "${choice,,}" in
       install\&disable|install|yes)
         if ! timeout 120 docker exec -u www-data nextcloud php occ app:install "$app" >>"$LOG" 2>&1; then
