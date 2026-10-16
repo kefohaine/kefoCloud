@@ -1081,15 +1081,35 @@ kuma_seed() {
 # command can land in a dead/restarting window; and a single attempt gives no
 # second chance once the installer has moved on (2026-09-25: both mailboxes
 # uncreated, leaving the whole mail stack with no account).
-# Returns non-zero only after a 5-minute retry window.
+# Returns non-zero after a 60 s confirmation window.
+# Wait until the mailserver's account API actually answers, not merely until the
+# container is running: docker-mailserver serves `setup email list` while it is
+# still counting down to its own "no mail account to start Dovecot (120s left)"
+# self-exit, so a mailbox ADD issued in that window is lost when the container
+# restarts underneath it (2026-10-15: vaultwarden@ reported uncreated on a run
+# where the very next attempt succeeded). One wait, shared by every mailbox
+# caller, instead of a per-call retry that turns a boot race into a 5-minute
+# stall. Returns non-zero when the API never answers.
+mail_wait_ready() {
+  local i=0
+  while [ $i -lt 300 ]; do
+    if docker exec mailserver setup email list >/dev/null 2>&1; then
+      return 0
+    fi
+    docker exec mailserver true >/dev/null 2>&1 \
+      || make dok-recreate-mailserver >>"$LOG" 2>&1 || true
+    sleep 5; i=$((i+5))
+  done
+  fail mailserver "account API did not answer after 5 min"
+  return 1
+}
+
 mailbox_add() {
   local addr="$1" pass="${2:-}" i=0
-  # 5 min (60 x 5 s), not 60 s: the DMS container restart-loops until Caddy has
-  # written its mail.$DOMAIN cert (SSL_TYPE=manual) AND for ~2 min while no
-  # account exists — a shorter window expires during that boot and reports the
-  # mailbox "not created" even though the very next attempt would succeed
-  # (2026-10-15: vaultwarden@ died on a 60 s budget but is created fine now).
-  while [ $i -lt 300 ]; do
+  # mail_wait_ready has already established that the account API answers, so
+  # this is a short confirmation retry (60 s, in 5 s steps): the only thing left
+  # to absorb is a container that restarted between the wait and this call.
+  while [ $i -lt 60 ]; do
     if docker exec mailserver setup email list 2>/dev/null \
          | grep -qiE "^[* ] *${addr//./\\.}( |\$|\[)"; then
       return 0
@@ -1912,12 +1932,20 @@ phase_stack() {
   cf_dns
   host_services
   containers_up
-  # per-module setup, in dependency order (default: everything ON)
+  # Per-module setup in dependency order (default: everything ON). The mail
+  # stack comes FIRST when it is enabled: both SMTP sender mailboxes
+  # (nextcloud@, vaultwarden@) need a mailserver that is past its own boot, and
+  # the DKIM publish needs the same container — running the mail work first is
+  # what keeps a slow DMS boot from surfacing as a mailbox failure halfway
+  # through the run (2026-10-15).
+  if [ "${MOD_MAIL:-true}" = "true" ]; then
+    mail_wait_ready
+    dkim_setup
+  fi
   if [ "${MOD_CLOUD:-true}" = "true" ]; then
     nextcloud_setup
   fi
   [ "${MOD_VAULT:-true}" = "true" ] && vaultwarden_setup
-  [ "${MOD_MAIL:-true}" = "true" ] && dkim_setup
   issue_certs
   [ "${MOD_MONITOR:-true}" = "true" ] && kuma_seed
   sweep
@@ -1993,7 +2021,7 @@ hint() {
     nextcloud_setup) echo "the occ wiring is re-applied automatically on each re-check (nextcloud_occ_remediate); if it still fails, ensure the nextcloud/talk containers are up (make dok-recreate-nextcloud) and the mail module's SMTP_PASSWORD exists in modules/nextcloud/.env — see the nextcloud_setup function in this script, then re-check" ;;
     dkim_setup)      echo "run: docker exec mailserver setup config dkim domain $DOMAIN; ensure ENABLE_OPENDKIM=0 in the mailserver compose (Rspamd signs); verify the CF token has Zone > DNS > Edit; then dig @<zone NS> TXT mail._domainkey.$DOMAIN" ;;
     dns_mail_txt)   echo "the installer retries the MX, SPF, wildcard DKIM placeholder and DMARC records on re-check; verify the token has Zone > DNS > Edit and inspect Cloudflare DNS for $DOMAIN (MX -> mail.$DOMAIN, TXT v=spf1 a:mail.$DOMAIN mx -all, *._domainkey, _dmarc)" ;;
-    vaultwarden_setup) echo "the installer retries mailbox creation for 5 min (mailbox_add) and recreates the mailserver when it is down (make dok-recreate-mailserver) — a repeat failure means SMTP_PASSWORD is missing from modules/vaultwarden/.env; verify the mail module is enabled (else this step is skipped) and that the mailserver container is healthy, then re-check" ;;
+    vaultwarden_setup) echo "the mail step waits for the mailserver's account API (mail_wait_ready) then retries the add — a repeat failure means SMTP_PASSWORD is missing from modules/vaultwarden/.env; verify the mail module is enabled (else this step is skipped) and that the mailserver container is healthy (make smoke), then re-check" ;;
     clone)          echo "the clone is HTTPS (the repo is public) — check network/DNS, then re-check" ;;
     hooks)          echo "run: make install-hooks in $REPO (re-run it after editing a hook)" ;;
     github_key)     echo "check /root/.ssh is writable (mkdir -p /root/.ssh && chmod 700 /root/.ssh), then re-check" ;;
@@ -2068,6 +2096,15 @@ resolve_errors() {
         echo "      problem: $(problem "${unexp[$i]}")${ERR_DETAIL[${unexp[$i]}]:+ (${ERR_DETAIL[${unexp[$i]}]})}"
         echo "      hint: $(hint "${unexp[$i]}")"
       done
+    fi
+    if [ ! -t 0 ]; then
+      # No terminal to answer on (piped/cron/CI run): a re-check prompt would
+      # park the run forever with no way to proceed. Record the pending state
+      # and stop LOUD instead — the errors above are already printed.
+      echo "No terminal to re-check on — recording finished=false and stopping."
+      FINISHED=false
+      write_state
+      exit 1
     fi
     read -rp "Fix / complete the items above, then press Enter to re-check (Ctrl-C aborts): " input \
       || { echo "No terminal input — aborting."; exit 1; }
