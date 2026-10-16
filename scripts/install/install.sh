@@ -1265,22 +1265,26 @@ kuma_seed() {
 # command can land in a dead/restarting window; and a single attempt gives no
 # second chance once the installer has moved on (2026-09-25: both mailboxes
 # uncreated, leaving the whole mail stack with no account).
-# Wait until the mailserver's account API actually answers, not merely until the
-# container is running: docker-mailserver serves `setup email list` while it is
-# still counting down to its own "no mail account to start Dovecot (120 s)"
-# self-exit, so a mailbox ADD issued in that window is lost when the container
-# restarts underneath it. One wait, shared by every mailbox caller, instead of a
-# per-call retry that turns a boot race into a 5-minute stall.
+# Wait until the mailserver's `setup` CLI is usable, not merely until the
+# container is running. NOTE: probe `setup help`, never `setup email list` — with
+# no accounts yet the list reads a store that does not exist, so the list returns
+# non-zero and the wait can never satisfy itself (its first account comes from
+# mailbox_add, which runs after it). mailbox_add stays the retry layer that
+# absorbs a DMS restarting underneath a mid-add.
 mail_wait_ready() {
   local i=0
   while [ $i -lt 300 ]; do
-    # (a) the container is up, (b) the CLI answers, and (c) it can read the
-    # account store it will have to write — a DMS still in its "no mail account
-    # to start Dovecot (120 s left)" countdown satisfies (a) but dies before (b)
-    # lands, which is what made the add vanish (2026-10-15).
+    # (a) the container is up and (b) its `setup` CLI runs. Probe with
+    # `setup help`, NOT `setup email list`: with zero accounts the account store
+    # that `list` reads does not exist yet, so `setup email list` fails and this
+    # wait DEADLOCKS — the first account is only ever added by mailbox_add, which
+    # runs AFTER this wait. On 2026-10-15 the mailserver boot-looped its
+    # "no mail account to start Dovecot (120 s)" countdown for the full 5 min
+    # while a healthy container answered `docker exec` the whole time, so dkim
+    # and both sender mailboxes were reported failed for a container that was up.
     if docker exec mailserver true >/dev/null 2>&1 \
-       && docker exec mailserver setup email list >/dev/null 2>&1; then
-      log "  mailserver account API ready after ${i}s"
+       && docker exec mailserver setup help >/dev/null 2>&1; then
+      log "  mailserver setup CLI ready after ${i}s"
       return 0
     fi
     if ! docker exec mailserver true >/dev/null 2>&1; then
