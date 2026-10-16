@@ -3472,7 +3472,8 @@ main() {
   if previous_install; then
     echo ""
     local _mode
-    ask_choice "kefoCloud is already installed - Do you want to repair or to reinstall it? (repair/reinstall): " _mode repair reinstall || _mode=repair
+    printf '%s[WARN]%s kefoCloud is already installed\n' "$C_ORANGE" "$C_RST"
+    ask_choice "Do you want to repair or to reinstall it? (repair/reinstall): " _mode repair reinstall || _mode=repair
     if [ "$_mode" = "reinstall" ]; then
       # Last confirmation before anything is touched: this is destructive and
       # irreversible (the production stack's data is deleted, not migrated).
