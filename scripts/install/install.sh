@@ -3292,20 +3292,32 @@ finalize_install() {
 # re-run of install.sh may offer it again.
 ask_optimize() {
   local answer="" rc
-  [ -f "$REPO/scripts/ops/optimize.sh" ] || return 0
-  if ! ask_boolean "Also run the machine performance pass (kernel, swap, disk tuning) now?" answer; then
+  local script="$REPO/scripts/ops/optimize.sh"
+
+  if [ ! -f "$script" ]; then
+    detail "  optimize.sh not found: $script"
     return 0
   fi
-  if [ "$answer" != "true" ]; then
-    log "  optimize.sh skipped — run it later: bash $REPO/scripts/ops/optimize.sh"; return 0
+
+  if ! ask_boolean "Also run the machine performance pass (kernel, swap, disk tuning) now?" answer; then
+    detail "  optimize.sh prompt did not complete"
+    return 0
   fi
-  detail "  running scripts/ops/optimize.sh --yes (its output goes to $LOG)"
-  bash "$REPO/scripts/ops/optimize.sh" --yes 2>&1 | tee -a "$LOG"
+
+  if [ "$answer" != "true" ]; then
+    log "  optimize.sh skipped — run it later: bash $script"
+    return 0
+  fi
+
+  detail "  running $script --yes (its output goes to $LOG)"
+
+  bash "$script" --yes 2>&1 | tee -a "$LOG"
   rc=${PIPESTATUS[0]}
-  if [ "$rc" = 0 ]; then
+
+  if [ "$rc" -eq 0 ]; then
     detail "  optimize.sh done"
   else
-    detail "  optimize.sh exited $rc — it is optional and can be re-run any time: bash $REPO/scripts/ops/optimize.sh"
+    detail "  optimize.sh exited $rc — it is optional and can be re-run any time: bash $script"
   fi
 }
 
