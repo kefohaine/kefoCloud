@@ -874,8 +874,8 @@ git-audit:
 # real parent SHA (rule 10) — a replay/rebase over the given range. Refuses to
 # rewrite any published commit, and needs a clean worktree. RANGE defaults to what
 # a push would publish (`make git-split RANGE=<a..b>`); `ARGS=--dry-run` reports
-# only. The pre-commit hook calls it with --staged; the pre-push hook over the
-# pushed range.
+# only. The prepare-commit-msg hook calls it with --staged; the pre-push hook
+# calls it over the pushed range.
 git-split:
 >@bash scripts/info/git-split.sh $(ARGS) $(RANGE)
 
