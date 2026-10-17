@@ -261,14 +261,16 @@ smoke:
 gh-web-health:
 >@bash scripts/info/gh-web-health.sh
 
-# Install the repo's git hooks (pre-commit: Caddy validate + app-vhost stub
-# guard; pre-push: live vhost smoke test + history-rewrite warning). The installer
-# runs this automatically; re-run manually after cloning or after editing a hook.
+# Install the repo's git hooks (pre-commit: Caddy validate + app-vhost stub guard
+# + auto-split a multi-area change; pre-push: live vhost smoke test +
+# history-rewrite warning + auto-split/fill-revert over the pushed range). The
+# installer runs this automatically; re-run manually after cloning or after
+# editing a hook.
 install-hooks:
 >@mkdir -p .git/hooks
 >@cp scripts/hooks/pre-commit scripts/hooks/pre-push .git/hooks/
 >@chmod +x .git/hooks/pre-commit .git/hooks/pre-push
->@scripts/lib/mklog info "installed git hooks: pre-commit (Caddy validate + app-vhost stub guard), pre-push (live vhost smoke + history-rewrite warning)"
+>@scripts/lib/mklog info "installed git hooks: pre-commit (Caddy validate + app-vhost stub guard + auto-split), pre-push (live vhost smoke + history-rewrite warning + auto-split/revert)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Mailserver Registry (Docker Mailserver CLI — see `make help` > Mailserver
@@ -850,7 +852,7 @@ migrate:
 # Git
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: git-pull git-add git-com git-push git-force-push git-audit
+.PHONY: git-pull git-add git-com git-push git-force-push git-audit git-split
 
 git-pull:
 >cd $(REPO) && git pull --ff-only
@@ -865,6 +867,17 @@ git-pull:
 # in the GitHub web editor, which runs no local hook.
 git-audit:
 >@bash scripts/info/git-audit.sh $(RANGE)
+
+# The rewriter behind the two hooks (scripts/info/git-split.sh). It performs the
+# fix `git-audit` only reports: split a bundle commit into one commit per AREA
+# (rule 26) and fill in the `Revert:` line of every significant commit with its
+# real parent SHA (rule 10) — a replay/rebase over the given range. Refuses to
+# rewrite any published commit, and needs a clean worktree. RANGE defaults to what
+# a push would publish (`make git-split RANGE=<a..b>`); `ARGS=--dry-run` reports
+# only. The pre-commit hook calls it with --staged; the pre-push hook over the
+# pushed range.
+git-split:
+>@bash scripts/info/git-split.sh $(ARGS) $(RANGE)
 
 git-add:
 >cd $(REPO) && git add -A
