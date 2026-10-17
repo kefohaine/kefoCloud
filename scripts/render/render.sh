@@ -11,6 +11,11 @@
 #   scripts/render/render.sh --reverse <in> <out> # live values -> {{TOKENS}} (for `make backup`)
 #   scripts/render/render.sh --tokens             # list the tokens + the values in use
 #
+# Conditional blocks are supported too: {{IF KEY}}…{{ELSE}}…{{END}} keeps the
+# first side when KEY is truthy (set and not false/0/no/off), the second side
+# otherwise — one skeleton, two variants (see the tail vhost's LE vs emergency
+# Tailscale cert). Blocks are resolved before token substitution.
+#
 # Unknown tokens are left VERBATIM and reported on stderr — a missing value is
 # loud, never a silently empty string in a config that then fails at runtime.
 #
@@ -92,6 +97,23 @@ if mode == "reverse":
     else:
         sys.stdout.write(data)
     sys.exit(0)
+# Conditional blocks: {{IF KEY}}…{{ELSE}}…{{END}} — the block survives when
+# KEY's value is TRUTHY (set and not false/0/no/off), the ELSE side otherwise.
+# Lets ONE tracked skeleton carry the normal and a fallback variant of a file
+# (today: the tail vhost's normal LE cert vs its emergency Tailscale cert)
+# without either variant being a second file. Resolved before token
+# substitution, innermost-first, so a dropped branch's {{TOKENS}} never surface
+# as unresolved.
+def _truthy(k):
+    return V.get(k, "").strip().lower() not in ("", "false", "0", "no", "off")
+_COND = re.compile(r"\{\{IF ([A-Z_][A-Z0-9_]*)\}\}(.*?)(?:\{\{ELSE\}\}(.*?))?\{\{END\}\}", re.S)
+def _cond(m):
+    return (m.group(2) or "") if _truthy(m.group(1)) else (m.group(3) or "")
+for _ in range(8):
+    _next = _COND.sub(_cond, data)
+    if _next == data: break
+    data = _next
+
 missing = []
 def sub(m):
     k = m.group(1)
