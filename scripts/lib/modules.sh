@@ -12,10 +12,10 @@
 # A `not installed` module has NO route at all: it is absent, not tailnet-only.
 #
 # The installed set is the `enabled_modules` field of data/install.state — the
-# file install.sh is the SOLE writer of. This module is the ONE accessor for
+# file the installer is the SOLE writer of. This module is the ONE accessor for
 # it: every reader (smoke, fetch, fetch-more) goes through here. A MISSING
 # state file means NOTHING is installed (never "all assumed") — a fresh clone
-# has no install until install.sh records one.
+# has no install until the installer records one.
 #
 # Requires instance.sh to have been sourced first (REPO_DIR, DATA_DIR, INSTALL_STATE).
 # Functions:
@@ -59,7 +59,7 @@ mod_installed() {
   return 1
 }
 # state_get <key> — one raw field of install.state ('' when absent). The
-# read-only door for a fact install.sh recorded beyond the module set, e.g. the
+# read-only door for a fact the installer recorded beyond the module set, e.g. the
 # tail door's TLS mode (TAIL_CERT_ISSUER / TS_CERT_HOST / LE_RATELIMIT_UNTIL).
 state_get()    { _mod_read "$1"; }
 mod_state()    { mod_installed "$1" && printf 'installed' || printf 'not installed'; }

@@ -5,7 +5,7 @@
 # {{TOKENS}} or ${VARS} and are rendered by scripts/render/render.sh. Scripts are CODE:
 # they must not be templates, so they source this file and use plain variables.
 #
-# Values come from data/instance.conf (untracked, written by install.sh). Each
+# Values come from data/instance.conf (untracked, written by the installer). Each
 # variable falls back to a sane default, so a script still works on a fresh
 # clone before the installer has ever run.
 #
@@ -15,7 +15,7 @@
 # INSTALL_STATE and LOG_DIR are the installer's OWN state — repo-relative under
 # data/, never a $GITHUB_USER path or an absolute host directory.
 # Variables already set by the caller win (`: "${X:=...}"` semantics), which is
-# how install.sh passes what it just prompted for.
+# how the installer passes what it just prompted for.
 #
 # NOTE: the machine name is NODE_NAME, not HOSTNAME — HOSTNAME is a bash
 # builtin that already holds the live hostname and clobbering it is confusing.
