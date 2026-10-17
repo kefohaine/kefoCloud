@@ -6,7 +6,7 @@
 # against committing a stub deployment: the 2026-08-28 incident shipped an
 # edge-wide change whose failure mode this test catches.
 #
-# There is NO bypass: smoke itself refuses to run unless install.state records
+# There is NO bypass: smoke itself refuses to run unless wizard.state records
 # finished=true, and this hook never writes state (the installer is its sole
 # writer). A host without a finished install therefore cannot push — accepted.
 set -uo pipefail
