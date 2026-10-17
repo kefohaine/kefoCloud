@@ -4,7 +4,7 @@
 # The repo is a skeleton: deployable files carry {{TOKENS}} ({{DOMAIN}},
 # {{REPO_DIR}}, {{HOSTNAME}}, …), never one operator's real domain, hostname,
 # paths or usernames. The values live in ONE untracked file, data/instance.conf,
-# written by scripts/install/install.sh (or by hand — it is plain KEY=VALUE).
+# written by the installer (or by hand — it is plain KEY=VALUE).
 #
 #   scripts/render/render.sh <input> [output]     # output defaults to stdout
 #   scripts/render/render.sh --check <input>      # exit 1 if any token is unresolved
@@ -41,7 +41,7 @@ esac
 
 [ -f "$CONF" ] || {
   echo "render.sh: no $CONF" >&2
-  echo "  Create it (scripts/install/install.sh writes it) with the values for THIS host:" >&2
+  echo "  Create it (the installer writes it) with the values for THIS host:" >&2
   echo "  see config/instance.defaults for the token list." >&2
   exit 1
 }
