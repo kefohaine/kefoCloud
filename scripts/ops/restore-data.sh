@@ -150,7 +150,7 @@ for name in "${TO_IMPORT[@]}"; do
     log "downloading $name from $DEV_SSH:~/$LAND_DIR/"
     src="~/$LAND_DIR/$name"
     S "$DEV_SSH" "sha256sum $src | awk '{print \$1}'" > "$DATA/.import-tmp/${name}.sha256"
-    S "$DEV_SSH" "rsync -a --info=progress2 $src $DATA/.import-tmp/$name" || die "download failed: $name"
+    rsync -a --info=progress2 "$DEV_SSH:$src" "$DATA/.import-tmp/$name" || die "download failed: $name"
     remote=$(cat "$DATA/.import-tmp/${name}.sha256")
     local=$(sha256sum "$DATA/.import-tmp/$name" | awk '{print $1}')
     [ "$remote" = "$local" ] || die "checksum mismatch for $name"
