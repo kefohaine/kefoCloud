@@ -9,7 +9,7 @@
 # tailnet — one row per fact, no duplicate listings.
 #
 # Module-aware: the record comes from data/install.state via
-# scripts/lib/modules.sh — the ONE accessor (install.sh is the sole writer).
+# scripts/lib/modules.sh — the ONE accessor (the installer is the sole writer).
 # TWO INDEPENDENT FACTS, never conflated:
 #   * `installation` — the install checkpoint printed FIRST: complete (green) /
 #                  pending (red) / no state, from install.state `finished`.
@@ -134,7 +134,7 @@ if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   if [ "$gd" -gt 0 ]; then gs="${Y}${gd} uncommitted${N}"; else gs="${G}clean${N}"; fi
   row git "$gb · $gs"
   # The repo's git guards (identity/edge pre-commit + smoke pre-push) — installed
-  # by `make install-hooks` and at deploy time by install.sh.
+  # by `make install-hooks` and at deploy time by the installer.
   if [ -x "$ROOT/.git/hooks/pre-commit" ] && [ -x "$ROOT/.git/hooks/pre-push" ]; then
     row hooks "${G}installed${N} — pre-commit (identity + edge), pre-push (smoke)"
   else

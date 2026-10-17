@@ -43,7 +43,7 @@ core() {
 make fetch|AIO dashboard — host perf, modules, git, units, docker, tmux, backups, mail, tailnet
 make render|skeleton → live: render data/rendered/ + refresh each service .env
 make fetch-more|deep dive — per-core cpu, mem breakdown, processes, sockets, all units+timers+cron, docker caps/stats/log sizes, disk+inodes, data/ growth, tailnet prefs, DNS probes, TLS expiry
-make smoke|live edge test — every vhost, tailnet edge, tls, mail (pre-push hook runs it; records its verdict only when install.sh asks)
+make smoke|live edge test — every vhost, tailnet edge, tls, mail (pre-push hook runs it; records its verdict only when the installer asks)
 EOF
 
   sec "maintain"
