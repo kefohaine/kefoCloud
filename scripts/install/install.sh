@@ -3635,6 +3635,14 @@ main() {
   banner
   load_state
 
+  # Decide fresh-vs-installed BEFORE the save_state below: save_state CREATES
+  # install.state, so asking previous_install afterwards always said "installed"
+  # — even on a first run — and dropped a fresh run into the repair gate, where
+  # instance.sh's DOMAIN=example.com fallback was reused and the domain prompt
+  # was skipped (the 2026-10-17 "domain isn't asked on fresh runs" bug).
+  local _prev=
+  previous_install && _prev=1
+
   # Each run starts UNFINISHED: whatever a previous run recorded (even
   # finished=true) is cleared here, so an interrupted run can never leave a
   # stale finished=true that a reader (smoke, modules.sh) would trust.
@@ -3649,7 +3657,7 @@ main() {
     exit 0
   fi
 
-  if previous_install; then
+  if [ -n "$_prev" ]; then
     local _mode
     printf '%s[WARN]%s kefoCloud is already installed\n' "$C_ORANGE" "$C_RST"
     ask_choice "What do you want to do? (repair/reinstall): " _mode repair reinstall || _mode=repair
