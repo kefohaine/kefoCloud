@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# pre-commit hook — guards the Caddy edge (installed via `make install-hooks`).
-# Two guards:
+# pre-commit hook — guards the Caddy edge and the commit identity (installed via
+# `make install-hooks`). Guards:
+#  0. The commit identity must be the operator's GitHub account (no root, no
+#     invented address) — see below.
 #  1. If any file under modules/caddy/ is staged, the Caddyfile must
 #     validate (via the running $DOMAIN container, when it's up).
 #  2. A bare `respond "ok"` in an APP vhost (cloud/kuma/mail/vault) is
