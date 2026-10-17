@@ -669,13 +669,17 @@ ask_choice() {   # ask_choice <question> <variable> <word...>
   return $rc
 }
 _ask_choice_raw() {
-  local q="$1" var="$2"; shift 2; local words=("$@") answer="" w
+  # The reply is held in _reply, NOT `answer`: `printf -v "$var"` assigns by name
+  # under bash's dynamic scope, so a local literally named like a caller's target
+  # (ask_optimize's `answer`) would swallow the answer and the caller would never
+  # see it (the 2026-10-17 "optimize.sh never fires" bug).
+  local q="$1" var="$2"; shift 2; local words=("$@") _reply="" w
   while :; do
     printf '%s[INFO]%s %s' "$C_GREY" "$C_RST" "$q"
-    read -r answer || { _task_count 1; return 1; }
+    read -r _reply || { _task_count 1; return 1; }
     _task_count 1
     for w in "${words[@]}"; do
-      if [ "${answer,,}" = "$w" ]; then printf -v "$var" '%s' "$w"; return 0; fi
+      if [ "${_reply,,}" = "$w" ]; then printf -v "$var" '%s' "$w"; return 0; fi
     done
     echo "   type $(
       printf '%s' "${words[0]}"
@@ -685,12 +689,14 @@ _ask_choice_raw() {
   done
 }
 _ask_boolean_raw() {
-  local q="$1" var="$2" answer
+  # _reply, not `answer` — see _ask_choice_raw: a same-named local would shadow
+  # the caller's target under dynamic scope and swallow the answer.
+  local q="$1" var="$2" _reply
   while :; do
     printf '%s[INFO]%s %s (yes/no): ' "$C_GREY" "$C_RST" "$q"
-    read -r answer || { _task_count 1; return 1; }
+    read -r _reply || { _task_count 1; return 1; }
     _task_count 1
-    case "${answer,,}" in
+    case "${_reply,,}" in
       yes) printf -v "$var" '%s' true;  return 0 ;;
       no)  printf -v "$var" '%s' false; return 0 ;;
       *)   echo "   type yes or no."; _task_count 1 ;;
