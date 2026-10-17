@@ -15,7 +15,10 @@
 # exit code. A NOT-INSTALLED module's section is buffered and never printed
 # inline: if any of its checks failed, that whole section appears ONCE more, at
 # the end, under one "Not installed / ignored" heading — listed but not
-# counted. No check prints twice.
+# counted. No check prints twice. The same buffered-ignored treatment is used
+# for one CORE block when install.state says the tail door is on an emergency
+# Tailscale cert (soft_begin/soft_end): its failures are moved aside, never
+# counted.
 #
 # VOCABULARY: an installed module is expected; a not-installed one is ABSENT —
 # no container, no data, no route. It is NOT "tailnet-only" (a property of the
@@ -33,6 +36,22 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 . "$ROOT/scripts/lib/modules.sh"
 mod_in() { mod_installed "$1"; }
+
+# The tail door's TLS state, read from install.state (install.sh is its sole
+# writer): normally tail.$DOMAIN on a Let's Encrypt cert, but after an LE
+# per-identifier rate limit that ONE door is rolled back to the machine's own
+# Tailscale HTTPS name with an emergency `tailscale cert`. The cert check stays
+# CORE whatever the door; the functional tail checks stay on tail.$DOMAIN and,
+# while the door is rolled back, their failures are moved to the ignored
+# section. No other vhost reads this.
+TAIL_CERT_ISSUER="$(state_get TAIL_CERT_ISSUER)"; TAIL_CERT_ISSUER="${TAIL_CERT_ISSUER:-acme}"
+TS_CERT_HOST="$(state_get TS_CERT_HOST)"
+TAIL_ROLLBACK=0
+if [ "$TAIL_CERT_ISSUER" = tailscale ] && [ -n "$TS_CERT_HOST" ]; then
+  TAIL_ROLLBACK=1; TAIL_DOOR="$TS_CERT_HOST"
+else
+  TAIL_DOOR="tail.$DOMAIN"
+fi
 
 FIN="$(mod_finished)"
 if [ "$FIN" != "true" ]; then
@@ -61,9 +80,35 @@ sec_buf=""
 sec_buf_on=""
 sec_disabled=""
 
-# say <line> — print now for a core/enabled section, buffer for a not-installed one.
-say() { if [ -n "$sec_buf_on" ]; then sec_buf+="$1"$'\n'; else printf '%s\n' "$1"; fi; }
-bad() { sec_fails=$((sec_fails+1)); }
+soft_on=""; soft_fails=0; soft_buf=""; soft_reason=""
+
+# say <line> — print now for a core/enabled section, buffer for a not-installed
+# one, or buffer for a soft (ignored-on-failure) block.
+say() {
+  if [ -n "$soft_on" ]; then soft_buf+="$1"$'\n'
+  elif [ -n "$sec_buf_on" ]; then sec_buf+="$1"$'\n'
+  else printf '%s\n' "$1"; fi
+}
+bad() {
+  if [ -n "$soft_on" ]; then soft_fails=$((soft_fails+1)); else sec_fails=$((sec_fails+1)); fi
+}
+
+# soft_begin <reason> / soft_end — a block of checks whose FAILURES must not
+# fail the run: they are moved ONCE into the end-of-report "ignored" section
+# (listed, not counted), while a clean block prints inline. Used for the tail
+# door's functional checks once install.sh has rolled that one door back to an
+# emergency Tailscale cert (install.state TAIL_CERT_ISSUER=tailscale).
+soft_begin() { soft_on=1; soft_fails=0; soft_buf=""; soft_reason="$1"; }
+soft_end() {
+  [ -n "$soft_on" ] || return 0
+  if [ "$soft_fails" -gt 0 ]; then
+    IGNORED+="== $soft_reason =="$'\n'"$soft_buf"$'\n'
+    ignored_total=$((ignored_total + soft_fails))
+  else
+    printf '%s' "$soft_buf"
+  fi
+  soft_on=""; soft_fails=0; soft_buf=""
+}
 
 # hdr <module|core> <title> — core/enabled sections print their heading and
 # every line immediately; a not-installed module's section is buffered instead.
@@ -150,6 +195,25 @@ check_tls() {
   fi
 }
 
+# check_tls_cert <host> — the door's cert must be the one install.sh chose (from
+# install.state): a Let's Encrypt cert (a normal DNS-01 cert AND a `tailscale
+# cert` are both LE-issued) that actually COVERS the host. A missing or
+# mismatched cert is what makes the functional checks return 000; failing here
+# names the cause. Always a CORE check (the door's cert is never ignorable).
+check_tls_cert() {
+  local host="$1" pem iss san
+  pem=$(echo | timeout 6 openssl s_client -connect 127.0.0.1:443 -servername "$host" 2>/dev/null)
+  iss=$(printf '%s' "$pem" | openssl x509 -noout -issuer 2>/dev/null)
+  san=$(printf '%s' "$pem" | openssl x509 -noout -ext subjectAltName 2>/dev/null)
+  if [[ "$iss" != *"Let's Encrypt"* ]]; then
+    say "FAIL tls:$host — issuer is not Let's Encrypt: ${iss:-<none>}"; bad; return
+  fi
+  if ! grep -q "DNS:$host" <<<"$san"; then
+    say "FAIL tls:$host — cert does not cover $host (install.state: issuer=$TAIL_CERT_ISSUER)"; bad; return
+  fi
+  say "ok   tls:$host — Let's Encrypt cert covering the door ($TAIL_CERT_ISSUER)"
+}
+
 # check_ctns <desc> <names...> — every listed container must be running.
 check_ctns() {
   local desc="$1"; shift
@@ -183,8 +247,20 @@ for f in "$ROOT/data/www"/*.html; do
 done
 check_tls "www.$DOMAIN"
 
-# tail is Tailscale-only: a non-tailnet source (this host's 127.0.0.1) must
-# get 403.
+# The tail door's cert — CORE: it must be the LE cert install.sh chose,
+# covering the door host install.state recorded (tail.$DOMAIN, or the machine's
+# own Tailscale name after an LE rate-limit rollback).
+check_tls_cert "$TAIL_DOOR"
+say "     tail door: https://$TAIL_DOOR (issuer: $TAIL_CERT_ISSUER)"
+
+# Functional tail checks — they probe the tail.$DOMAIN door. While install.sh
+# has it rolled back to an emergency cert (install.state issuer=tailscale) their
+# failures are moved to the ignored section (the door is expected to differ) and
+# only the cert check above counts; on a normal LE door they are core checks.
+if [ "$TAIL_ROLLBACK" = 1 ]; then
+  soft_begin "tail door rolled back to an emergency Tailscale cert (LE rate-limited tail.$DOMAIN — install.state)"
+fi
+# tail is Tailscale-only: a non-tailnet source (this host's 127.0.0.1) must get 403.
 check tail "tail.$DOMAIN" "/" "403" "" "non-tailnet sources get 403"
 # From the tailnet side (the host's own Tailscale IP passes the @not_tailnet
 # matcher) everything on the vhost serves unauthenticated — including /ttyd:
@@ -207,6 +283,7 @@ if [ -n "$ts_ip" ]; then
 else
   say "FAIL tailnet-edge: no Tailscale IP on this host — tailnet-side checks skipped"; bad
 fi
+soft_end
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -367,9 +444,14 @@ echo ""
 # scattering red across the report.
 absent=""
 for m in $mods_absent; do absent="$absent${absent:+, }$m"; done
-if [ -n "${mods_absent:-}" ]; then
-  echo "== Not installed / ignored — module(s) not installed: ${mods_absent% } =="
-  echo "   informational only, never counted — these modules are ABSENT (no container, no route)."
+if [ -n "${mods_absent:-}" ] || [ -n "$IGNORED" ]; then
+  if [ -n "${mods_absent:-}" ]; then
+    echo "== Not installed / ignored — module(s) not installed: ${mods_absent% } =="
+    echo "   informational only, never counted — these modules are ABSENT (no container, no route)."
+  else
+    echo "== Not installed / ignored =="
+    echo "   informational only, never counted."
+  fi
   printf '%s' "$IGNORED"
   echo "   $ignored_total failing check(s) here, ${fails} failing check(s) in core / enabled modules."
   echo ""
