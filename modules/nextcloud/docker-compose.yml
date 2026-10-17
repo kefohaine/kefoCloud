@@ -61,7 +61,7 @@ services:
       NEXTCLOUD_DATA_DIR: /data
       # trusted_proxies is NOT set here — the image entrypoint writes it as a
       # single comma-joined string, and NC 34's setup check requires a real
-      # array. It is set as an array via occ in scripts/install/install.sh
+      # array. It is set as an array via occ in the installer
       # nextcloud_setup (delete + indexed sets; the CF ranges live there too).
       OVERWRITECLIURL: "https://cloud.${DOMAIN}"
 
