@@ -37,7 +37,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 . "$ROOT/scripts/lib/modules.sh"
 mod_in() { mod_installed "$1"; }
 
-# The tail door's TLS state, read from install.state (install.sh is its sole
+# The tail door's TLS state, read from install.state (the installer is its sole
 # writer): normally tail.$DOMAIN on a Let's Encrypt cert, but after an LE
 # per-identifier rate limit that ONE door is rolled back to the machine's own
 # Tailscale HTTPS name with an emergency `tailscale cert`. The cert check stays
@@ -96,7 +96,7 @@ bad() {
 # soft_begin <reason> / soft_end — a block of checks whose FAILURES must not
 # fail the run: they are moved ONCE into the end-of-report "ignored" section
 # (listed, not counted), while a clean block prints inline. Used for the tail
-# door's functional checks once install.sh has rolled that one door back to an
+# door's functional checks once the installer has rolled that one door back to an
 # emergency Tailscale cert (install.state TAIL_CERT_ISSUER=tailscale).
 soft_begin() { soft_on=1; soft_fails=0; soft_buf=""; soft_reason="$1"; }
 soft_end() {
@@ -195,7 +195,7 @@ check_tls() {
   fi
 }
 
-# check_tls_cert <host> — the door's cert must be the one install.sh chose (from
+# check_tls_cert <host> — the door's cert must be the one the installer chose (from
 # install.state): a Let's Encrypt cert (a normal DNS-01 cert AND a `tailscale
 # cert` are both LE-issued) that actually COVERS the host. A missing or
 # mismatched cert is what makes the functional checks return 000; failing here
@@ -247,13 +247,13 @@ for f in "$ROOT/data/www"/*.html; do
 done
 check_tls "www.$DOMAIN"
 
-# The tail door's cert — CORE: it must be the LE cert install.sh chose,
+# The tail door's cert — CORE: it must be the LE cert the installer chose,
 # covering the door host install.state recorded (tail.$DOMAIN, or the machine's
 # own Tailscale name after an LE rate-limit rollback).
 check_tls_cert "$TAIL_DOOR"
 say "     tail door: https://$TAIL_DOOR (issuer: $TAIL_CERT_ISSUER)"
 
-# Functional tail checks — they probe the tail.$DOMAIN door. While install.sh
+# Functional tail checks — they probe the tail.$DOMAIN door. While the installer
 # has it rolled back to an emergency cert (install.state issuer=tailscale) their
 # failures are moved to the ignored section (the door is expected to differ) and
 # only the cert check above counts; on a normal LE door they are core checks.
@@ -457,7 +457,7 @@ if [ -n "${mods_absent:-}" ] || [ -n "$IGNORED" ]; then
   echo ""
 fi
 # smoke never touches install.state: its exit code IS the verdict, and the ONLY
-# thing that may act on that verdict is install.sh (the sole writer of
+# thing that may act on that verdict is the installer (the sole writer of
 # install.state). An operator's `make smoke` and the pre-push hook just report.
 if [ "$fails" -gt 0 ]; then
   echo "SMOKE FAILED — $fails failing check(s) in core / enabled modules. Fix before committing/pushing."
