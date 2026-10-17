@@ -224,26 +224,25 @@ declare -a TASK_STATE=() TASK_TS=()
 TASK_CUR=-1 TASK_ACTIVE= TASK_DRAWN= ANIM_PID= ANIM_POS=0 TASK_ERR= TASK_SKIP=
 _TAIL=0 _ANIM_PAUSE= _COLS=80 ANIM_SYM='$'
 
-# The RUNNING row's time column: an 8-wide field whose bracket and EMPTY columns
-# are purple, with ONE orange marker (the operator's currency sign, ANIM_SYM, set
-# by ask_locale from the locale country; `$` when that country has no
-# single-column sign — a silent design choice) ping-ponging across it (0..7..1).
-# The sign is ALWAYS orange and the closing bracket is ALWAYS purple, so the
-# marker never leaks its colour into the bracket the row ends with.
+# The RUNNING row's time column, drawn as a fake `HH:MM:SS` clock whose six
+# digit cells are the operator's currency sign (ANIM_SYM, set by ask_locale from
+# the locale country; `$` when that country has no single-column sign) and whose
+# two colons are purple. The six signs carry a sliding rainbow: cell i takes
+# rainbow[(ANIM_POS + i) % 8], so consecutive frames shift the whole gradient by
+# one hue and the colours appear to march across the line. The field is ALWAYS
+# exactly 8 visible cells (`$$:$$:$$`), so the row's width never changes and the
+# animator can overwrite in place without flicker.
 _anim_field() {
-  local p=$(( ANIM_POS % 14 ))
-  (( p > 7 )) && p=$(( 14 - p ))
-
   # Rainbow colors: red, orange, yellow, green, cyan, blue, indigo, violet
   local -a rainbow=(196 208 226 46 51 21 54 93)
-  local k sym=${ANIM_SYM:-\$}
-
-  for k in {0..7}; do
-    if (( k == p )); then
-      printf '\033[38;5;%sm%s\033[39m' "${rainbow[p]}" "$sym"
-    else
-      printf ' '
-    fi
+  local n=${#rainbow[@]}
+  local off=$(( ANIM_POS % n ))
+  local sym=${ANIM_SYM:-\$}
+  local i c
+  for i in 0 1 2 3 4 5; do
+    c=${rainbow[$(( (off + i) % n ))]}
+    printf '\033[38;5;%sm%s\033[39m' "$c" "$sym"
+    (( i == 1 || i == 3 )) && printf '%s:%s' "$C_PURPLE" "$C_RST"
   done
 }
 # One newline-terminated row for task $1.
@@ -342,7 +341,7 @@ _task_update() {
 # Background animator for the running row (TTY only).
 _task_anim() {
   local i="$1" pos=0
-  while :; do pos=$(( (pos + 1) % 14 )); ANIM_POS=$pos; _task_update "$i"; sleep 0.1; done
+  while :; do pos=$(( (pos + 1) % 8 )); ANIM_POS=$pos; _task_update "$i"; sleep 0.1; done
 }
 # Stop the animator while an interactive prompt owns the tty, so it cannot redraw
 # over the prompt. Ref-counted so nested prompts work.
