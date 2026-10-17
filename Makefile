@@ -591,21 +591,23 @@ dok-logs-nextcloud-db:
 
 .PHONY: backup
 
-# Ships ALL installed modules as two bundles to a tailnet device (taildrop).
-# Bundles: nextcloud-backup-<date>.tar.gz (PostgreSQL DB + Nextcloud datadir),
-#          other-backup-<date>.tar.gz (vault / mailserver / kuma datadirs).
-# Built in a temp dir, taildropped to the device's ~/backups/, sha256-verified,
+# Ships ALL installed modules to a tailnet device (taildrop), in one of two modes
+# (prompted, or BACKUP_MODE=bundle|raw):
+#   bundle — nextcloud-backup-<date>.tar.gz (PostgreSQL DB + Nextcloud datadir),
+#            other-backup-<date>.tar.gz (vault / mailserver / kuma datadirs).
+#   raw    — nextcloud-<date>/ and others-<date>/ raw datadirectories.
+# Staged in a temp dir, taildropped to the device's ~/backups/, sha256-verified,
 # then deleted locally. No local copies; repo/config is never read or written.
 backup:
 ifeq ($(TAILDROP),)
->@scripts/lib/mklog error "usage: make backup requires TAILDROP=<tailnet-device> — ships all modules as two bundles (nextcloud, other) to a tailnet device; data/ is untouched and repo/config is never read or written"
+>@scripts/lib/mklog error "usage: make backup requires TAILDROP=<tailnet-device> — ships all modules to a tailnet device as bundles (default) or raw datadirectories (BACKUP_MODE=raw); data/ is untouched and repo/config is never read or written"
 >@exit 1
 endif
->DRYRUN="$(DRYRUN)" bash scripts/ops/backup-bundles.sh TAILDROP="$(TAILDROP)"
+>BACKUP_MODE="$(BACKUP_MODE)" bash scripts/ops/backup-bundles.sh TAILDROP="$(TAILDROP)"
 
 import-backups:
 ifeq ($(TAILDROP),)
->@scripts/lib/mklog error "usage: make import-backups requires TAILDROP=<tailnet-device> — previews what would be restored and asks for a typed yes before touching anything; no DRYRUN flag needed (preview is built in)"
+>@scripts/lib/mklog error "usage: make import-backups requires TAILDROP=<tailnet-device> — previews the bundles or raw datadirectories on the device and asks for a typed yes before restoring anything"
 >@exit 1
 endif
 >@bash scripts/ops/restore-data.sh TAILDROP="$(TAILDROP)"
