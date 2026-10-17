@@ -28,6 +28,7 @@
 #   mod_note <m>            '' when installed, else `(not installed)` — for rows
 #   mod_roster              every repo container (edge + every declared module)
 #   mod_finished            `true` | `false` | `absent`  (install.state checkpoint)
+#   state_get <key>         one raw install.state field ('' when absent)
 #   exposure <host>         `tailnet-only` for tail.$DOMAIN, else `public`
 
 MODULES_CONF="${MODULES_CONF:-${REPO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}/config/modules.conf}"
@@ -57,6 +58,10 @@ mod_installed() {
   case " $em " in *" $1 "*) return 0 ;; esac
   return 1
 }
+# state_get <key> — one raw field of install.state ('' when absent). The
+# read-only door for a fact install.sh recorded beyond the module set, e.g. the
+# tail door's TLS mode (TAIL_CERT_ISSUER / TS_CERT_HOST / LE_RATELIMIT_UNTIL).
+state_get()    { _mod_read "$1"; }
 mod_state()    { mod_installed "$1" && printf 'installed' || printf 'not installed'; }
 mod_note()     { mod_installed "$1" || printf '(not installed)'; }
 mod_finished() {
