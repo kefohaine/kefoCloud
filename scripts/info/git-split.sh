@@ -34,6 +34,10 @@
 . "$(dirname "$(readlink -f "$0")")/../lib/instance.sh" 2>/dev/null || true
 . "$(dirname "$(readlink -f "$0")")/../lib/commit-areas.sh"
 set -uo pipefail
+# Our own replay runs `git cherry-pick` in a detached mid-rebase tree where the
+# hooks' helper (scripts/lib/commit-areas.sh) may not exist yet, and re-splitting
+# a replayed commit is wrong anyway — so tell every hook to stand down.
+export GIT_SPLIT_INTERNAL=1
 
 REPO="${REPO_DIR:-$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)}"
 G() { git -C "$REPO" "$@"; }
