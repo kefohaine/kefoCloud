@@ -26,3 +26,10 @@
 # SERVER_IP — the host's public IPv4 (needed for DNS + mail PTR checks)
 # EMAIL — the operator's contact address (admin@$DOMAIN)
 # TIMEZONE — IANA zone used by containers and cron (UTC)
+#
+# Written by install.sh (never prompted):
+# TAIL_CERT_ROLLBACK — "true" when the tail.$DOMAIN door must be served under
+#                      TS_CERT_HOST with an emergency `tailscale cert` cert
+#                      instead of an LE cert (set after an LE per-identifier
+#                      rate limit on tail.$DOMAIN). Any other value = normal LE.
+# TS_CERT_HOST — the machine's own Tailscale HTTPS name (kefomachine.<tailnet>.ts.net)
