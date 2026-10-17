@@ -156,8 +156,11 @@ fail() {
 # A logged note surfaced in the post-install summary but NOT a success blocker
 # (used for non-fatal GitHub-push failures and similar soft warnings).
 warn() {
+  local t
+  for t in "${ERR_WARN_TAGS[@]:-}"; do [ "$t" = "$1" ] && return 0; done  # once per run
   log "  WARN: $(problem "$1")${2:+ ($2)}"
   ERR_WARN_TAGS+=("$1")
+  ERR_DETAIL["$1"]="${2:-}"
 }
 
 ERR_WARN_TAGS=()
@@ -517,6 +520,13 @@ save_state() {
     printf 'CF_API_TOKEN=%q\n'       "${CF_API_TOKEN:-}"
     printf 'TS_AUTHKEY=%q\n'         "${TS_AUTHKEY:-}"
     printf 'TS_IP=%q\n'              "${TS_IP:-}"
+    # The tail.$DOMAIN door's TLS state (see tail_cert_rollback / issue_certs):
+    # which issuer serves the door, the machine's own Tailscale HTTPS name, and
+    # the remembered Let's Encrypt rate-limit expiry — a later run compares the
+    # expiry to its own clock and keeps the door OFF LE until it has passed.
+    printf 'TAIL_CERT_ISSUER=%q\n'   "${TAIL_CERT_ISSUER:-acme}"
+    printf 'TS_CERT_HOST=%q\n'       "${TS_CERT_HOST:-}"
+    printf 'LE_RATELIMIT_UNTIL=%q\n' "${LE_RATELIMIT_UNTIL:-}"
     # The device's PUBLIC ssh key (safe to store): reuses on resume, re-asked on
     # a fresh run. Without it here a resume had no record and re-prompted.
     printf 'SSH_PUBKEY=%q\n'         "${SSH_PUBKEY:-}"
@@ -1533,6 +1543,20 @@ write_instance_conf() {
   local f="$DATA/instance.conf" keep=""
   mkdir -p "$DATA"
   [ -f "$f" ] && keep=$(grep -E '^(SERVER_IP|EMAIL|TIMEZONE)=' "$f" || true)
+  # Auto-remembered LE rate limit for tail.$DOMAIN: while it is unexpired the
+  # door stays on its Tailscale-cert rollback and is NOT ordered from LE; once
+  # it has passed (or was never recorded) the door goes back to LE. Either way
+  # the machine's Tailscale name is captured so the render has a value ready.
+  TS_CERT_HOST="${TS_CERT_HOST:-$(ts_cert_host)}"
+  if le_ratelimit_active; then
+    TAIL_CERT_ISSUER=tailscale
+    warn cert_tail_ratelimit "$LE_RATELIMIT_UNTIL"
+  else
+    TAIL_CERT_ISSUER=acme
+    LE_RATELIMIT_UNTIL=""
+  fi
+  local rollback=false
+  [ "${TAIL_CERT_ISSUER:-acme}" = tailscale ] && rollback=true
   {
     echo "# data/instance.conf — the values for THIS host (untracked, mode 0600)."
     echo "# Written by scripts/install/install.sh; see config/instance.defaults for what"
@@ -1548,6 +1572,11 @@ write_instance_conf() {
     printf 'REPO_DIR=%s\n' "$REPO"
     printf 'DATA_DIR=%s\n' "$DATA"
     printf 'LOG_DIR=%s\n' "$LOG_DIR"
+    # The tail door's TLS variant (see modules/caddy/vhosts/tail.caddy): the
+    # ONLY template that reads these. TS_CERT_HOST is written whenever known so
+    # a later repair render has it even before the first rollback.
+    printf 'TAIL_CERT_ROLLBACK=%s\n' "$rollback"
+    [ -n "$TS_CERT_HOST" ] && printf 'TS_CERT_HOST=%s\n' "$TS_CERT_HOST"
     [ -n "$keep" ] && printf '%s\n' "$keep"
   } > "$f"
   chmod 600 "$f"
@@ -2742,6 +2771,70 @@ cf_mail_dns() {
   fi
 }
 
+# ── tail.$DOMAIN door TLS: LE, with a Tailscale-cert rollback ──────────────
+# Let's Encrypt rate-limits an EXACT set of identifiers (5 certs / 168 h). When
+# tail.$DOMAIN hits it, Caddy retries forever, the door never gets a cert and
+# answers a TLS alert (curl 000) instead of its 403/200 — that is the tail
+# smoke failure of 2026-10-17. The installer then rolls THAT ONE door back to a
+# cert minted by `tailscale cert` for the machine's own HTTPS name and serves
+# the same door there, until the limit lifts. No other vhost ever falls back.
+
+# The machine's own Tailscale HTTPS name (kefomachine.<tailnet>.ts.net) — the
+# only name `tailscale cert` can issue for (CertDomains is unset). Empty when
+# tailscaled is not up.
+ts_cert_host() {
+  tailscale status --json 2>/dev/null | jq -r '.Self.DNSName // empty' 2>/dev/null | sed 's/\.$//'
+}
+
+# LE's retry-after for a rate-limited identifier, read from Caddy's ACME log
+# ("retry after 2026-10-17 08:20:10 UTC") and turned into an ISO-8601 UTC stamp
+# for install.state. Prints "" when the last failure for the host was not a 429.
+le_ratelimit_until() {
+  local host="${1:-tail.$DOMAIN}" raw
+  raw="$(docker logs caddy 2>&1 | grep -a 'rateLimited' | grep -a "\"identifier\":\"$host\"" \
+    | grep -aoE 'retry after [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]{8} UTC' | tail -1)"
+  [ -n "$raw" ] || return 0
+  date -u -d "${raw#retry after }" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null
+}
+
+# Is a remembered LE rate limit still in force? (ISO UTC strings sort
+# lexicographically, so a plain string compare against `date -u` is exact.)
+le_ratelimit_active() {
+  [ -n "${LE_RATELIMIT_UNTIL:-}" ] || return 1
+  [[ "$(date -u +%Y-%m-%dT%H:%M:%SZ)" < "$LE_RATELIMIT_UNTIL" ]]
+}
+
+# Roll the tail.$DOMAIN door back to a Tailscale cert. Mints the cert FIRST (a
+# failure leaves the door on LE rather than pointing Caddy at a missing file,
+# which would stop the edge), then records the state, re-renders the rollback
+# vhost and reloads the edge (admin off: config is read at start, so a restart
+# IS the reload).
+tail_cert_rollback() {
+  local until="$1" tsh cert key
+  tsh="${TS_CERT_HOST:-$(ts_cert_host)}"
+  if [ -z "$tsh" ]; then
+    log "  cannot roll the tail door back — no Tailscale HTTPS name (tailscaled down?)"
+    return 1
+  fi
+  cert="$DATA/caddy_data/tail-door.crt"; key="$DATA/caddy_data/tail-door.key"
+  mkdir -p "$DATA/caddy_data"
+  if ! tailscale cert --cert-file "$cert" --key-file "$key" "$tsh" >>"$LOG" 2>&1; then
+    log "  tailscale cert for $tsh failed — tail.$DOMAIN stays on LE (see $LOG)"
+    return 1
+  fi
+  chmod 644 "$cert"; chmod 600 "$key"
+  TS_CERT_HOST="$tsh"
+  TAIL_CERT_ISSUER=tailscale
+  LE_RATELIMIT_UNTIL="$until"
+  save_state
+  warn cert_tail_ratelimit "$until"
+  log "  tail.$DOMAIN LE rate-limited until $until — emergency tailscale cert for $tsh"
+  write_instance_conf
+  docker restart caddy >>"$LOG" 2>&1 || true
+  detail "  tail door now served as https://$tsh (emergency tailscale cert) until $until"
+  return 0
+}
+
 # Issuer of the cert Caddy presents for one vhost, polled while ACME finishes.
 cert_issuer() {
   local h="$1" i=0 iss=""
@@ -2761,10 +2854,29 @@ issue_certs() {
   mod_on vault   && hosts="$hosts vault"
   mod_on monitor && hosts="$hosts kuma"
   mod_on mail    && hosts="$hosts mail"
+  # tail.$DOMAIN is ordered here TOO (not left to lazy on-demand issuance), so a
+  # per-identifier LE rate limit is caught at install time and rolled back then
+  # — instead of surfacing later as a dead door in smoke. Only when the door is
+  # not already on its Tailscale-cert rollback.
+  [ "${TAIL_CERT_ISSUER:-acme}" = acme ] && hosts="$hosts tail"
   for h in $hosts; do
     curl -sk --resolve "$h.$DOMAIN:443:127.0.0.1" -o /dev/null "https://$h.$DOMAIN/" >>"$LOG" 2>&1 || true
     sleep 3
   done
+  # A rate limit is a ONE-SHOT failure: the order never completes, so polling
+  # for a cert (as the stuck/empty logic below does) would only time out. Read
+  # it straight off Caddy's ACME log — up to ~30 s, since Caddy's first obtain
+  # runs just after the trigger above — and roll the door back instead.
+  if [[ " $hosts " == *" tail "* ]]; then
+    local tuntil="" i=0
+    while [ $i -lt 15 ]; do
+      tuntil="$(le_ratelimit_until "tail.$DOMAIN")"; [ -n "$tuntil" ] && break
+      i=$((i+1)); sleep 2
+    done
+    if [ -n "$tuntil" ] && tail_cert_rollback "$tuntil"; then
+      hosts="$(printf '%s\n' $hosts | grep -v '^tail$' | paste -sd' ')"
+    fi
+  fi
   # The trigger requests above only wake Caddy up — the first DNS-01 issuance
   # is not instant, so cert_issuer polls before declaring failure. The two
   # outcomes are NOT the same and must not be treated as one:
@@ -2801,7 +2913,15 @@ issue_certs() {
     iss=$(cert_issuer "$h")
     case "$iss" in
       *"Let's Encrypt"*) ;;
-      *) fail "cert_$h" "issuer was: $iss";;
+      *)
+        # Safety net for the tail door: if the 429 only showed up late, roll
+        # back here rather than failing the install for a limit the operator
+        # cannot clear by hand.
+        if [ "$h" = tail ] && tuntil="$(le_ratelimit_until "tail.$DOMAIN")" \
+           && [ -n "$tuntil" ] && tail_cert_rollback "$tuntil"; then
+          continue
+        fi
+        fail "cert_$h" "issuer was: $iss";;
     esac
   done
 }
@@ -3044,6 +3164,7 @@ problem() {
     zone)           echo "Cloudflare zone '$DOMAIN' not found" ;;
     dns_*)          echo "DNS record for ${1#dns_}.$DOMAIN is missing" ;;
     cert_*)         echo "cert for ${1#cert_}.$DOMAIN is not issued by Let's Encrypt" ;;
+    cert_tail_ratelimit) echo "Let's Encrypt rate-limited tail.$DOMAIN — the tail door was rolled back to an emergency Tailscale cert" ;;
     sweep)          echo "old project name is still referenced in the repo tree" ;;
     sslmode)        echo "Cloudflare SSL/TLS mode is not Full (or strict)" ;;
     nextcloud_setup) echo "Nextcloud occ wiring incomplete (Talk signaling/TURN, SMTP, background cron)" ;;
@@ -3084,6 +3205,7 @@ hint() {
     zone)           echo "add $DOMAIN as a zone in the Cloudflare dashboard, then re-check" ;;
     dns_*)          echo "create an A record ${1#dns_}.$DOMAIN -> ${HOST_IP:-<machine IP>} in Cloudflare (turn must be DNS-only/grey-cloud — TURN bypasses the proxy; the rest proxied), then re-check" ;;
     cert_*)         echo "hit https://${1#cert_}.$DOMAIN once to trigger ACME, wait a few seconds, then re-check" ;;
+    cert_tail_ratelimit) echo "the tailnet door (webpage + machine ttyd) is served under the machine's own Tailscale HTTPS name with a tailscale cert; re-run the installer in REPAIR mode once the LE limit lifts to restore the LE cert for tail.$DOMAIN" ;;
     sweep)          echo "rename or remove the files listed by: grep -rlI $GITHUB_USER $REPO --exclude-dir=.git --exclude-dir=docs --exclude-dir=archives --exclude-dir=scripts, then re-check" ;;
     sslmode)        echo "Cloudflare dashboard -> SSL/TLS -> Overview -> set mode to Full (or Full strict), then re-check" ;;
     nextcloud_setup) echo "the occ wiring is re-applied automatically on each re-check (nextcloud_occ_remediate); if it still fails, ensure the nextcloud/talk containers are up (make dok-recreate-nextcloud) and the mail module's SMTP_PASSWORD exists in modules/nextcloud/.env — see the nextcloud_setup function in this script, then re-check" ;;
@@ -3368,8 +3490,15 @@ success_block() {
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${KUMA_PASS:-(already set — rotate with: make kuma-passwd USER=admin PASS=…)}" "$C_RST"
   mod_on mail && printf '  %sWebmail%s      https://mail.%s    %s(mailboxes via make mail-gen)%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
-  printf '  %sShell%s        https://tail.%s   %s(tailnet-only)%s\n' \
-    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
+  if [ "${TAIL_CERT_ISSUER:-acme}" = tailscale ] && [ -n "${TS_CERT_HOST:-}" ]; then
+    # Emergency door: LE rate-limited tail.$DOMAIN, so the SAME door (tailnet
+    # webpage + machine ttyd) is served under the machine's own Tailscale name.
+    printf '  %sShell%s        https://%s   %s(tailnet-only — emergency Tailscale cert)%s\n' \
+      "$C_PURPLE" "$C_RST" "$TS_CERT_HOST" "$C_GREY" "$C_RST"
+  else
+    printf '  %sShell%s        https://tail.%s   %s(tailnet-only)%s\n' \
+      "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
+  fi
   printf '  %smachine IP%s %s    %sTailscale IP%s %s\n' \
     "$C_GREY" "$C_RST" "${HOST_IP:-?}" "$C_GREY" "$C_RST" "${TS_IP:-?}"
   echo ""
@@ -3396,6 +3525,12 @@ success_block() {
   fi
   n=$((n+1)); printf '   %d. Tailscale split-DNS: admin console -> DNS -> add %s -> %s\n' "$n" "$DOMAIN" "${TS_IP:-<tailscale IP>}"
   printf '      %sso tail.%s resolves for tailnet devices (dnsmasq on the machine already answers it)%s\n' "$C_GREY" "$DOMAIN" "$C_RST"
+  if [ "${TAIL_CERT_ISSUER:-acme}" = tailscale ]; then
+    n=$((n+1)); printf '   %s%d. %sLet'"'"'s Encrypt rate limit%s: tail.%s is rate-limited until %s — Caddy cannot issue its LE cert.\n' \
+      "$C_ORANGE" "$n" "$C_RST" "$DOMAIN" "${LE_RATELIMIT_UNTIL:-?}"
+    printf '      %sthe tailnet webpage + machine ttyd are served as https://%s with an emergency Tailscale cert.%s\n' "$C_GREY" "${TS_CERT_HOST:-<ts name>}" "$C_RST"
+    printf '      %sre-run the installer in REPAIR mode after %s to get the LE cert for tail.%s back (install.state remembers the limit).%s\n' "$C_GREY" "${LE_RATELIMIT_UNTIL:-?}" "$DOMAIN" "$C_RST"
+  fi
   if mod_on cloud; then
     n=$((n+1)); printf '   %d. %s(optional)%s Cloudflare WAF rule skip for cloud.%s (desktop sync)\n' "$n" "$C_GREY" "$C_RST" "$DOMAIN"
   fi
