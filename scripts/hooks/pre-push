@@ -48,19 +48,24 @@ while read -r lref lsha rref rsha; do
   fi
   [ "$rsha" = "0000000000000000000000000000000000000000" ] && continue  # new branch: no rewrite warning
 
-  # Commit hygiene over the pushed range (AGENTS rules 26 + 10). This is the
-  # only place a bad commit can be caught when it did NOT come from this
-  # checkout: a commit made in the GitHub web editor runs no local hook at all.
-  # Same rules, same script as `make git-audit` (a bundle = more than one area,
-  # a significant commit = no `Revert:` line). Operator override:
-  # HISTORY_AUDIT_OVERRIDE=1.
+  # Commit hygiene over the pushed range (AGENTS rules 26 + 10) — AUTOMATED.
+  # This is the only place a bad commit can be caught when it did NOT come from
+  # this checkout: a GitHub-web-editor commit runs no local hook at all. When the
+  # range breaks the rules the hook runs scripts/info/git-split.sh (replay/rebase
+  # — auto-split bundles by AREA, auto-SHA the Revert: lines), then aborts so the
+  # operator re-runs `git push` on the rewrapped history. git-split itself refuses
+  # to touch published commits, so only local commits are ever rewritten.
+  # Set GIT_SPLIT_DISABLE=1 to only refuse. Operator override: HISTORY_AUDIT_OVERRIDE=1.
   if [ "${HISTORY_AUDIT_OVERRIDE:-}" != "1" ] && [ -f "$repo/scripts/info/git-audit.sh" ]; then
-    if ! out=$(bash "$repo/scripts/info/git-audit.sh" "$range" 2>&1); then
-      echo "pre-push: refusing to push — $range breaks the commit-hygiene rules."
-      printf '%s\n' "$out" | sed 's/^/  /'
-      echo "  Split the bundles (rule 26) and add a Revert: line to the significant commits (rule 10),"
-      echo "  then push again. Re-check with: make git-audit RANGE=$range"
-      echo "  Operator-approved bundle? push with HISTORY_AUDIT_OVERRIDE=1."
+    if ! bash "$repo/scripts/info/git-audit.sh" "$range" >/dev/null 2>&1; then
+      echo "pre-push: $range breaks the commit-hygiene rules — auto-splitting (rule 26) and filling revert recipes (rule 10)."
+      if [ "${GIT_SPLIT_DISABLE:-}" != "1" ] && [ -f "$repo/scripts/info/git-split.sh" ] \
+         && bash "$repo/scripts/info/git-split.sh" "$range"; then
+        echo "pre-push: history rewritten — re-run 'git push' to publish the split commits."
+        exit 1
+      fi
+      bash "$repo/scripts/info/git-audit.sh" "$range" | sed 's/^/  /'
+      echo "  split manually (make git-audit RANGE=$range) or push with HISTORY_AUDIT_OVERRIDE=1."
       exit 1
     fi
   fi

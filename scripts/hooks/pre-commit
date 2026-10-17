@@ -10,7 +10,9 @@
 #     paths). Any vhost another repo installs into the edge is guarded by
 #     the pre-push smoke instead.
 
-. "$(git rev-parse --show-toplevel)/scripts/lib/instance.sh" 2>/dev/null || true
+repo=$(git rev-parse --show-toplevel)
+. "$repo/scripts/lib/instance.sh" 2>/dev/null || true
+. "$repo/scripts/lib/commit-areas.sh"
 set -uo pipefail
 
 staged=$(git diff --cached --name-only)
@@ -63,23 +65,33 @@ for f in $app_vhosts; do
   fi
 done
 
-# 3. One change per commit (AGENTS rule 26), enforced as far as a hook can see,
-#    which is by AREA: a commit may touch one top-level area, plus the docs that
-#    describe that same change. The installer + `docs/GUIDE.md`
-#    passes; installer + uninstaller (two changes) or the installer +
-#    `Makefile` does not. Intent is not readable from a diff, so the hook
-#    refuses the shapes that are always a bundle and names the split to make.
-#    Operator-approved bundle: commit with ONE_CHANGE_OVERRIDE=1.
+# 3. One change per commit (AGENTS rule 26) — AUTOMATED. The unit is the AREA
+#    (scripts/lib/commit-areas.sh: `topdir/subdir`; docs ride with a change).
+#    When the staged change spans more than one area the hook does not just
+#    refuse: it runs scripts/info/git-split.sh --staged, which commits the
+#    staged change as one commit per area, then aborts the outer commit — the
+#    work is ALREADY committed, split. Set GIT_SPLIT_DISABLE=1 to only refuse,
+#    or ONE_CHANGE_OVERRIDE=1 to allow the bundle as-is (operator-approved).
 if [ "${ONE_CHANGE_OVERRIDE:-}" != "1" ]; then
-  code=$(printf '%s\n' "$staged" | grep -vE '^docs/|^README\.md$|(^|/)[^/]*\.md$' | grep . || true)
-  units=$(printf '%s\n' "$code" | sed -nE 's|^([^/]+/[^/]+)/.*|\1|p; s|^([^/]+)$|\1|p' | sort -u)
+  units=$(printf '%s\n' "$staged" | while IFS= read -r p; do commit_area "$p" || true; done \
+            | grep -v '^$' | sort -u)
   nunits=$(printf '%s\n' "$units" | grep -c . || true)
   if [ "${nunits:-0}" -gt 1 ]; then
-    echo "pre-commit: refusing to commit — this commit spans $nunits unrelated areas:"
-    printf '  %s\n' $units
-    echo "  One change per commit (AGENTS rule 26): split it with 'git add -p'."
-    echo "  One area plus its own docs is fine; two areas never is."
-    echo "  Operator-approved bundle? commit with ONE_CHANGE_OVERRIDE=1."
+    splitter="$repo/scripts/info/git-split.sh"
+    if [ "${GIT_SPLIT_DISABLE:-}" != "1" ] && [ -f "$splitter" ]; then
+      echo "pre-commit: staged change spans $nunits areas — splitting into one commit per area (rule 26):"
+      printf '  %s\n' $units
+      if bash "$splitter" --staged; then
+        echo "pre-commit: done — $nunits commits made; the single commit you asked for is"
+        echo "  aborted because its work is already committed. (GIT_SPLIT_DISABLE=1 to only refuse.)"
+        exit 1
+      fi
+      echo "pre-commit: auto-split failed — refusing the bundle."
+    else
+      echo "pre-commit: refusing to commit — this commit spans $nunits unrelated areas:"
+      printf '  %s\n' $units
+      echo "  One change per commit (AGENTS rule 26): split it with 'git add -p'."
+    fi
     exit 1
   fi
 fi
