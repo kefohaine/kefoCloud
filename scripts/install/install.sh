@@ -101,7 +101,6 @@ LOG_DIR="$DATA/logs"
 # to make its save_state calls write the LIVE state — which is what recorded a
 # finished install as pending. Tests must point INSTALL_STATE somewhere else.
 INSTALL_STATE="${INSTALL_STATE:-$DATA/install.state}"
-FINISHED=false
 CHECKPOINT_OPEN=
 LOG="$LOG_DIR/install.log"
 ERR_TAGS=()
@@ -3702,12 +3701,6 @@ main() {
   local _prev=
   previous_install && _prev=1
 
-  # Each run starts UNFINISHED: whatever a previous run recorded (even
-  # finished=true) is cleared here, so an interrupted run can never leave a
-  # stale finished=true that a reader (smoke, modules.sh) would trust.
-  FINISHED=false
-  save_state
-
   # Consent gate: nothing is touched until the operator says yes.
   local _go
   ask_boolean "Do you want to continue?" _go || _go=false
@@ -3718,7 +3711,7 @@ main() {
 
   if [ -n "$_prev" ]; then
     local _mode
-    printf '%s[WARN]%s kefoCloud is already installed\n' "$C_ORANGE" "$C_RST"
+    printf "%s[WARN]%s 'data/install.state' detected - wizard previously ran\n" "$C_ORANGE" "$C_RST"
     ask_choice "What do you want to do? (repair/reinstall): " _mode repair reinstall || _mode=repair
     if [ "$_mode" = "reinstall" ]; then
       # Last confirmation before anything is touched: this is destructive and
@@ -3772,6 +3765,10 @@ main() {
   # without re-reading install.state (never the token/key VALUES).
   detail "  answers: domain=$DOMAIN modules=$(enabled_modules_list || true)"
   detail "  answers: cloudflare_token=$([ -n "${CF_API_TOKEN:-}" ] && echo present || echo MISSING) tailscale_key=$([ -n "${TS_AUTHKEY:-}" ] && echo present || echo MISSING) github_remote=${GH_REMOTE:-false}"
+  # Each installation starts UNFINISHED: whatever a previous run recorded (even
+  # finished=true) is cleared here, so an interrupted run can never leave a
+  # stale finished=true that a reader (smoke, modules.sh) would trust.
+  FINISHED=false
   save_state
 
   # Fail fast: the Cloudflare zone must already exist (the script cannot create
