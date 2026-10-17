@@ -527,9 +527,11 @@ save_state() {
     printf 'TAIL_CERT_ISSUER=%q\n'   "${TAIL_CERT_ISSUER:-acme}"
     printf 'TS_CERT_HOST=%q\n'       "${TS_CERT_HOST:-}"
     printf 'LE_RATELIMIT_UNTIL=%q\n' "${LE_RATELIMIT_UNTIL:-}"
-    # The device's PUBLIC ssh key (safe to store): reuses on resume, re-asked on
-    # a fresh run. Without it here a resume had no record and re-prompted.
+    # The device's PUBLIC ssh key(s) (safe to store): reuses on resume, re-asked
+    # on a fresh run. SSH_PUBKEYS is the allowlist (newline-separated); the
+    # legacy single SSH_PUBKEY is kept pointing at the first key for back-compat.
     printf 'SSH_PUBKEY=%q\n'         "${SSH_PUBKEY:-}"
+    printf 'SSH_PUBKEYS=%q\n'        "${SSH_PUBKEYS:-}"
     # The raw module ANSWERS, so a resume reuses the choice (empty once a module
     # has not been asked yet — ask_modules re-asks only the empty ones).
     printf 'MOD_CLOUD=%q\n'          "${MOD_CLOUD:-}"
@@ -737,45 +739,77 @@ ask_modules() {
 # here instead of leaving it as a follow-up `ssh_keys` step. Only the PUBLIC
 # half is pasted; the private half never leaves that device. Nothing is ever
 # minted server-side (that is the difference to the opt-in GitHub key below).
+#
+# The door is an ALLOWLIST: any number of keys are accepted, one per line, and
+# every one is authorized (the legacy single SSH_PUBKEY is still written for
+# back-compat — it holds the first key). Paste several, one per line, and leave
+# a blank line to finish.
+auth_add_key() {   # authorize one public key, deduplicated
+  local key="$1"
+  [ -n "$key" ] || return 0
+  grep -qxF "$key" /root/.ssh/authorized_keys 2>/dev/null \
+    || printf '%s\n' "$key" >> /root/.ssh/authorized_keys
+  chmod 600 /root/.ssh/authorized_keys
+}
+ssh_key_count() { grep -c . /root/.ssh/authorized_keys 2>/dev/null || echo 0; }
 ask_ssh_key() {
-  local line info
+  local line info key
   mkdir -p /root/.ssh && chmod 700 /root/.ssh
-  # A resumed run reuses the key saved in install.state; a fresh (no-resume) run
-  # has SSH_PUBKEY unset and asks again — the key is a first-class prompted
-  # answer like DOMAIN and the tokens, not an inference from authorized_keys
-  # (2026-10-16: authorized_keys existing was the old skip signal, which also
-  # silenced the prompt on a fresh re-run).
-  if [ -n "${SSH_PUBKEY:-}" ]; then
-    grep -qxF "$SSH_PUBKEY" /root/.ssh/authorized_keys 2>/dev/null \
-      || { printf '%s\n' "$SSH_PUBKEY" >> /root/.ssh/authorized_keys; chmod 600 /root/.ssh/authorized_keys; }
+  # A resumed run reuses the allowlist saved in install.state (SSH_PUBKEYS); a
+  # fresh (no-resume) run has it unset and asks again — the keys are a
+  # first-class prompted answer like DOMAIN and the tokens, not an inference
+  # from authorized_keys (2026-10-16: authorized_keys existing was the old skip
+  # signal, which also silenced the prompt on a fresh re-run).
+  if [ -n "${SSH_PUBKEYS:-}" ]; then
+    while IFS= read -r key; do
+      [ -n "$key" ] || continue
+      auth_add_key "$key"
+    done <<< "$SSH_PUBKEYS"
+    detail "  SSH: $(ssh_key_count) device key(s) from install.state already authorized — paste skipped"
+    return 0
+  fi
+  # Also honor a legacy single SSH_PUBKEY saved by an older installer.
+  if [ -n "${SSH_PUBKEY:-}" ] && [ -z "${SSH_PUBKEYS:-}" ]; then
+    auth_add_key "$SSH_PUBKEY"
+    SSH_PUBKEYS="$SSH_PUBKEY"
     detail "  SSH: device key from install.state already authorized — paste skipped"
     return 0
   fi
   printf '\n SSH is key-only (root, no password). On the device you will connect FROM run\n'
   printf '   cat ~/.ssh/id_ed25519.pub\n'
-  printf ' and paste that one line here (no ssh-copy-id needs to run yet). Only the\n'
-  printf ' PUBLIC half goes to the server; the private half never leaves your device.\n'
-  printf ' Use a key you can actually use — hardening is key-only, so a wrong or lost\n'
-  printf ' key is a lockout.\n\n'
+  printf ' and paste that line here (no ssh-copy-id needs to run yet). Paste SEVERAL\n'
+  printf ' keys, one per line, to authorize more than one device — leave a blank line\n'
+  printf ' when you are done. Only the PUBLIC half goes to the server; the private half\n'
+  printf ' never leaves your device. Use a key you can actually use — hardening is\n'
+  printf ' key-only, so a wrong or lost key is a lockout.\n\n'
   while :; do
-    printf '%s[INFO]%s Public SSH key of your device: ' "$C_GREY" "$C_RST"
+    printf '%s[INFO]%s Public SSH key of your device (blank line when done): ' "$C_GREY" "$C_RST"
     read -r line \
       || { echo "A public key is required — re-run the installer from a terminal."; exit 1; }
     line="$(printf '%s' "$line" | tr -d '\r' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
     case "$line" in
-      "") continue ;;
+      "")
+        # A blank line finishes — but the allowlist may never be empty.
+        [ -n "${SSH_PUBKEYS:-}" ] && break
+        echo "   at least one public key is required (hardening is key-only)."
+        continue ;;
       *"PRIVATE KEY"*) echo "   that is the PRIVATE key — never paste it; paste the .pub line."; continue ;;
     esac
     info="$(printf '%s\n' "$line" | ssh-keygen -lf - 2>/dev/null)"
     [ -n "$info" ] || { echo "   not a valid public key — paste the whole .pub line (ssh-ed25519 AAAA… you@device)."; continue; }
-    grep -qxF "$line" /root/.ssh/authorized_keys 2>/dev/null \
-      || printf '%s\n' "$line" >> /root/.ssh/authorized_keys
-    chmod 600 /root/.ssh/authorized_keys
-    # Persist the answer so a resume reuses it and a no-resume re-asks.
-    SSH_PUBKEY="$line"
+    auth_add_key "$line"
+    # Append to the allowlist (deduplicated, exact match — grep -F) so a resume
+    # reuses every key.
+    if [ -z "${SSH_PUBKEYS:-}" ]; then
+      SSH_PUBKEYS="$line"
+    elif ! printf '%s\n' "$SSH_PUBKEYS" | grep -qxF "$line"; then
+      SSH_PUBKEYS="$SSH_PUBKEYS"$'\n'"$line"
+    fi
+    # Persist so a resume reuses the list and a no-resume re-asks; keep the
+    # legacy single-key field pointing at the first key.
+    SSH_PUBKEY="${SSH_PUBKEYS%%$'\n'*}"
     save_state
-    detail "  SSH key accepted: $info"
-    return 0
+    detail "  SSH key accepted: $info (allowlist now $(ssh_key_count) key(s))"
   done
 }
 
@@ -3692,7 +3726,7 @@ main() {
       # Every value is re-asked from scratch: the state the previous instance
       # held was erased with data/, and a reinstall never inherits the previous
       # instance's answers.
-      unset DOMAIN CF_API_TOKEN TS_AUTHKEY TS_IP SSH_PUBKEY \
+      unset DOMAIN CF_API_TOKEN TS_AUTHKEY TS_IP SSH_PUBKEY SSH_PUBKEYS \
             LOCALE_COUNTRY \
             MOD_CLOUD MOD_VAULT MOD_MAIL MOD_MONITOR \
             GH_REMOTE GH_AUTH_OK \
@@ -3712,7 +3746,7 @@ main() {
   else
     # No previous run: drop whatever instance.sh's fallbacks put in the
     # environment (notably DOMAIN=example.com) so no prompt is silently skipped.
-    unset DOMAIN CF_API_TOKEN TS_AUTHKEY SSH_PUBKEY NC_APPS_APPLIED
+    unset DOMAIN CF_API_TOKEN TS_AUTHKEY SSH_PUBKEY SSH_PUBKEYS NC_APPS_APPLIED
   fi
   ask_inputs
   # The decisions this run is built on — recorded so the log explains itself
