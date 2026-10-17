@@ -18,6 +18,8 @@
 repo=$(git rev-parse --show-toplevel)
 . "$repo/scripts/lib/commit-areas.sh"
 set -uo pipefail
+[ "${GIT_SPLIT_INTERNAL:-}" = 1 ] && exit 0   # a git-split replay: our own commits, stand down
+
 
 case "${2:-}" in merge|squash) exit 0 ;; esac
 [ "${ONE_CHANGE_OVERRIDE:-}" = "1" ] && exit 0

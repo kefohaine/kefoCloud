@@ -10,6 +10,8 @@
 # finished=true, and this hook never writes state (the installer is its sole
 # writer). A host without a finished install therefore cannot push — accepted.
 set -uo pipefail
+[ "${GIT_SPLIT_INTERNAL:-}" = 1 ] && exit 0   # a git-split replay: our own commits, stand down
+
 
 repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 smoke="$repo/scripts/stack/smoke-vhosts.sh"
