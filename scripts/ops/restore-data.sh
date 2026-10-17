@@ -25,6 +25,7 @@ SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=15)
 log()  { printf '\033[36m[import]\033[0m %s\n' "$*"; }
 warn() { printf '\033[33m[import] WARN:\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[31m[import] FATAL:\033[0m %s\n' "$*" >&2; exit 1; }
+hr()   { printf '%s\n' "────────────────────────────────────────────────────────────────"; }
 
 S() { ssh "${SSH_OPTS[@]}" "$1" "$2"; }
 
