@@ -1,8 +1,8 @@
-# config/cloud/apps.conf.default — the TEMPLATE install.sh seeds config/cloud/apps.conf from
+# config/cloud/apps.conf.default — the TEMPLATE the installer seeds config/cloud/apps.conf from
 # when that file is absent (a fresh clone has none). Copy it in place, then edit.
 #
 # This file holds ONLY your own extra Nextcloud apps. Two apps are enforced by
-# install.sh and cannot be configured here:
+# the installer and cannot be configured here:
 #   spreed  (Talk)                    → install&enable
 #   app_api (AppAPI)                  → install&disable
 # Change those from your own Nextcloud Apps page.
@@ -10,7 +10,7 @@
 # One action per line, in order. Valid verbs: install&enable=, install&disable=,
 # disable=, remove=. Multi-action form allowed: install&enable=APP_A disable=APP_B
 #
-# Semantics (install.sh applies these against the live occ state):
+# Semantics (the installer applies these against the live occ state):
 #   install&enable=  install if absent, then enable. Already enabled → skip.
 #   install&disable= install if absent, then disable.
 #   disable=         installed app → disable it. Not installed → warns and asks.
