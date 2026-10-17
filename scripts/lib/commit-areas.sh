@@ -55,12 +55,6 @@ commit_areas() {
   done <<< "$ns" | sort -u
 }
 
-# commit_changed_paths <commit> — print every changed path (one per line), old
-# and new sides of a rename separately, so grouping covers the whole tree.
-commit_changed_paths() {
-  git diff-tree -r --name-only --no-commit-id --no-renames --root "$1" 2>/dev/null
-}
-
 # revert_parent_sha <commit> — the SHA named in the commit's
 # `Revert: git reset --hard <sha>` line (rule 10), or nothing. Reads the real
 # SHA so a rewriter can tell a stale recipe (names an old parent) from a fresh
