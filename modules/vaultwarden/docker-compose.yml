@@ -17,7 +17,7 @@ services:
       # SMTP — verification / invite / notification emails via the local
       # mailserver (vaultwarden@${DOMAIN} sender mailbox, STARTTLS on 587).
       # Values come from modules/vaultwarden/.env (gitignored — generated
-      # by scripts/install/install.sh seed_stack; see vaultwarden_setup).
+      # by the installer's seed_stack; see vaultwarden_setup).
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT}
       SMTP_SECURITY: ${SMTP_SECURITY}
