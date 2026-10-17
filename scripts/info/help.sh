@@ -66,6 +66,7 @@ make git-pull|pull remote changes
 make git-add|stage every change
 make git-com MSG=<sentence>|commit staged changes — single-sentence MSG only
 make git-audit RANGE=<a..b>|monitor the commit-hygiene rules (26 one change per commit, 10 revert recipe) — default: what a push would publish; the pre-push hook enforces it
+make git-split RANGE=<a..b>|rewrite a local range to satisfy those rules — auto-split bundles per area, auto-SHA the Revert: lines; ARGS=--dry-run to preview; refuses published commits — the hooks run it for you
 make git-push|push to the remote
 make git-force-push BRANCH=<b>|force-push a rewritten branch (--force-with-lease only; BRANCH required — never clobbers another's commits)
 EOF

@@ -26,6 +26,7 @@
 # HISTORY_AUDIT_OVERRIDE=1 reports and exits 0.
 
 . "$(dirname "$(readlink -f "$0")")/../lib/instance.sh" 2>/dev/null || true
+. "$(dirname "$(readlink -f "$0")")/../lib/commit-areas.sh"
 set -uo pipefail
 
 REPO="${REPO_DIR:-$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)}"
@@ -44,19 +45,8 @@ if [ -z "$range" ]; then
   exit 2
 fi
 
-# Security / structure / performance paths (rule 10). A change here can take a
-# service offline or change how the box is reached, so it must ship a revert
-# recipe. Monitoring-only scripts (scripts/info) are deliberately NOT here.
-significant_path() {
-  case "$1" in
-    Makefile) return 0 ;;
-    modules/caddy/*)  return 0 ;;
-    modules/*/docker-compose.yml) return 0 ;;
-    config/ssh/*|config/sysctl/*|config/systemd/*|config/docker/*|config/dnsmasq/*|config/cron/*|config/goose/*) return 0 ;;
-    scripts/hooks/*|scripts/lib/*|scripts/install/*|scripts/render/*|scripts/stack/*|scripts/ops/*|scripts/access/*|scripts/modules/*) return 0 ;;
-  esac
-  return 1
-}
+# AREA (rule 26) and SIGNIFICANT (rule 10) come from scripts/lib/commit-areas.sh
+# — the same definitions git-split.sh rewrites against, so the two never drift.
 
 commits=$(G rev-list --reverse "$range" 2>/dev/null || true)
 if [ -z "$commits" ]; then
@@ -88,13 +78,7 @@ for c in $commits; do
     p=${p##*$'\t'}                                  # R100\told\tnew -> new
     case "$st" in D*|R*) sig=rename_or_delete ;; esac
     significant_path "$p" && sig="$sig $p"
-    case "$p" in docs/*|*.md) continue ;; esac
-    rest=${p#*/}
-    if [ "$rest" != "$p" ] && [ "${rest#*/}" != "$rest" ]; then
-      a="${p%%/*}/${rest%%/*}"
-    else
-      a="$p"
-    fi
+    a=$(commit_area "$p") || continue
     case " $areas " in *" $a "*) ;; *) areas="$areas $a" ;; esac
   done <<< "$ns"
 
