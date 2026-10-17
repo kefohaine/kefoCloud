@@ -45,7 +45,12 @@ def tail_vhost():
     for path in sorted(glob.glob(os.path.join(vdir, "*.caddy"))):
         src = open(path, encoding="utf-8").read()
         m = re.search(r"^https://([A-Za-z0-9.-]+)\s*\{", src, re.M)
-        if m and m.group(1).split(".")[0] == "tail":
+        if not m:
+            continue
+        # The tail vhost is either the tail.<domain> label OR — after an LE
+        # rate limit rolls the door back — the machine's own Tailscale name;
+        # the /targets.json door-list route is what identifies it in that case.
+        if m.group(1).split(".")[0] == "tail" or "/targets.json" in src:
             return m.group(1), src
     return None, None
 
