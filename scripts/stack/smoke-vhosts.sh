@@ -2,21 +2,21 @@
 # Live smoke test for every vhost + the mail platform + the host services —
 # run ONLY on a finished install, structured per MODULE.
 #
-# GATE: data/install.state must record finished=true, else the suite refuses to
+# GATE: data/wizard.state must record finished=true, else the suite refuses to
 # run (exit 1) before checking anything. smoke is the LAST "is everything done?"
 # source, not a diagnostic for a host mid-install — and there is NO bypass
 # (a pre-push hook on an unfinished host therefore always fails: intentional).
 
 #
 # Module awareness: the roster comes from config/modules.conf; the enabled set
-# from data/install.state via scripts/lib/modules.sh — the ONE accessor. Every
+# from data/wizard.state via scripts/lib/modules.sh — the ONE accessor. Every
 # check still runs factually. The CORE sections (edge, host) and every
 # installed (enabled) module section print inline, and only they decide the
 # exit code. A NOT-INSTALLED module's section is buffered and never printed
 # inline: if any of its checks failed, that whole section appears ONCE more, at
 # the end, under one "Not installed / ignored" heading — listed but not
 # counted. No check prints twice. The same buffered-ignored treatment is used
-# for one CORE block when install.state says the tail door is on an emergency
+# for one CORE block when wizard.state says the tail door is on an emergency
 # Tailscale cert (soft_begin/soft_end): its failures are moved aside, never
 # counted.
 #
@@ -37,7 +37,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 . "$ROOT/scripts/lib/modules.sh"
 mod_in() { mod_installed "$1"; }
 
-# The tail door's TLS state, read from install.state (the installer is its sole
+# The tail door's TLS state, read from wizard.state (the installer is its sole
 # writer): normally tail.$DOMAIN on a Let's Encrypt cert, but after an LE
 # per-identifier rate limit that ONE door is rolled back to the machine's own
 # Tailscale HTTPS name with an emergency `tailscale cert`. The cert check stays
@@ -55,7 +55,7 @@ fi
 
 FIN="$(mod_finished)"
 if [ "$FIN" != "true" ]; then
-  echo "smoke: install.state is not finished ('${FIN:-absent}') — refusing to run."
+  echo "smoke: wizard.state is not finished ('${FIN:-absent}') — refusing to run."
   echo "  make smoke only runs on a finished install (enabled_modules + finished=true in $INSTALL_STATE)."
   echo "  Finish an install first; there is no bypass."
   exit 1
@@ -68,7 +68,7 @@ while read -r m; do
   [ -n "$m" ] || continue
   mod_installed "$m" && inst+="$m " || mods_absent="${mods_absent:-}${m} "
 done < <(mod_all)
-echo "modules installed: ${inst:-none}${mods_absent:+· not installed: ${mods_absent% }} (install.state)"
+echo "modules installed: ${inst:-none}${mods_absent:+· not installed: ${mods_absent% }} (wizard.state)"
 
 fails=0
 IGNORED=""
@@ -97,7 +97,7 @@ bad() {
 # fail the run: they are moved ONCE into the end-of-report "ignored" section
 # (listed, not counted), while a clean block prints inline. Used for the tail
 # door's functional checks once the installer has rolled that one door back to an
-# emergency Tailscale cert (install.state TAIL_CERT_ISSUER=tailscale).
+# emergency Tailscale cert (wizard.state TAIL_CERT_ISSUER=tailscale).
 soft_begin() { soft_on=1; soft_fails=0; soft_buf=""; soft_reason="$1"; }
 soft_end() {
   [ -n "$soft_on" ] || return 0
@@ -196,7 +196,7 @@ check_tls() {
 }
 
 # check_tls_cert <host> — the door's cert must be the one the installer chose (from
-# install.state): a Let's Encrypt cert (a normal DNS-01 cert AND a `tailscale
+# wizard.state): a Let's Encrypt cert (a normal DNS-01 cert AND a `tailscale
 # cert` are both LE-issued) that actually COVERS the host. A missing or
 # mismatched cert is what makes the functional checks return 000; failing here
 # names the cause. Always a CORE check (the door's cert is never ignorable).
@@ -209,7 +209,7 @@ check_tls_cert() {
     say "FAIL tls:$host — issuer is not Let's Encrypt: ${iss:-<none>}"; bad; return
   fi
   if ! grep -q "DNS:$host" <<<"$san"; then
-    say "FAIL tls:$host — cert does not cover $host (install.state: issuer=$TAIL_CERT_ISSUER)"; bad; return
+    say "FAIL tls:$host — cert does not cover $host (wizard.state: issuer=$TAIL_CERT_ISSUER)"; bad; return
   fi
   say "ok   tls:$host — Let's Encrypt cert covering the door ($TAIL_CERT_ISSUER)"
 }
@@ -248,17 +248,17 @@ done
 check_tls "www.$DOMAIN"
 
 # The tail door's cert — CORE: it must be the LE cert the installer chose,
-# covering the door host install.state recorded (tail.$DOMAIN, or the machine's
+# covering the door host wizard.state recorded (tail.$DOMAIN, or the machine's
 # own Tailscale name after an LE rate-limit rollback).
 check_tls_cert "$TAIL_DOOR"
 say "     tail door: https://$TAIL_DOOR (issuer: $TAIL_CERT_ISSUER)"
 
 # Functional tail checks — they probe the tail.$DOMAIN door. While the installer
-# has it rolled back to an emergency cert (install.state issuer=tailscale) their
+# has it rolled back to an emergency cert (wizard.state issuer=tailscale) their
 # failures are moved to the ignored section (the door is expected to differ) and
 # only the cert check above counts; on a normal LE door they are core checks.
 if [ "$TAIL_ROLLBACK" = 1 ]; then
-  soft_begin "tail door rolled back to an emergency Tailscale cert (LE rate-limited tail.$DOMAIN — install.state)"
+  soft_begin "tail door rolled back to an emergency Tailscale cert (LE rate-limited tail.$DOMAIN — wizard.state)"
 fi
 # tail is Tailscale-only: a non-tailnet source (this host's 127.0.0.1) must get 403.
 check tail "tail.$DOMAIN" "/" "403" "" "non-tailnet sources get 403"
@@ -456,9 +456,9 @@ if [ -n "${mods_absent:-}" ] || [ -n "$IGNORED" ]; then
   echo "   $ignored_total failing check(s) here, ${fails} failing check(s) in core / enabled modules."
   echo ""
 fi
-# smoke never touches install.state: its exit code IS the verdict, and the ONLY
+# smoke never touches wizard.state: its exit code IS the verdict, and the ONLY
 # thing that may act on that verdict is the installer (the sole writer of
-# install.state). An operator's `make smoke` and the pre-push hook just report.
+# wizard.state). An operator's `make smoke` and the pre-push hook just report.
 if [ "$fails" -gt 0 ]; then
   echo "SMOKE FAILED — $fails failing check(s) in core / enabled modules. Fix before committing/pushing."
   exit 1
