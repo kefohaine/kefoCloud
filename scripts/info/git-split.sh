@@ -7,9 +7,10 @@
 # with its real parent SHA (auto rebase + auto SHA).
 #
 # It is the automation behind the two hooks:
-#   * pre-commit calls it with --staged — the staged change is committed as one
-#     commit per AREA, then the outer `git commit` is aborted (the work is
-#     already committed).
+#   * prepare-commit-msg calls it with --staged — the staged change is committed
+#     as one commit per AREA, then the outer `git commit` is aborted (the work is
+#     already committed). It is prepare-commit-msg, not pre-commit, because
+#     pre-commit runs before git composes the message.
 #   * pre-push calls it over the range a push would publish — bundles are split
 #     and missing revert recipes are inserted (a replay/rebase), then the hook
 #     aborts so the operator re-runs `git push` on the rewrapped history.
