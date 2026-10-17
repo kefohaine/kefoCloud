@@ -10,7 +10,7 @@
 # containers or service names are assumed. Files are only touched when the
 # state actually differs; every edit is backed up to /root/optimize-backup-*.
 #
-# Style mirrors install.sh / nc-datadir-nfs.sh: welcome banner + description, no
+# Style mirrors the installer / nc-datadir-nfs.sh: welcome banner + description, no
 # interactive prompts (every choice is auto-detected or env-overridable),
 # fully unattended work. At the end any failures and manual steps are
 # reported with a problem + hint each; every time you press Enter the script
@@ -487,7 +487,7 @@ Dpkg::Use-Pty "false";
 '
 }
 
-# ------------------------------------------------------------------ error framework (install.sh style)
+# ------------------------------------------------------------------ error framework (the installer style)
 problem() {
   case "$1" in
     apt)          echo "apt update/autoremove/clean did not complete" ;;
