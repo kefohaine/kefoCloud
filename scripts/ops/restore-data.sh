@@ -187,14 +187,40 @@ for name in "${TO_IMPORT[@]}"; do
 done
 
 # ---- overlay each staged tree onto the live data/ ----
-for SRC in "${SRC_DIRS[@]}"; do
-  log "restoring $(basename "$SRC") → $DATA/"
-  rsync -a "$SRC/" "$DATA/" || die "restore failed from $SRC"
-done
+# If the datadir is exported (`make nc-datadir-nfs` export — marker present) the
+# live cloud datadir IS the NFS export on the external machine, so restore cloud/
+# straight back to it; pgdata and the other dirs stay local. (The external mount
+# has no_root_squash, so the preserved owners survive.)
+if [ -f "$DATA/.nc-import-source" ]; then
+  EX_HOST="$(sed -n '1p' "$DATA/.nc-import-source")"
+  EX_HOST="${EX_HOST#*@}"
+  EX_MOUNT="$(sed -n '2p' "$DATA/.nc-import-source")"
+  case "$EX_HOST" in
+    *[!0-9.]* ) EX_IP="$(peer_ip "$EX_HOST")";;
+    * ) EX_IP="$EX_HOST";;
+  esac
+  [ -n "$EX_IP" ] || die "cannot resolve the external datadir host $EX_HOST"
+  log "cloud datadir is external — restoring cloud/ to root@$EX_IP:$EX_MOUNT"
+  for SRC in "${SRC_DIRS[@]}"; do
+    if [ -d "$SRC/cloud" ]; then
+      rsync -a --info=progress2 "$SRC/cloud/" "root@$EX_IP:$EX_MOUNT/" \
+        || die "cloud restore to the external export failed"
+    fi
+    ( cd "$SRC" && for d in pgdata vault mailserver kuma; do
+        [ -d "$d" ] && rsync -a "$d/" "$DATA/$d/"
+      done ) || die "restore failed from $SRC"
+  done
+else
+  for SRC in "${SRC_DIRS[@]}"; do
+    log "restoring $(basename "$SRC") → $DATA/"
+    rsync -a "$SRC/" "$DATA/" || die "restore failed from $SRC"
+  done
+fi
 
 echo
 echo "ownership after restore (matches the backup's stored owners):"
 for d in pgdata cloud vault mailserver kuma; do
+  { [ "$d" = cloud ] && [ -f "$DATA/.nc-import-source" ]; } && continue   # cloud lives on the external machine now
   [ -d "$DATA/$d" ] && printf '  %s → uid:%s gid:%s\n' "$d" "$(stat -c '%u' "$DATA/$d")" "$(stat -c '%g' "$DATA/$d")"
 done
 
