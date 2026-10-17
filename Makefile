@@ -50,7 +50,7 @@ compose-file-of = $(REPO)/$(COMPOSE_FILE_$1)
 # $(DOMAIN) needs a local image build; compose v5.5.0 on Debian trixie ships
 # buildx 0.13.1, which is too old for `compose ... --build` (needs >= 0.17).
 # Try the compose build first and fall back to plain `docker build` + compose
-# up (the install.sh pattern) so `make dok-recreate-caddy` works everywhere.
+# up (the installer pattern) so `make dok-recreate-caddy` works everywhere.
 # --remove-orphans on every recreate: a container left over from a RENAMED or
 # REMOVED service in the same compose file keeps running with the old name and
 # the old config, and compose only warns ("Found orphan containers (...)"). The
@@ -262,7 +262,7 @@ gh-web-health:
 >@bash scripts/info/gh-web-health.sh
 
 # Install the repo's git hooks (pre-commit: Caddy validate + app-vhost stub
-# guard; pre-push: live vhost smoke test + history-rewrite warning). install.sh
+# guard; pre-push: live vhost smoke test + history-rewrite warning). The installer
 # runs this automatically; re-run manually after cloning or after editing a hook.
 install-hooks:
 >@mkdir -p .git/hooks
@@ -398,7 +398,7 @@ talk-gen:
 >@bash scripts/modules/talk-gen.sh
 
 # Snapshot the live NC users/groups/quotas into cloud/recovery/ outside the
-# repo (generated recovery manifests — install.sh recreates exactly this
+# repo (generated recovery manifests — the installer recreates exactly this
 # state on fresh installs; re-run after any user/group change).
 nc-capture:
 >@bash scripts/modules/nc-capture.sh
