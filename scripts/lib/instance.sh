@@ -48,7 +48,7 @@ fi
 : "${GITHUB_USER:=exampleuser}"
 : "${REPO_NAME:=kefoCloud}"
 : "${LOG_DIR:=$DATA_DIR/logs}"
-: "${INSTALL_STATE:=$DATA_DIR/install.state}"
+: "${INSTALL_STATE:=$DATA_DIR/wizard.state}"
 : "${SERVER_IP:=}"
 : "${EMAIL:=admin@$DOMAIN}"
 
