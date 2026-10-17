@@ -26,7 +26,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 ### Robustness
 
 #### Pre-2026-10-17 history still bundles areas and lacks revert recipes
-- **File**: git history (868 commits; `make git-audit RANGE=origin/main` reports 224 bundles + 359 significant commits without a `Revert:` line)
+- **File**: git history (`make git-audit RANGE=origin/main` lists every one of them)
 - **Problem**: the one-change rule (AGENTS 26) and the revert-recipe rule (10) were enforced from 2026-10-17 onward, so everything published before that predates both — many commits span several areas and no significant commit carried a `Revert:` line. The pre-push audit only sees the range being pushed, so this backlog is invisible to it.
 - **Fix**: leave it (the rules are not retroactive and a full-history rewrite risks the GitHub web index — see `docs/GUIDE.md` "History rewrites"); or rewrite it deliberately with the plumbing `commit-tree` loop, which is a large, separate job.
 
