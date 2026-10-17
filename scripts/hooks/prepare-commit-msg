@@ -15,10 +15,10 @@
 # Skipped for merge/squash (a merge message is not a change message), for a
 # single-area change, and when GIT_SPLIT_DISABLE=1 / ONE_CHANGE_OVERRIDE=1.
 
+[ "${GIT_SPLIT_INTERNAL:-}" = 1 ] && exit 0   # a git-split replay: our own commits, stand down
 repo=$(git rev-parse --show-toplevel)
 . "$repo/scripts/lib/commit-areas.sh"
 set -uo pipefail
-[ "${GIT_SPLIT_INTERNAL:-}" = 1 ] && exit 0   # a git-split replay: our own commits, stand down
 
 
 case "${2:-}" in merge|squash) exit 0 ;; esac

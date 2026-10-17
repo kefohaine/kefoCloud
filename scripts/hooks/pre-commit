@@ -10,11 +10,11 @@
 #     paths). Any vhost another repo installs into the edge is guarded by
 #     the pre-push smoke instead.
 
+[ "${GIT_SPLIT_INTERNAL:-}" = 1 ] && exit 0   # a git-split replay: our own commits, stand down
 repo=$(git rev-parse --show-toplevel)
 . "$repo/scripts/lib/instance.sh" 2>/dev/null || true
 . "$repo/scripts/lib/commit-areas.sh"
 set -uo pipefail
-[ "${GIT_SPLIT_INTERNAL:-}" = 1 ] && exit 0   # a git-split replay: our own commits, stand down
 
 
 staged=$(git diff --cached --name-only)
