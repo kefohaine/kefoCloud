@@ -47,6 +47,24 @@ while read -r lref lsha rref rsha; do
     exit 1
   fi
   [ "$rsha" = "0000000000000000000000000000000000000000" ] && continue  # new branch: no rewrite warning
+
+  # Commit hygiene over the pushed range (AGENTS rules 26 + 10). This is the
+  # only place a bad commit can be caught when it did NOT come from this
+  # checkout: a commit made in the GitHub web editor runs no local hook at all.
+  # Same rules, same script as `make git-audit` (a bundle = more than one area,
+  # a significant commit = no `Revert:` line). Operator override:
+  # HISTORY_AUDIT_OVERRIDE=1.
+  if [ "${HISTORY_AUDIT_OVERRIDE:-}" != "1" ] && [ -f "$repo/scripts/info/git-audit.sh" ]; then
+    if ! out=$(bash "$repo/scripts/info/git-audit.sh" "$range" 2>&1); then
+      echo "pre-push: refusing to push — $range breaks the commit-hygiene rules."
+      printf '%s\n' "$out" | sed 's/^/  /'
+      echo "  Split the bundles (rule 26) and add a Revert: line to the significant commits (rule 10),"
+      echo "  then push again. Re-check with: make git-audit RANGE=$range"
+      echo "  Operator-approved bundle? push with HISTORY_AUDIT_OVERRIDE=1."
+      exit 1
+    fi
+  fi
+
   if ! git merge-base --is-ancestor "$rsha" "$lsha" 2>/dev/null; then
     echo "pre-push: WARNING — this push replaces existing remote history (not a fast-forward)."
     echo "  After it lands, github.com may 404/500 while git stays healthy (2026-09-03 lesson)."
