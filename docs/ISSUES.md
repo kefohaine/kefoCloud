@@ -25,6 +25,11 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### Robustness
 
+#### Pre-2026-10-17 history still bundles areas and lacks revert recipes
+- **File**: git history (868 commits; `make git-audit RANGE=origin/main` reports 224 bundles + 359 significant commits without a `Revert:` line)
+- **Problem**: the one-change rule (AGENTS 26) and the revert-recipe rule (10) were enforced from 2026-10-17 onward, so everything published before that predates both — many commits span several areas and no significant commit carried a `Revert:` line. The pre-push audit only sees the range being pushed, so this backlog is invisible to it.
+- **Fix**: leave it (the rules are not retroactive and a full-history rewrite risks the GitHub web index — see `docs/GUIDE.md` "History rewrites"); or rewrite it deliberately with the plumbing `commit-tree` loop, which is a large, separate job.
+
 #### Destructive make recipes run with no confirmation guard
 - **File**: `Makefile`
 - **Problem**: several recipes destroy data or overwrite live state with no prompt and no automatic backup. Data-destroying: `nc-user-del` / `mail-del` / `kuma-del-user` (user + data), `connect` → datadirectory (moves the datadirectory and can delete the local copy). Live-state overwriting: `install-config` (overwrites host config, restarts sshd/dnsmasq), `update` (pull/recreate; the apt half is now the separate `apt-upgrade`), `dok-recreate-all` / `dok-stop-all` / `dok-recreate-nextcloud-db`. Data restore is taildrop-only via `make backup TAILDROP=<device>` + `make import-backups`. Interrupting: `install-config`/`update` (recreate or restart units) and `connect` (datadirectory).
