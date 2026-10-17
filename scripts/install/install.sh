@@ -221,7 +221,7 @@ task_reinstall_skip() {   # task_reinstall_skip <task-function-name>
 }
 TASK_TOTAL=${#TASK_NAMES[@]}
 declare -a TASK_STATE=() TASK_TS=()
-TASK_CUR=-1 TASK_ACTIVE= TASK_DRAWN= ANIM_PID= ANIM_POS=0 TASK_ERR= TASK_SKIP=
+TASK_CUR=-1 TASK_ACTIVE= TASK_DRAWN= ANIM_PID= ANIM_POS=0 TASK_ERR= TASK_SKIP= SMOKE_FAILS=
 _TAIL=0 _ANIM_PAUSE= _COLS=80 ANIM_SYM='$'
 
 # The RUNNING row's time column, drawn as a fake `HH:MM:SS` clock whose six
@@ -3397,13 +3397,20 @@ run_smoke() {
   # ONE call, ONE source of truth: `make smoke`'s exit code. smoke itself never
   # writes install.state — this script reads the code and records the verdict
   # (that is what keeps install.sh the sole writer, and what lets an operator's
-  # own `make smoke`, and the pre-push hook, only report).
-  if make -C "$REPO" smoke >>"$LOG" 2>&1; then
+  # own `make smoke`, and the pre-push hook, only report). The output is
+  # captured so the per-check FAIL lines can be shown to the operator on a
+  # failure (not just hidden in the log).
+  local out
+  if out="$(make -C "$REPO" smoke 2>&1)"; then
+    printf '%s\n' "$out" >>"$LOG"
     detail "  smoke passed — the edge and every enabled module answer"
     return 0
   fi
+  printf '%s\n' "$out" >>"$LOG"
+  # Keep only the failing check lines — smoke prints one `FAIL …` line per check
+  # that did not pass, plus a trailing summary. That is what the operator needs.
+  SMOKE_FAILS="$(printf '%s\n' "$out" | grep -E '^FAIL ' || true)"
   detail "  SMOKE FAILED — the edge is not fully serving every enabled module"
-  msg "  SMOKE FAILED — re-run 'make smoke' and fix what it reports (full output: $LOG)"
   return 1
 }
 
@@ -3438,9 +3445,22 @@ finalize_install() {
     write_state
     CHECKPOINT_OPEN=
     echo ""
+    # Name the checks that failed (smoke printed one FAIL line per failing
+    # check), then tell the operator the exact recovery: fix it and re-run in
+    # REPAIR mode. Then ABORT (non-zero) — a failed smoke is not a clean exit.
+    _section "SMOKE FAILURES — the edge is not fully serving" "$C_RED"
+    if [ -n "${SMOKE_FAILS:-}" ]; then
+      while IFS= read -r _l; do
+        _note "$(printf '  %s%s%s' "$C_RED" "$_l" "$C_RST")"
+      done <<< "$SMOKE_FAILS"
+    else
+      _note "  (make smoke printed no per-check FAIL lines — see the full output: $LOG)"
+    fi
+    _note ""
     msg " NOT FINISHED — install.state is recorded pending (finished=false)."
-    echo " Fix the failure above, then re-run the installer to finish."
-    return 0
+    echo " Fix the failing check(s) above, then re-run this installer and choose REPAIR"
+    echo " at the prompt to finish (every step is idempotent)."
+    return 1
   fi
   CHECKPOINT_OPEN=
   success_block
