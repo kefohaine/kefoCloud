@@ -1,7 +1,7 @@
 # /etc/logrotate.d/instance — installed by `make install-config` from
 # config/logrotate/instance.
 #
-# Every log this project writes lives in {{LOG_DIR}} (install.log,
+# Every log this project writes lives in {{LOG_DIR}} (wizard.log,
 # uninstall.log, and any log an installed module writes). This single rule is
 # what keeps that namespace bounded: 8 weeks, compressed, so the namespace can
 # never grow without limit. Nothing else in the project logs per-event (no
