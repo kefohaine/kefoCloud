@@ -12,7 +12,7 @@
 # vaultwarden-add-user EMAIL=… PASS=…, vaultwarden-del-user EMAIL=….
 #
 # Subcommands: list | add <email> <pass> | ensure <email> <pass> | del <email>
-# (add fails if the account exists; ensure is add-if-missing, for install.sh)
+# (add fails if the account exists; ensure is add-if-missing, for the installer)
 
 set -uo pipefail
 

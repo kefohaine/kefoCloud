@@ -3,7 +3,7 @@
 # scripts/modules/nc-capture.sh — snapshot the LIVE Nextcloud user/group/quota/app state
 # into homelab/cloud/recovery/ ({users,groups}.txt + default-quota + apps.txt, OUTSIDE
 # the repo — instance recovery state, like pgdata; never commit these). These
-# are GENERATED recovery manifests: install.sh's nextcloud_setup recreates
+# are GENERATED recovery manifests: the installer's nextcloud_setup recreates
 # exactly what this captures on a fresh install — no hardcoded lists, so
 # nothing drifts as users/groups/apps change. Run `make nc-capture` on a healthy
 # instance before wiping/migrating (and re-run it after any user/app change).
