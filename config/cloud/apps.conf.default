@@ -8,7 +8,7 @@
 # Change those from your own Nextcloud Apps page.
 #
 # One action per line, in order. Valid verbs: install&enable=, install&disable=,
-# disable=, remove=. Multi-action form allowed: install&enable=spreed disable=app_api
+# disable=, remove=. Multi-action form allowed: install&enable=APP_A disable=APP_B
 #
 # Semantics (install.sh applies these against the live occ state):
 #   install&enable=  install if absent, then enable. Already enabled → skip.
