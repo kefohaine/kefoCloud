@@ -95,7 +95,7 @@ if [ "$ACTION" = "export" ]; then
     *)
       echo
       echo "Do it first:"
-      echo "  make backup MODULE=cloud TAILDROP=<device>"
+      echo "  make backup TAILDROP=<device>"
       echo "  (or set TAILDROP to your own tailnet device)"
       exit 0
       ;;
