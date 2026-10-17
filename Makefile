@@ -206,7 +206,7 @@ ttyd-rm:
 # AIO dashboard (scripts/info/fetch.sh): host perf (uptime, load, cpu, memory,
 # swap, disk), all available modules (installed green / uninstalled red),
 # git, units, failed units (+ their targets), docker, tmux, backups, mail,
-# tailnet — one aligned colored read; module-aware (install.state).
+# tailnet — one aligned colored read; module-aware (wizard.state).
 # Render the skeleton into data/rendered/ (Caddy tree + config/) and refresh the
 # instance block in every service .env. Everything that lands on the host or in
 # a container comes from here, never from the tracked files directly.
@@ -247,7 +247,7 @@ update:
 >@bash scripts/stack/smoke-vhosts.sh || scripts/lib/mklog warn "smoke reported failures — see above (smoke runs only on a finished install)"
 
 # Live edge smoke test — every vhost must serve its real app (see
-# scripts/stack/smoke-vhosts.sh). Runs ONLY on a finished install (install.state
+# scripts/stack/smoke-vhosts.sh). Runs ONLY on a finished install (wizard.state
 # finished=true) and has no bypass. Run after any modules/caddy/ change or
 # `docker restart caddy`. The pre-push hook runs this automatically.
 smoke:
