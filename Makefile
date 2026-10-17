@@ -848,10 +848,21 @@ migrate:
 # Git
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: git-pull git-add git-com git-push git-force-push
+.PHONY: git-pull git-add git-com git-push git-force-push git-audit
 
 git-pull:
 >cd $(REPO) && git pull --ff-only
+
+# Commit-hygiene monitor (scripts/info/git-audit.sh). Walks a revision range and
+# reports the two rules a commit cannot check about itself: rule 26 (one change
+# per commit — judged by AREA, the same unit the pre-commit hook splits on) and
+# rule 10 (a `Revert:` line in the message of every significant commit). Default
+# range: what a push would publish; RANGE=<a..b> audits anything (RANGE=origin/main
+# = the whole published history). The pre-push hook runs it over every pushed
+# range and refuses on a violation — that is the only way to catch a commit made
+# in the GitHub web editor, which runs no local hook.
+git-audit:
+>@bash scripts/info/git-audit.sh $(RANGE)
 
 git-add:
 >cd $(REPO) && git add -A
