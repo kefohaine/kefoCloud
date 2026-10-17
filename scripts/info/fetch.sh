@@ -8,12 +8,12 @@
 # (+ each failed unit's target in () marks), tmux, backups, mailboxes and the
 # tailnet — one row per fact, no duplicate listings.
 #
-# Module-aware: the record comes from data/install.state via
+# Module-aware: the record comes from data/wizard.state via
 # scripts/lib/modules.sh — the ONE accessor (the installer is the sole writer).
 # TWO INDEPENDENT FACTS, never conflated:
 #   * `installation` — the install checkpoint printed FIRST: complete (green) /
-#                  pending (red) / no state, from install.state `finished`.
-#   * `modules`  — installed (green) vs not installed (red), from install.state,
+#                  pending (red) / no state, from wizard.state `finished`.
+#   * `modules`  — installed (green) vs not installed (red), from wizard.state,
 #                  regardless of `finished`. A not-installed module is ABSENT —
 #                  no route — and is printed in WORDS, never colour alone: it is
 #                  NOT 'tailnet-only'.
@@ -58,12 +58,12 @@ BANNER
 printf "  %s%s%s — kefoCloud fetch  %s· %s%s\n" "$B" "$(hostname)" "$N" "$D" "$(date '+%F %T %Z')" "$N"
 rule
 
-# installation — the install checkpoint (install.state `finished`), first: the
+# installation — the install checkpoint (wizard.state `finished`), first: the
 # honest caveat for every row below. complete=green, pending/no state=red.
 case "$(mod_finished)" in
-  true)    row installation "${G}complete${N} — install.state finished=true" ;;
-  false)   row installation "${R}pending${N} — install.state finished=false (install did not complete)" ;;
-  absent)  row installation "${R}pending${N} — data/install.state absent (never installed)" ;;
+  true)    row installation "${G}complete${N} — wizard.state finished=true" ;;
+  false)   row installation "${R}pending${N} — wizard.state finished=false (install did not complete)" ;;
+  absent)  row installation "${R}pending${N} — data/wizard.state absent (never installed)" ;;
   *)       row installation "${R}pending${N} — finished=$(mod_finished)" ;;
 esac
 
@@ -103,7 +103,7 @@ topmem=$(ps -eo comm,pmem --sort=-pmem --no-headers 2>/dev/null | head -3 \
 row "top mem" "$topmem"
 
 # modules — ALWAYS every module the repo declares (config/modules.conf), from
-# install.state: recorded in green, the rest in red with the words spelled out
+# wizard.state: recorded in green, the rest in red with the words spelled out
 # (never colour alone — a not-installed module must not be inferred from colour).
 mods=""
 while read -r m; do
@@ -111,7 +111,7 @@ while read -r m; do
   if mod_installed "$m"; then mods+="${G}${m}${N}  "
   else mods+="${R}${m}${N} ${D}(not installed)${N}  "; fi
 done < <(mod_all)
-mods+="${D}(install.state enabled_modules)${N}"
+mods+="${D}(wizard.state enabled_modules)${N}"
 row modules "$mods"
 
 # containers — mod_roster: the edge + EVERY declared module's containers, state
