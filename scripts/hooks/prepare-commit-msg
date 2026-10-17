@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# prepare-commit-msg hook — AUTO-SPLIT a multi-area staged change into one
+# commit per AREA (AGENTS rule 26; the AREAs come from
+# scripts/lib/commit-areas.sh). Installed via `make install-hooks`.
+#
+# Why THIS hook and not pre-commit: pre-commit runs BEFORE git composes the
+# commit message, so a split there would re-use the PREVIOUS commit's message
+# (a real trap — the stale message lands on every split piece). prepare-commit-msg
+# is the earliest hook that has BOTH the staged index AND the message file, so
+# the pieces get the message the operator actually typed.
+#
+# It runs scripts/info/git-split.sh --staged (which commits one commit per area),
+# then aborts the outer commit — the work is ALREADY committed, split.
+# Args: $1 = the message file, $2 = source (message|template|merge|squash|commit).
+# Skipped for merge/squash (a merge message is not a change message), for a
+# single-area change, and when GIT_SPLIT_DISABLE=1 / ONE_CHANGE_OVERRIDE=1.
+
+repo=$(git rev-parse --show-toplevel)
+. "$repo/scripts/lib/commit-areas.sh"
+set -uo pipefail
+
+case "${2:-}" in merge|squash) exit 0 ;; esac
+[ "${ONE_CHANGE_OVERRIDE:-}" = "1" ] && exit 0
+[ "${GIT_SPLIT_DISABLE:-}" = "1" ] && exit 0
+
+staged=$(git diff --cached --name-only)
+[ -z "$staged" ] && exit 0
+
+units=$(printf '%s\n' "$staged" | while IFS= read -r p; do commit_area "$p" || true; done \
+          | grep -v '^$' | sort -u)
+nunits=$(printf '%s\n' "$units" | grep -c . || true)
+[ "${nunits:-0}" -gt 1 ] || exit 0
+
+splitter="$repo/scripts/info/git-split.sh"
+[ -f "$splitter" ] || exit 0
+
+echo "prepare-commit-msg: staged change spans $nunits areas — splitting into one commit per area (rule 26):"
+printf '  %s\n' $units
+if GIT_SPLIT_MESSAGE_FILE="$1" bash "$splitter" --staged; then
+  echo "prepare-commit-msg: done — $nunits commits made; the commit you asked for is"
+  echo "  aborted because its work is already committed. (GIT_SPLIT_DISABLE=1 to only refuse.)"
+  exit 1
+fi
+echo "prepare-commit-msg: auto-split failed — refusing the bundle."
+exit 1

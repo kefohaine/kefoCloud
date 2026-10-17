@@ -67,31 +67,22 @@ done
 
 # 3. One change per commit (AGENTS rule 26) — AUTOMATED. The unit is the AREA
 #    (scripts/lib/commit-areas.sh: `topdir/subdir`; docs ride with a change).
-#    When the staged change spans more than one area the hook does not just
-#    refuse: it runs scripts/info/git-split.sh --staged, which commits the
-#    staged change as one commit per area, then aborts the outer commit — the
-#    work is ALREADY committed, split. Set GIT_SPLIT_DISABLE=1 to only refuse,
-#    or ONE_CHANGE_OVERRIDE=1 to allow the bundle as-is (operator-approved).
-if [ "${ONE_CHANGE_OVERRIDE:-}" != "1" ]; then
+#    A multi-area staged change is committed as one commit per area by the
+#    prepare-commit-msg hook, which runs right AFTER this one — pre-commit
+#    cannot do it: it runs BEFORE the commit message exists, so the split would
+#    carry a stale message. Here the hook only gates the case where splitting is
+#    disabled: with GIT_SPLIT_DISABLE=1 (and no ONE_CHANGE_OVERRIDE) a bundle is
+#    refused outright. With splitting enabled, this hook lets the bundle pass to
+#    prepare-commit-msg, which splits it.
+if [ "${ONE_CHANGE_OVERRIDE:-}" != "1" ] && [ "${GIT_SPLIT_DISABLE:-}" = "1" ]; then
   units=$(printf '%s\n' "$staged" | while IFS= read -r p; do commit_area "$p" || true; done \
             | grep -v '^$' | sort -u)
   nunits=$(printf '%s\n' "$units" | grep -c . || true)
   if [ "${nunits:-0}" -gt 1 ]; then
-    splitter="$repo/scripts/info/git-split.sh"
-    if [ "${GIT_SPLIT_DISABLE:-}" != "1" ] && [ -f "$splitter" ]; then
-      echo "pre-commit: staged change spans $nunits areas — splitting into one commit per area (rule 26):"
-      printf '  %s\n' $units
-      if bash "$splitter" --staged; then
-        echo "pre-commit: done — $nunits commits made; the single commit you asked for is"
-        echo "  aborted because its work is already committed. (GIT_SPLIT_DISABLE=1 to only refuse.)"
-        exit 1
-      fi
-      echo "pre-commit: auto-split failed — refusing the bundle."
-    else
-      echo "pre-commit: refusing to commit — this commit spans $nunits unrelated areas:"
-      printf '  %s\n' $units
-      echo "  One change per commit (AGENTS rule 26): split it with 'git add -p'."
-    fi
+    echo "pre-commit: refusing to commit — this commit spans $nunits unrelated areas:"
+    printf '  %s\n' $units
+    echo "  One change per commit (AGENTS rule 26): split it with 'git add -p',"
+    echo "  or unset GIT_SPLIT_DISABLE and let prepare-commit-msg split it."
     exit 1
   fi
 fi
