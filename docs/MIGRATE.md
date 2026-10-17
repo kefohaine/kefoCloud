@@ -5,9 +5,9 @@ The primary path is the installer — a plug-and-play, **root-only** installer. 
 ## Run it
 
 ```
-scp scripts/install/install.sh root@<new-machine>:
+scp scripts/install/wizard.sh root@<new-machine>:
 ssh root@<new-machine>
-bash install.sh
+bash wizard.sh
 ```
 
 Enter the domain, CF token, and TS auth key when prompted. The script runs unattended as root; full log at `{{LOG_DIR}}/wizard.log`. Errors are printed numbered at the end, then a success summary with credentials.

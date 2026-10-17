@@ -124,12 +124,12 @@ The block is replaced, never duplicated, and the secrets already in those files
   tokens; nothing in git names a real host, domain, path or user.
 - Live values (public IP, container names, tailnet peers, module list) are still
   **auto-detected** by scripts — never read from a file (AGENTS rule 12).
-- `data/install.state` (written by the installer, its **sole writer**, **only
+- `data/wizard.state` (written by the installer, its **sole writer**, **only
   when a run reaches success**) records the `enabled_modules` + the `finished`
   checkpoint + the prompted secrets (mode 0600); `installed-modules.detected.conf`
   + `installed-modules.report.txt` are the independent-probe confirmation.
   Every reader (`make smoke`, `make fetch`, `scripts/lib/modules.sh`) reads
-  `install.state`.
+  `wizard.state`.
 - Secrets never belong in git; `data/instance.conf` is 0600, and rendered
   output (`data/rendered/`) is where live config actually comes from.
 - The installer asks every prompt on every run — there is no prompt-defaults

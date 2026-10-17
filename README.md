@@ -9,7 +9,7 @@ Fork it, run the installer, and the same board is yours — under your own domai
 
 ```bash
 git clone https://github.com/kefohaine/kefoCloud.git
-cd kefoCloud && bash scripts/install/install.sh
+cd kefoCloud && bash scripts/install/wizard.sh
 ```
 
 Prompts once then runs unattended — errors are listed with a hint each and re-checked until resolved, and succes is only granted when the smoke check passes

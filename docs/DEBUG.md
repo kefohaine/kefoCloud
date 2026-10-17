@@ -21,7 +21,7 @@ How to run an occasional deep scan or triage an incident on this system. **The r
 ## 2. Standard scan (read-only)
 ```
 make fetch                   # AIO dashboard: perf, modules, git, units, docker, tmux, backups, mail, tailnet
-make smoke                    # every vhost must serve its real app; runs ONLY on a finished install (install.state finished=true); not-installed modules' failures are listed once at the end and don't fail the run
+make smoke                    # every vhost must serve its real app; runs ONLY on a finished install (wizard.state finished=true); not-installed modules' failures are listed once at the end and don't fail the run
 docker ps --format '{{.Names}}	{{.Status}}'
 ss -tlnp                      # listeners — compare with GUIDE "Domains and access model"
 sudo ufw status verbose

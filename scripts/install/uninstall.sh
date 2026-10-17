@@ -37,7 +37,7 @@
 #   - sshd hardening — deliberately KEPT (removing the drop-in would
 #     re-enable password auth; weakening is never the uninstall's job)
 #
-# install.state (data/install.state) is the record the installer is the sole writer
+# wizard.state (data/wizard.state) is the record the installer is the sole writer
 # of. Teardown is the ONE exception that may change it: at the end of a
 # teardown that removed anything, the removed modules are dropped from
 # enabled_modules and `finished` is set back to false — so `make smoke` (which
@@ -51,7 +51,7 @@
 # Usage (root on the box, from the repo checkout):
 #   sudo bash scripts/install/uninstall.sh              # interactive teardown
 #   sudo bash scripts/install/uninstall.sh --reinstall  # stack-only teardown,
-#     no prompts, install.state dropped, then a VERIFICATION that the stack is
+#     no prompts, wizard.state dropped, then a VERIFICATION that the stack is
 #     really gone. Exit 0 = verified gone, 1 = something is left. This is the
 #     hand-off the installer calls for a reinstall (the installer only adds; every
 #     removal lives here).
@@ -68,7 +68,7 @@ OP_USER=root
 # ($NODE_NAME -> kefoCloud) without editing any script.
 REPO="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
 PROJECT_DIR="$REPO/data"
-INSTALL_STATE="${INSTALL_STATE:-$PROJECT_DIR/install.state}"
+INSTALL_STATE="${INSTALL_STATE:-$PROJECT_DIR/wizard.state}"
 LOG_DIR="${LOG_DIR:-$PROJECT_DIR/logs}"
 LOG="$LOG_DIR/uninstall.log"
 ERR_TAGS=()
@@ -131,7 +131,7 @@ ask() { # ask <var> <question> [ignored]  (ONLY the words yes/no; recorded as tr
 # production stack, so this mode removes exactly the stack and its data:
 #   modules (containers + data dirs) · edge (Caddy + caddy_data/)
 #   every module data dir including ones no module claims (pgdata, talk,
-#   rendered, www, download, mailserver, logs, …) · install.state
+#   rendered, www, download, mailserver, logs, …) · wizard.state
 # It NEVER touches the repo clone, the host services, the packages, the
 # operator account or the tailnet membership — those are the framework, and a
 # reinstall keeps them.
@@ -215,7 +215,7 @@ verify_stack_gone() {
     return 1
   fi
   echo ""
-  echo " Stack verified gone: containers, network, data/ and install.state are all clear."
+  echo " Stack verified gone: containers, network, data/ and wizard.state are all clear."
   log "  reinstall verification passed — nothing of the stack is left"
   return 0
 }
@@ -252,9 +252,9 @@ ask_restore() {
 restore_after_teardown() {
   [ "${RESTORE_AFTER:-false}" = true ] || return 0
   echo ""
-  echo "Reinstalling the production stack: bash $REPO/scripts/install/install.sh"
+  echo "Reinstalling the production stack: bash $REPO/scripts/install/wizard.sh"
   echo "   …it will find data/ erased; answer 'reinstall' at its first prompt."
-  bash "$REPO/scripts/install/install.sh"
+  bash "$REPO/scripts/install/wizard.sh"
   log "  the installer returned ($?) after the teardown hand-off"
 }
 
@@ -347,7 +347,7 @@ ask_inputs() {
     ask_restore    # data/ is gone but the box stays usable → offer the rebuild
   else
     echo ""
-    echo "Reinstall the production stack later with: bash $REPO/scripts/install/install.sh"
+    echo "Reinstall the production stack later with: bash $REPO/scripts/install/wizard.sh"
     echo "   …answer 'reinstall' at its first prompt (repairs a running instance instead)."
   fi
   echo "Teardown summary — modules: ${ml:-none}· edge: ${RM_EDGE:-false} · host: ${RM_HOST:-false} · pkgs: ${RM_PKGS:-false} · user: ${RM_USER:-false} · tailnet: ${RM_TAILNET:-false}"
@@ -359,7 +359,7 @@ mod_rm() { # indirection: is module $1 selected for removal?
   [ "${!v:-false}" = true ]
 }
 
-# ────────────── install.state teardown update (the one exception) ──────────
+# ────────────── wizard.state teardown update (the one exception) ──────────
 
 # The enabled modules recorded BEFORE any removal (empty when there is no
 # state — nothing was installed). Read in a subshell so the state's secrets
@@ -569,7 +569,7 @@ problem() {
     container_*) echo "container ${1#container_} is still there" ;;
     network)  echo "the stack's docker network 'net' is still there" ;;
     data_*)   echo "data/${1#data_} is still there" ;;
-    state)    echo "install.state is still there" ;;
+    state)    echo "wizard.state is still there" ;;
     edge)     echo "the edge (Caddy) is not fully removed" ;;
     host_goose)  echo "host service 'goose' not removed" ;;
     host_ttyd)   echo "host service 'ttyd' not removed (or was skipped — inside-ttyd guard)" ;;
@@ -712,14 +712,14 @@ success_block() {
   echo "   - $PROJECT_DIR/backups/"
   echo "   - $REPO"
   if [ -f "$INSTALL_STATE" ]; then
-    echo "   - install.state: enabled_modules now '$(sed -n 's/^enabled_modules=//p' "$INSTALL_STATE")', finished=false"
+    echo "   - wizard.state: enabled_modules now '$(sed -n 's/^enabled_modules=//p' "$INSTALL_STATE")', finished=false"
   fi
   echo ""
   echo " Follow-ups (manual, none block):"
   echo "   1. Cloudflare: the DNS records for this host remain — delete them in"
   echo "      the dashboard if this machine is being decommissioned"
   echo "   2. Re-join the tailnet after a re-install: tailscale up"
-  echo "   3. Re-install any time with: bash scripts/install/install.sh"
+  echo "   3. Re-install any time with: bash scripts/install/wizard.sh"
   echo "=============================================================="
 }
 
@@ -764,7 +764,7 @@ reinstall_stack_only() {
     mod_rm "$k" && { echo "   remove     $k"; }
   done
   echo "   remove     edge (Caddy) + caddy_data/"
-  echo "   remove     data/ (module data, rendered config, logs, install.state)"
+  echo "   remove     data/ (module data, rendered config, logs, wizard.state)"
   echo "   keep       the repo clone, host services, packages, root account, tailnet"
   echo ""
 
@@ -788,7 +788,7 @@ reinstall_stack_only() {
   for d in $(stack_data_dirs); do
     rm -rf "$d" >>"$LOG" 2>&1 || fail "data_$(basename "$d")" "$d not deleted"
   done
-  # install.state lives in data/ and is written by the installer alone — this is
+  # wizard.state lives in data/ and is written by the installer alone — this is
   # the documented teardown exception: drop the record WITH its data, so no
   # reader can see a finished install for a stack that no longer exists.
   [ -f "$INSTALL_STATE" ] && rm -f "$INSTALL_STATE" >>"$LOG" 2>&1
@@ -839,7 +839,7 @@ main() {
   if [ "${RM_BACKUPS:-false}" = true ] && [ -d "$PROJECT_DIR/backups" ]; then
     rm -rf "$PROJECT_DIR/backups" >>"$LOG" 2>&1 || log "WARN: backups/ not deleted"
   fi
-  # install.state teardown update (the one exception to the installer's sole
+  # wizard.state teardown update (the one exception to the installer's sole
   # write): drop the removed modules and clear the finished checkpoint so
   # `make smoke` no longer treats this host as a finished install.
   if [ -f "$INSTALL_STATE" ]; then
@@ -848,7 +848,7 @@ main() {
       mod_rm "$m" || keep+="$m "
     done
     state_reset "${keep% }" false
-    log "  install.state: enabled_modules='${keep% }' finished=false"
+    log "  wizard.state: enabled_modules='${keep% }' finished=false"
   fi
   resolve_errors
   restore_after_teardown

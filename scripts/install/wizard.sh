@@ -39,9 +39,9 @@
 # tailnet). The installer runs entirely as root — no sudo user, no hand-off.
 #
 # Usage:
-#   scp scripts/install/install.sh root@$NODE_NAME:
+#   scp scripts/install/wizard.sh root@$NODE_NAME:
 #   ssh root@$NODE_NAME
-#   bash install.sh
+#   bash wizard.sh
 #
 # Paths: the repo lives at $REPO ($ROOT); every external,
 # untracked artefact (data, modules, databases, uploads) lives under $DATA
@@ -90,17 +90,17 @@ MANIFEST_DIR="$DATA/cloud/recovery"
 # instance it describes and one logrotate rule bounds it. No $GITHUB_USER
 # namespace and no fallback.
 #
-# The installer's OWN state is $INSTALL_STATE (data/install.state, mode 0600),
+# The installer's OWN state is $INSTALL_STATE (data/wizard.state, mode 0600),
 # repo-relative — it holds the CF token + Tailscale key, so it is never
 # world-readable. The installer is its SOLE writer (including the `finished`
 # checkpoint); every reader (make smoke / make fetch / scripts/lib/modules.sh)
 # only reads it.
 LOG_DIR="$DATA/logs"
 # INSTALL_STATE is the ONE artefact every reader uses, and this script is its
-# sole writer. Sourcing this file for a harness (`bash -c '. install.sh'`) used
+# sole writer. Sourcing this file for a harness (`bash -c '. wizard.sh'`) used
 # to make its save_state calls write the LIVE state — which is what recorded a
 # finished install as pending. Tests must point INSTALL_STATE somewhere else.
-INSTALL_STATE="${INSTALL_STATE:-$DATA/install.state}"
+INSTALL_STATE="${INSTALL_STATE:-$DATA/wizard.state}"
 CHECKPOINT_OPEN=
 LOG="$LOG_DIR/wizard.log"
 ERR_TAGS=()
@@ -467,7 +467,7 @@ load_state() {
 # prompts — an UNSET value can only mean "this run never asked", which is a
 # run that should be doing the full job, not silently skipping steps. Every
 # caller goes through here, so a step can never disagree with the module record
-# written to install.state (2026-10-15: three different call sites disagreed on
+# written to wizard.state (2026-10-15: three different call sites disagreed on
 # the fallback, and one of them made a healthy Nextcloud report a failure).
 mod_on() {
   # Build the name first, then indirect it: `${MOD_${1^^}:-true}` is NOT valid
@@ -569,7 +569,7 @@ migrate_state() {
 # $LOG lives outside the repo and must exist before ANYTHING redirects into it
 # (a `>>"$LOG"` whose directory is missing fails the redirection, the command
 # behind it is never run, and `|| fail ...` then reports the step as broken) —
-# and before the first `log()`, or tee swallows that line. $DATA (install.state)
+# and before the first `log()`, or tee swallows that line. $DATA (wizard.state)
 # is tightened to 0700 because it holds the CF token + Tailscale key. Idempotent;
 # main() calls it first thing.
 ensure_runtime_dirs() {
@@ -581,7 +581,7 @@ ensure_runtime_dirs() {
 # the installer is ADD-ONLY: it creates, never removes. So a reinstall does not
 # tear anything down here — it asks, then HANDS OFF to uninstall.sh, which owns
 # all removal and all of its safety checks (containers down, volumes + data/
-# gone, docker gone, install.state cleared). The installer only decides when to
+# gone, docker gone, wizard.state cleared). The installer only decides when to
 # hand off and what to do with the answer:
 #
 #   bash scripts/install/uninstall.sh --reinstall
@@ -747,7 +747,7 @@ ssh_key_count() { grep -c . /root/.ssh/authorized_keys 2>/dev/null || echo 0; }
 ask_ssh_key() {
   local line info key
   mkdir -p /root/.ssh && chmod 700 /root/.ssh
-  # A resumed run reuses the allowlist saved in install.state (SSH_PUBKEYS); a
+  # A resumed run reuses the allowlist saved in wizard.state (SSH_PUBKEYS); a
   # fresh (no-resume) run has it unset and asks again — the keys are a
   # first-class prompted answer like DOMAIN and the tokens, not an inference
   # from authorized_keys (2026-10-16: authorized_keys existing was the old skip
@@ -757,14 +757,14 @@ ask_ssh_key() {
       [ -n "$key" ] || continue
       auth_add_key "$key"
     done <<< "$SSH_PUBKEYS"
-    detail "  SSH: $(ssh_key_count) device key(s) from install.state already authorized — paste skipped"
+    detail "  SSH: $(ssh_key_count) device key(s) from wizard.state already authorized — paste skipped"
     return 0
   fi
   # Also honor a legacy single SSH_PUBKEY saved by an older installer.
   if [ -n "${SSH_PUBKEY:-}" ] && [ -z "${SSH_PUBKEYS:-}" ]; then
     auth_add_key "$SSH_PUBKEY"
     SSH_PUBKEYS="$SSH_PUBKEY"
-    detail "  SSH: device key from install.state already authorized — paste skipped"
+    detail "  SSH: device key from wizard.state already authorized — paste skipped"
     return 0
   fi
   printf '\n SSH is key-only (root, no password). On the device you will connect FROM run\n'
@@ -972,7 +972,7 @@ ask_inputs() {
 # `finished` checkpoint) — the ONE artefact every reader uses. It ALSO writes a
 # cross-checked detection report (independent probes) purely as evidence: a
 # declared/confirmed mismatch is logged as a warning, never used as truth.
-#   install.state                    enabled modules + finished + prompted values
+#   wizard.state                    enabled modules + finished + prompted values
 #   installed-modules.detected.conf  modules confirmed by independent probes
 #   installed-modules.report.txt     per-module, per-method evidence matrix
 # Probes, deliberately independent of the record: (1) the container is running,
@@ -2335,7 +2335,7 @@ nextcloud_setup() {
 
   # SMTP wiring is gated on the mail module — `mod_on mail` is the single
   # definition of that test, so this step can never disagree with what the
-  # module record in install.state says or with the mailbox/recheck arms.
+  # module record in wizard.state says or with the mailbox/recheck arms.
   . modules/nextcloud/.env
   if mod_on mail; then
     mailbox_add "nextcloud@$DOMAIN" "${SMTP_PASSWORD:-}" \
@@ -2820,7 +2820,7 @@ ts_cert_host() {
 
 # LE's retry-after for a rate-limited identifier, read from Caddy's ACME log
 # ("retry after 2026-10-17 08:20:10 UTC") and turned into an ISO-8601 UTC stamp
-# for install.state. Prints "" when the last failure for the host was not a 429.
+# for wizard.state. Prints "" when the last failure for the host was not a 429.
 le_ratelimit_until() {
   local host="${1:-tail.$DOMAIN}" raw
   raw="$(docker logs caddy 2>&1 | grep -a 'rateLimited' | grep -a "\"identifier\":\"$host\"" \
@@ -3377,18 +3377,18 @@ resolve_errors() {
 #      immediately when NOT opted in.
 #   3. record the install: enabled_modules + finished=true, via write_state.
 #   4. ONE `make smoke` — the "is everything actually done?" source. The gate it
-#      enforces (install.state finished=true) is why the checkpoint is written
+#      enforces (wizard.state finished=true) is why the checkpoint is written
 #      FIRST; its EXIT CODE is the verdict (core + enabled modules decide it, a
 #      not-installed module's checks are informational only).
 #   5. finished=false + stop, no success block, when smoke fails. Fail LOUD.
-# Nothing but this script ever writes install.state: `make smoke` only reports,
+# Nothing but this script ever writes wizard.state: `make smoke` only reports,
 # and the installer records the verdict of the single call it makes.
 # CHECKPOINT_OPEN guards the window between step 3 and the last decision: if the
 # run is interrupted there, the EXIT trap reverts finished to false.
 run_smoke() {
   detail "  running the live edge smoke test (make smoke) — the last check"
   # ONE call, ONE source of truth: `make smoke`'s exit code. smoke itself never
-  # writes install.state — this script reads the code and records the verdict
+  # writes wizard.state — this script reads the code and records the verdict
   # (that is what keeps the installer the sole writer, and what lets an operator's
   # own `make smoke`, and the pre-push hook, only report). The output is
   # captured so the per-check FAIL lines can be shown to the operator on a
@@ -3450,7 +3450,7 @@ finalize_install() {
       _note "  (make smoke printed no per-check FAIL lines — see the full output: $LOG)"
     fi
     _note ""
-    msg " NOT FINISHED — install.state is recorded pending (finished=false)."
+    msg " NOT FINISHED — wizard.state is recorded pending (finished=false)."
     echo " Fix the failing check(s) above, then re-run this installer and choose REPAIR"
     echo " at the prompt to finish (every step is idempotent)."
     return 1
@@ -3581,7 +3581,7 @@ success_block() {
     n=$((n+1)); printf '   %s%d. %sLet'"'"'s Encrypt rate limit%s: tail.%s is rate-limited until %s — Caddy cannot issue its LE cert.\n' \
       "$C_ORANGE" "$n" "$C_RST" "$DOMAIN" "${LE_RATELIMIT_UNTIL:-?}"
     printf '      %sthe tailnet webpage + machine ttyd are served as https://%s with an emergency Tailscale cert.%s\n' "$C_GREY" "${TS_CERT_HOST:-<ts name>}" "$C_RST"
-    printf '      %sre-run the installer in REPAIR mode after %s to get the LE cert for tail.%s back (install.state remembers the limit).%s\n' "$C_GREY" "${LE_RATELIMIT_UNTIL:-?}" "$DOMAIN" "$C_RST"
+    printf '      %sre-run the installer in REPAIR mode after %s to get the LE cert for tail.%s back (wizard.state remembers the limit).%s\n' "$C_GREY" "${LE_RATELIMIT_UNTIL:-?}" "$DOMAIN" "$C_RST"
   fi
   if mod_on cloud; then
     n=$((n+1)); printf '   %d. %s(optional)%s Cloudflare WAF rule skip for cloud.%s (desktop sync)\n' "$n" "$C_GREY" "$C_RST" "$DOMAIN"
@@ -3655,7 +3655,7 @@ trap _exit_trap EXIT
 
 # ─────────────────────────────── main ──────────────────────────────────────
 
-# A previous, incomplete run leaves either the saved answers (install.state) or
+# A previous, incomplete run leaves either the saved answers (wizard.state) or
 # the instance.conf a run writes once the prompts are answered.
 previous_install() { [ -s "${INSTALL_STATE:-}" ] || [ -s "$DATA/instance.conf" ]; }
 
@@ -3688,7 +3688,7 @@ main() {
   load_state
 
   # Decide fresh-vs-installed BEFORE the save_state below: save_state CREATES
-  # install.state, so asking previous_install afterwards always said "installed"
+  # wizard.state, so asking previous_install afterwards always said "installed"
   # — even on a first run — and dropped a fresh run into the repair gate, where
   # instance.sh's DOMAIN=example.com fallback was reused and the domain prompt
   # was skipped (the 2026-10-17 "domain isn't asked on fresh runs" bug).
@@ -3705,13 +3705,13 @@ main() {
 
   if [ -n "$_prev" ]; then
     local _mode
-    printf "%s[WARN]%s 'data/install.state' detected - wizard previously ran\n" "$C_ORANGE" "$C_RST"
+    printf "%s[WARN]%s 'data/wizard.state' detected - wizard previously ran\n" "$C_ORANGE" "$C_RST"
     ask_choice "What do you want to do? (repair/reinstall): " _mode repair reinstall || _mode=repair
     if [ "$_mode" = "reinstall" ]; then
       # Last confirmation before anything is touched: this is destructive and
       # irreversible (the production stack's data is deleted, not migrated).
       local _wipe
-      printf "%s[WARN]%s 'kefoCloud/data/' & 'install.state' planned for deletion\n" "$C_ORANGE" "$C_RST"
+      printf "%s[WARN]%s 'kefoCloud/data/' & 'wizard.state' planned for deletion\n" "$C_ORANGE" "$C_RST"
       ask_boolean "Do you wish to proceed?" _wipe || _wipe=false
       if [ "$_wipe" != "true" ]; then
         log "  reinstall declined at the confirmation prompt — nothing was changed"
@@ -3756,7 +3756,7 @@ main() {
   fi
   ask_inputs
   # The decisions this run is built on — recorded so the log explains itself
-  # without re-reading install.state (never the token/key VALUES).
+  # without re-reading wizard.state (never the token/key VALUES).
   detail "  answers: domain=$DOMAIN modules=$(enabled_modules_list || true)"
   detail "  answers: cloudflare_token=$([ -n "${CF_API_TOKEN:-}" ] && echo present || echo MISSING) tailscale_key=$([ -n "${TS_AUTHKEY:-}" ] && echo present || echo MISSING) github_remote=${GH_REMOTE:-false}"
   # Each installation starts UNFINISHED: whatever a previous run recorded (even
