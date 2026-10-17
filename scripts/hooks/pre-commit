@@ -22,7 +22,7 @@ staged=$(git diff --cached --name-only)
 #    non-GitHub address is not attributable either. Only a GitHub identity is
 #    accepted: the account-noreply form git maps to the account
 #    (`<id>+<login>@users.noreply.github.com`) or GitHub's own web-commit form
-#    (`noreply@github.com`). Fail loud and say exactly how to fix it; install.sh
+#    (`noreply@github.com`). Fail loud and say exactly how to fix it; the installer
 #    writes the real identity (and user.useConfigOnly) at deploy time.
 ident=$(git var GIT_AUTHOR_IDENT 2>/dev/null || true)
 email=$(printf '%s' "$ident" | sed -n 's/^.*<\(.*\)>.*$/\1/p')
@@ -65,8 +65,8 @@ done
 
 # 3. One change per commit (AGENTS rule 26), enforced as far as a hook can see,
 #    which is by AREA: a commit may touch one top-level area, plus the docs that
-#    describe that same change. `scripts/install/install.sh` + `docs/GUIDE.md`
-#    passes; `install.sh` + `uninstall.sh` (two changes) or `install.sh` +
+#    describe that same change. The installer + `docs/GUIDE.md`
+#    passes; installer + uninstaller (two changes) or the installer +
 #    `Makefile` does not. Intent is not readable from a diff, so the hook
 #    refuses the shapes that are always a bundle and names the split to make.
 #    Operator-approved bundle: commit with ONE_CHANGE_OVERRIDE=1.

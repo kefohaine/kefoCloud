@@ -44,7 +44,7 @@ scripts/render/render.sh --tokens
 ## The one file with real values
 
 `data/instance.conf` (untracked, mode 0600) is the only place an instance value
-lives. `scripts/install/install.sh` writes it from what it prompts and detects
+lives. The installer writes it from what it prompts and detects
 (the domain is prompted, `{{GITHUB_USER}}` is read from the checkout's `origin`
 remote, paths come from its own location); it is plain `KEY=VALUE` and safe to
 edit by hand (`make render` afterwards).
@@ -124,7 +124,7 @@ The block is replaced, never duplicated, and the secrets already in those files
   tokens; nothing in git names a real host, domain, path or user.
 - Live values (public IP, container names, tailnet peers, module list) are still
   **auto-detected** by scripts — never read from a file (AGENTS rule 12).
-- `data/install.state` (written by `install.sh`, its **sole writer**, **only
+- `data/install.state` (written by the installer, its **sole writer**, **only
   when a run reaches success**) records the `enabled_modules` + the `finished`
   checkpoint + the prompted secrets (mode 0600); `installed-modules.detected.conf`
   + `installed-modules.report.txt` are the independent-probe confirmation.

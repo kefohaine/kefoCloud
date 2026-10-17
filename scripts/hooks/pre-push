@@ -7,7 +7,7 @@
 # edge-wide change whose failure mode this test catches.
 #
 # There is NO bypass: smoke itself refuses to run unless install.state records
-# finished=true, and this hook never writes state (install.sh is its sole
+# finished=true, and this hook never writes state (the installer is its sole
 # writer). A host without a finished install therefore cannot push — accepted.
 set -uo pipefail
 
@@ -34,7 +34,7 @@ while read -r lref lsha rref rsha; do
   # Identity guard: refuse to push any commit whose author/committer is not a
   # GitHub identity. Root (`root@<host>`, the no-identity fallback) and any
   # invented/non-GitHub address are non-attributable and must never reach the
-  # remote (AGENTS rule 12); install.sh sets the real identity at deploy time.
+  # remote (AGENTS rule 12); the installer sets the real identity at deploy time.
   # Runs before the fast-forward test so a NEW branch is scanned whole (rsha=0s).
   range="$lsha"; [ "$rsha" != "0000000000000000000000000000000000000000" ] && range="$rsha..$lsha"
   bad=$(git log --format='%ae%n%ce' "$range" 2>/dev/null \
