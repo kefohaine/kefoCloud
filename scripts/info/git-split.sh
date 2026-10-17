@@ -203,17 +203,17 @@ replay_range() {
     n=$(commit_areas "$c" | grep -c .)
 
     if [ "$n" -gt 1 ]; then
-      G cherry-pick --no-commit -q "$c" >/dev/null 2>&1 || { restore; die "conflict splitting ${c:0:9} — resolve manually"; }
+      G cherry-pick --no-commit "$c" >/dev/null 2>&1 || { restore; die "conflict splitting ${c:0:9} — resolve manually"; }
       printf '%s\n' "$ns" | split_from_status "$subject" "$body"; rc=$?
       if [ "$rc" != 0 ] && [ "$rc" != 3 ]; then restore; die "split of ${c:0:9} failed"; fi
     elif commit_is_significant "$c" && ! commit_has_revert "$c"; then
-      G cherry-pick --no-commit -q "$c" >/dev/null 2>&1 || { restore; die "conflict on ${c:0:9} — resolve manually"; }
+      G cherry-pick --no-commit "$c" >/dev/null 2>&1 || { restore; die "conflict on ${c:0:9} — resolve manually"; }
       local rev msg; rev=$(G rev-parse HEAD)
       msg="$subject"; [ -n "$body" ] && msg="${msg}"$'\n\n'"${body}"
       msg="${msg}"$'\n\n'"Revert: git reset --hard ${rev}"
       printf '%s\n' "$msg" | G commit -q --no-verify --author="$AUTHOR" -F - || { restore; die "commit failed on ${c:0:9}"; }
     else
-      G cherry-pick -q "$c" >/dev/null 2>&1 || { restore; die "conflict replaying ${c:0:9} — resolve manually"; }
+      G cherry-pick "$c" >/dev/null 2>&1 || { restore; die "conflict replaying ${c:0:9} — resolve manually"; }
     fi
   done
 
