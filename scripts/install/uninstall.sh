@@ -1,14 +1,14 @@
-# This script performs the reverse of install.sh.
+# This script performs the reverse of the installer.
 #!/bin/bash
-# This script performs the reverse of install.sh:
-# • Stops and removes all Docker containers started by install.sh
+# This script performs the reverse of the installer:
+# • Stops and removes all Docker containers started by the installer
 # • Deletes generated data directories (data/, rendered/, cloud/recovery/)
 # • Removes Cloudflare DNS records (A, CNAME, TXT for domain and services)
 # • Revokes Let's Encrypt certificates via certbot cleanup
 # • Clears instance state and logs
 # • Disables modules (cloud, vault, mail, monitor) and cleans up configs
 # • Optionally removes GitHub remote authentication keys
-# homelab uninstall.sh — the exact opposite of install.sh, in the same style.
+# homelab uninstall.sh — the exact opposite of the installer, in the same style.
 #
 # Reverse-onboarding: takes the deployment apart module by module (cloud,
 # vault, mail, monitor — none removed unless the operator answers yes per
@@ -26,7 +26,7 @@
 #                            are still asked; one explicit confirm)
 #   3) cancel
 #
-# Installs nothing, creates nothing. It removes what install.sh put on the
+# Installs nothing, creates nothing. It removes what the installer put on the
 # box — auto-detected from the live system (compose files, systemctl, dpkg
 # — no hardcoded rosters) — and NEVER deletes operator data without an
 # explicit per-category prompt (no defaults — only an explicit yes removes):
@@ -37,7 +37,7 @@
 #   - sshd hardening — deliberately KEPT (removing the drop-in would
 #     re-enable password auth; weakening is never the uninstall's job)
 #
-# install.state (data/install.state) is the record install.sh is the sole writer
+# install.state (data/install.state) is the record the installer is the sole writer
 # of. Teardown is the ONE exception that may change it: at the end of a
 # teardown that removed anything, the removed modules are dropped from
 # enabled_modules and `finished` is set back to false — so `make smoke` (which
@@ -53,7 +53,7 @@
 #   sudo bash scripts/install/uninstall.sh --reinstall  # stack-only teardown,
 #     no prompts, install.state dropped, then a VERIFICATION that the stack is
 #     really gone. Exit 0 = verified gone, 1 = something is left. This is the
-#     hand-off install.sh calls for a reinstall (install.sh only adds; every
+#     hand-off the installer calls for a reinstall (the installer only adds; every
 #     removal lives here).
 #
 # Full log: $LOG_DIR/uninstall.log
@@ -91,7 +91,7 @@ cat <<'EOF'
 ╚███╔███╔╝╚██████╔╝██║  ██║██║███████╗███████╗██╔╝ ██╗██╔╝ ██║
  ╚══╝╚══╝  ╚═════╝ ╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝
 
-  One-shot teardown for the homelab stack: reverses scripts/install/install.sh
+  One-shot teardown for the homelab stack: reverses the installer
   step by step — modules first (cloud, vault, mail, monitor; nothing removed
   unless the operator answers yes one by one), then the edge, the host services, the
   installed packages, the operator user, and the tailnet membership
@@ -125,7 +125,7 @@ ask() { # ask <var> <question> [ignored]  (ONLY the words yes/no; recorded as tr
 # operator answers yes.
 
 # ─────────────── --reinstall: the installer's hand-off mode ───────────────
-# install.sh is ADD-ONLY, so a reinstall hands the removal HERE:
+# the installer is ADD-ONLY, so a reinstall hands the removal HERE:
 #   bash scripts/install/uninstall.sh --reinstall
 # Scope is pre-answered and contains NO prompts — a reinstall rebuilds the
 # production stack, so this mode removes exactly the stack and its data:
@@ -137,10 +137,10 @@ ask() { # ask <var> <question> [ignored]  (ONLY the words yes/no; recorded as tr
 # reinstall keeps them.
 #
 # Exit code is the SAFETY CHECK the installer depends on:
-#   0 = the stack is verifiably gone (every check below passed) → install.sh
+#   0 = the stack is verifiably gone (every check below passed) → the installer
 #       proceeds with the reinstall run
 #   1 = something is still there, or a removal failed, or the list could not be
-#       listed → install.sh ABORTS the reinstall (it changes nothing)
+#       listed → the installer ABORTS the reinstall (it changes nothing)
 REINSTALL_MODE=false
 for _a in "$@"; do
   case "$_a" in
@@ -196,7 +196,7 @@ verify_stack_gone() {
     [ "$(basename "$d")" = logs ] && continue
     t+="data_$(basename "$d") "
   done
-  [ -d "$PROJECT_DIR/logs" ] && log "  note: data/logs kept (holds this teardown's own log; the installer recreates its fresh install.log)"
+  [ -d "$PROJECT_DIR/logs" ] && log "  note: data/logs kept (holds this teardown's own log; the installer recreates its fresh wizard.log)"
   [ -f "$INSTALL_STATE" ] && t+="state "
   # module compose files are repo-TRACKED and deliberately kept — they are the
   # framework, not stack state.
@@ -210,7 +210,7 @@ verify_stack_gone() {
     for i in "${!ERR_TAGS[@]}"; do
       echo "   - $(problem "${ERR_TAGS[$i]}")"
     done
-    echo " Reinstall aborted (install.sh will not rebuild onto a live stack)."
+    echo " Reinstall aborted (the installer will not rebuild onto a live stack)."
     log "  reinstall verification FAILED: ${ERR_TAGS[*]}"
     return 1
   fi
@@ -220,11 +220,11 @@ verify_stack_gone() {
   return 0
 }
 
-# Hand the box back to install.sh after a teardown that left it unusable (the
+# Hand the box back to the installer after a teardown that left it unusable (the
 # stack and its data gone, nothing else touched) — that is exactly the state
-# install.sh's reinstall gate expects, so it rebuilds the production stack with
+# the installer's reinstall gate expects, so it rebuilds the production stack with
 # freshly asked values and runs smoke last. Offered, never assumed: only an
-# explicit yes spawns it, and UNS_INSTALLER=yes (set by install.sh's own
+# explicit yes spawns it, and UNS_INSTALLER=yes (set by the installer's own
 # hand-off, one level down) suppresses it entirely so the two scripts can never
 # bounce the box between each other.
 ask_restore() {
@@ -237,7 +237,7 @@ ask_restore() {
   fi
   [ -n "$v" ] && return 0
   while :; do
-    read -rp "Uninstall finished — run install.sh to reinstall the stack now? (yes/no): " a || return 1
+    read -rp "Uninstall finished — run the installer to reinstall the stack now? (yes/no): " a || return 1
     case "${a,,}" in
       yes) RESTORE_AFTER=true;  return 0;;
       no)  RESTORE_AFTER=false; return 0;;
@@ -246,8 +246,8 @@ ask_restore() {
   done
 }
 
-# Start install.sh (never exec: this script's log stays the teardown's own).
-# data/ is gone, so install.sh opens its fresh data/logs/install.log and asks
+# Start the installer (never exec: this script's log stays the teardown's own).
+# data/ is gone, so the installer opens its fresh data/logs/wizard.log and asks
 # every value at the repair/reinstall gate.
 restore_after_teardown() {
   [ "${RESTORE_AFTER:-false}" = true ] || return 0
@@ -255,7 +255,7 @@ restore_after_teardown() {
   echo "Reinstalling the production stack: bash $REPO/scripts/install/install.sh"
   echo "   …it will find data/ erased; answer 'reinstall' at its first prompt."
   bash "$REPO/scripts/install/install.sh"
-  log "  install.sh returned ($?) after the teardown hand-off"
+  log "  the installer returned ($?) after the teardown hand-off"
 }
 
 ask_modules() {
@@ -337,7 +337,7 @@ ask_inputs() {
   for k in cloud vault mail monitor; do
     mod_rm "$k" && ml+="$k "
   done
-  # The real reinstall is the pair: this teardown, then install.sh in reinstall
+  # The real reinstall is the pair: this teardown, then the installer in reinstall
   # mode on the emptied box. `any` is false when nothing is selected — an
   # operator who only wants the stack rebuilt is sent straight to the installer
   # (it can repair, no teardown needed).
@@ -370,7 +370,7 @@ if [ -f "$INSTALL_STATE" ]; then
 fi
 
 # Rewrite ONLY enabled_modules + finished in $INSTALL_STATE, preserving every
-# other (secret) line. install.sh is otherwise the sole writer; this is the
+# other (secret) line. The installer is otherwise the sole writer; this is the
 # documented teardown exception.
 state_reset() {   # state_reset <enabled_modules> <finished>
   [ -f "$INSTALL_STATE" ] || return 0
@@ -519,7 +519,7 @@ remove_host() {
   rm -f /etc/sysctl.d/99-kefo.conf
   rm -f /etc/cron.d/nextcloud
   rm -f /etc/fail2ban/jail.d/sshd.conf
-  # the binaries install.sh dropped into /usr/local/bin
+  # the binaries the installer dropped into /usr/local/bin
   rm -f /usr/local/bin/ttyd /usr/local/bin/goose
   systemctl daemon-reload
   # sshd hardening is deliberately KEPT: removing the drop-in would
@@ -565,7 +565,7 @@ remove_tailnet() {
 problem() {
   case "$1" in
     rmmod_*)  echo "the ${1#rmmod_} module is not fully removed" ;;
-    # --reinstall verification (install.sh's hand-off): the stack must be gone
+    # --reinstall verification (the installer's hand-off): the stack must be gone
     container_*) echo "container ${1#container_} is still there" ;;
     network)  echo "the stack's docker network 'net' is still there" ;;
     data_*)   echo "data/${1#data_} is still there" ;;
@@ -752,14 +752,14 @@ summary() {
 trap summary EXIT
 
 # ─────────────────────── --reinstall: stack only ──────────────────────────
-# No prompts: install.sh already asked, and this mode is the installer's hand-off.
+# No prompts: the installer already asked, and this mode is the installer's hand-off.
 # Removes the production stack and its data, verifies the box is clean, and
 # returns the verdict as its exit code (0 = gone, 1 = something is left).
 reinstall_stack_only() {
   local k
   log "=== uninstall.sh --reinstall — production stack only (no host, no repo, no tailnet)"
   echo ""
-  echo "Uninstalling the production stack (hand-off from install.sh):"
+  echo "Uninstalling the production stack (hand-off from the installer):"
   for k in $STACK_MODULES; do
     mod_rm "$k" && { echo "   remove     $k"; }
   done
@@ -788,7 +788,7 @@ reinstall_stack_only() {
   for d in $(stack_data_dirs); do
     rm -rf "$d" >>"$LOG" 2>&1 || fail "data_$(basename "$d")" "$d not deleted"
   done
-  # install.state lives in data/ and is written by install.sh alone — this is
+  # install.state lives in data/ and is written by the installer alone — this is
   # the documented teardown exception: drop the record WITH its data, so no
   # reader can see a finished install for a stack that no longer exists.
   [ -f "$INSTALL_STATE" ] && rm -f "$INSTALL_STATE" >>"$LOG" 2>&1
@@ -839,7 +839,7 @@ main() {
   if [ "${RM_BACKUPS:-false}" = true ] && [ -d "$PROJECT_DIR/backups" ]; then
     rm -rf "$PROJECT_DIR/backups" >>"$LOG" 2>&1 || log "WARN: backups/ not deleted"
   fi
-  # install.state teardown update (the one exception to install.sh's sole
+  # install.state teardown update (the one exception to the installer's sole
   # write): drop the removed modules and clear the finished checkpoint so
   # `make smoke` no longer treats this host as a finished install.
   if [ -f "$INSTALL_STATE" ]; then

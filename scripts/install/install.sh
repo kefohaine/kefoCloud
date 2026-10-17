@@ -1,5 +1,5 @@
 #!/bin/bash
-# $NODE_NAME install.sh — root-only, plug-and-play new-machine installer.
+# $NODE_NAME installation wizard — root-only, plug-and-play new-machine installer.
 #
 # ALL inputs are collected up front, in one fixed order, before any install
 # work, and each is persisted immediately (so an abort mid-run leaves the
@@ -92,7 +92,7 @@ MANIFEST_DIR="$DATA/cloud/recovery"
 #
 # The installer's OWN state is $INSTALL_STATE (data/install.state, mode 0600),
 # repo-relative — it holds the CF token + Tailscale key, so it is never
-# world-readable. install.sh is its SOLE writer (including the `finished`
+# world-readable. The installer is its SOLE writer (including the `finished`
 # checkpoint); every reader (make smoke / make fetch / scripts/lib/modules.sh)
 # only reads it.
 LOG_DIR="$DATA/logs"
@@ -102,7 +102,7 @@ LOG_DIR="$DATA/logs"
 # finished install as pending. Tests must point INSTALL_STATE somewhere else.
 INSTALL_STATE="${INSTALL_STATE:-$DATA/install.state}"
 CHECKPOINT_OPEN=
-LOG="$LOG_DIR/install.log"
+LOG="$LOG_DIR/wizard.log"
 ERR_TAGS=()
 declare -A ERR_DETAIL=()
 
@@ -424,14 +424,14 @@ task_end() {
 }
 
 # ───────────────────── fresh log for this run ──────────────────────────────
-# install.log describes ONE run: truncate it the moment the run starts, then
+# wizard.log describes ONE run: truncate it the moment the run starts, then
 # announce what the run is. Called from main() before any prompt, so even an
 # aborted run leaves a log that says so.
 init_log() {
   install -d -m 0755 "$LOG_DIR"
   : >"$LOG"
   chmod 600 "$LOG"
-  log "=== install.sh run $(date -Is) — node ${NODE_NAME:-?} repo $REPO"
+  log "=== the installer run $(date -Is) — node ${NODE_NAME:-?} repo $REPO"
   log "=== args: $*"
 }
 
@@ -490,7 +490,7 @@ enabled_modules_list() {
   printf '%s' "${out% }"
 }
 
-# install.sh is the SOLE writer of $INSTALL_STATE — including `finished`.
+# the installer is the SOLE writer of $INSTALL_STATE — including `finished`.
 # Everything else (make smoke, make fetch, modules.sh) only reads it.
 # A module record exists only for a FINISHED install: while finished is not yet
 # true the enabled_modules field is written empty, so a half-answered run can
@@ -578,37 +578,37 @@ ensure_runtime_dirs() {
 }
 
 # ─────────────────── reinstall: hand the REMOVAL to uninstall.sh ───────────
-# install.sh is ADD-ONLY: it creates, never removes. So a reinstall does not
+# the installer is ADD-ONLY: it creates, never removes. So a reinstall does not
 # tear anything down here — it asks, then HANDS OFF to uninstall.sh, which owns
 # all removal and all of its safety checks (containers down, volumes + data/
-# gone, docker gone, install.state cleared). install.sh only decides when to
+# gone, docker gone, install.state cleared). The installer only decides when to
 # hand off and what to do with the answer:
 #
 #   bash scripts/install/uninstall.sh --reinstall
 #     → scope pre-answered (stack only, data/ deleted, no repo/host/tailnet),
 #       no prompts, then uninstall.sh VERIFIES the box is really clean and
 #       exits 0 only when it is;
-#     → 0 means "nothing of the stack is left" → install.sh continues with the
+#     → 0 means "nothing of the stack is left" → the installer continues with the
 #       reinstall run (tasks [SKIP]ped outside data/, smoke last);
 #     → 1 means "something is still there" → the reinstall is ABORTED; the run
 #       stops before touching anything and the box is left as uninstall.sh
 #       left it (a repair run can still finish it).
 # The log namespace lives under data/, which the teardown deletes — so the most
-# recent install.log is preserved at the repo root first and read back into this
-# run's fresh data/logs/install.log (one run, one log, as always).
+# recent wizard.log is preserved at the repo root first and read back into this
+# run's fresh data/logs/wizard.log (one run, one log, as always).
 reinstall_handoff() {
   local u="$REPO/scripts/install/uninstall.sh"
-  local carry="$REPO/.reinstall-install.log" ts
+  local carry="$REPO/.reinstall-wizard.log" ts
   if [ ! -f "$u" ]; then
     fail reinstall "scripts/install/uninstall.sh is missing — cannot uninstall the stack"
     return 1
   fi
   [ -f "$LOG" ] && cp -f "$LOG" "$carry" 2>/dev/null || true
 
-  detail "  handing the removal to scripts/install/uninstall.sh --reinstall (install.sh never removes)"
+  detail "  handing the removal to scripts/install/uninstall.sh --reinstall (the installer never removes)"
   echo ""
   # Interactive on purpose: the operator watches the teardown and its
-  # verification, then sees install.sh take over again. Always return 0 to
+  # verification, then sees the installer take over again. Always return 0 to
   # start the reinstall run.
   UNS_INSTALLER=yes bash "$u" --reinstall
   local rc=$?
@@ -621,10 +621,10 @@ reinstall_handoff() {
     # Kept for the record, with an explicit marker: the carried file is the
     # previous run's log, not this one's.
     ts="$(date +%s)"
-    { echo "=== carried over from the previous install.log (before the reinstall teardown) ==="
+    { echo "=== carried over from the previous wizard.log (before the reinstall teardown) ==="
       cat "$carry"; } >>"$LOG" 2>/dev/null || true
     rm -f "$carry" 2>/dev/null || true
-    log "  previous install.log carried into this run's log (marker: 'carried over from the previous install.log')"
+    log "  previous wizard.log carried into this run's log (marker: 'carried over from the previous wizard.log')"
   fi
   log "  reinstall: uninstall.sh --reinstall exited $rc"
 
@@ -1343,7 +1343,7 @@ task_tailscale() {
   task_start
   task_reinstall_skip task_tailscale && return 0
   if ! command -v tailscale >/dev/null 2>&1; then
-    # Output goes to the LOG, never the console: tailscale's install.sh runs with
+    # Output goes to the LOG, never the console: tailscale's installer runs with
     # `set -x` and calls apt, so piping it to the tty dumps a trace + apt chatter
     # straight into the live checklist. Those lines are external to the animator's
     # relative-cursor accounting (_TAIL only counts what _note prints), so the
@@ -1571,7 +1571,7 @@ write_instance_conf() {
   # data/instance.conf is the ONE place this instance's values live: templates
   # are rendered from it (make render) and scripts read it (scripts/lib/instance.sh).
   # Values we do not own here (SERVER_IP, EMAIL, TIMEZONE) are PRESERVED from an
-  # existing file — re-running install.sh must never wipe them.
+  # existing file — re-running the installer must never wipe them.
   local f="$DATA/instance.conf" keep=""
   mkdir -p "$DATA"
   [ -f "$f" ] && keep=$(grep -E '^(SERVER_IP|EMAIL|TIMEZONE)=' "$f" || true)
@@ -1591,7 +1591,7 @@ write_instance_conf() {
   [ "${TAIL_CERT_ISSUER:-acme}" = tailscale ] && rollback=true
   {
     echo "# data/instance.conf — the values for THIS host (untracked, mode 0600)."
-    echo "# Written by scripts/install/install.sh; see config/instance.defaults for what"
+    echo "# Written by the installer; see config/instance.defaults for what"
     echo "# each token means. Edit by hand and run 'make render' to apply."
     printf 'DOMAIN=%s\n' "$DOMAIN"
     printf 'HOSTNAME=%s\n' "${NODE_NAME:-$(hostname -s)}"
@@ -1726,7 +1726,7 @@ seed_stack() {
 docker_net() {
   # Create the bridge only when it is missing: the plain `create ... || true`
   # logged "Error response from daemon: network with name net already exists"
-  # on every re-run, which reads like a failure in install.log for a no-op.
+  # on every re-run, which reads like a failure in wizard.log for a no-op.
   docker network inspect net >/dev/null 2>&1 \
     || docker network create net --subnet=172.22.0.0/16 >>"$LOG" 2>&1 || true
 }
@@ -1925,7 +1925,7 @@ mailbox_exists() {
 # account, a hash and the Maildir, and it is idempotent enough that a retry
 # after a restart re-adds what was lost. Its OUTPUT IS LOGGED (the old call
 # redirected stderr to /dev/null, which is why four consecutive failures left
-# nothing in install.log to diagnose — 2026-10-15). Verification goes through
+# nothing in wizard.log to diagnose — 2026-10-15). Verification goes through
 # the mailserver's config file as well as its listing, so a container that
 # answers the API while rejecting writes cannot be reported as success.
 mailbox_add() {
@@ -2263,7 +2263,7 @@ ask_nc_apps() {
   # a read-only mirror for diffs against config/cloud/apps.conf.
   mkdir -p "$MANIFEST_DIR"
   {
-    echo "# GENERATED by install.sh from config/cloud/apps.conf ($(date -Is)) — do not edit; re-run install to refresh."
+    echo "# GENERATED by the installer from config/cloud/apps.conf ($(date -Is)) — do not edit; re-run install to refresh."
     echo "# Format: one app id per line (occ app:list --enabled)."
     docker exec -u www-data nextcloud php occ app:list --enabled 2>/dev/null \
       | grep -oE '^  - [^:]+' | sed -E 's/^  - ([^:]+).*/\1/'
@@ -3382,14 +3382,14 @@ resolve_errors() {
 #      not-installed module's checks are informational only).
 #   5. finished=false + stop, no success block, when smoke fails. Fail LOUD.
 # Nothing but this script ever writes install.state: `make smoke` only reports,
-# and install.sh records the verdict of the single call it makes.
+# and the installer records the verdict of the single call it makes.
 # CHECKPOINT_OPEN guards the window between step 3 and the last decision: if the
 # run is interrupted there, the EXIT trap reverts finished to false.
 run_smoke() {
   detail "  running the live edge smoke test (make smoke) — the last check"
   # ONE call, ONE source of truth: `make smoke`'s exit code. smoke itself never
   # writes install.state — this script reads the code and records the verdict
-  # (that is what keeps install.sh the sole writer, and what lets an operator's
+  # (that is what keeps the installer the sole writer, and what lets an operator's
   # own `make smoke`, and the pre-push hook, only report). The output is
   # captured so the per-check FAIL lines can be shown to the operator on a
   # failure (not just hidden in the log).
@@ -3463,7 +3463,7 @@ finalize_install() {
 # ── Optional follow-up — only ever reached after a FULLY green run ────────
 # optimize.sh is a separate tool (the machine performance pass), so it is offered,
 # never assumed. It is idempotent — re-running it is a no-op — which is why a
-# re-run of install.sh may offer it again.
+# re-run of the installer may offer it again.
 ask_optimize() { ## BROKEN - NEITHER PROMPT ANSWERS FIRE OPTIMIZE.SH - SILENT FAIL - INVESTIGATE AND FIX
   local answer="" rc
   local script="$REPO/scripts/ops/optimize.sh"
@@ -3682,7 +3682,7 @@ main() {
     msg "Run as root: root@$NODE_NAME is the only entry point (no sudo hand-off)."; exit 1
   fi
   ensure_runtime_dirs       # first: the prompts below log (see the helper)
-  init_log "$@"             # FRESH log for this run (install.log = one run)
+  init_log "$@"             # FRESH log for this run (wizard.log = one run)
   migrate_state             # one-time legacy setup.state import (before load)
   banner
   load_state
@@ -3723,7 +3723,7 @@ main() {
       if ! reinstall_handoff "$@"; then
         # The hand-off refused (or uninstall.sh failed): STOP — a reinstall on
         # top of a half-removed stack is exactly the accident this gate exists
-        # to prevent. install.sh changed nothing.
+        # to prevent. The installer changed nothing.
         FINISHED=false
         save_state
         summary
