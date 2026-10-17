@@ -240,7 +240,7 @@ _anim_field() {
   local sym=${ANIM_SYM:-\$}
   local i c
   for i in 0 1 2 3 4 5; do
-    c=${rainbow[$(( (off + i) % n ))]}
+    c=${rainbow[$(( (off - i + n) % n ))]}
     printf '\033[38;5;%sm%s\033[39m' "$c" "$sym"
     (( i == 1 || i == 3 )) && printf '%s:%s' "$C_PURPLE" "$C_RST"
   done
