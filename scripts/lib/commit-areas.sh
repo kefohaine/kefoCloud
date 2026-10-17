@@ -60,3 +60,28 @@ commit_areas() {
 commit_changed_paths() {
   git diff-tree -r --name-only --no-commit-id --no-renames --root "$1" 2>/dev/null
 }
+
+# revert_parent_sha <commit> — the SHA named in the commit's
+# `Revert: git reset --hard <sha>` line (rule 10), or nothing. Reads the real
+# SHA so a rewriter can tell a stale recipe (names an old parent) from a fresh
+# one. ${REPO:-.} lets the callers run from any cwd.
+revert_parent_sha() {
+  git -C "${REPO:-.}" log -1 --format='%B' "$1" 2>/dev/null \
+    | sed -nE 's/^[[:space:]]*Revert:[[:space:]]*git reset --hard[[:space:]]+([0-9a-f]{7,40}).*/\1/p' \
+    | head -1
+}
+
+# strip_revert — filter: drop `Revert:` lines. A rewriter replays a message and
+# appends its OWN fresh recipe, so the old line (possibly now stale) must go.
+strip_revert() { grep -vE '^[[:space:]]*Revert:'; }
+
+# commit_revert_ok <commit> — 0 when the commit carries a `git reset --hard`
+# Revert recipe naming its CURRENT parent (present and not stale). A root commit
+# (no parent) is trivially ok.
+commit_revert_ok() {
+  local want got
+  want=$(git -C "${REPO:-.}" rev-parse -q --verify "$1^" 2>/dev/null) || return 0
+  got=$(revert_parent_sha "$1"); [ -n "$got" ] || return 1
+  got=$(git -C "${REPO:-.}" rev-parse -q --verify "$got" 2>/dev/null) || return 1
+  [ "$got" = "$want" ]
+}
