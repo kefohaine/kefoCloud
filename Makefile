@@ -261,16 +261,16 @@ smoke:
 gh-web-health:
 >@bash scripts/info/gh-web-health.sh
 
-# Install the repo's git hooks (pre-commit: Caddy validate + app-vhost stub guard
-# + auto-split a multi-area change; pre-push: live vhost smoke test +
-# history-rewrite warning + auto-split/fill-revert over the pushed range). The
-# installer runs this automatically; re-run manually after cloning or after
-# editing a hook.
+# Install the repo's git hooks (pre-commit: identity + Caddy validate + app-vhost
+# stub guard; prepare-commit-msg: auto-split a multi-area change into one commit
+# per area; pre-push: live vhost smoke test + history-rewrite warning +
+# auto-split/fill-revert over the pushed range). The installer runs this
+# automatically; re-run manually after cloning or after editing a hook.
 install-hooks:
 >@mkdir -p .git/hooks
->@cp scripts/hooks/pre-commit scripts/hooks/pre-push .git/hooks/
->@chmod +x .git/hooks/pre-commit .git/hooks/pre-push
->@scripts/lib/mklog info "installed git hooks: pre-commit (Caddy validate + app-vhost stub guard + auto-split), pre-push (live vhost smoke + history-rewrite warning + auto-split/revert)"
+>@cp scripts/hooks/pre-commit scripts/hooks/prepare-commit-msg scripts/hooks/pre-push .git/hooks/
+>@chmod +x .git/hooks/pre-commit .git/hooks/prepare-commit-msg .git/hooks/pre-push
+>@scripts/lib/mklog info "installed git hooks: pre-commit (identity + Caddy validate + app-vhost stub guard), prepare-commit-msg (auto-split per area), pre-push (live vhost smoke + history-rewrite warning + auto-split/revert)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Mailserver Registry (Docker Mailserver CLI — see `make help` > Mailserver
