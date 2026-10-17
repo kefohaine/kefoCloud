@@ -92,11 +92,23 @@ for c in $commits; do
 
   if [ -n "$sig" ]; then
     msg=$(G log -1 --format='%B' "$c")
+    want=$(G rev-parse -q --verify "$c^" 2>/dev/null || true)
     if ! printf '%s\n' "$msg" | grep -qE '^[[:space:]]*Revert:'; then
       reverts=$((reverts + 1))
       printf '  %sREVERT%s %s  %s\n' "$R" "$N" "$short" "$subject"
       printf '         %ssignificant:%s%s\n' "$D" "${sig# }" "$N"
-      printf '         %sadd: Revert: git reset --hard <parent sha>  (rule 10)%s\n' "$D" "$N"
+      printf '         %sadd: Revert: git reset --hard %s  (rule 10)%s\n' "$D" "$want" "$N"
+    else
+      # A recipe that names an OLD parent (a stale SHA after a rewrite) is as
+      # useless as a missing one — the reset target would not be the parent.
+      got=$(revert_parent_sha "$c")
+      gote=$(G rev-parse -q --verify "${got:-x}" 2>/dev/null || true)
+      if [ -n "$got" ] && [ -n "$want" ] && [ "$gote" != "$want" ]; then
+        reverts=$((reverts + 1))
+        printf '  %sREVERT%s %s  %s\n' "$R" "$N" "$short" "$subject"
+        printf '         %sstale recipe: names %s, parent is %s%s\n' "$D" "${got:0:9}" "${want:0:9}" "$N"
+        printf '         %sfix: Revert: git reset --hard %s  (rule 10)%s\n' "$D" "$want" "$N"
+      fi
     fi
   fi
 done

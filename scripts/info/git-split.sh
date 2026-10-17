@@ -55,16 +55,13 @@ commit_is_significant() {
   return 1
 }
 
-commit_has_revert() {
-  G log -1 --format='%B' "$1" 2>/dev/null | grep -qE '^[[:space:]]*Revert:'
-}
-
 # split_from_status <subject> <body> — stdin is `git diff-tree --name-status`
 # lines. HEAD is at the parent; `git reset` has not run yet. Stages one commit
 # per AREA (docs ride with the largest area) and gives each significant one a
 # Revert: line naming its real parent. Returns 3 when there is nothing to split.
 split_from_status() {
   local subject="$1" body="$2"
+  body=$(printf '%s\n' "$body" | strip_revert)          # the recipe is re-added fresh
   local lines; lines=$(cat)
   local paths; paths=$(printf '%s\n' "$lines" | cut -f2)
   local areas; areas=$(printf '%s\n' "$paths" | while IFS= read -r p; do commit_area "$p" || true; done \
@@ -165,8 +162,10 @@ replay_range() {
   local need=0 n
   for c in $commits; do
     n=$(commit_areas "$c" | grep -c .)
-    [ "$n" -gt 1 ] && need=1
-    commit_is_significant "$c" && ! commit_has_revert "$c" && need=1
+    if [ "$n" -gt 1 ]; then need=1; continue; fi
+    if commit_is_significant "$c"; then
+      commit_revert_ok "$c" || need=1
+    fi
   done
   if [ "$need" = 0 ]; then
     echo "git-split: range '$range' already satisfies rules 26/10 — nothing to do"
@@ -179,7 +178,7 @@ replay_range() {
       n=$(commit_areas "$c" | grep -c .)
       printf '  %s  %s%s\n' "${c:0:9}" "$(G log -1 --format=%s "$c")" \
         "$([ "$n" -gt 1 ] && echo "  [bundle: $(commit_areas "$c" | paste -sd, -)]" \
-           || { commit_is_significant "$c" && ! commit_has_revert "$c" && echo "  [missing Revert:]"; })"
+           || { commit_is_significant "$c" && ! commit_revert_ok "$c" && echo "  [revert recipe]"; })"
     done
     return 0
   fi
@@ -206,9 +205,13 @@ replay_range() {
       G cherry-pick --no-commit "$c" >/dev/null 2>&1 || { restore; die "conflict splitting ${c:0:9} — resolve manually"; }
       printf '%s\n' "$ns" | split_from_status "$subject" "$body"; rc=$?
       if [ "$rc" != 0 ] && [ "$rc" != 3 ]; then restore; die "split of ${c:0:9} failed"; fi
-    elif commit_is_significant "$c" && ! commit_has_revert "$c"; then
+    elif commit_is_significant "$c"; then
+      # auto-SHA: replay with the recipe recomputed for the NEW parent — the
+      # old line (kept from the original message) may name a rewritten-away SHA.
       G cherry-pick --no-commit "$c" >/dev/null 2>&1 || { restore; die "conflict on ${c:0:9} — resolve manually"; }
-      local rev msg; rev=$(G rev-parse HEAD)
+      local rev msg
+      rev=$(G rev-parse HEAD)
+      body=$(printf '%s\n' "$body" | strip_revert)
       msg="$subject"; [ -n "$body" ] && msg="${msg}"$'\n\n'"${body}"
       msg="${msg}"$'\n\n'"Revert: git reset --hard ${rev}"
       printf '%s\n' "$msg" | G commit -q --no-verify --author="$AUTHOR" -F - || { restore; die "commit failed on ${c:0:9}"; }
