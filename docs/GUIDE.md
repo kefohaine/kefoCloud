@@ -10,7 +10,7 @@ One Debian machine runs the lab in Docker Compose: the Caddy edge (`$DOMAIN`, ho
 
 **Which modules are actually installed is a runtime fact**, not a doc fact: `scripts/install/install.sh` — the SOLE writer of `$DATA_DIR/install.state` — records the `enabled_modules` and sets the `finished` checkpoint **only when a run reaches success** (a failed or unfinished run leaves a non-finished state), and `make fetch` / `make fetch-more` / `make smoke` read it (through `scripts/lib/modules.sh`, the one accessor). A module that is **not installed** is ABSENT — no container, no data, no route (its vhost answers 502 if one is deployed). It is **not** "tailnet-only"; see "Module state vs route exposure" below.
 
-The public hostnames (`cloud` `vault` `kuma` `mail` `talk` `www`) go through Cloudflare; `tail.$DOMAIN` is tailnet-only. A second tailnet-only machine can be made the PERMANENT live Nextcloud datadirectory host by `make nc-datadir-nfs` (`scripts/ops/nc-datadir-nfs.sh` — `export` moves this host's datadirectory over NFS to it; `import` restores this host's own previously-exported datadir); `make backup` ships ALL modules (not one at a time) as two bundles — `nextcloud-backup-*.tar.gz` = PostgreSQL DB + Nextcloud datadir, `other-backup-*.tar.gz` = vault/mailserver/kuma datadirs — to a tailnet device; `make import-backups` previews what's available and asks for a typed yes before restoring. The database always stays on the main machine (see the `nc-datadir-nfs` row below). The authoritative hostname/module/container lists are the ones the scripts derive at runtime: `config/modules.conf`, `install.state`, `docker ps` — never this sentence.
+The public hostnames (`cloud` `vault` `kuma` `mail` `talk` `www`) go through Cloudflare; `tail.$DOMAIN` is tailnet-only. A second tailnet-only machine can be made the PERMANENT live Nextcloud datadirectory host by `make nc-datadir-nfs` (`scripts/ops/nc-datadir-nfs.sh` — `export` moves this host's datadirectory over NFS to it; `import` restores this host's own previously-exported datadir); `make backup` ships ALL modules (not one at a time) to a tailnet device in one of two modes — bundles (`nextcloud-backup-*.tar.gz` = PostgreSQL DB + Nextcloud datadir, `other-backup-*.tar.gz` = vault/mailserver/kuma datadirs) or raw datadirectories (`nextcloud-*/`, `others-*/`); `make import-backups` previews what's available and asks for a typed yes before restoring. The database always stays on the main machine (see the `nc-datadir-nfs` row below). The authoritative hostname/module/container lists are the ones the scripts derive at runtime: `config/modules.conf`, `install.state`, `docker ps` — never this sentence.
 
 ## Request flow
 
@@ -163,11 +163,20 @@ A periodic repair pass is deliberately **not installed**: `scripts/stack/stack-u
 
 ## Backup & restore
 
-- `make backup TAILDROP=<tailnet-device>` — ships every installed module as two bundles to the device's `backups/` folder (tailnet-only WireGuard transfer, sha256-verified):
-  `nextcloud-backup-<date>.tar.gz` — PostgreSQL DB (`pgdata`) + Nextcloud datadir (`cloud`); if the datadir is external (`make nc-datadir-nfs` export — marker `$DATA/.nc-import-source`), only the DB is copied to that machine, then the bundle is built and taildropped from there.
-  `other-backup-<date>.tar.gz` — vault, mailserver and kuma datadirs.
-  No bundles are kept locally and `repo/config/` is never read or written.
-- `make import-backups TAILDROP=<tailnet-device>` — preview: lists bundles on the device, which modules they cover, which live dirs would be overridden, which containers stop (caddy excluded), then asks which bundles to import and requires a typed `yes` before transferring. No `DRYRUN=1` flag — preview + confirmation are built in.
+- `make backup TAILDROP=<tailnet-device>` — ships every installed module to the device's `backups/` folder (tailnet-only WireGuard transfer, verified before the staging copies are deleted). No bundles are kept locally and `repo/config/` is never read or written. The mode is chosen at the prompt (`BACKUP_MODE=bundle|raw`, bundle default); the plan is then printed and a typed `yes` is required before any work:
+  - **bundle** — two archives: `nextcloud-backup-<date>.tar.gz` = PostgreSQL DB (`pgdata`) + Nextcloud datadir (`cloud`); `other-backup-<date>.tar.gz` = vault, mailserver and kuma datadirs. sha256-verified after transfer.
+  - **raw** — the same datadirs as plain trees, no archive: `nextcloud-<date>/` (`pgdata` + `cloud`) and `others-<date>/` (vault, mailserver, kuma). Verified with an aggregate content fingerprint (a hash of the sorted per-file sha256 manifest) since there is no tarball to hash.
+  - If the datadir is external (`make nc-datadir-nfs` export — marker `$DATA/.nc-import-source`), `cloud` is sent straight from the external machine in both modes (in bundle mode the DB is copied over, the bundle built and taildropped from there); `pgdata` and the other datadirs always come from the main host.
+- `make import-backups TAILDROP=<tailnet-device>` — preview: lists the bundles and raw datadirs on the device, which modules they cover, which live dirs would be overridden, which containers stop (caddy excluded), then asks what to import and requires a typed `yes` before transferring. Bundle contents and raw top-level entries must be within `{pgdata, cloud, vault, mailserver, kuma}` or the import refuses. No `DRYRUN=1` flag — preview + confirmation are built in.
+
+Datadir interworking (`cloud` only; `pgdata` and the other datadirs are always local):
+
+| state | `make backup` cloud source | `make import-backups` cloud destination | `make nc-datadir-nfs` |
+|---|---|---|---|
+| no marker | `$DATA/cloud` | `$DATA/cloud` | export → moves the datadir over NFS, writes the marker |
+| marker present | the external `EX_IP:EX_MOUNT` | the external `EX_IP:EX_MOUNT` | import → moves the datadir back, removes the marker |
+
+So a backup taken before the datadir move can be imported after it (and vice versa): the restore routes `cloud` to wherever the datadir lives now, without a `make nc-datadir-nfs` import first.
 - All backups live only on the tailnet device; there is no on-host backup storage anymore. To keep a second copy, copy from the device (e.g. `ssh <device> 'rsync -a ~/backups/ <local>/'`).
 - `make bundle-secrets`, `make bundle-config`, `make clean-backups` and `make cleanup` were removed — secrets/config tarballs are no longer produced locally. Secrets that must be preserved (`/root/.ssh/github_key`, `/etc/goose/goose.env`, `CF_API_TOKEN`...) are copies of host files; replicate them via the device copy above.
 

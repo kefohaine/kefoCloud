@@ -33,7 +33,7 @@ Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Caddy, Vaultwarden, Uptime
 
 - `bash scripts/ops/optimize.sh` — automated performance optimization after install; useful for resource management
 - `make nc-datadir-nfs` — make an external machine the PERMANENT live Nextcloud datadir host over the tailnet; the database stays on this machine; useful for bulky external storage
-- `make backup TAILDROP=<device>` ships all modules as two sha256-verified bundles to a Tailscale device; restore with `make import-backups`; useful for safety & migration
+- `make backup TAILDROP=<device>` ships all modules to a Tailscale device as verified bundles (default) or raw datadirectories (`BACKUP_MODE=raw`); restore with `make import-backups`; useful for safety & migration
 
 ## Documentation
 
