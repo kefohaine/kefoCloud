@@ -2,7 +2,7 @@
 #
 # The repo contains NO operator-specific value: deployable files carry
 # {{TOKENS}} and this file says what each one means. The values themselves live
-# in data/instance.conf (untracked), written by scripts/install/install.sh when it
+# in data/instance.conf (untracked), written by the installer when it
 # prompts, or by you by hand:
 #
 #   DOMAIN=example.com
@@ -27,7 +27,7 @@
 # EMAIL — the operator's contact address (admin@$DOMAIN)
 # TIMEZONE — IANA zone used by containers and cron (UTC)
 #
-# Written by install.sh (never prompted):
+# Written by the installer (never prompted):
 # TAIL_CERT_ROLLBACK — "true" when the tail.$DOMAIN door must be served under
 #                      TS_CERT_HOST with an emergency `tailscale cert` cert
 #                      instead of an LE cert (set after an LE per-identifier
