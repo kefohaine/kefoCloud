@@ -42,6 +42,7 @@ mod_in() { mod_installed "$1"; }
 # `tailscale serve` publishes the shell under the machine's own HTTPS name and
 # no Caddy tail vhost exists. There is no automatic switch between the two.
 TAIL_ENDPOINT="$(state_get TAIL_ENDPOINT)"; TAIL_ENDPOINT="${TAIL_ENDPOINT:-caddy}"
+TAIL_CERT_ISSUER="$(state_get TAIL_CERT_ISSUER)"; TAIL_CERT_ISSUER="${TAIL_CERT_ISSUER:-acme}"
 TS_CERT_HOST="$(state_get TS_CERT_HOST)"
 TAIL_ROLLBACK=0
 if [ "$TAIL_ENDPOINT" = "tailscale" ] && [ -n "$TS_CERT_HOST" ]; then
