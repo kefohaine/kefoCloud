@@ -59,8 +59,7 @@ mod_installed() {
   return 1
 }
 # state_get <key> — one raw field of wizard.state ('' when absent). The
-# read-only door for a fact the installer recorded beyond the module set, e.g. the
-# private shell endpoint (TAIL_ENDPOINT / TAIL_CERT_ISSUER / TS_CERT_HOST).
+# read-only door for a fact the installer recorded beyond the module set.
 state_get()    { _mod_read "$1"; }
 mod_state()    { mod_installed "$1" && printf 'installed' || printf 'not installed'; }
 mod_note()     { mod_installed "$1" || printf '(not installed)'; }
