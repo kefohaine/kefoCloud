@@ -2951,12 +2951,17 @@ sync_tail_endpoint() {
   local tsh="${TS_CERT_HOST:-$(ts_cert_host)}"
   if [ "${TAIL_ENDPOINT:-caddy}" = "tailscale" ]; then
     [ -n "$tsh" ] || { warn tail_serve "no Tailscale HTTPS name (tailscaled down?)"; return 1; }
-    # Path-preserving proxy: ttyd runs with -b /ttyd, so /ttyd reaches the shell.
-    if ! tailscale serve --bg --https=443 /ttyd http://172.22.0.1:7681 >>"$LOG" 2>&1; then
+    # Caddy runs in host network and owns *:443, so tailscaled cannot bind the
+    # tailnet IP on 443 ("localListener failed to listen ... address already in
+    # use"). Serve on 8443 instead; `--set-path=/ttyd` is the supported mount
+    # syntax (a bare `/ttyd` argument is rejected: "invalid argument format")
+    # and it STRIPS the mount prefix, so the target must carry /ttyd itself —
+    # ttyd runs with -b /ttyd, and without it every request is a 404.
+    if ! tailscale serve --bg --https=8443 --set-path=/ttyd "http://172.22.0.1:7681/ttyd" >>"$LOG" 2>&1; then
       warn tail_serve "tailscale serve failed (see $LOG)"
       return 1
     fi
-    detail "  private shell endpoint: https://$tsh/ttyd (tailscale serve)"
+    detail "  private shell endpoint: https://$tsh:8443/ttyd (tailscale serve)"
   else
     # A previous tailscale run may have left a serve config behind; only clear
     # it when the saved endpoint actually was tailscale (never a blind reset).
@@ -3361,7 +3366,7 @@ hint() {
     dns_*)          echo "create an A record ${1#dns_}.$DOMAIN -> ${HOST_IP:-<machine IP>} in Cloudflare (turn must be DNS-only/grey-cloud — TURN bypasses the proxy; the rest proxied), then re-check" ;;
     cert_*)         echo "hit https://${1#cert_}.$DOMAIN once to trigger ACME, wait a few seconds, then re-check" ;;
     cert_tail_ratelimit) echo "the installer never switches endpoints by itself: re-run it and answer 'tailscale' at the private-shell prompt to serve the shell with tailscale serve instead of Caddy's LE cert" ;;
-    tail_serve)         echo "run: tailscale serve --bg --https=443 /ttyd http://172.22.0.1:7681 (HTTPS certs must be enabled for the tailnet), then re-check" ;;
+    tail_serve)         echo "run: tailscale serve --bg --https=8443 --set-path=/ttyd http://172.22.0.1:7681/ttyd (HTTPS certs must be enabled for the tailnet; 8443 because Caddy owns *:443), then re-check" ;;
     sweep)          echo "rename or remove the files listed by: grep -rlI $GITHUB_USER $REPO --exclude-dir=.git --exclude-dir=docs --exclude-dir=archives --exclude-dir=scripts, then re-check" ;;
     sslmode)        echo "Cloudflare dashboard -> SSL/TLS -> Overview -> set mode to Full (or Full strict), then re-check" ;;
     nextcloud_setup) echo "the occ wiring is re-applied automatically on each re-check (nextcloud_occ_remediate); if it still fails, ensure the nextcloud/talk containers are up (make dok-recreate-nextcloud) and the mail module's SMTP_PASSWORD exists in modules/nextcloud/.env — see the nextcloud_setup function in this script, then re-check" ;;
@@ -3404,7 +3409,7 @@ recheck() {
     zone) [ -n "$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" | jq -r '.result[0].id // empty')" ] ;;
     dns_*) local h=${1#dns_}; [ -n "$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$h.$DOMAIN" | jq -r '.result[0].id // empty')" ] ;;
     cert_*) local h=${1#cert_}; echo | timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$h.$DOMAIN" 2>/dev/null | openssl x509 -noout -issuer 2>/dev/null | grep -q "Let's Encrypt" ;;
-    tail_serve) tailscale serve status 2>/dev/null | grep -q '/ttyd' ;;
+    tail_serve) tailscale serve status 2>/dev/null | grep -q ':8443' && tailscale serve status 2>/dev/null | grep -q '/ttyd' ;;
     sweep) [ -z "$(sweep_hits)" ] ;;
     sslmode) ssl_mode_full ;;
     nextcloud_setup) nextcloud_occ_remediate; if ! mod_on mail || docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN"; then docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://talk.$DOMAIN/signaling" && docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "talk.$DOMAIN:3478" && docker exec -u www-data nextcloud php occ config:system:get trusted_domains 2>/dev/null | grep -qx "cloud.$DOMAIN"; else false; fi ;;
@@ -3670,7 +3675,7 @@ success_block() {
   if [ "${TAIL_ENDPOINT:-caddy}" = "tailscale" ] && [ -n "${TS_CERT_HOST:-}" ]; then
     # Explicit tailscale endpoint: the shell is published by tailscale serve
     # under the machine's own Tailscale HTTPS name; Caddy has no tail vhost.
-    printf '  %sShell%s        https://%s/ttyd   %s(tailnet-only — tailscale serve)%s\n' \
+    printf '  %sShell%s        https://%s:8443/ttyd   %s(tailnet-only — tailscale serve)%s\n' \
       "$C_PURPLE" "$C_RST" "$TS_CERT_HOST" "$C_GREY" "$C_RST"
   else
     printf '  %sShell%s        https://tail.%s   %s(tailnet-only)%s\n' \
@@ -3703,7 +3708,7 @@ success_block() {
   n=$((n+1)); printf '   %d. Tailscale split-DNS: admin console -> DNS -> add %s -> %s\n' "$n" "$DOMAIN" "${TS_IP:-<tailscale IP>}"
   printf '      %sso tail.%s resolves for tailnet devices (dnsmasq on the machine already answers it)%s\n' "$C_GREY" "$DOMAIN" "$C_RST"
   if [ "${TAIL_ENDPOINT:-caddy}" = "tailscale" ]; then
-    n=$((n+1)); printf '   %s%d. %sPrivate shell endpoint%s: served by tailscale serve at https://%s/ttyd — no Caddy tail vhost exists by choice.\n' \
+    n=$((n+1)); printf '   %s%d. %sPrivate shell endpoint%s: served by tailscale serve at https://%s:8443/ttyd — no Caddy tail vhost exists by choice.\n' \
       "$C_ORANGE" "$n" "$C_RST" "${TS_CERT_HOST:-<ts name>}"
     printf '      %swant it back on Caddy? re-run the installer and answer "caddy" at the private-shell prompt (never automatic).%s\n' "$C_GREY" "$C_RST"
   fi
