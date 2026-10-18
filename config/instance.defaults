@@ -27,14 +27,7 @@
 # EMAIL — the operator's contact address (admin@$DOMAIN)
 # TIMEZONE — IANA zone used by containers and cron (UTC)
 #
-# Prompted by the installer (with the domain):
-# TAIL_ENDPOINT — "caddy" (LE cert for tail.$DOMAIN) or "tailscale" (tailscale
-#                 serve publishes /ttyd under the machine's own HTTPS name).
-#                 The installer never switches between them and takes no blank
-#                 answer: every run must choose caddy or tailscale explicitly.
-#
 # Written by the installer:
-# TS_CERT_HOST — the machine's own Tailscale HTTPS name (kefomachine.<tailnet>.ts.net)
 # VIDEO_CALLING — "true" to run Talk (spreed + signaling + coturn); the talk
 #                 vhost and its cert are rendered only when true.
 # CLIENT_PUSH   — "true" to run notify_push and route cloud.$DOMAIN/push to it.
