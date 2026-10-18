@@ -176,7 +176,7 @@ stack_data_dirs() {
 # never be reinstalled onto. Read-only: it inspects, it never deletes.
 verify_stack_gone() {
   local t=""
-  local ctn="caddy nextcloud postgresql vaultwarden uptimekuma mailserver roundcube talk-hpb talk-relay"
+  local ctn="caddy nextcloud postgresql vaultwarden uptimekuma mailu-front mailu-imap mailu-smtp mailu-antispam mailu-admin mailu-redis roundcube talk-hpb talk-relay notify-push"
   local c d
 
   for c in $ctn; do
