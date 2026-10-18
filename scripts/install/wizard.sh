@@ -2834,29 +2834,32 @@ cf_mail_dns() {
     # (the old form) left a stale A record pointing at the machine's OLD public
     # IP after an IP change — the re-run reported success while the zone was
     # wrong. A record already carrying the wanted content+proxied is untouched.
-    local rec rid cur prox
+    local rec rid cur prox fqdn
+    # An empty host means the zone apex: "$DOMAIN", never ".$DOMAIN".
+    fqdn="${1:+$1.}$DOMAIN"
     rec=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
-      "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$1.$DOMAIN")
+      "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$fqdn")
     rid=$(printf '%s' "$rec" | jq -r '.result[0].id // empty')
     cur=$(printf '%s' "$rec" | jq -r '.result[0].content // empty')
     prox=$(printf '%s' "$rec" | jq -r '.result[0].proxied // empty')
     if [ -z "$rid" ]; then
       curl -s -X POST -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
         "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
-        -d "{\"type\":\"A\",\"name\":\"$1.$DOMAIN\",\"content\":\"$HOST_IP\",\"ttl\":1,\"proxied\":$2}" \
-        >>"$LOG" 2>&1 || fail "dns_$1"
+        -d "{\"type\":\"A\",\"name\":\"$fqdn\",\"content\":\"$HOST_IP\",\"ttl\":1,\"proxied\":$2}" \
+        >>"$LOG" 2>&1 || fail "dns_${1:-apex}"
       return 0
     fi
     [ "$cur" = "$HOST_IP" ] && [ "$prox" = "$2" ] && return 0
-    detail "  A record $1.$DOMAIN: $cur/$prox -> $HOST_IP/$2 (updating)"
+    detail "  A record $fqdn: $cur/$prox -> $HOST_IP/$2 (updating)"
     curl -s -X PUT -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
       "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$rid" \
-      -d "{\"type\":\"A\",\"name\":\"$1.$DOMAIN\",\"content\":\"$HOST_IP\",\"ttl\":1,\"proxied\":$2}" \
-      >>"$LOG" 2>&1 || fail "dns_$1"
+      -d "{\"type\":\"A\",\"name\":\"$fqdn\",\"content\":\"$HOST_IP\",\"ttl\":1,\"proxied\":$2}" \
+      >>"$LOG" 2>&1 || fail "dns_${1:-apex}"
   }
-  # proxied (orange cloud): vault/kuma/www. talk rides on the cloud door.
-  for h in cloud vault kuma www; do
+  # proxied (orange cloud): the apex + vault/kuma/www. talk rides on the cloud door.
+  for h in "" cloud vault kuma www; do
     case "$h" in
+      "")    cf_record "" true;;
       cloud) mod_on cloud && cf_record "$h" false;;
       vault) mod_on vault && cf_record "$h" true;;
       kuma)  mod_on monitor && cf_record "$h" true;;
