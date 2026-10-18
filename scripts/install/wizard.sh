@@ -1295,11 +1295,16 @@ task_ssh() {
   # Single operator account: root. The provider image may ship a login-capable
   # account (e.g. the cloud-init 'debian' user) — remove every non-root account
   # with a real UID so root@$NODE_NAME is genuinely the only way in.
-  local u uid home
-  while IFS=: read -r u _ uid _ _ home _; do
+  local u uid home sh
+  while IFS=: read -r u _ uid _ _ home sh; do
     [ "$u" = root ] && continue
     [ "$uid" -ge 1000 ] 2>/dev/null || continue
     [ "$uid" -lt 65534 ] || continue
+    # systemd dynamic users live in 61184-65519 and cannot be deleted with
+    # userdel ("user does not exist" — they are not in /etc/passwd). They also
+    # never log in: skip them, and skip any account whose shell is nologin.
+    [ "$uid" -ge 61184 ] && continue
+    case "$sh" in */nologin|*/false|'') continue ;; esac
     detail "  removing non-root login account '$u' ($home)"
     pkill -u "$u" 2>/dev/null || true
     sleep 1
