@@ -6,8 +6,7 @@
 # answers for a resume). Order: continue-gate, apply-previous-answers (only when
 # state exists), GitHub collaborator opt-in (+ commit identity + automatic key
 # verification), device SSH key, Tailscale auth key, Cloudflare API token,
-# domain, private shell endpoint (caddy/tailscale), modules (one space-separated
-# line). Every affirmation takes only the
+# domain, modules (one space-separated line). Every affirmation takes only the
 # literal words `yes`/`no` (no shortcut, no default); the answer is recorded as
 # the boolean true/false. Then it runs unattended as a fixed 11-task checklist
 # (grey [WAIT] -> animated orange [EXEC] -> green [DONE] / red [FAIL]; a failed
@@ -513,12 +512,6 @@ save_state() {
     printf 'CF_API_TOKEN=%q\n'       "${CF_API_TOKEN:-}"
     printf 'TS_AUTHKEY=%q\n'         "${TS_AUTHKEY:-}"
     printf 'TS_IP=%q\n'              "${TS_IP:-}"
-    # The private shell endpoint (explicit operator choice; never inferred) and
-    # the machine's own Tailscale HTTPS name. TAIL_CERT_ISSUER mirrors the
-    # endpoint for readers of wizard.state/smoke (acme | tailscale).
-    printf 'TAIL_ENDPOINT=%q\n'      "${TAIL_ENDPOINT:-}"
-    printf 'TAIL_CERT_ISSUER=%q\n'   "${TAIL_CERT_ISSUER:-acme}"
-    printf 'TS_CERT_HOST=%q\n'       "${TS_CERT_HOST:-}"
     # The device's PUBLIC ssh key(s) (safe to store): reuses on resume, re-asked
     # on a fresh run. SSH_PUBKEYS is the allowlist (newline-separated); the
     # legacy single SSH_PUBKEY is kept pointing at the first key for back-compat.
@@ -945,13 +938,8 @@ ask_inputs() {
   # each is persisted immediately (save_state) so an abort mid-run leaves the
   # answers for a resume. Order: locale country (sets local time first),
   # github-remote-access (+ identity), device-ssh, tailscale, cloudflare, domain,
-  # private shell endpoint, modules. The resume question precedes all of these
-  # (it decides whether saved answers are reused).
-
-  # The endpoint a previous run saved is never reused for a blank answer; it is
-  # kept only so sync_tail_endpoint can tell whether a stale `tailscale serve`
-  # config needs clearing.
-  PREV_TAIL_ENDPOINT="${TAIL_ENDPOINT:-}"
+  # modules. The resume question precedes all of these (it decides whether saved
+  # answers are reused).
 
   # 1 — locale country: resolved to a timezone and applied before any timestamp.
   ask_locale
@@ -985,24 +973,6 @@ ask_inputs() {
   fi
   DOMAIN="${DOMAIN,,}"
   [[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]] || { echo "Invalid domain: $DOMAIN"; exit 1; }
-  save_state
-
-  # 6b — private shell endpoint: caddy (LE cert for tail.$DOMAIN) or tailscale
-  # (tailscale serve on the machine's own HTTPS name). The installer NEVER
-  # switches between them on its own, and there is NO blank fallback: every run
-  # must answer explicitly (a resume reuses the saved value only by asking).
-  local _te
-  while :; do
-    printf '%s[INFO]%s Host private shell endpoint with Caddy or Tailscale? (caddy/tailscale): ' \
-      "$C_GREY" "$C_RST"
-    read -r _te || exit 1
-    _te="${_te,,}"
-    case "$_te" in
-      caddy|tailscale) TAIL_ENDPOINT="$_te"; break ;;
-      "") echo "   an explicit choice is required: type caddy or tailscale." ;;
-      *) echo "   type caddy or tailscale." ;;
-    esac
-  done
   save_state
 
   # 7 — modules (one space-separated prompt), then the cloud-only options that
@@ -1637,16 +1607,6 @@ write_instance_conf() {
   local f="$DATA/instance.conf" keep=""
   mkdir -p "$DATA"
   [ -f "$f" ] && keep=$(grep -E '^(SERVER_IP|EMAIL|TIMEZONE)=' "$f" || true)
-  # The private shell endpoint is the operator's explicit choice (TAIL_ENDPOINT),
-  # never an inference from a rate limit. The machine's Tailscale name is
-  # captured whenever known so a tailscale-endpoint render has a value ready;
-  # TAIL_CERT_ISSUER is kept for readers of wizard.state/smoke.
-  TS_CERT_HOST="${TS_CERT_HOST:-$(ts_cert_host)}"
-  if [ "${TAIL_ENDPOINT:-caddy}" = "tailscale" ]; then
-    TAIL_CERT_ISSUER=tailscale
-  else
-    TAIL_CERT_ISSUER=acme
-  fi
   {
     echo "# data/instance.conf — the values for THIS host (untracked, mode 0600)."
     echo "# Written by the installer; see config/instance.defaults for what"
@@ -1662,15 +1622,10 @@ write_instance_conf() {
     printf 'REPO_DIR=%s\n' "$REPO"
     printf 'DATA_DIR=%s\n' "$DATA"
     printf 'LOG_DIR=%s\n' "$LOG_DIR"
-    # The private shell endpoint: render-all drops the tail vhost when it is
-    # tailscale (tailscale serve owns the shell), and the caddy path keeps the
-    # normal LE tail.$DOMAIN vhost. Never both, never a runtime switch.
-    printf 'TAIL_ENDPOINT=%s\n' "${TAIL_ENDPOINT:-caddy}"
     # Cloud module optional services: rendered as {{IF VIDEO_CALLING}} /
     # {{IF CLIENT_PUSH}} blocks (talk vhost, cloud /push route).
     printf 'VIDEO_CALLING=%s\n' "${VIDEO_CALLING:-true}"
     printf 'CLIENT_PUSH=%s\n' "${CLIENT_PUSH:-false}"
-    [ -n "$TS_CERT_HOST" ] && printf 'TS_CERT_HOST=%s\n' "$TS_CERT_HOST"
     [ -n "$keep" ] && printf '%s\n' "$keep"
   } > "$f"
   chmod 600 "$f"
@@ -1866,9 +1821,9 @@ host_services() {
   # renders the live Tailscale IP in at deploy time, so the repo file is never
   # mutated and no instance-specific address is ever committed.
   make install-config >>"$LOG" 2>&1 || fail install_config
-  # Publish the shell endpoint the operator chose (tailscale serve only under an
-  # explicit tailscale choice; caddy leaves the LE vhost alone).
-  sync_tail_endpoint || true
+  # Clear any `tailscale serve` mapping so nothing shadows the Caddy tail vhost
+  # (idempotent; a no-op when serve has no configuration).
+  tailscale serve reset >>"$LOG" 2>&1 || true
   # fail2ban: on trixie the default file backend finds no /var/log/auth.log and
   # the unit exits 255. Our jail.d/sshd.conf ships backend=systemd; restart and
   # verify so a silently-dead jail can never pass as hardened.
@@ -2923,61 +2878,11 @@ cf_mail_dns() {
   fi
 }
 
-# ── private shell endpoint: Caddy or tailscale serve ──────────────────────
-# The operator picks ONE endpoint at the domain prompt (caddy / tailscale) and
-# the installer never switches on its own. Let's Encrypt rate-limits an EXACT
-# set of identifiers (5 certs / 168 h); when tail.$DOMAIN is rate-limited under
-# the caddy choice, Caddy retries forever and the door answers a TLS alert.
-# That is a WARNING with the remedy to re-run and choose tailscale — never an
-# automatic rollback between the two methods.
-
-# The machine's own Tailscale HTTPS name (kefomachine.<tailnet>.ts.net) — the
-# only name `tailscale cert` can issue for (CertDomains is unset). Empty when
-# tailscaled is not up.
-ts_cert_host() {
-  tailscale status --json 2>/dev/null | jq -r '.Self.DNSName // empty' 2>/dev/null | sed 's/\.$//'
-}
-
-# LE's retry-after for a rate-limited identifier, read from Caddy's ACME log
-# ("retry after 2026-10-17 08:20:10 UTC") and turned into an ISO-8601 UTC stamp
-# for wizard.state. Prints "" when the last failure for the host was not a 429.
-le_ratelimit_until() {
-  local host="${1:-tail.$DOMAIN}" raw
-  raw="$(docker logs caddy 2>&1 | grep -a 'rateLimited' | grep -a "\"identifier\":\"$host\"" \
-    | grep -aoE 'retry after [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]{8} UTC' | tail -1)"
-  [ -n "$raw" ] || return 0
-  date -u -d "${raw#retry after }" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null
-}
-
-# Configure the ONE private shell endpoint the operator chose. `caddy` leaves
-# tail.$DOMAIN on its LE vhost; `tailscale` publishes /ttyd with tailscale serve
-# under the machine's own HTTPS name and the tail vhost is not rendered at all.
-# Idempotent, and it never changes the choice: an endpoint switch happens only
-# when a later run answers the prompt differently.
-sync_tail_endpoint() {
-  local tsh="${TS_CERT_HOST:-$(ts_cert_host)}"
-  if [ "${TAIL_ENDPOINT:-caddy}" = "tailscale" ]; then
-    [ -n "$tsh" ] || { warn tail_serve "no Tailscale HTTPS name (tailscaled down?)"; return 1; }
-    # Caddy runs in host network and owns *:443, so tailscaled cannot bind the
-    # tailnet IP on 443 ("localListener failed to listen ... address already in
-    # use"). Serve on 8443 instead; `--set-path=/ttyd` is the supported mount
-    # syntax (a bare `/ttyd` argument is rejected: "invalid argument format")
-    # and it STRIPS the mount prefix, so the target must carry /ttyd itself —
-    # ttyd runs with -b /ttyd, and without it every request is a 404.
-    if ! tailscale serve --bg --https=8443 --set-path=/ttyd "http://172.22.0.1:7681/ttyd" >>"$LOG" 2>&1; then
-      warn tail_serve "tailscale serve failed (see $LOG)"
-      return 1
-    fi
-    detail "  private shell endpoint: https://$tsh:8443/ttyd (tailscale serve)"
-  else
-    # A previous tailscale run may have left a serve config behind; only clear
-    # it when the saved endpoint actually was tailscale (never a blind reset).
-    if [ "${PREV_TAIL_ENDPOINT:-}" = "tailscale" ]; then
-      tailscale serve reset >>"$LOG" 2>&1 || true
-      detail "  private shell endpoint: https://tail.$DOMAIN (Caddy, LE)"
-    fi
-  fi
-}
+# ── tail door TLS ──────────────────────────────────────────────────────────
+# tail.$DOMAIN is served by Caddy's own vhost with `tls internal` (Caddy's local
+# CA, never Let's Encrypt): the vhost is tailnet-only, so it has no public ACME
+# identifier and no per-identifier rate limit. Caddy issues and stores the cert
+# itself; there is nothing to order or renew from the installer.
 
 # Issuer of the cert Caddy presents for one vhost, polled while ACME finishes.
 cert_issuer() {
@@ -2999,31 +2904,12 @@ issue_certs() {
   mod_on vault   && hosts="$hosts vault"
   mod_on monitor && hosts="$hosts kuma"
   mod_on mail    && hosts="$hosts mail"
-  # tail.$DOMAIN is ordered only under the explicit caddy choice — the
-  # tailscale endpoint is served by `tailscale serve` and never touches Caddy's
-  # ACME. A per-identifier LE limit is only WARNED about (with the remedy to
-  # re-run and choose tailscale); the installer never switches by itself.
-  [ "${TAIL_ENDPOINT:-caddy}" = "caddy" ] && hosts="$hosts tail"
+  # tail.$DOMAIN is absent on purpose: its `tls internal` cert is issued by
+  # Caddy's local CA, not ordered from Let's Encrypt.
   for h in $hosts; do
     curl -sk --resolve "$h.$DOMAIN:443:127.0.0.1" -o /dev/null "https://$h.$DOMAIN/" >>"$LOG" 2>&1 || true
     sleep 3
   done
-  # A rate limit is a ONE-SHOT failure: the order never completes, so polling
-  # would only time out. Read it off Caddy's ACME log — up to ~30 s, since
-  # Caddy's first obtain runs just after the trigger above — WARN, and leave the
-  # door exactly where the operator put it (no automatic caddy↔tailscale move).
-  if [[ " $hosts " == *" tail "* ]]; then
-    local tuntil="" i=0
-    while [ $i -lt 15 ]; do
-      tuntil="$(le_ratelimit_until "tail.$DOMAIN")"; [ -n "$tuntil" ] && break
-      i=$((i+1)); sleep 2
-    done
-    if [ -n "$tuntil" ]; then
-      warn cert_tail_ratelimit "$tuntil"
-      log "  tail.$DOMAIN LE rate-limited until $tuntil — staying on Caddy (reinstall and choose tailscale to move the shell endpoint)"
-      hosts="$(printf '%s\n' $hosts | grep -v '^tail$' | paste -sd' ')"
-    fi
-  fi
   # The trigger requests above only wake Caddy up — the first DNS-01 issuance
   # is not instant, so cert_issuer polls before declaring failure. The two
   # outcomes are NOT the same and must not be treated as one:
@@ -3060,15 +2946,7 @@ issue_certs() {
     iss=$(cert_issuer "$h")
     case "$iss" in
       *"Let's Encrypt"*) ;;
-      *)
-        # Same rule late in the run: warn about a rate-limited tail door and
-        # keep the operator's endpoint, never roll it over to the other method.
-        if [ "$h" = tail ] && tuntil="$(le_ratelimit_until "tail.$DOMAIN")" && [ -n "$tuntil" ]; then
-          warn cert_tail_ratelimit "$tuntil"
-          log "  tail.$DOMAIN LE rate-limited until $tuntil — staying on Caddy (reinstall and choose tailscale to move the shell endpoint)"
-          continue
-        fi
-        fail "cert_$h" "issuer was: $iss";;
+      *) fail "cert_$h" "issuer was: $iss";;
     esac
   done
 }
@@ -3330,8 +3208,6 @@ problem() {
     zone)           echo "Cloudflare zone '$DOMAIN' not found" ;;
     dns_*)          echo "DNS record for ${1#dns_}.$DOMAIN is missing" ;;
     cert_*)         echo "cert for ${1#cert_}.$DOMAIN is not issued by Let's Encrypt" ;;
-    cert_tail_ratelimit) echo "Let's Encrypt rate-limited tail.$DOMAIN — the shell endpoint stayed on Caddy (no automatic switch)" ;;
-    tail_serve)         echo "the tailscale-serve shell endpoint is not configured" ;;
     sweep)          echo "old project name is still referenced in the repo tree" ;;
     sslmode)        echo "Cloudflare SSL/TLS mode is not Full (or strict)" ;;
     nextcloud_setup) echo "Nextcloud occ wiring incomplete (Talk signaling/TURN, SMTP, background cron)" ;;
@@ -3372,8 +3248,6 @@ hint() {
     zone)           echo "add $DOMAIN as a zone in the Cloudflare dashboard, then re-check" ;;
     dns_*)          echo "create an A record ${1#dns_}.$DOMAIN -> ${HOST_IP:-<machine IP>} in Cloudflare (turn must be DNS-only/grey-cloud — TURN bypasses the proxy; the rest proxied), then re-check" ;;
     cert_*)         echo "hit https://${1#cert_}.$DOMAIN once to trigger ACME, wait a few seconds, then re-check" ;;
-    cert_tail_ratelimit) echo "the installer never switches endpoints by itself: re-run it and answer 'tailscale' at the private-shell prompt to serve the shell with tailscale serve instead of Caddy's LE cert" ;;
-    tail_serve)         echo "run: tailscale serve --bg --https=8443 --set-path=/ttyd http://172.22.0.1:7681/ttyd (HTTPS certs must be enabled for the tailnet; 8443 because Caddy owns *:443), then re-check" ;;
     sweep)          echo "rename or remove the files listed by: grep -rlI $GITHUB_USER $REPO --exclude-dir=.git --exclude-dir=docs --exclude-dir=archives --exclude-dir=scripts, then re-check" ;;
     sslmode)        echo "Cloudflare dashboard -> SSL/TLS -> Overview -> set mode to Full (or Full strict), then re-check" ;;
     nextcloud_setup) echo "the occ wiring is re-applied automatically on each re-check (nextcloud_occ_remediate); if it still fails, ensure the nextcloud/talk containers are up (make dok-recreate-nextcloud) and the mail module's SMTP_PASSWORD exists in modules/nextcloud/.env — see the nextcloud_setup function in this script, then re-check" ;;
@@ -3416,7 +3290,6 @@ recheck() {
     zone) [ -n "$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" | jq -r '.result[0].id // empty')" ] ;;
     dns_*) local h=${1#dns_}; [ -n "$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$h.$DOMAIN" | jq -r '.result[0].id // empty')" ] ;;
     cert_*) local h=${1#cert_}; echo | timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$h.$DOMAIN" 2>/dev/null | openssl x509 -noout -issuer 2>/dev/null | grep -q "Let's Encrypt" ;;
-    tail_serve) tailscale serve status 2>/dev/null | grep -q ':8443' && tailscale serve status 2>/dev/null | grep -q '/ttyd' ;;
     sweep) [ -z "$(sweep_hits)" ] ;;
     sslmode) ssl_mode_full ;;
     nextcloud_setup) nextcloud_occ_remediate; if ! mod_on mail || docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN"; then docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://talk.$DOMAIN/signaling" && docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "talk.$DOMAIN:3478" && docker exec -u www-data nextcloud php occ config:system:get trusted_domains 2>/dev/null | grep -qx "cloud.$DOMAIN"; else false; fi ;;
@@ -3679,15 +3552,8 @@ success_block() {
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${KUMA_PASS:-(already set — rotate with: make kuma-passwd USER=admin PASS=…)}" "$C_RST"
   mod_on mail && printf '  %sWebmail%s      https://mail.%s    %s(mailboxes via make mail-gen)%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
-  if [ "${TAIL_ENDPOINT:-caddy}" = "tailscale" ] && [ -n "${TS_CERT_HOST:-}" ]; then
-    # Explicit tailscale endpoint: the shell is published by tailscale serve
-    # under the machine's own Tailscale HTTPS name; Caddy has no tail vhost.
-    printf '  %sShell%s        https://%s:8443/ttyd   %s(tailnet-only — tailscale serve)%s\n' \
-      "$C_PURPLE" "$C_RST" "$TS_CERT_HOST" "$C_GREY" "$C_RST"
-  else
-    printf '  %sShell%s        https://tail.%s   %s(tailnet-only)%s\n' \
-      "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
-  fi
+  printf '  %sShell%s        https://tail.%s   %s(tailnet-only, self-signed cert)%s\n' \
+    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
   printf '  %smachine IP%s %s    %sTailscale IP%s %s\n' \
     "$C_GREY" "$C_RST" "${HOST_IP:-?}" "$C_GREY" "$C_RST" "${TS_IP:-?}"
   echo ""
@@ -3714,11 +3580,6 @@ success_block() {
   fi
   n=$((n+1)); printf '   %d. Tailscale split-DNS: admin console -> DNS -> add %s -> %s\n' "$n" "$DOMAIN" "${TS_IP:-<tailscale IP>}"
   printf '      %sso tail.%s resolves for tailnet devices (dnsmasq on the machine already answers it)%s\n' "$C_GREY" "$DOMAIN" "$C_RST"
-  if [ "${TAIL_ENDPOINT:-caddy}" = "tailscale" ]; then
-    n=$((n+1)); printf '   %s%d. %sPrivate shell endpoint%s: served by tailscale serve at https://%s:8443/ttyd — no Caddy tail vhost exists by choice.\n' \
-      "$C_ORANGE" "$n" "$C_RST" "${TS_CERT_HOST:-<ts name>}"
-    printf '      %swant it back on Caddy? re-run the installer and answer "caddy" at the private-shell prompt (never automatic).%s\n' "$C_GREY" "$C_RST"
-  fi
   if mod_on cloud; then
     n=$((n+1)); printf '   %d. %s(optional)%s Cloudflare WAF rule skip for cloud.%s (desktop sync)\n' "$n" "$C_GREY" "$C_RST" "$DOMAIN"
   fi
@@ -3869,7 +3730,7 @@ main() {
       # held was erased with data/, and a reinstall never inherits the previous
       # instance's answers.
       unset DOMAIN CF_API_TOKEN TS_AUTHKEY TS_IP SSH_PUBKEY SSH_PUBKEYS \
-            LOCALE_COUNTRY TAIL_ENDPOINT TAIL_CERT_ISSUER TS_CERT_HOST \
+            LOCALE_COUNTRY \
             MOD_CLOUD MOD_VAULT MOD_MAIL MOD_MONITOR VIDEO_CALLING CLIENT_PUSH \
             GH_REMOTE GH_AUTH_OK \
             GITHUB_COMMIT_NAME GITHUB_COMMIT_EMAIL \
@@ -3888,7 +3749,7 @@ main() {
   else
     # No previous run: drop whatever instance.sh's fallbacks put in the
     # environment (notably DOMAIN=example.com) so no prompt is silently skipped.
-    unset DOMAIN CF_API_TOKEN TS_AUTHKEY SSH_PUBKEY SSH_PUBKEYS NC_APPS_APPLIED TAIL_ENDPOINT \
+    unset DOMAIN CF_API_TOKEN TS_AUTHKEY SSH_PUBKEY SSH_PUBKEYS NC_APPS_APPLIED \
           VIDEO_CALLING CLIENT_PUSH
   fi
   ask_inputs
