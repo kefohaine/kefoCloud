@@ -1404,13 +1404,16 @@ task_tailscale() {
   [ -n "$TS_IP" ] && log "tailscale IP: $TS_IP" || fail ts_ip
   # A rejoin can hand the node a NEW tailnet IP, and dnsmasq binds its split-DNS
   # resolver to that address — a stale bind makes tailnet *.$DOMAIN refuse (seen:
-  # bound 100.83.215.34 while the live IP was 100.106.87.43). Refresh the render
-  # whenever the installed conf no longer matches the live IP, so the machine
-  # never sits on a dead bind after a rejoin. The render + sed pair is exactly
-  # what `make install-config` uses, so one source of truth; non-fatal because
-  # install-config re-renders unconditionally later in the run anyway.
+  # bound 100.83.215.34 while the live IP was 100.106.87.43). The `address=`
+  # answer for tail.$DOMAIN must move with it: a bind on the live IP plus an
+  # answer on the old one resolves the door to a departed address. Refresh the
+  # render whenever either line no longer matches the live IP, so the machine
+  # never sits on a dead bind or a stale answer after a rejoin. The render + sed
+  # pair is exactly what `make install-config` uses, so one source of truth;
+  # non-fatal because install-config re-renders unconditionally later anyway.
   if [ -f /etc/dnsmasq.d/10-tailnet.conf ] \
-     && ! grep -q "listen-address=$TS_IP\$" /etc/dnsmasq.d/10-tailnet.conf; then
+     && { ! grep -q "listen-address=$TS_IP\$" /etc/dnsmasq.d/10-tailnet.conf \
+          || ! grep -q "address=/tail\.$DOMAIN/$TS_IP\$" /etc/dnsmasq.d/10-tailnet.conf; }; then
     bash "$REPO/scripts/render/render-all.sh" >>"$LOG" 2>&1 || true
     make -C "$REPO" install-dnsmasq-conf >>"$LOG" 2>&1 \
       || log "dnsmasq split-DNS refresh failed (install-config will render it later in the run)"
