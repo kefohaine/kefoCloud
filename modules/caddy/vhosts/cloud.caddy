@@ -33,6 +33,12 @@ https://cloud.{{DOMAIN}} {
 {{END}}
     php_fastcgi 172.22.0.5:9000 {
         root /var/www/html
+        # notify_push (172.22.0.16) proxies its client requests through this
+        # edge. Trusting its X-Forwarded-For keeps the real client address all
+        # the way to Nextcloud — without it Caddy replaces the header with the
+        # container IP and `occ notify_push:setup`'s trusted-proxy self-test
+        # fails. Internal bridge peers only; public peers stay untrusted.
+        trusted_proxies 172.22.0.16/32
         # strip NC's own security headers so the site-level header set below
         # yields exactly one value per field (Caddy appends, not replaces)
 		header_down -X-Frame-Options
