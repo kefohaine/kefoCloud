@@ -15,10 +15,7 @@
 # exit code. A NOT-INSTALLED module's section is buffered and never printed
 # inline: if any of its checks failed, that whole section appears ONCE more, at
 # the end, under one "Not installed / ignored" heading — listed but not
-# counted. No check prints twice. The same buffered-ignored treatment is used
-# for one CORE block when wizard.state says the private shell endpoint is
-# tailscale serve (soft_begin/soft_end): its failures are moved aside, never
-# counted.
+# counted. No check prints twice.
 #
 # VOCABULARY: an installed module is expected; a not-installed one is ABSENT —
 # no container, no data, no route. It is NOT "tailnet-only" (a property of the
@@ -78,35 +75,13 @@ sec_buf=""
 sec_buf_on=""
 sec_disabled=""
 
-soft_on=""; soft_fails=0; soft_buf=""; soft_reason=""
-
 # say <line> — print now for a core/enabled section, buffer for a not-installed
-# one, or buffer for a soft (ignored-on-failure) block.
+# one.
 say() {
-  if [ -n "$soft_on" ]; then soft_buf+="$1"$'\n'
-  elif [ -n "$sec_buf_on" ]; then sec_buf+="$1"$'\n'
+  if [ -n "$sec_buf_on" ]; then sec_buf+="$1"$'\n'
   else printf '%s\n' "$1"; fi
 }
-bad() {
-  if [ -n "$soft_on" ]; then soft_fails=$((soft_fails+1)); else sec_fails=$((sec_fails+1)); fi
-}
-
-# soft_begin <reason> / soft_end — a block of checks whose FAILURES must not
-# fail the run: they are moved ONCE into the end-of-report "ignored" section
-# (listed, not counted), while a clean block prints inline. Used for the tail
-# door's functional checks when the shell endpoint is tailscale serve
-# (wizard.state TAIL_ENDPOINT=tailscale).
-soft_begin() { soft_on=1; soft_fails=0; soft_buf=""; soft_reason="$1"; }
-soft_end() {
-  [ -n "$soft_on" ] || return 0
-  if [ "$soft_fails" -gt 0 ]; then
-    IGNORED+="== $soft_reason =="$'\n'"$soft_buf"$'\n'
-    ignored_total=$((ignored_total + soft_fails))
-  else
-    printf '%s' "$soft_buf"
-  fi
-  soft_on=""; soft_fails=0; soft_buf=""
-}
+bad() { sec_fails=$((sec_fails+1)); }
 
 # hdr <module|core> <title> — core/enabled sections print their heading and
 # every line immediately; a not-installed module's section is buffered instead.
@@ -193,14 +168,16 @@ check_tls() {
   fi
 }
 
-# check_tls_cert <host> — the door's cert must be the one the installer chose (from
-# wizard.state): a Let's Encrypt cert (a normal DNS-01 cert AND a `tailscale
-# cert` are both LE-issued) that actually COVERS the host. A missing or
-# mismatched cert is what makes the functional checks return 000; failing here
-# names the cause. Always a CORE check (the door's cert is never ignorable).
+# check_tls_cert <host> [connect-addr] [port] — the door's cert must be the one
+# the installer chose (from wizard.state): a Let's Encrypt cert (a normal DNS-01
+# cert AND a `tailscale cert` are both LE-issued) that actually COVERS the host.
+# A missing or mismatched cert is what makes the functional checks return 000;
+# failing here names the cause. Defaults probe Caddy on 127.0.0.1:443; under the
+# tailscale endpoint the caller passes the tailnet IP and the serve port.
+# Always a CORE check (the door's cert is never ignorable).
 check_tls_cert() {
-  local host="$1" pem iss san
-  pem=$(echo | timeout 6 openssl s_client -connect 127.0.0.1:443 -servername "$host" 2>/dev/null)
+  local host="$1" addr="${2:-127.0.0.1}" port="${3:-443}" pem iss san
+  pem=$(echo | timeout 6 openssl s_client -connect "$addr:$port" -servername "$host" 2>/dev/null)
   iss=$(printf '%s' "$pem" | openssl x509 -noout -issuer 2>/dev/null)
   san=$(printf '%s' "$pem" | openssl x509 -noout -ext subjectAltName 2>/dev/null)
   if [[ "$iss" != *"Let's Encrypt"* ]]; then
@@ -245,51 +222,52 @@ for f in "$ROOT/data/www"/*.html; do
 done
 check_tls "www.$DOMAIN"
 
-# The tail door's cert — CORE: it must cover the door host wizard.state
-# recorded (tail.$DOMAIN under caddy, or the machine's own Tailscale name under
-# tailscale serve).
-check_tls_cert "$TAIL_DOOR"
-say "     tail door: https://$TAIL_DOOR (issuer: $TAIL_CERT_ISSUER)"
-
-# Functional tail checks — they probe the tail.$DOMAIN door. Under the explicit
-# tailscale endpoint (wizard.state TAIL_ENDPOINT=tailscale) their caddy-door
-# failures are moved to the ignored section and the tailscale-serve check below
-# is the functional one; under caddy they are core checks.
-if [ "$TAIL_ROLLBACK" = 1 ]; then
-  soft_begin "private shell endpoint is tailscale serve (wizard.state TAIL_ENDPOINT=tailscale)"
-fi
-# tail is Tailscale-only: a non-tailnet source (this host's 127.0.0.1) must get 403.
-check tail "tail.$DOMAIN" "/" "403" "" "non-tailnet sources get 403"
-# From the tailnet side (the host's own Tailscale IP passes the @not_tailnet
-# matcher) everything on the vhost serves unauthenticated — including /ttyd:
-# Tailscale membership is the ONLY gate (basic auth was removed 2026-09-22).
+# The tail door is CORE in both endpoint modes: under `caddy` it is
+# tail.$DOMAIN on its LE vhost; under `tailscale` it is tailscaled's own HTTPS
+# listener on the tailnet IP (port 8443 — Caddy owns *:443 on this host, so
+# tailscale serve cannot bind 443; see sync_tail_endpoint in the installer).
+TS_SERVE_PORT=8443
 ts_ip="$(tailscale ip -4 2>/dev/null | head -1)"
-if [ -n "$ts_ip" ] && [ "$TAIL_ENDPOINT" = "tailscale" ]; then
-  ta=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 --resolve "$TAIL_DOOR:443:$ts_ip" "https://$TAIL_DOOR/ttyd" 2>/dev/null)
-  case "$ta" in
-    200|301|302|307|308)
-      say "ok   tail-ttyd: $ta — tailscale serve publishes the shell tailnet-only" ;;
-    *)
-      say "FAIL tail-ttyd: $TAIL_DOOR/ttyd got $ta (tailscale serve endpoint)"; bad ;;
-  esac
-elif [ -n "$ts_ip" ]; then
-  ta=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 --resolve "tail.$DOMAIN:443:$ts_ip" "https://tail.$DOMAIN/" 2>/dev/null)
-  if [ "$ta" != 200 ] && [ "$ta" != 301 ] && [ "$ta" != 308 ]; then
-    say "FAIL tail-terminal: from a tailnet source got $ta (want 200)"; bad
+if [ "$TAIL_ROLLBACK" = 1 ]; then
+  check_tls_cert "$TAIL_DOOR" "$ts_ip" "$TS_SERVE_PORT"
+  say "     tail door: https://$TAIL_DOOR:$TS_SERVE_PORT (issuer: $TAIL_CERT_ISSUER)"
+  if [ -z "$ts_ip" ]; then
+    say "FAIL tailnet-edge: no Tailscale IP on this host — tailscale serve cannot be reached"; bad
   else
-    say "ok   tail-terminal: $ta — terminal serves tailnet devices"
+    ta=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 --resolve "$TAIL_DOOR:$TS_SERVE_PORT:$ts_ip" "https://$TAIL_DOOR:$TS_SERVE_PORT/ttyd" 2>/dev/null)
+    case "$ta" in
+      200|301|302|307|308)
+        say "ok   tail-ttyd: $ta — tailscale serve publishes the shell tailnet-only" ;;
+      *)
+        say "FAIL tail-ttyd: $TAIL_DOOR:$TS_SERVE_PORT/ttyd got $ta (tailscale serve endpoint)"; bad ;;
+    esac
   fi
-  tt=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 --resolve "tail.$DOMAIN:443:$ts_ip" "https://tail.$DOMAIN/ttyd" 2>/dev/null)
-  case "$tt" in
-    200|301|302|307|308)
-      say "ok   tail-ttyd: $tt — the shell serves tailnet devices without a second credential" ;;
-    *)
-      say "FAIL tail-ttyd: /ttyd got $tt (want a 2xx/3xx — the shell must NOT challenge; 401 means a credential crept back in)"; bad ;;
-  esac
 else
-  say "FAIL tailnet-edge: no Tailscale IP on this host — tailnet-side checks skipped"; bad
+  check_tls_cert "$TAIL_DOOR"
+  say "     tail door: https://$TAIL_DOOR (issuer: $TAIL_CERT_ISSUER)"
+  # tail is Tailscale-only: a non-tailnet source (this host's 127.0.0.1) must get 403.
+  check tail "tail.$DOMAIN" "/" "403" "" "non-tailnet sources get 403"
+  # From the tailnet side (the host's own Tailscale IP passes the @not_tailnet
+  # matcher) everything on the vhost serves unauthenticated — including /ttyd:
+  # Tailscale membership is the ONLY gate (basic auth was removed 2026-09-22).
+  if [ -n "$ts_ip" ]; then
+    ta=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 --resolve "tail.$DOMAIN:443:$ts_ip" "https://tail.$DOMAIN/" 2>/dev/null)
+    if [ "$ta" != 200 ] && [ "$ta" != 301 ] && [ "$ta" != 308 ]; then
+      say "FAIL tail-terminal: from a tailnet source got $ta (want 200)"; bad
+    else
+      say "ok   tail-terminal: $ta — terminal serves tailnet devices"
+    fi
+    tt=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 --resolve "tail.$DOMAIN:443:$ts_ip" "https://tail.$DOMAIN/ttyd" 2>/dev/null)
+    case "$tt" in
+      200|301|302|307|308)
+        say "ok   tail-ttyd: $tt — the shell serves tailnet devices without a second credential" ;;
+      *)
+        say "FAIL tail-ttyd: /ttyd got $tt (want a 2xx/3xx — the shell must NOT challenge; 401 means a credential crept back in)"; bad ;;
+    esac
+  else
+    say "FAIL tailnet-edge: no Tailscale IP on this host — tailnet-side checks skipped"; bad
+  fi
 fi
-soft_end
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
