@@ -1,10 +1,12 @@
 # config/cloud/apps.conf.default — the TEMPLATE the installer seeds config/cloud/apps.conf from
 # when that file is absent (a fresh clone has none). Copy it in place, then edit.
 #
-# This file holds ONLY your own extra Nextcloud apps. Two apps are enforced by
-# the installer and cannot be configured here:
-#   spreed  (Talk)                    → install&enable
-#   app_api (AppAPI)                  → install&disable
+# This file holds ONLY your own extra Nextcloud apps. The installer enforces:
+#   contacts                          → install&enable (always)
+#   app_api (AppAPI)                  → install&disable (always)
+#   spreed  (Talk)                    → install&enable (video calling on)
+#   roundcube (mail webmail app)      → install&enable (mail module on)
+#   notify_push (client push)         → install&enable (client push on)
 # Change those from your own Nextcloud Apps page.
 #
 # One action per line, in order. Valid verbs: install&enable=, install&disable=,
