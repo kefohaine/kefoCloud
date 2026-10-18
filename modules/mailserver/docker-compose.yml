@@ -1,98 +1,142 @@
-services:
-  mailserver:
-    # Docker Mailserver (Postfix + Dovecot). One container, monthly releases,
-    # DKIM/DMARC/fail2ban/Rspamd built in. TLS is the per-vhost LE cert Caddy
-    # issues for mail.${DOMAIN} — mounted read-only from caddy_data and reused
-    # for SMTP/IMAP (SSL_TYPE=manual; DMS's changedetector reloads postfix +
-    # dovecot when the cert file changes, so LE renewal needs no restart).
-    image: ghcr.io/docker-mailserver/docker-mailserver:latest
-    container_name: mailserver
-    hostname: mail.${DOMAIN}
-    restart: unless-stopped
+x-mailu-env: &mailu-env
+  env_file: .env
+  environment:
+    HOSTNAMES: "mail.${DOMAIN}"
 
-    # Cap the container's json-file log (the daemon default in
-    # config/docker/daemon.json already does this; stated explicitly here so
-    # the cap survives a daemon.json change) — mail logs are chatty.
+services:
+  # ── Mailu (front + postfix + dovecot + rspamd + admin) ────────────────────
+  # Replaces the single-container Docker Mailserver. Mailu splits the roles:
+  # `front` owns the public ports and TLS, `smtp`/`imap` speak the protocols on
+  # the bridge, `antispam` is Rspamd, `admin` holds the SQLite config + CLI.
+  # `webmail` is deliberately NOT started: Roundcube stays the webmail and is
+  # served by Caddy at mail.${DOMAIN} (container `roundcube` below).
+  #
+  # TLS_FLAVOR=mail: no HTTP listener in front (Caddy owns 80/443 on the host);
+  # SMTP/IMAP use the per-vhost LE cert for mail.${DOMAIN} from caddy_data,
+  # mounted as /certs/cert.pem + /certs/key.pem.
+  front:
+    image: mailu/nginx:2.0
+    container_name: mailu-front
+    restart: unless-stopped
+    <<: *mailu-env
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
-
-    # SMTP + IMAP must actually listen before the container is "healthy".
+    mem_limit: 256m
+    memswap_limit: 256m
+    ports:
+      - "25:25"
+      - "465:465"
+      - "587:587"
+      - "993:993"
+    volumes:
+      - ${DATA_DIR}/mailserver/certs:/certs:ro
+      - ${DATA_DIR}/mailserver/overrides/nginx:/overrides:ro
+    depends_on:
+      - redis
+      - imap
+      - smtp
+      - admin
+      - antispam
     healthcheck:
       test: ["CMD-SHELL", "ss -tln | grep -Eq '0.0.0.0:(25|465|587|993)\\b'"]
       interval: 30s
       timeout: 5s
       retries: 5
       start_period: 60s
-
-    # Hard RAM cap (no container swap) — survives recreates, unlike docker update.
-    mem_limit: 1g
-    memswap_limit: 1g
-
-    environment:
-      OVERRIDE_HOSTNAME: mail.${DOMAIN}
-      # Allow the Roundcube container (same bridge) to relay via SMTP.
-      PERMIT_DOCKER: connected-networks
-      SSL_TYPE: manual
-      SSL_CERT_PATH: /caddy/caddy/certificates/acme-v02.api.letsencrypt.org-directory/mail.${DOMAIN}/mail.${DOMAIN}.crt
-      SSL_KEY_PATH: /caddy/caddy/certificates/acme-v02.api.letsencrypt.org-directory/mail.${DOMAIN}/mail.${DOMAIN}.key
-      POSTMASTER_ADDRESS: postmaster@${DOMAIN}
-      # Anti-spoofing: each authenticated user may only send as their own
-      # address (or aliases mapped to them) — reject_authenticated_sender_
-      # login_mismatch on submission. Without it, any account can put any
-      # address in MAIL FROM (roundcube identity spoofing vector).
-      SPOOF_PROTECTION: 1
-      ENABLE_RSPAMD: 1
-      ENABLE_FAIL2BAN: 1
-      # Rspamd signs DKIM (its dkim_signing module) — OpenDKIM must stay OFF
-      # or DMS's `setup config dkim` refuses to generate keys (conflict).
-      ENABLE_OPENDKIM: 0
-      ENABLE_OPENDMARC: 1
-      # Lightweight: no ClamAV.
-      ENABLE_CLAMAV: 0
-      # No IPv6 on this machine.
-      POSTFIX_INET_PROTOCOLS: ipv4
-
-    ports:
-      - "25:25"
-      - "465:465"
-      - "587:587"
-      - "993:993"
-
-    volumes:
-      - ${DATA_DIR}/mailserver/data:/var/mail
-      - ${DATA_DIR}/mailserver/state:/var/mail-state
-      - ${DATA_DIR}/mailserver/logs:/var/log/mail
-      - ${DATA_DIR}/mailserver/config:/tmp/docker-mailserver
-      - ${DATA_DIR}/caddy_data:/caddy:ro
-      - /etc/localtime:/etc/localtime:ro
-
-    cap_add:
-      # fail2ban manages iptables inside the container.
-      - NET_ADMIN
-
     networks:
       net:
         ipv4_address: 172.22.0.9
 
+  imap:
+    image: mailu/dovecot:2.0
+    container_name: mailu-imap
+    restart: unless-stopped
+    <<: *mailu-env
+    mem_limit: 256m
+    memswap_limit: 256m
+    volumes:
+      - ${DATA_DIR}/mailserver/mail:/mail
+      - ${DATA_DIR}/mailserver/overrides/dovecot:/overrides:ro
+    networks:
+      net:
+        ipv4_address: 172.22.0.17
+
+  smtp:
+    image: mailu/postfix:2.0
+    container_name: mailu-smtp
+    restart: unless-stopped
+    <<: *mailu-env
+    mem_limit: 256m
+    memswap_limit: 256m
+    volumes:
+      - ${DATA_DIR}/mailserver/mail:/mail
+      - ${DATA_DIR}/mailserver/overrides/postfix:/overrides:ro
+    networks:
+      net:
+        ipv4_address: 172.22.0.18
+
+  antispam:
+    image: mailu/rspamd:2.0
+    container_name: mailu-antispam
+    restart: unless-stopped
+    <<: *mailu-env
+    mem_limit: 256m
+    memswap_limit: 256m
+    volumes:
+      - ${DATA_DIR}/mailserver/filter:/var/lib/rspamd
+      - ${DATA_DIR}/mailserver/dkim:/dkim
+      - ${DATA_DIR}/mailserver/overrides/rspamd:/overrides:ro
+    networks:
+      net:
+        ipv4_address: 172.22.0.19
+
+  admin:
+    image: mailu/admin:2.0
+    container_name: mailu-admin
+    restart: unless-stopped
+    <<: *mailu-env
+    mem_limit: 256m
+    memswap_limit: 256m
+    volumes:
+      - ${DATA_DIR}/mailserver/data:/data
+      - ${DATA_DIR}/mailserver/dkim:/dkim
+    # Admin UI is not published: reach it over the tailnet/SSH tunnel
+    # (`ssh -L 8081:127.0.0.1:8081 root@$NODE_NAME`). Caddy keeps 80/443.
+    ports:
+      - "127.0.0.1:8081:80"
+    networks:
+      net:
+        ipv4_address: 172.22.0.20
+
+  redis:
+    image: mailu/redis:2.0
+    container_name: mailu-redis
+    restart: unless-stopped
+    <<: *mailu-env
+    mem_limit: 128m
+    memswap_limit: 128m
+    volumes:
+      - ${DATA_DIR}/mailserver/redis:/data
+    networks:
+      net:
+        ipv4_address: 172.22.0.21
+
   roundcube:
-    # Webmail for the mail platform, served by Caddy at mail.${DOMAIN}.
-    # No published ports — only Caddy reaches it. SQLite DB in the bind
-    # mount below. IMAP/SMTP point at the mail container over the bridge.
+    # Webmail for the mail platform, unchanged: Caddy serves it at
+    # mail.${DOMAIN}. IMAP/SMTP now point at Mailu's imap/smtp containers.
     image: roundcube/roundcubemail:latest
     container_name: roundcube
     restart: unless-stopped
 
-    # Same log cap as every other unit (see modules/mailserver above).
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
 
-    # Web root must answer (apache + php-fpm up) before "healthy".
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1/"]
       interval: 30s
@@ -100,30 +144,22 @@ services:
       retries: 3
       start_period: 15s
 
-    # Hard RAM cap (no container swap) — survives recreates, unlike docker update.
     mem_limit: 384m
     memswap_limit: 384m
 
     environment:
       ROUNDCUBEMAIL_DB_TYPE: sqlite
-      # SQLite DB lives in the bind mount below (image default /var/roundcube/db).
-      ROUNDCUBEMAIL_DEFAULT_HOST: mailserver
+      ROUNDCUBEMAIL_DEFAULT_HOST: mailu-imap
       ROUNDCUBEMAIL_DEFAULT_PORT: 143
-      # Note: the entrypoint reads SMTP_SERVER (not SMTP_HOST).
-      ROUNDCUBEMAIL_SMTP_SERVER: mailserver
+      ROUNDCUBEMAIL_SMTP_SERVER: mailu-smtp
       ROUNDCUBEMAIL_SMTP_PORT: 587
-      # Users log in with just their local part (e.g. admin).
       ROUNDCUBEMAIL_USERNAME_DOMAIN: ${DOMAIN}
 
     volumes:
       - ${DATA_DIR}/mailserver/roundcube:/var/roundcube/db
-      # STARTTLS overrides (see file header) — included by the entrypoint.
-      # rendered by `make render` (replaces {{DOMAIN}} with the live domain)
       - ${DATA_DIR}/rendered/mailserver/roundcube-tls.inc.php:/var/roundcube/config/roundcube-tls.inc.php:ro
 
     extra_hosts:
-      # Map the cert FQDN to the mail container's bridge IP so Roundcube's
-      # TLS SNI + cert verification see mail.${DOMAIN} (the LE cert name).
       - "mail.${DOMAIN}:172.22.0.9"
 
     networks:
