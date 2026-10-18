@@ -16,8 +16,8 @@
 # inline: if any of its checks failed, that whole section appears ONCE more, at
 # the end, under one "Not installed / ignored" heading — listed but not
 # counted. No check prints twice. The same buffered-ignored treatment is used
-# for one CORE block when wizard.state says the tail door is on an emergency
-# Tailscale cert (soft_begin/soft_end): its failures are moved aside, never
+# for one CORE block when wizard.state says the private shell endpoint is
+# tailscale serve (soft_begin/soft_end): its failures are moved aside, never
 # counted.
 #
 # VOCABULARY: an installed module is expected; a not-installed one is ABSENT —
@@ -37,17 +37,14 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 . "$ROOT/scripts/lib/modules.sh"
 mod_in() { mod_installed "$1"; }
 
-# The tail door's TLS state, read from wizard.state (the installer is its sole
-# writer): normally tail.$DOMAIN on a Let's Encrypt cert, but after an LE
-# per-identifier rate limit that ONE door is rolled back to the machine's own
-# Tailscale HTTPS name with an emergency `tailscale cert`. The cert check stays
-# CORE whatever the door; the functional tail checks stay on tail.$DOMAIN and,
-# while the door is rolled back, their failures are moved to the ignored
-# section. No other vhost reads this.
-TAIL_CERT_ISSUER="$(state_get TAIL_CERT_ISSUER)"; TAIL_CERT_ISSUER="${TAIL_CERT_ISSUER:-acme}"
+# The private shell endpoint, read from wizard.state (the installer is its sole
+# writer): `caddy` means tail.$DOMAIN on a Let's Encrypt cert; `tailscale` means
+# `tailscale serve` publishes the shell under the machine's own HTTPS name and
+# no Caddy tail vhost exists. There is no automatic switch between the two.
+TAIL_ENDPOINT="$(state_get TAIL_ENDPOINT)"; TAIL_ENDPOINT="${TAIL_ENDPOINT:-caddy}"
 TS_CERT_HOST="$(state_get TS_CERT_HOST)"
 TAIL_ROLLBACK=0
-if [ "$TAIL_CERT_ISSUER" = tailscale ] && [ -n "$TS_CERT_HOST" ]; then
+if [ "$TAIL_ENDPOINT" = "tailscale" ] && [ -n "$TS_CERT_HOST" ]; then
   TAIL_ROLLBACK=1; TAIL_DOOR="$TS_CERT_HOST"
 else
   TAIL_DOOR="tail.$DOMAIN"
@@ -96,8 +93,8 @@ bad() {
 # soft_begin <reason> / soft_end — a block of checks whose FAILURES must not
 # fail the run: they are moved ONCE into the end-of-report "ignored" section
 # (listed, not counted), while a clean block prints inline. Used for the tail
-# door's functional checks once the installer has rolled that one door back to an
-# emergency Tailscale cert (wizard.state TAIL_CERT_ISSUER=tailscale).
+# door's functional checks when the shell endpoint is tailscale serve
+# (wizard.state TAIL_ENDPOINT=tailscale).
 soft_begin() { soft_on=1; soft_fails=0; soft_buf=""; soft_reason="$1"; }
 soft_end() {
   [ -n "$soft_on" ] || return 0
@@ -247,18 +244,18 @@ for f in "$ROOT/data/www"/*.html; do
 done
 check_tls "www.$DOMAIN"
 
-# The tail door's cert — CORE: it must be the LE cert the installer chose,
-# covering the door host wizard.state recorded (tail.$DOMAIN, or the machine's
-# own Tailscale name after an LE rate-limit rollback).
+# The tail door's cert — CORE: it must cover the door host wizard.state
+# recorded (tail.$DOMAIN under caddy, or the machine's own Tailscale name under
+# tailscale serve).
 check_tls_cert "$TAIL_DOOR"
 say "     tail door: https://$TAIL_DOOR (issuer: $TAIL_CERT_ISSUER)"
 
-# Functional tail checks — they probe the tail.$DOMAIN door. While the installer
-# has it rolled back to an emergency cert (wizard.state issuer=tailscale) their
-# failures are moved to the ignored section (the door is expected to differ) and
-# only the cert check above counts; on a normal LE door they are core checks.
+# Functional tail checks — they probe the tail.$DOMAIN door. Under the explicit
+# tailscale endpoint (wizard.state TAIL_ENDPOINT=tailscale) their caddy-door
+# failures are moved to the ignored section and the tailscale-serve check below
+# is the functional one; under caddy they are core checks.
 if [ "$TAIL_ROLLBACK" = 1 ]; then
-  soft_begin "tail door rolled back to an emergency Tailscale cert (LE rate-limited tail.$DOMAIN — wizard.state)"
+  soft_begin "private shell endpoint is tailscale serve (wizard.state TAIL_ENDPOINT=tailscale)"
 fi
 # tail is Tailscale-only: a non-tailnet source (this host's 127.0.0.1) must get 403.
 check tail "tail.$DOMAIN" "/" "403" "" "non-tailnet sources get 403"
@@ -266,7 +263,15 @@ check tail "tail.$DOMAIN" "/" "403" "" "non-tailnet sources get 403"
 # matcher) everything on the vhost serves unauthenticated — including /ttyd:
 # Tailscale membership is the ONLY gate (basic auth was removed 2026-09-22).
 ts_ip="$(tailscale ip -4 2>/dev/null | head -1)"
-if [ -n "$ts_ip" ]; then
+if [ -n "$ts_ip" ] && [ "$TAIL_ENDPOINT" = "tailscale" ]; then
+  ta=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 --resolve "$TAIL_DOOR:443:$ts_ip" "https://$TAIL_DOOR/ttyd" 2>/dev/null)
+  case "$ta" in
+    200|301|302|307|308)
+      say "ok   tail-ttyd: $ta — tailscale serve publishes the shell tailnet-only" ;;
+    *)
+      say "FAIL tail-ttyd: $TAIL_DOOR/ttyd got $ta (tailscale serve endpoint)"; bad ;;
+  esac
+elif [ -n "$ts_ip" ]; then
   ta=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 --resolve "tail.$DOMAIN:443:$ts_ip" "https://tail.$DOMAIN/" 2>/dev/null)
   if [ "$ta" != 200 ] && [ "$ta" != 301 ] && [ "$ta" != 308 ]; then
     say "FAIL tail-terminal: from a tailnet source got $ta (want 200)"; bad
@@ -294,42 +299,46 @@ check cloud "cloud.$DOMAIN" "/" "200 301 302 307 308" html "Nextcloud answers"
 check_sec_headers cloud "cloud.$DOMAIN" "/" "one of each"
 check_tls "cloud.$DOMAIN"
 
-# talk.$DOMAIN — Talk HPB + TURN. The backend API must answer with the
-# signaling server's Welcome JSON and the client websocket route must reject
-# an unauthenticated handshake (400/426/101). A bare `respond "ok"` stub
-# returns 200 on both and fails here — the ok-stub guard for Talk.
-check talk-root "talk.$DOMAIN" "/" "200" "" "Talk signaling served"
-talk_welcome=$(curl -s --max-time 12 --resolve "talk.$DOMAIN:443:127.0.0.1" "https://talk.$DOMAIN/signaling/api/v1/welcome" 2>/dev/null)
-if ! echo "$talk_welcome" | grep -q '"Welcome"'; then
-  say "FAIL talk-signaling: /signaling/api/v1/welcome is not the signaling server: $(echo "$talk_welcome" | head -c 80)"; bad
-else
-  say "ok   talk-signaling — HPB backend API answers"
-fi
-talk_ws=$(curl -s -o /dev/null -w '%{http_code}' --http1.1 --max-time 12 --resolve "talk.$DOMAIN:443:127.0.0.1" \
-  -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
-  "https://talk.$DOMAIN/signaling" 2>/dev/null)
-if [ "$talk_ws" != "400" ] && [ "$talk_ws" != "426" ] && [ "$talk_ws" != "101" ]; then
-  say "FAIL talk-signaling: websocket handshake got HTTP $talk_ws (want 400/426/101 — signaling server must answer)"; bad
-else
-  say "ok   talk-signaling — websocket endpoint answers ($talk_ws)"
-fi
-check_tls "talk.$DOMAIN"
-
-# coturn listeners: TURN (udp 3478) + TURNS (tcp 5349) must be bound. A re-run
-# recreates the containers and smoke runs right after, so the relay may still be
-# binding its ports — poll briefly (30 s) before failing, or a working install
-# reports talk-ports on every re-run.
-coturn_ok=""
-for _ in $(seq 1 15); do
-  if ss -lun 2>/dev/null | grep -q ':3478 ' && ss -ltn 2>/dev/null | grep -q ':5349 '; then
-    coturn_ok=1; break
+# Talk is optional (wizard.state VIDEO_CALLING); skip its checks when off.
+if [ "$(state_get VIDEO_CALLING)" != "false" ]; then
+  # talk.$DOMAIN — Talk HPB + TURN. The backend API must answer with the
+  # signaling server's Welcome JSON and the client websocket route must reject
+  # an unauthenticated handshake (400/426/101). A bare `respond "ok"` stub
+  # returns 200 on both and fails here — the ok-stub guard for Talk.
+  check talk-root "talk.$DOMAIN" "/" "200" "" "Talk signaling served"
+  talk_welcome=$(curl -s --max-time 12 --resolve "talk.$DOMAIN:443:127.0.0.1" "https://talk.$DOMAIN/signaling/api/v1/welcome" 2>/dev/null)
+  if ! echo "$talk_welcome" | grep -q '"Welcome"'; then
+    say "FAIL talk-signaling: /signaling/api/v1/welcome is not the signaling server: $(echo "$talk_welcome" | head -c 80)"; bad
+  else
+    say "ok   talk-signaling — HPB backend API answers"
   fi
-  sleep 2
-done
-if [ -n "$coturn_ok" ]; then
-  say "ok   talk-ports — coturn listening on 3478/udp + 5349/tcp"
-else
-  say "FAIL talk-ports: coturn not listening on 3478/udp + 5349/tcp (is talk-relay up?)"; bad
+  talk_ws=$(curl -s -o /dev/null -w '%{http_code}' --http1.1 --max-time 12 --resolve "talk.$DOMAIN:443:127.0.0.1" \
+    -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+    "https://talk.$DOMAIN/signaling" 2>/dev/null)
+  if [ "$talk_ws" != "400" ] && [ "$talk_ws" != "426" ] && [ "$talk_ws" != "101" ]; then
+    say "FAIL talk-signaling: websocket handshake got HTTP $talk_ws (want 400/426/101 — signaling server must answer)"; bad
+  else
+    say "ok   talk-signaling — websocket endpoint answers ($talk_ws)"
+  fi
+  check_tls "talk.$DOMAIN"
+
+  # coturn listeners: TURN (udp 3478) + TURNS (tcp 5349) must be bound. A re-run
+  # recreates the containers and smoke runs right after, so the relay may still be
+  # binding its ports — poll briefly (30 s) before failing, or a working install
+  # reports talk-ports on every re-run.
+  coturn_ok=""
+  for _ in $(seq 1 15); do
+    if ss -lun 2>/dev/null | grep -q ':3478 ' && ss -ltn 2>/dev/null | grep -q ':5349 '; then
+      coturn_ok=1; break
+    fi
+    sleep 2
+  done
+  if [ -n "$coturn_ok" ]; then
+    say "ok   talk-ports — coturn listening on 3478/udp + 5349/tcp"
+  else
+    say "FAIL talk-ports: coturn not listening on 3478/udp + 5349/tcp (is talk-relay up?)"; bad
+  fi
+
 fi
 
 nc_status="$(docker exec -u www-data nextcloud php occ status --output=json 2>/dev/null)"
@@ -339,7 +348,11 @@ else
   say "ok   nc-status — Nextcloud installed, out of maintenance mode"
 fi
 
-check_ctns cloud nextcloud postgresql redis talk-hpb talk-relay
+if [ "$(state_get VIDEO_CALLING)" != "false" ]; then
+  check_ctns cloud nextcloud postgresql redis talk-hpb talk-relay
+else
+  check_ctns cloud nextcloud postgresql redis
+fi
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -363,9 +376,9 @@ check_ctns monitor uptimekuma
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Module: mail — Docker Mailserver + Roundcube webmail.
+# Module: mail — Mailu (front/smtp/imap/antispam/admin/redis) + Roundcube webmail.
 # ─────────────────────────────────────────────────────────────────────────────
-hdr mail "Mail — Docker Mailserver + Roundcube (module: mail)"
+hdr mail "Mail — Mailu + Roundcube (module: mail)"
 check mail "mail.$DOMAIN" "/" "200 301 302 307 308" html "Roundcube webmail"
 check_sec_headers mail "mail.$DOMAIN" "/" "one of each"
 check_tls "mail.$DOMAIN"
@@ -386,7 +399,7 @@ else
   say "ok   imaps:993 — Dovecot IMAPS banner"
 fi
 
-check_ctns mail mailserver roundcube
+check_ctns mail mailu-front mailu-imap mailu-smtp mailu-antispam mailu-admin mailu-redis roundcube
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
