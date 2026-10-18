@@ -19,28 +19,16 @@
 # Last-Modified deletes (no validators left to revalidate against) and the
 # legacy Pragma/Expires headers make every request hit the edge fresh.
 #
-# TLS — two variants of the ONE tail door, chosen by the installer, never by
-# hand. Normally tail.{{DOMAIN}} gets a Let's Encrypt cert (DNS-01, like every
-# other vhost). But LE enforces a per-identifier rate limit (HTTP 429: 5 certs
-# for an exact set of names per 168 h): when that one name is rate-limited,
-# Caddy can never issue for it and the door answers 000 (TLS alert) instead of
-# 403/200 — which is exactly the tail smoke failures of 2026-10-17. The
-# installer then rolls THIS door only back to a cert minted by `tailscale cert`
-# for the machine's own Tailscale HTTPS name, and serves the same door there.
-# `TAIL_CERT_ROLLBACK` is written into instance.conf by the installer; no other
-# vhost ever takes this branch.
-{{IF TAIL_CERT_ROLLBACK}}
-https://{{TS_CERT_HOST}} {
-    # Emergency cert: static files minted by `tailscale cert` (written next to
-    # the ACME store under /data), used until the LE limit lifts and a repair
-    # run re-renders the normal block below.
-    tls /data/tail-door.crt /data/tail-door.key
-{{ELSE}}
+# TLS — this vhost exists ONLY under the installer's explicit `caddy` endpoint
+# choice (TAIL_ENDPOINT in data/instance.conf). tail.{{DOMAIN}} gets a Let's
+# Encrypt cert (DNS-01, like every other vhost); a per-identifier LE rate limit
+# is a warning whose remedy is a re-run choosing `tailscale`, never an automatic
+# switch. Under the `tailscale` choice the installer does not render this file
+# at all — `tailscale serve` publishes /ttyd under the machine's own HTTPS name.
 https://tail.{{DOMAIN}} {
     tls {
         dns cloudflare {env.CF_API_TOKEN}
     }
-{{END}}
     import compress
     header {
         import security_headers

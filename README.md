@@ -20,12 +20,12 @@ Prompts once then runs unattended — errors are listed with a hint each and re-
 
 ![Repository Banner](.github/images/modules.png)
 
-Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Caddy, Vaultwarden, Uptime Kuma and the Docker Mailserver + Roundcube platform behind Cloudflare with tailscale, ttyd, dnsmasq and goose as host services.
+Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Caddy, Vaultwarden, Uptime Kuma and the Mailu + Roundcube platform behind Cloudflare with tailscale, ttyd, dnsmasq and goose as host services.
 
 | name | app | note |
 |---|---|---|
 | **Cloud** | Nextcloud | app choices in `config/cloud/apps.conf` (untracked, empty by default; `spreed`/`app_api` are enforced in code, never asked) |
-| **Mail** | Docker Mailserver + Roundcube | SMTP/IMAPS, DKIM/SPF/DMARC on your own domain |
+| **Mail** | Mailu + Roundcube | SMTP/IMAPS, DKIM/SPF/DMARC on your own domain |
 | **Vault** | Vaultwarden | any Bitwarden client, server included |
 | **Monitor** | Uptime Kuma | watches public *and* tailnet-only doors |
 

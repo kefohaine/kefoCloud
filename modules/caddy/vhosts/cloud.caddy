@@ -24,6 +24,13 @@ https://cloud.{{DOMAIN}} {
     respond @blocked "not found" 404
     redir /.well-known/carddav /remote.php/dav 308
     redir /.well-known/caldav /remote.php/dav 308
+{{IF CLIENT_PUSH}}
+    # notify_push websocket/HTTP endpoint (container on 172.22.0.16). The app's
+    # base_endpoint is https://cloud.{{DOMAIN}}/push, so the prefix is kept.
+    handle /push/* {
+        reverse_proxy 172.22.0.16:7867
+    }
+{{END}}
     php_fastcgi 172.22.0.5:9000 {
         root /var/www/html
         # strip NC's own security headers so the site-level header set below

@@ -1,7 +1,8 @@
-# mail.{{DOMAIN}} — Roundcube webmail (Docker Mailserver platform).
+# mail.{{DOMAIN}} — Roundcube webmail (Mailu platform).
 # TLS: Let's Encrypt DNS-01 via Cloudflare (same pattern as every vhost).
-# The mail container reuses this cert for SMTP/IMAP TLS (SSL_TYPE=manual,
-# caddy_data mounted read-only at /caddy), so renewals are shared.
+# Mailu front reuses this cert for SMTP/IMAP TLS. The installer copies the
+# issued mail.{{DOMAIN}} pair from caddy_data to mailserver/certs (mounted at
+# /certs), so renewals are shared and front restarts on renewal.
 
 https://mail.{{DOMAIN}} {
     tls {
