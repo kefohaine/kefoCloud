@@ -219,12 +219,13 @@ fi
 
 # mail (module-gated)
 if mod_in mail; then
-  if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx mailserver; then
-    mb=$(docker exec mailserver setup email list 2>/dev/null | grep -c '@' || true)
-    al=$(docker exec mailserver setup alias list 2>/dev/null | grep -c '@' || true)
+  if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx mailu-front; then
+    out=$(docker exec mailu-admin flask mailu config-export -j 2>/dev/null || true)
+    mb=$(printf '%s' "$out" | jq -r '.. | objects | select(.localpart? and .domain?) | .localpart' 2>/dev/null | sort -u | wc -l)
+    al=$(printf '%s' "$out" | jq -r '.. | objects | select(.destination?) | .localpart' 2>/dev/null | sort -u | wc -l)
     row mail "${mb:-0} mailboxes · ${al:-0} aliases"
   else
-    row mail "${R}mailserver down${N}"
+    row mail "${R}mailu down${N}"
   fi
 else
   row mail "${D}module not installed${N}"
