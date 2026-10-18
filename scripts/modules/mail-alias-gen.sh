@@ -36,15 +36,17 @@ rand_local() {
 alias_addr=""
 for _ in $(seq 1 10); do
   candidate=$(rand_local)
-  if ! docker exec mailserver setup alias list 2>/dev/null \
-       | grep -qiE "^[* ] *$candidate@$DOMAIN "; then
+  if ! docker exec mailu-admin flask mailu config-export -j 2>/dev/null \
+       | jq -e --arg l "$candidate" --arg d "$DOMAIN" \
+           '[.. | objects | select((.localpart? == $l) and (.domain? == $d))] | length > 0' \
+           >/dev/null 2>&1; then
     alias_addr="$candidate@$DOMAIN"
     break
   fi
 done
 [ -n "$alias_addr" ] || { echo "mail-gen-alias: no unique alias found after 10 tries"; exit 1; }
 
-docker exec mailserver setup alias add "$alias_addr" "$TO" >/dev/null
+docker exec mailu-admin flask mailu alias "$candidate" "$DOMAIN" "$TO" >/dev/null
 
 echo "Disposable forwarding alias created:"
 echo "info:  alias $alias_addr created"
