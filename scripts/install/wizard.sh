@@ -1037,30 +1037,32 @@ write_state() {
     echo; } > "$rep"
 
   for m in cloud vault mail monitor; do
-    ct=0; cf=0; dd=0; vh=0
+    ct=0; dd=0; vh=0
     case "$m" in
       cloud)   ct=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -cx nextcloud)
-               [ -f "$REPO/modules/nextcloud/docker-compose.yml" ] && cf=1
                [ -e "$DATA/cloud/users" ] && dd=1
                [ -f "$RENDER_DIR/caddy/vhosts/cloud.caddy" ] && vh=1 ;;
       vault)   ct=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -cx vaultwarden)
-               [ -f "$REPO/modules/vaultwarden/docker-compose.yml" ] && cf=1
                [ -e "$DATA/vault/data" ] && dd=1
                [ -f "$RENDER_DIR/caddy/vhosts/vault.caddy" ] && vh=1 ;;
       mail)    ct=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -cxE 'mailu-front|roundcube')
-               [ -f "$REPO/modules/mailserver/docker-compose.yml" ] && cf=1
                [ -e "$DATA/mailserver/data" ] && dd=1
                [ -f "$RENDER_DIR/caddy/vhosts/mail.caddy" ] && vh=1 ;;
       monitor) ct=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -cx uptimekuma)
-               [ -f "$REPO/modules/uptimekuma/docker-compose.yml" ] && cf=1
                [ -e "$DATA/kuma/data" ] && dd=1
                [ -f "$RENDER_DIR/caddy/vhosts/kuma.caddy" ] && vh=1 ;;
     esac
-    ev=$((ct+cf+dd+vh))
+    # CONFIRMED = the module's container is running. The compose file is a REPO
+    # fact (always present, so it proves nothing), and a leftover data dir or
+    # rendered vhost is exactly what an uninstall/reinstall leaves behind — it
+    # used to count as "present", so every module was always PRESENT and the
+    # declared/detected warning fired on every run. Those two are still shown
+    # as leftovers (data/vhost columns) but never confirm a module.
+    ev=$ct
     [ "$ev" -gt 0 ] && echo "$m" >> "$det"
-    printf '%-8s declared=%s running=%s compose=%s data=%s vhost=%s -> %s\n' \
+    printf '%-8s declared=%s running=%s data=%s vhost=%s -> %s\n' \
       "$m" "$(mod_on "$m" && echo 1 || echo 0)" \
-      "$ct" "$cf" "$dd" "$vh" "$([ "$ev" -gt 0 ] && echo PRESENT || echo absent)" >> "$rep"
+      "$ct" "$dd" "$vh" "$([ "$ev" -gt 0 ] && echo PRESENT || echo absent)" >> "$rep"
   done
 
   detail "  wrote $INSTALL_STATE (enabled: ${em:-none}; finished=$FINISHED)"
