@@ -273,7 +273,7 @@ install-hooks:
 >@scripts/lib/mklog info "installed git hooks: pre-commit (identity + Caddy validate + app-vhost stub guard), prepare-commit-msg (auto-split per area), pre-push (live vhost smoke + history-rewrite warning + auto-split/revert)"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Mailserver Registry (Docker Mailserver CLI — see `make help` > Mailserver
+# Mailserver Registry (Mailu `flask mailu` CLI — see `make help` > Mailserver
 # Registry). Passwords never land in shell history or the process list.
 # Friends log in at https://mail.$(DOMAIN) with just the local part
 # (ROUNDCUBEMAIL_USERNAME_DOMAIN=$(DOMAIN)).
@@ -295,22 +295,23 @@ mail-gen-alias:
 >@[ -n "$(TO)" ] || { scripts/lib/mklog error "usage: make mail-gen-alias TO=target@example.com"; exit 1; }
 >@bash scripts/modules/mail-alias-gen.sh "$(TO)"
 
-# Delete an address AND all its stored mailbox data (DMS never deletes
-# Maildirs on its own — this removes the folder under
-# mailserver/data/$(DOMAIN)/<local>/ too). One merged info line.
+# Delete an address AND all its stored mailbox data (Mailu's user-delete only
+# deactivates by default; -r removes the account and its mail).
 mail-del:
 >@[ -n "$(MAIL)" ] || { scripts/lib/mklog error "usage: make mail-del MAIL=name@$(DOMAIN)"; exit 1; }
->@if docker exec mailserver setup email del "$(MAIL)" >/dev/null 2>&1; then \
-    local=$${MAIL%@*}; \
-    if [ -d "$(REPO)/data/mailserver/data/$(DOMAIN)/$$local" ]; then \
-      sudo rm -rf "$(REPO)/data/mailserver/data/$(DOMAIN)/$$local" && scripts/lib/mklog info "$(MAIL) deleted — account, aliases, quota and stored mail"; \
-    else scripts/lib/mklog info "$(MAIL) deleted — account, aliases, quota (no stored mail)"; fi \
+>@if docker exec mailu-admin flask mailu user-delete -r "$(MAIL)" >/dev/null 2>&1; then \
+    scripts/lib/mklog info "$(MAIL) deleted — account, aliases, quota and stored mail"; \
   else scripts/lib/mklog error "$(MAIL) not found — nothing deleted"; exit 1; fi
 
-# Remove one target from an alias (DMS needs both).
+# Remove one target from an alias (Mailu aliases are a target list).
 mail-del-alias:
 >@[ -n "$(FROM)" ] && [ -n "$(TO)" ] || { scripts/lib/mklog error "usage: make mail-del-alias FROM=x@$(DOMAIN) TO=target@example.com"; exit 1; }
->@docker exec mailserver setup alias del "$(FROM)" "$(TO)" >/dev/null && scripts/lib/mklog info "alias $(FROM) -> $(TO) removed"
+>@local=$${FROM%@*}; dom=$${FROM#*@}; \
+  cur=$$(docker exec mailu-admin flask mailu config-export -j 2>/dev/null | jq -r --arg l "$$local" --arg d "$$dom" '.. | objects | select((.localpart?==$$l) and (.domain?==$$d)) | .destination // empty' | head -1); \
+  new=$$(printf '%s' "$$cur" | tr ',' '\n' | sed '/^$$/d' | grep -vxF "$(TO)" | paste -sd, -); \
+  if [ -n "$$new" ]; then docker exec mailu-admin flask mailu alias "$$local" "$$dom" "$$new" >/dev/null; \
+    scripts/lib/mklog info "alias $(FROM) -> $(TO) removed"; \
+  else docker exec mailu-admin flask mailu alias-delete "$(FROM)" >/dev/null && scripts/lib/mklog info "alias $(FROM) removed (no targets left)"; fi
 
 # Quota setter: with MAIL = per-mailbox quota; without MAIL = the default
 # quota that mail-gen applies (persisted in modules/mailserver/default-quota).
@@ -318,35 +319,38 @@ mail-del-alias:
 mail-quota:
 >@[ -n "$(QUOTA)" ] || { scripts/lib/mklog error "usage: make mail-quota [MAIL=name@$(DOMAIN)] QUOTA=2G (MAIL empty = set the default for mail-gen)"; exit 1; }
 >@echo "$(QUOTA)" | grep -qE '^([0-9]+(B|k|M|G|T)|0)$$' || { scripts/lib/mklog error "invalid QUOTA '$(QUOTA)' — B/k/M/G/T suffix, or 0 (no limit)"; exit 1; }
->@if [ -n "$(MAIL)" ]; then docker exec mailserver setup quota set "$(MAIL)" "$(QUOTA)" >/dev/null && scripts/lib/mklog info "quota for $(MAIL) set to $(QUOTA)"; \
+>@if [ -n "$(MAIL)" ]; then \
+    local=$${MAIL%@*}; dom=$${MAIL#*@}; bytes=$$(numfmt --from=iec "$(QUOTA)" 2>/dev/null || echo "$(QUOTA)"); \
+    printf 'users:\n  - localpart: %s\n    domain: %s\n    quota_bytes: %s\n' "$$local" "$$dom" "$$bytes" | docker exec -i mailu-admin flask mailu config-update >/dev/null \
+      && scripts/lib/mklog info "quota for $(MAIL) set to $(QUOTA)"; \
   else printf '%s\n' "$(QUOTA)" > modules/mailserver/default-quota && scripts/lib/mklog info "default quota for mail-gen set to $(QUOTA) (modules/mailserver/default-quota) — git add/commit to keep it"; fi
 
 # Rotate a mailbox password. PWD empty = auto-generate a 16-char password and
 # print it once. (PWD is make's cwd builtin — only a command-line PWD= is used.)
 mail-password:
 >@[ -n "$(MAIL)" ] || { scripts/lib/mklog error "usage: make mail-password MAIL=name@$(DOMAIN) [PWD=…]"; exit 1; }
->@if [ "$(origin PWD)" = "command line" ] && [ -n "$(PWD)" ]; then \
-    docker exec mailserver setup email update "$(MAIL)" "$(PWD)" >/dev/null && scripts/lib/mklog info "password updated for $(MAIL)"; \
+>@local=$${MAIL%@*}; dom=$${MAIL#*@}; \
+  if [ "$(origin PWD)" = "command line" ] && [ -n "$(PWD)" ]; then \
+    docker exec mailu-admin flask mailu password "$$local" "$$dom" "$(PWD)" >/dev/null && scripts/lib/mklog info "password updated for $(MAIL)"; \
   else p=$$(openssl rand -base64 12 | tr -d '\n'); \
-    docker exec mailserver setup email update "$(MAIL)" "$$p" >/dev/null && scripts/lib/mklog info "password for $(MAIL) updated — new password: $$p"; fi
+    docker exec mailu-admin flask mailu password "$$local" "$$dom" "$$p" >/dev/null && scripts/lib/mklog info "password for $(MAIL) updated — new password: $$p"; fi
 
-# Card for one address: existence, quota (dovecot-quotas.cf), webmail URL.
-# The password is a hash and cannot be shown — rotate with mail-password.
+# Card for one address: existence, quota, webmail URL. The password is hashed
+# and cannot be shown — rotate with mail-password.
 mail-card:
 >@[ -n "$(MAIL)" ] || { scripts/lib/mklog error "usage: make mail-card MAIL=name@$(DOMAIN)"; exit 1; }
->@local=$${MAIL%@*}; \
-  if docker exec mailserver setup email list | grep -q "^[* ]*$$local@"; then \
-    q=$$(grep "^$(MAIL):" "$(REPO)/data/mailserver/config/dovecot-quotas.cf" 2>/dev/null | cut -d: -f2); \
-    scripts/lib/mklog info "address $(MAIL) — exists, quota $${q:-unlimited}, webmail https://mail.$(DOMAIN) (login with '$$local')"; \
+>@local=$${MAIL%@*}; dom=$${MAIL#*@}; \
+  q=$$(docker exec mailu-admin flask mailu config-export -j 2>/dev/null | jq -r --arg l "$$local" --arg d "$$dom" '.. | objects | select((.localpart?==$$l) and (.domain?==$$d)) | .quota_bytes // empty' | head -1); \
+  if docker exec mailu-admin flask mailu config-export -j 2>/dev/null | jq -e --arg l "$$local" --arg d "$$dom" '[.. | objects | select((.localpart?==$$l) and (.domain?==$$d))] | length > 0' >/dev/null 2>&1; then \
+    scripts/lib/mklog info "address $(MAIL) — exists, quota $${q:-unlimited} bytes, webmail https://mail.$(DOMAIN) (login with '$$local')"; \
     scripts/lib/mklog warn "password is hashed — rotate with make mail-password MAIL=$(MAIL)"; \
   else scripts/lib/mklog error "$(MAIL) not found — create with make mail-gen [MAIL=…]"; exit 1; fi
 
 mail-list:
 >@scripts/lib/mklog info "mailboxes for $(DOMAIN):"
->@docker exec mailserver setup email list 2>/dev/null | sed -n 's/^[* ]*//p' | grep '@' | sed 's/ .*//' | while IFS= read -r addr; do \
-    q=$$(grep -F "$$addr:" "$(REPO)/data/mailserver/config/dovecot-quotas.cf" 2>/dev/null | cut -d: -f2 | tr -d ' '); \
-    scripts/lib/mklog info "$$addr — $${q:-unlimited}"; \
-  done
+>@docker exec mailu-admin flask mailu config-export -j 2>/dev/null \
+  | jq -r '.. | objects | select(.localpart? and .domain?) | "\(.localpart)@\(.domain) \(.quota_bytes // "unlimited")"' \
+  | sort -u | while IFS= read -r row; do scripts/lib/mklog info "$$row"; done
 
 # Regenerate the tail terminal's navigation catalogue from the Caddy vhost
 # files ($DATA_DIR/www/targets.json — GENERATED, do not hand-edit). Run after
