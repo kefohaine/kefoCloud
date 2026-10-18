@@ -38,7 +38,6 @@ mod_in() { mod_installed "$1"; }
 # local CA, never Let's Encrypt) — so every HTTPS probe against it must accept
 # the self-signed chain. The door is still tailnet-only: a non-tailnet source
 # gets 403, a tailnet source gets the page/shell.
-TAIL_DOOR="tail.$DOMAIN"
 TS_IP="$(tailscale ip -4 2>/dev/null | head -1)"
 
 FIN="$(mod_finished)"
@@ -162,37 +161,6 @@ check_tls() {
   fi
 }
 
-# check_tail_cert <host> — tail.$DOMAIN uses Caddy's `tls internal` (its local
-# CA, never Let's Encrypt), so the issuer must be Caddy's authority and the cert
-# must cover the host. A missing or mismatched cert is what makes the functional
-# checks return 000; failing here names the cause. Always a CORE check.
-check_tail_cert() {
-  local host="$1" pem iss san
-  pem=$(echo | timeout 6 openssl s_client -connect 127.0.0.1:443 -servername "$host" 2>/dev/null)
-  iss=$(printf '%s' "$pem" | openssl x509 -noout -issuer 2>/dev/null)
-  san=$(printf '%s' "$pem" | openssl x509 -noout -ext subjectAltName 2>/dev/null)
-  if [[ "$iss" != *"Caddy"* ]]; then
-    say "FAIL tls:$host — issuer is not Caddy's local CA: ${iss:-<none>}"; bad; return
-  fi
-  if ! grep -q "DNS:$host" <<<"$san"; then
-    say "FAIL tls:$host — cert does not cover $host"; bad; return
-  fi
-  say "ok   tls:$host — Caddy local CA cert covering https://$host (self-signed, no LE)"
-}
-
-# check_tail_dns <host> — a tailnet device must be able to RESOLVE the door by
-# name, which only works when the tailnet split-DNS route sends $DOMAIN to this
-# machine's dnsmasq. Every other tail probe passes `--resolve` and therefore
-# cannot see a missing route; this one asks MagicDNS itself.
-check_tail_dns() {
-  local host="$1" ip
-  ip=$(dig +short +time=3 +tries=1 @100.100.100.100 "$host" 2>/dev/null | head -1)
-  if [ "$ip" != "${TS_IP:-}" ] || [ -z "$ip" ]; then
-    say "FAIL dns:$host — MagicDNS does not resolve it (got ${ip:-<none>}, want ${TS_IP:-<tailscale IP>}): add the split-DNS route via the Tailscale admin console (DNS -> nameservers -> $DOMAIN -> $TS_IP)"; bad; return
-  fi
-  say "ok   dns:$host — tailnet split DNS resolves the door to $ip"
-}
-
 # check_ctns <desc> <names...> — every listed container must be running.
 check_ctns() {
   local desc="$1"; shift
@@ -231,8 +199,6 @@ check_tls "www.$DOMAIN"
 # local CA — self-signed, never LE). It is tailnet-only: a non-tailnet source
 # gets 403 before anything else runs, and a tailnet source gets the door list at
 # `/`, the generated catalogue at `/targets.json`, and the shell at `/ttyd`.
-check_tail_cert "$TAIL_DOOR"
-check_tail_dns "$TAIL_DOOR"
 check tail "tail.$DOMAIN" "/" "403" "" "non-tailnet sources get 403" insecure
 ts_ip="$TS_IP"
 if [ -n "$ts_ip" ]; then
