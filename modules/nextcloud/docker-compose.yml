@@ -194,16 +194,22 @@ services:
     mem_limit: 128m
     memswap_limit: 128m
     environment:
-      # notify_push talks to Nextcloud's PHP-FPM upstream directly; it never
-      # goes through Caddy, so the trusted-proxy headers stay the edge's job.
-      NEXTCLOUD_URL: "http://172.22.0.5:9000"
+      # notify_push v1.4 needs the Nextcloud DATABASE (it reads the file cache
+      # directly) and REDIS (the pubsub channel the app publishes to) — without
+      # DATABASE_URL it exits with "No database server is configured" and
+      # crash-loops. NEXTCLOUD_URL is the PUBLIC url (the push server proxies
+      # the client through the real HTTP edge, so Nextcloud's trusted-proxy
+      # chain and the client IP stay intact). Pointing it at the PHP-FPM
+      # upstream made the setup self-test fail: Nextcloud resolved the push
+      # container as the client instead of the x-forwarded-for header.
+      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:5432/${POSTGRES_DB}"
+      DATABASE_PREFIX: "oc_"
+      REDIS_URL: "redis://${REDIS_HOST}:6379"
+      NEXTCLOUD_URL: "https://cloud.${DOMAIN}"
       PORT: "7867"
-    healthcheck:
-      test: ["CMD-SHELL", "timeout 3 bash -c '</dev/tcp/127.0.0.1/7867' || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
+    # No healthcheck: the image is from scratch (no shell, no curl), so any
+    # CMD-SHELL probe can never run and the container reports "unhealthy"
+    # forever. The installer's `occ notify_push:self-test` is the real check.
     networks:
       net:
         ipv4_address: 172.22.0.16
