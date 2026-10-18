@@ -2229,8 +2229,19 @@ ask_nc_apps() {
     # (config/cloud/apps.conf): no prompt.
     # Failures are logged and dropped silently; the plan above is authoritative.
     detail "  install&enable='$app' — not present in occ; installing then enabling"
-    if ! timeout 120 docker exec -u www-data nextcloud php occ app:install "$app" >>"$LOG" 2>&1; then
-      _warn_note "occ app:install $app failed — app not in the appstore and no local app dir; action dropped"
+    # The appstore download can exceed two minutes on a cold cache; a timeout
+    # used to abort the install silently, so the enforced notify_push app went
+    # missing and the later `occ notify_push:setup` failed with an unrelated
+    # "no commands defined" error. Retry once with a generous cap.
+    _installed=0
+    for _try in 1 2; do
+      if timeout 300 docker exec -u www-data nextcloud php occ app:install "$app" >>"$LOG" 2>&1; then
+        _installed=1; break
+      fi
+      log "  occ app:install $app failed (attempt $_try)"
+    done
+    if [ "$_installed" != 1 ]; then
+      _warn_note "occ app:install $app failed after 2 attempts — app not in the appstore and no local app dir; action dropped"
       continue
     fi
     if ! timeout 120 docker exec -u www-data nextcloud php occ app:enable "$app" >>"$LOG" 2>&1; then
