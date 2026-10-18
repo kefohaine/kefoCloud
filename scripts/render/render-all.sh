@@ -52,12 +52,6 @@ render_tree() {   # render_tree <src-dir> <dest-dir> [exclude-name]
 }
 
 render_tree "$ROOT/modules/caddy" "$TMP/caddy" Dockerfile
-# The private shell endpoint is an explicit choice: under `tailscale` the shell
-# is published by `tailscale serve`, so the Caddy tail vhost must not exist at
-# all (no LE order, no listener on tail.$DOMAIN).
-if [ "$(val TAIL_ENDPOINT)" = "tailscale" ]; then
-  rm -f "$TMP/caddy/vhosts/tail.caddy"
-fi
 # Video calling is optional: without it there is no signaling/TURN listener, so
 # no talk.$DOMAIN vhost and no talk cert order.
 # Only an explicit false drops the vhost: an older instance.conf without the

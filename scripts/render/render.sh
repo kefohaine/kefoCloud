@@ -100,7 +100,7 @@ if mode == "reverse":
 # Conditional blocks: {{IF KEY}}…{{ELSE}}…{{END}} — the block survives when
 # KEY's value is TRUTHY (set and not false/0/no/off), the ELSE side otherwise.
 # Lets ONE tracked skeleton carry the normal and a fallback variant of a file
-# (today: the tail vhost's normal LE cert vs its emergency Tailscale cert)
+# (today: the cloud vhost's optional notify_push route)
 # without either variant being a second file. Resolved before token
 # substitution, innermost-first, so a dropped branch's {{TOKENS}} never surface
 # as unresolved.
