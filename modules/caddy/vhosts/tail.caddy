@@ -19,16 +19,13 @@
 # Last-Modified deletes (no validators left to revalidate against) and the
 # legacy Pragma/Expires headers make every request hit the edge fresh.
 #
-# TLS — this vhost exists ONLY under the installer's explicit `caddy` endpoint
-# choice (TAIL_ENDPOINT in data/instance.conf). tail.{{DOMAIN}} gets a Let's
-# Encrypt cert (DNS-01, like every other vhost); a per-identifier LE rate limit
-# is a warning whose remedy is a re-run choosing `tailscale`, never an automatic
-# switch. Under the `tailscale` choice the installer does not render this file
-# at all — `tailscale serve` publishes /ttyd under the machine's own HTTPS name.
+# TLS — Caddy's own local CA (`tls internal`), never Let's Encrypt. The vhost
+# is tailnet-only, so there is no public ACME identifier to manage and no
+# per-identifier rate limit to trip; browsers show a one-time warning for the
+# untrusted local CA, which is expected. Caddy issues and stores the cert itself
+# (caddy_data), so no renewal or DNS-01 round-trip is involved.
 https://tail.{{DOMAIN}} {
-    tls {
-        dns cloudflare {env.CF_API_TOKEN}
-    }
+    tls internal
     import compress
     header {
         import security_headers
