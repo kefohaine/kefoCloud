@@ -13,8 +13,8 @@
 #
 # Conditional blocks are supported too: {{IF KEY}}…{{ELSE}}…{{END}} keeps the
 # first side when KEY is truthy (set and not false/0/no/off), the second side
-# otherwise — one skeleton, two variants (see the tail vhost's LE vs emergency
-# Tailscale cert). Blocks are resolved before token substitution.
+# otherwise — one skeleton, two variants. Blocks are resolved before token
+# substitution.
 #
 # Unknown tokens are left VERBATIM and reported on stderr — a missing value is
 # loud, never a silently empty string in a config that then fails at runtime.
