@@ -39,6 +39,7 @@ mod_in() { mod_installed "$1"; }
 # the self-signed chain. The door is still tailnet-only: a non-tailnet source
 # gets 403, a tailnet source gets the page/shell.
 TAIL_DOOR="tail.$DOMAIN"
+TS_IP="$(tailscale ip -4 2>/dev/null | head -1)"
 
 FIN="$(mod_finished)"
 if [ "$FIN" != "true" ]; then
@@ -176,7 +177,20 @@ check_tail_cert() {
   if ! grep -q "DNS:$host" <<<"$san"; then
     say "FAIL tls:$host — cert does not cover $host"; bad; return
   fi
-  say "ok   tls:$host — Caddy local CA cert covering the door (self-signed, no LE)"
+  say "ok   tls:$host — Caddy local CA cert covering https://$host (self-signed, no LE)"
+}
+
+# check_tail_dns <host> — a tailnet device must be able to RESOLVE the door by
+# name, which only works when the tailnet split-DNS route sends $DOMAIN to this
+# machine's dnsmasq. Every other tail probe passes `--resolve` and therefore
+# cannot see a missing route; this one asks MagicDNS itself.
+check_tail_dns() {
+  local host="$1" ip
+  ip=$(dig +short +time=3 +tries=1 @100.100.100.100 "$host" 2>/dev/null | head -1)
+  if [ "$ip" != "${TS_IP:-}" ] || [ -z "$ip" ]; then
+    say "FAIL dns:$host — MagicDNS does not resolve it (got ${ip:-<none>}, want ${TS_IP:-<tailscale IP>}): add the split-DNS route via the Tailscale admin console (DNS -> nameservers -> $DOMAIN -> $TS_IP)"; bad; return
+  fi
+  say "ok   dns:$host — tailnet split DNS resolves the door to $ip"
 }
 
 # check_ctns <desc> <names...> — every listed container must be running.
@@ -202,6 +216,7 @@ check_ctns edge "caddy"
 # www: the instance homepage + the drop folder + every page the operator has
 # actually put in the web root ($DATA/www). Derived from the files present, so
 # no page name is hardcoded and a fresh install (placeholder page only) passes.
+check apex         "$DOMAIN"     "/"          "200 301 302 307 308" ""    "bare domain reaches the homepage"
 check www          "www.$DOMAIN" "/"          "200 301 302 307 308" ""    "homepage"
 check www-download "www.$DOMAIN" "/download/" "200 301 302 307 308" html "public drop folder browses"
 for f in "$ROOT/data/www"/*.html; do
@@ -217,9 +232,9 @@ check_tls "www.$DOMAIN"
 # gets 403 before anything else runs, and a tailnet source gets the door list at
 # `/`, the generated catalogue at `/targets.json`, and the shell at `/ttyd`.
 check_tail_cert "$TAIL_DOOR"
-say "     tail door: https://$TAIL_DOOR (issuer: Caddy local CA, self-signed)"
+check_tail_dns "$TAIL_DOOR"
 check tail "tail.$DOMAIN" "/" "403" "" "non-tailnet sources get 403" insecure
-ts_ip="$(tailscale ip -4 2>/dev/null | head -1)"
+ts_ip="$TS_IP"
 if [ -n "$ts_ip" ]; then
   # Tailscale membership is the ONLY gate (basic auth was removed 2026-09-22),
   # so from the host's own Tailscale IP every route serves unauthenticated.
