@@ -1,7 +1,8 @@
 # Top-level Caddy config. Per-vhost routes live in ./vhosts/*.caddy
-# and are imported below. Each vhost declares its own TLS block — all
-# use Let's Encrypt DNS-01 via the Cloudflare plugin (token in
-# CF_API_TOKEN env var). The old CF Origin CA wildcard cert was
+# and are imported below. Each PUBLIC vhost declares its own TLS block —
+# Let's Encrypt DNS-01 via the Cloudflare plugin (token in CF_API_TOKEN env
+# var); tail.{{DOMAIN}} is the exception and uses `tls internal` (local CA).
+# The old CF Origin CA wildcard cert was
 # removed because its SNI wildcard (`*.{{DOMAIN}}`) covered every
 # vhost and the per-vhost ACME automation policy never fired.
 # Per-vhost LE certs keep each cert scoped to its own SNI.
@@ -45,8 +46,8 @@ http:// {
 }
 
 # ── vhosts ──────────────────────────────────────────────────────────────────
-# Each vhost declares its own `tls { dns cloudflare { ... } }` block so the
-# ACME cert is scoped to that vhost's SNI. The wildcard cert that used to
+# Each public vhost declares its own `tls { dns cloudflare { ... } }` block so
+# the ACME cert is scoped to that vhost's SNI; tail.{{DOMAIN}} uses `tls internal`. The wildcard cert that used to
 # back all vhosts is no longer referenced — per-vhost ACME certs are scoped
 # to their own SNI (see ./vhosts/cloud.caddy for the rationale).
 
