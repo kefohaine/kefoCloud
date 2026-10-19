@@ -66,10 +66,16 @@ render_tree "$ROOT/config" "$TMP/config" instance.defaults www
 #  in the web root, rendered below, not under /etc)
 
 # Swap in place (keeps the mounted inode alive), then drop the scratch tree.
-mkdir -p "$OUT/caddy" "$OUT/config"
+mkdir -p "$OUT/caddy" "$OUT/config" "$OUT/mailserver"
 if command -v rsync >/dev/null 2>&1; then
   rsync -a --delete "$TMP/caddy/"  "$OUT/caddy/"
   rsync -a --delete "$TMP/config/" "$OUT/config/"
+  # The mail platform mounts rendered files too (roundcube's tls/smtp overrides
+  # and identities_level). Without this the mount source is missing, Docker
+  # creates an empty DIRECTORY at that path, and the override silently never
+  # loads — roundcube then talks plaintext to mailu-imap and login fails with
+  # "Empty startup greeting".
+  rsync -a --delete "$TMP/mailserver/" "$OUT/mailserver/"
 else
   # Fallback: copy over, then remove files whose source is gone. Never rm -rf.
   cp -a "$TMP/." "$OUT/"
