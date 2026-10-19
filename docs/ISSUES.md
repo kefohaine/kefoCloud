@@ -25,6 +25,11 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### Robustness
 
+#### Most ops and module scripts have no dry-run or plan mode
+- **File**: `scripts/ops/*.sh`, `scripts/modules/*.sh`, `scripts/stack/stack-up.sh`
+- **Problem**: AGENTS rule 29 lets an agent exercise a script only through a dry/plan mode or a fixture target; apart from `optimize.sh --dry-run` and `restore-data.sh`'s preview, these have neither, so a change to one of them cannot be verified by an agent without a real run.
+- **Fix (candidate, not approved)**: add a `DRYRUN=1` path that prints the plan and exits before the first mutation, starting with the scripts that write state (`talk-gen.sh`, `nc-capture.sh`, `stack-up.sh`).
+
 #### Pre-2026-10-17 history still bundles areas and lacks revert recipes
 - **File**: git history (`make git-audit RANGE=origin/main` lists every one of them)
 - **Problem**: the one-change rule (AGENTS 26) and the revert-recipe rule (10) were enforced from 2026-10-17 onward, so everything published before that predates both — many commits span several areas and no significant commit carried a `Revert:` line. The pre-push audit only sees the range being pushed, so this backlog is invisible to it.
