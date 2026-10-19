@@ -287,13 +287,13 @@ end_sec
 # ─────────────────────────────────────────────────────────────────────────────
 # Module: mail — Mailu (front/smtp/imap/antispam/admin/redis) + Roundcube webmail.
 # ─────────────────────────────────────────────────────────────────────────────
-hdr mail "Mail — Mailu + Roundcube (module: mail)"
-check mail "mail.$DOMAIN" "/" "200 301 302 307 308" html "Roundcube webmail"
+hdr mail "Mail — Mailu platform + Roundcube webmail (module: mail)"
+check mail "mail.$DOMAIN" "/" "200 301 302 307 308" html "Mailu platform door"
 check_sec_headers mail "mail.$DOMAIN" "/" "one of each"
 check_tls "mail.$DOMAIN"
-check mailu "mailu.$DOMAIN" "/" "200 301 302 307 308" html "Mailu platform door"
-check_sec_headers mailu "mailu.$DOMAIN" "/" "one of each"
-check_tls "mailu.$DOMAIN"
+check cube "cube.$DOMAIN" "/" "200 301 302 307 308" html "Roundcube webmail"
+check_sec_headers cube "cube.$DOMAIN" "/" "one of each"
+check_tls "cube.$DOMAIN"
 
 # SMTP 25/587 + IMAPS 993 must answer.
 for port in 25 587; do
