@@ -1,0 +1,39 @@
+# cube.{{DOMAIN}} — Roundcube webmail (Mailu platform, container `roundcube`
+# at 172.22.0.10:80). Roundcube is a web client only: it reaches the platform
+# over STARTTLS at tls://mail.{{DOMAIN}}:143/:587
+# (modules/mailserver/roundcube-tls.inc.php), i.e. mailu-front, whose cert is
+# this same account's mail.{{DOMAIN}} pair.
+# TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
+
+https://cube.{{DOMAIN}} {
+    tls {
+        # Fallback issuer chain: Let's Encrypt first, then Buypass Go SSL and
+        # ZeroSSL — free providers tried in order, so a per-issuer rate limit
+        # (5 orders/name/week on LE) never leaves a vhost without a cert.
+        issuer acme https://acme-v02.api.letsencrypt.org/directory {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+        issuer acme https://api.buypass.com/acme/directory {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+        issuer acme https://acme.zerossl.com/v2/DV90 {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+    }
+    import compress
+    request_body {
+        max_size 25m
+    }
+    header {
+        import security_headers
+    }
+    reverse_proxy 172.22.0.10:80 {
+        # strip roundcube's own security headers so the site-level set yields one value
+		header_down -X-Frame-Options
+		header_down -X-Content-Type-Options
+		header_down -Referrer-Policy
+    }
+}

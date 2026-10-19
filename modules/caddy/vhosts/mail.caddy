@@ -1,12 +1,11 @@
-# mail.{{DOMAIN}} — Roundcube webmail (Mailu platform).
+# mail.{{DOMAIN}} — Mailu's platform door (admin UI + the platform as served by
+# mailu-front at 172.22.0.9:80). This is also the name SMTP/IMAP present: the
+# installer copies the issued mail.{{DOMAIN}} pair from caddy_data to
+# mailserver/certs (mounted at /certs on mailu-front, which terminates the
+# 25/465/587/993 listeners), so the web door and the protocol cert are the same
+# name, and mailu-front's SNI/cert check matches its own hostname.
+# The webmail door is cube.{{DOMAIN}} (Roundcube at 172.22.0.10).
 # TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
-# This is the roundcube DOOR cert — the webmail vhost terminates here, and
-# roundcube's own tls:// SMTP/IMAP client path to the mail platform verifies
-# against it. The installer copies the issued mail.{{DOMAIN}} pair from
-# caddy_data to mailserver/certs (mounted at /certs on mailu-front, which
-# terminates the SMTP/IMAP listeners), so renewals are shared and the front
-# restarts on renewal. Mailu's own identity is mailu.{{DOMAIN}} (dashboard,
-# also terminated by Caddy) — the two names never overlap.
 
 https://mail.{{DOMAIN}} {
     tls {
@@ -33,10 +32,12 @@ https://mail.{{DOMAIN}} {
     header {
         import security_headers
     }
-    reverse_proxy 172.22.0.10:80 {
-        # strip roundcube's own security headers so the site-level set yields one value
+    reverse_proxy 172.22.0.9:80 {
+        # strip Mailu front's own security headers so the site-level set
+        # yields one value per field
 		header_down -X-Frame-Options
 		header_down -X-Content-Type-Options
 		header_down -Referrer-Policy
+		header_down -Strict-Transport-Security
     }
 }
