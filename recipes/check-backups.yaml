@@ -13,7 +13,7 @@ extensions:
 activities:
   - "Enumerate backup artifacts and schedules"
   - "Check the nightly Nextcloud pg_dump and the NFS datadirectory copies"
-  - "Check make backup / make import-data recipes and taildrop device coverage"
+  - "Check make backup / make import-backups recipes and taildrop device coverage"
   - "Assess restore procedures and off-site/DR coverage"
   - "Report gaps and a prioritized remediation list"
 parameters:
