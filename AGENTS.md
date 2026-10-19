@@ -10,6 +10,12 @@
   cannot pass before `wizard.state` records `finished=true`. No agent or operator
   command may use it.
 
+## Scripts
+- Never run a script on the operator's behalf without explicit approval in the
+  current task — not even for debugging or to reproduce a bug. Without it, read
+  it, lint it (`bash -n`), or use its dry-run/fixture mode only; the operator
+  runs the real thing (docs/AGENTS.md rule 29).
+
 ## Installer invariants (see scripts/install/wizard.sh)
 - Never commit or push unless the user explicitly asks for it in the current task.
 - data/logs/wizard.log is cleared at the start of each run; fix root causes, not symptoms.
