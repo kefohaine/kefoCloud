@@ -2740,6 +2740,13 @@ nextcloud_setup() {
     if mod_on mail; then
       occ_check "mail.$DOMAIN" docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null \
         || return 1
+      # The wrapper is only usable if it knows where its Roundcube is and
+      # leaves the personal login name editable (see the app-config block
+      # above); verified here so repair mode re-applies both.
+      occ_check "https://cube.$DOMAIN" docker exec -u www-data nextcloud php occ config:app:get mail_roundcube externalLocation 2>/dev/null \
+        || return 1
+      occ_check "userChosenEmail" docker exec -u www-data nextcloud php occ config:app:get mail_roundcube emailAddressChoice 2>/dev/null \
+        || return 1
     fi
     occ_check "https://talk.$DOMAIN/signaling" docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null \
       || return 1
@@ -2774,6 +2781,18 @@ nextcloud_setup() {
   # updater page. www-data owns it, like the rest of the html tree.
   docker exec -u www-data nextcloud php -r 'file_put_contents("/var/www/html/config/upgrade-disable-web.config.php", "<?php\n\$CONFIG = array (\n  \"upgrade.disable-web\" => false,\n);\n");' >/dev/null 2>&1 || true
   docker exec -u www-data nextcloud php occ config:system:set upgrade.disable-web --value false --type boolean >/dev/null 2>&1 || true
+
+  # FINAL: recycle the web workers. occ runs in its own process, while app
+  # config is cached per PHP-FPM worker in APCu (memcache.local = APCu,
+  # cache_app_config defaults to true) — a value set with occ can stay
+  # invisible to the running workers, and the web UI keeps serving the OLD
+  # value with no trace in the DB (this is what kept the personal "Email Login
+  # Name" greyed out: the DB said userChosenEmail, the workers still had
+  # userPreferencesEmail). USR2 is php-fpm's graceful reload; php-fpm is PID 1
+  # in this image, workers are recycled and re-read the DB — no downtime, no
+  # restart of the container (and NO other occ command is needed).
+  docker exec nextcloud sh -c 'kill -USR2 1' >>"$LOG" 2>&1 \
+    || log "  php-fpm reload failed — app config changes may need a nextcloud restart"
 }
 
 # Automated remediation for a nextcloud_setup failure: re-apply the idempotent
@@ -2804,6 +2823,16 @@ nextcloud_occ_remediate() {
     docker exec -u www-data nextcloud php occ config:system:set mail_smtpsecure --value tls >/dev/null 2>&1
     docker exec -u www-data nextcloud php occ config:system:set mail_smtpauthtype --value LOGIN >/dev/null 2>&1
     docker exec -u www-data nextcloud php occ config:system:set mail_smtpauth --value true >/dev/null 2>&1
+    # mail_roundcube app config (externalLocation + emailAddressChoice): the
+    # app is re-installed from the appstore on a cold install, which drops its
+    # config, so re-assert both here — same values and rationale as the
+    # nextcloud_setup block; userChosenEmail is what keeps the personal "Email
+    # Login Name" editable and is the only choice that works with an empty NC
+    # profile email.
+    docker exec -u www-data nextcloud php occ config:app:set mail_roundcube externalLocation \
+      --value "https://cube.$DOMAIN" >/dev/null 2>&1 || true
+    docker exec -u www-data nextcloud php occ config:app:set mail_roundcube emailAddressChoice \
+      --value userChosenEmail >/dev/null 2>&1 || true
   fi
   sig=$(docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null)
   echo "$sig" | grep -q "https://talk.$DOMAIN/signaling" \
@@ -2814,6 +2843,11 @@ nextcloud_occ_remediate() {
   echo "$trn" | grep -q "talk.$DOMAIN:5349" \
     || docker exec -u www-data nextcloud php occ talk:turn:add turns "talk.$DOMAIN:5349" "tcp" --secret "$TURN_SECRET" >/dev/null 2>&1 || true
   docker exec -u www-data nextcloud php occ background:cron >/dev/null 2>&1 || true
+  # Same reason as the FINAL block of nextcloud_setup: app config is cached per
+  # PHP-FPM worker in APCu, so values written here (occ = its own process) stay
+  # invisible to the web UI until the workers are recycled. USR2 = graceful
+  # php-fpm reload (php-fpm is PID 1 in this image), no downtime.
+  docker exec nextcloud sh -c 'kill -USR2 1' >/dev/null 2>&1 || true
 }
 
 # Vaultwarden SMTP sender mailbox (vaultwarden@$DOMAIN) — created after the
@@ -3500,7 +3534,7 @@ problem() {
     cert_*)         echo "cert for ${1#cert_}.$DOMAIN is not issued by Let's Encrypt" ;;
     sweep)          echo "old project name is still referenced in the repo tree" ;;
     sslmode)        echo "Cloudflare SSL/TLS mode is not Full (or strict)" ;;
-    nextcloud_setup) echo "Nextcloud occ wiring incomplete (Talk signaling/TURN, SMTP, background cron)" ;;
+    nextcloud_setup) echo "Nextcloud occ wiring incomplete (Talk signaling/TURN, SMTP, background cron, mail_roundcube externalLocation/emailAddressChoice)" ;;
     dkim_setup)      echo "DKIM key / dkim._domainkey TXT record not published" ;;
     dns_mail_txt)   echo "one or more mail records (MX, SPF, DMARC) are missing" ;;
     vaultwarden_setup) echo "Vaultwarden SMTP sender mailbox missing (vaultwarden@$DOMAIN)" ;;
@@ -3582,7 +3616,7 @@ recheck() {
     cert_*) local h=${1#cert_}; echo | timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$h.$DOMAIN" 2>/dev/null | openssl x509 -noout -issuer 2>/dev/null | grep -q "Let's Encrypt" ;;
     sweep) [ -z "$(sweep_hits)" ] ;;
     sslmode) ssl_mode_full ;;
-    nextcloud_setup) nextcloud_occ_remediate; if ! mod_on mail || docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN"; then docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://talk.$DOMAIN/signaling" && docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "talk.$DOMAIN:3478" && docker exec -u www-data nextcloud php occ config:system:get trusted_domains 2>/dev/null | grep -qx "cloud.$DOMAIN"; else false; fi ;;
+    nextcloud_setup) nextcloud_occ_remediate; if ! mod_on mail || { docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN" && docker exec -u www-data nextcloud php occ config:app:get mail_roundcube externalLocation 2>/dev/null | grep -qx "https://cube.$DOMAIN" && docker exec -u www-data nextcloud php occ config:app:get mail_roundcube emailAddressChoice 2>/dev/null | grep -qx "userChosenEmail"; }; then docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://talk.$DOMAIN/signaling" && docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "talk.$DOMAIN:3478" && docker exec -u www-data nextcloud php occ config:system:get trusted_domains 2>/dev/null | grep -qx "cloud.$DOMAIN"; else false; fi ;;
     dkim_setup)      dig +short TXT "dkim._domainkey.$DOMAIN" @"$(dig +short NS "$DOMAIN" | head -1)" 2>/dev/null | tr -d '"' | grep -qE 'p=[A-Za-z0-9+/=]{100,}' ;;
     dns_mail_txt) mod_on mail || return 0; cf_mail_dns; local records; records=$(curl -fsS -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" 2>/dev/null) || return 1; printf '%s' "$records" | jq -e --arg d "$DOMAIN" --arg s "v=spf1 a:mail.$DOMAIN mx -all" --arg m 'v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s;' '[.result[] | {type,name,content}] as $r | [[$d,"MX"],["_dmarc."+$d,"TXT"]] as $fs | [($fs[] | . as $x | any($r[]; .type==$x[1] and .name==$x[0])), any($r[]; .type=="TXT" and .name==$d and .content==$s)] | all' >/dev/null ;;
     vaultwarden_setup) if mod_on mail; then . modules/vaultwarden/.env 2>/dev/null; mailbox_add "vaultwarden@$DOMAIN" "${SMTP_PASSWORD:-}" >/dev/null 2>&1; mailbox_exists "vaultwarden@$DOMAIN"; else false; fi ;;
