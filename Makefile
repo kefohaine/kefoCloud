@@ -6,6 +6,14 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -c
 
+# USER is exported by every login shell (USER=root) and make imports the whole
+# environment, so an account-targeting recipe would silently act on root when
+# it was meant to require USER= on the command line. Blank the inherited copy
+# once here; a command-line USER= still wins.
+ifeq ($(origin USER),environment)
+USER :=
+endif
+
 # The repo path is DERIVED from this Makefile's own location — never hardcoded.
 # That is what lets the checkout be renamed or moved without editing the
 # Makefile, and it is why every other path below hangs off $(REPO).
@@ -17,6 +25,10 @@ RENDER_DIR := $(REPO)/data/rendered
 COMPOSE  := docker compose -f
 CONTAINERS := caddy uptimekuma nextcloud vaultwarden mailserver roundcube
 HOST     := ttyd dnsmasq goose
+# The tailnet device that receives files/bundles — one spelling for backup,
+# import-backups and the taildrop helpers (TAILDROP_HOST is an alias). No
+# default: shipping to an arbitrary device is worse than a usage error.
+TAILDROP ?= $(TAILDROP_HOST)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Docker containers: dok-<action>-<ctn>
@@ -33,7 +45,7 @@ HOST     := ttyd dnsmasq goose
 .PHONY: $(addprefix dok-stop-,$(CONTAINERS)) dok-stop-all dok-stop
 .PHONY: $(addprefix dok-logs-,$(CONTAINERS)) dok-logs-all dok-logs
 
-# $(DOMAIN) (Caddy) rebuilds its image locally; the rest just pull.
+# caddy rebuilds its image locally; the rest just pull.
 # $(DOMAIN) = custom Dockerfile adds caddy-dns/cloudflare for ACME DNS-01
 #   on every vhost; DNS-01 keeps cert issuance independent of the proxy.
 
@@ -47,27 +59,34 @@ COMPOSE_FILE_roundcube := modules/mailserver/docker-compose.yml
 # so the expansion happens at recipe-expansion time, not recipe-execution time.
 compose-file-of = $(REPO)/$(COMPOSE_FILE_$1)
 
-# $(DOMAIN) needs a local image build; compose v5.5.0 on Debian trixie ships
-# buildx 0.13.1, which is too old for `compose ... --build` (needs >= 0.17).
-# Try the compose build first and fall back to plain `docker build` + compose
-# up (the installer pattern) so `make dok-recreate-caddy` works everywhere.
+# One compose unit's force-recreate, shared by dok-recreate-<ctn> and
+# dok-recreate-all so the two can never drift. caddy rebuilds its image
+# locally; compose v5.5.0 on Debian trixie ships buildx 0.13.1, which is too old
+# for `compose ... --build` (needs >= 0.17) — try the compose build first and
+# fall back to plain `docker build` + compose up (the installer pattern) so
+# `make dok-recreate-caddy` works everywhere.
 # --remove-orphans on every recreate: a container left over from a RENAMED or
 # REMOVED service in the same compose file keeps running with the old name and
 # the old config, and compose only warns ("Found orphan containers (...)"). The
 # installer then probes the name it expects, finds nothing serving, and reports a
 # failure on a stack that is actually healthy. Recreate is the one place the
 # operator has asked for "this file, exactly as written", so the orphans go.
-define dok_recreate_rule
-dok-recreate-$1:
->@if [ "$1" = "caddy" ]; then \
-    if ! $(COMPOSE) $(call compose-file-of,$1) up -d --force-recreate --remove-orphans --build; then \
+# $1 = absolute compose file path.
+define compose_recreate_cmds
+if [ "$1" = "$(REPO)/modules/caddy/docker-compose.yml" ]; then \
+    if ! $(COMPOSE) "$1" up -d --force-recreate --remove-orphans --build; then \
       scripts/lib/mklog warn "compose build unavailable (buildx < 0.17 on trixie) — falling back to docker build + compose up"; \
       docker build -t caddy:local $(REPO)/modules/caddy \
-        && $(COMPOSE) $(call compose-file-of,$1) up -d --force-recreate --remove-orphans; \
+        && $(COMPOSE) "$1" up -d --force-recreate --remove-orphans; \
     fi; \
   else \
-    $(COMPOSE) $(call compose-file-of,$1) up -d --force-recreate --remove-orphans; \
+    $(COMPOSE) "$1" up -d --force-recreate --remove-orphans; \
   fi
+endef
+
+define dok_recreate_rule
+dok-recreate-$1:
+>@$(call compose_recreate_cmds,$(call compose-file-of,$1))
 endef
 $(foreach s,$(CONTAINERS),$(eval $(call dok_recreate_rule,$s)))
 
@@ -84,32 +103,25 @@ dok-stop-$1:
 endef
 $(foreach s,$(CONTAINERS),$(eval $(call dok_stop_rule,$s)))
 
+# Primary container to tail per service: mailserver runs mailu-* + roundcube
+# and has no container named after itself, so its log target is mailu-admin
+# (per-service view: make mail-logs SERVICE=<svc>).
+LOG_CONTAINER_mailserver := mailu-admin
+log-container-of = $(if $(LOG_CONTAINER_$1),$(LOG_CONTAINER_$1),$1)
+
 define dok_logs_rule
 dok-logs-$1:
-># Tail the container named after the service.
->docker logs $1 --tail 50 -f
+># Tail the service's primary container.
+>docker logs $(call log-container-of,$1) --tail 50 -f
 endef
 $(foreach s,$(CONTAINERS),$(eval $(call dok_logs_rule,$s)))
 
-# Shared loop: force-recreate every compose unit under modules/ ($(DOMAIN)
-# builds locally, with the buildx fallback). Used by dok-recreate-all and
-# update — each keeps a self-contained recipe (no chained make targets).
-define dok_recreate_all_cmds
-@for f in $(REPO)/modules/*/docker-compose.yml; do \
-    if [ "$$f" = "$(REPO)/modules/caddy/docker-compose.yml" ]; then \
-      if ! $(COMPOSE) "$$f" up -d --force-recreate --remove-orphans --build; then \
-        scripts/lib/mklog warn "compose build unavailable (buildx < 0.17 on trixie) — falling back to docker build + compose up"; \
-        docker build -t caddy:local $(REPO)/modules/caddy \
-          && $(COMPOSE) "$$f" up -d --force-recreate --remove-orphans; \
-      fi; \
-    else \
-      $(COMPOSE) "$$f" up -d --force-recreate --remove-orphans; \
-    fi; \
-  done
-endef
-
+# Shared loop: force-recreate every compose unit under modules/ (the same
+# per-file body the -<ctn> rules use).
 dok-recreate-all:
->$(dok_recreate_all_cmds)
+>@for f in $(REPO)/modules/*/docker-compose.yml; do \
+    $(call compose_recreate_cmds,$$f); \
+  done
 
 dok-restart-all:
 >@for f in $(REPO)/modules/*/docker-compose.yml; do \
@@ -121,22 +133,26 @@ dok-stop-all:
     $(COMPOSE) "$$f" stop; \
   done
 
+# container:label pairs, so the mailserver map is applied without a shell case.
+DOK_LOG_TARGETS := $(foreach c,$(CONTAINERS),$(call log-container-of,$c):$c)
+
 dok-logs-all:
->@stdbuf -oL bash -c 'for c in $(CONTAINERS); do \
-    docker logs $$c --tail 50 -f 2>&1 | stdbuf -oL sed "s/^/[$$c] /" & \
+>@stdbuf -oL bash -c 'for t in $(DOK_LOG_TARGETS); do \
+    lc=$${t%%:*}; c=$${t#*:}; \
+    docker logs $$lc --tail 50 -f 2>&1 | stdbuf -oL sed "s/^/[$$c] /" & \
   done; wait'
 
 TARGET ?=
 
 # Container actions, TARGET= style: make dok-recreate TARGET=caddy
-# (the -<ctn> suffixed targets stay as thin aliases).
+# (the -<ctn> suffixed targets stay as thin aliases; without TARGET the
+# usage line names every accepted value).
 .PHONY: dok-action
 dok-action:
->@if [ -z "$(TARGET)" ]; then \
-    scripts/lib/mklog error "usage: make $(ACTION) TARGET=<ctn>  (one of: $(CONTAINERS))"; \
-  else \
-    $(MAKE) --no-print-directory $(ACTION)-$(TARGET); \
-  fi
+>@case " $(CONTAINERS) " in \
+    *" $(TARGET) "*) $(MAKE) --no-print-directory $(ACTION)-$(TARGET);; \
+    *) scripts/lib/mklog error "usage: make $(ACTION) TARGET=<ctn>  (one of: $(CONTAINERS))"; exit 1;; \
+  esac
 
 dok-recreate:
 >@$(MAKE) --no-print-directory ACTION=dok-recreate dok-action
@@ -176,18 +192,27 @@ systemd-log-all:
   done; wait'
 
 systemd-restart:
->@scripts/lib/mklog error "Usage: make systemd-restart-<svc>  (one of: $(HOST))"
->@echo "       make systemd-restart-all"
+>@$(MAKE) --no-print-directory ACTION=systemd-restart systemd-action
 systemd-log:
->@scripts/lib/mklog error "Usage: make systemd-log-<svc>  (one of: $(HOST))"
->@echo "       make systemd-log-all"
+>@$(MAKE) --no-print-directory ACTION=systemd-log systemd-action
+
+# Same TARGET= form as the dok-* family: make systemd-restart TARGET=goose
+# (the -<svc> suffixed targets stay as thin aliases).
+.PHONY: systemd-action
+systemd-action:
+>@case " $(HOST) " in \
+    *" $(TARGET) "*) $(MAKE) --no-print-directory $(ACTION)-$(TARGET);; \
+    *) scripts/lib/mklog error "usage: make $(ACTION) TARGET=<svc>  (one of: $(HOST)) — or make $(ACTION)-all"; exit 1;; \
+  esac
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: fetch fetch-more render ttyd-devices ttyd-add ttyd-rm smoke gh-web-health install-hooks update apt-upgrade install-config kuma-import help talk-gen vaultwarden-list-users vaultwarden-add-user vaultwarden-del-user
-.PHONY: deploy backup nc-data nc-datadir-nfs import-backups
+.PHONY: fetch fetch-more render tail-targets ttyd-devices ttyd-add ttyd-rm smoke gh-web-health install-hooks update apt-upgrade install-config help talk-gen nc-capture nc-default-user-quota
+.PHONY: kuma-import kuma-list-users kuma-add-user kuma-passwd kuma-del-user
+.PHONY: vaultwarden-list-users vaultwarden-add-user vaultwarden-del-user
+.PHONY: deploy backup nc-datadir-nfs import-backups
 
 # Per-tailnet-device web-terminal sessions: one named tmux session each, served
 # by the SINGLE ttyd listener as /ttyd?arg=<name> and listed on the tail page.
@@ -503,7 +528,7 @@ mail-manager:
 >@[ -n "$(MAIL_DOMAIN)" ] || { scripts/lib/mklog error "usage: make mail-manager MAIL_DOMAIN=<domain> USER=<addr@domain>"; exit 1; }
 >@case "$(USER)" in \
     *@*) ;; \
-    *) scripts/lib/mklog error "USER must be a full address (USER='<addr@domain>') — the shell exports USER=$(USER), so it is never taken from the environment"; exit 1;; \
+    *) scripts/lib/mklog error "USER must be a full address (USER='<addr@domain>') — USER is never taken from the environment"; exit 1;; \
   esac
 >@u="$(USER)"; $(MAIL_ADMIN) setmanager "$(MAIL_DOMAIN)" "$${u%@*}" >/dev/null \
     && scripts/lib/mklog info "$${u%@*} is now a manager of $(MAIL_DOMAIN)"
@@ -532,7 +557,7 @@ mail-admin-password:
   [ -n "$$p" ] || { p=$$(openssl rand -base64 12 | tr -d '\n'); gen=1; }; \
   acct=$$(sed -n 's/^INITIAL_ADMIN_ACCOUNT=//p' $(MAIL_ENV) 2>/dev/null | head -1); acct=$${acct:-admin}; \
   adom=$$(sed -n 's/^INITIAL_ADMIN_DOMAIN=//p' $(MAIL_ENV) 2>/dev/null | head -1); adom=$${adom:-$(DOMAIN)}; \
-  $(MAIL_ADMIN) admin "$$acct" "$$adom" "$$p" >/dev/null \
+  $(MAIL_ADMIN) admin -m update "$$acct" "$$adom" "$$p" >/dev/null \
     || { scripts/lib/mklog error "could not set the admin password for $$acct@$$adom"; exit 1; }; \
   if [ "$$gen" = 1 ]; then scripts/lib/mklog info "admin $$acct@$$adom password: $$p (printed once)"; \
   else scripts/lib/mklog info "admin $$acct@$$adom password updated"; fi; \
@@ -575,20 +600,21 @@ kuma-list-users:
 >@bash scripts/modules/kuma-user.sh list
 
 kuma-add-user:
->@[ -n "$(USER)" ] && [ -n "$(PASS)" ] || { scripts/lib/mklog error "Usage: make kuma-add-user USER=<name> PASS=<password>"; exit 1; }
+>@[ -n "$(USER)" ] && [ -n "$(PASS)" ] || { scripts/lib/mklog error "usage: make kuma-add-user USER=<name> PASS=<password>"; exit 1; }
 >@bash scripts/modules/kuma-user.sh add "$(USER)" "$(PASS)"
 
 kuma-passwd:
->@[ -n "$(USER)" ] && [ -n "$(PASS)" ] || { scripts/lib/mklog error "Usage: make kuma-passwd USER=<name> PASS=<newpassword>"; exit 1; }
+>@[ -n "$(USER)" ] && [ -n "$(PASS)" ] || { scripts/lib/mklog error "usage: make kuma-passwd USER=<name> PASS=<newpassword>"; exit 1; }
 >@bash scripts/modules/kuma-user.sh passwd "$(USER)" "$(PASS)"
 
 kuma-del-user:
->@[ -n "$(USER)" ] || { scripts/lib/mklog error "Usage: make kuma-del-user USER=<name>"; exit 1; }
+>@[ -n "$(USER)" ] || { scripts/lib/mklog error "usage: make kuma-del-user USER=<name>"; exit 1; }
 >@bash scripts/modules/kuma-user.sh del "$(USER)"
 
 # Import an adapted Uptime Kuma db from another host (KUMA_DB=/path).
 kuma-import:
->sudo scripts/modules/kuma-import.sh $(KUMA_DB)
+>@[ -n "$(KUMA_DB)" ] || { scripts/lib/mklog error "usage: make kuma-import KUMA_DB=<path>"; exit 1; }
+>@sudo scripts/modules/kuma-import.sh "$(KUMA_DB)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Vaultwarden accounts (no CLI — scripts/modules/vaultwarden-user.sh recreates
@@ -599,11 +625,11 @@ vaultwarden-list-users:
 >@bash scripts/modules/vaultwarden-user.sh list
 
 vaultwarden-add-user:
->@[ -n "$(EMAIL)" ] && [ -n "$(PASS)" ] || { scripts/lib/mklog error "Usage: make vaultwarden-add-user EMAIL=<addr> PASS=<password>"; exit 1; }
+>@[ -n "$(EMAIL)" ] && [ -n "$(PASS)" ] || { scripts/lib/mklog error "usage: make vaultwarden-add-user EMAIL=<addr> PASS=<password>"; exit 1; }
 >@bash scripts/modules/vaultwarden-user.sh add "$(EMAIL)" "$(PASS)"
 
 vaultwarden-del-user:
->@[ -n "$(EMAIL)" ] || { scripts/lib/mklog error "Usage: make vaultwarden-del-user EMAIL=<addr>"; exit 1; }
+>@[ -n "$(EMAIL)" ] || { scripts/lib/mklog error "usage: make vaultwarden-del-user EMAIL=<addr>"; exit 1; }
 >@bash scripts/modules/vaultwarden-user.sh del "$(EMAIL)"
 
 # Generate the Nextcloud-stack secrets + Talk service configs (idempotent).
@@ -706,12 +732,10 @@ endef
 install-config:
 >$(install_config_cmds)
 
-# Help-line name for a full restore: config/ → live + the latest secrets
-# bundle → live. Self-contained recipe; fails with a clear message if no
-# secrets-bundle-*.tar.gz exists yet.
-deploy:
->$(install_config_cmds)
->$(install_secrets_cmds)
+# Full host restore: config/ → live paths. Same one-shot body as
+# install-config (one implementation, so the two can never diverge); module
+# data and secrets are restored separately with import-backups.
+deploy: install-config
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Per-file install (config/<file> → live path)
@@ -837,7 +861,7 @@ endif
 
 tmux-new:
 >@if [ -z "$(TAG)" ]; then \
-    scripts/lib/mklog error "Usage: make tmux-new TAG=<session>   (TAG is required)"; \
+    scripts/lib/mklog error "usage: make tmux-new TAG=<session>   (TAG is required)"; \
     exit 1; \
   fi
 >@if tmux has-session -t "$(TAG)" 2>/dev/null; then \
@@ -850,7 +874,7 @@ tmux-new:
 
 tmux-open:
 >@if [ -z "$(TAG)" ]; then \
-    scripts/lib/mklog error "Usage: make tmux-open TAG=<session>"; \
+    scripts/lib/mklog error "usage: make tmux-open TAG=<session>"; \
     exit 1; \
   fi
 >@if ! tmux has-session -t "$(TAG)" 2>/dev/null; then \
@@ -861,7 +885,7 @@ tmux-open:
 
 tmux-kill:
 >@if [ -z "$(TAG)" ]; then \
-    scripts/lib/mklog error "Usage: make tmux-kill TAG=<session>"; \
+    scripts/lib/mklog error "usage: make tmux-kill TAG=<session>"; \
     exit 1; \
   fi
 >@if ! tmux has-session -t "$(TAG)" 2>/dev/null; then \
@@ -890,11 +914,11 @@ NC_OCC := docker exec -u www-data nextcloud php occ
 	nc-config-get nc-config-set nc-users nc-user-add nc-user-del nc-user-password \
 	nc-user-setting nc-scan nc-groups nc-jobs nc-talk-signaling nc-talk-signaling-add \
 	nc-talk-signaling-del nc-talk-turn nc-talk-turn-add nc-talk-turn-del \
-	nc-2fa-enforce nc-logs mail-list
+	nc-2fa-enforce nc-logs
 
 nc-occ:
 >@if [ -z "$(CMD)" ]; then \
-    scripts/lib/mklog error "Usage: make nc-occ CMD='<occ command + args>'  (e.g. CMD='status' or CMD='app:list')"; \
+    scripts/lib/mklog error "usage: make nc-occ CMD='<occ command + args>'  (e.g. CMD='status' or CMD='app:list')"; \
     exit 1; \
   fi
 >$(NC_OCC) $(CMD)
@@ -942,30 +966,30 @@ nc-apps:
 >$(NC_OCC) app:list
 
 nc-app-enable:
->@if [ -z "$(APP)" ]; then scripts/lib/mklog error "Usage: make nc-app-enable APP=<app-id>"; exit 1; fi
->$(NC_OCC) app:enable $(APP)
+>@if [ -z "$(APP)" ]; then scripts/lib/mklog error "usage: make nc-app-enable APP=<app-id>"; exit 1; fi
+>$(NC_OCC) app:enable "$(APP)"
 
 nc-app-disable:
->@if [ -z "$(APP)" ]; then scripts/lib/mklog error "Usage: make nc-app-disable APP=<app-id>"; exit 1; fi
->$(NC_OCC) app:disable $(APP)
+>@if [ -z "$(APP)" ]; then scripts/lib/mklog error "usage: make nc-app-disable APP=<app-id>"; exit 1; fi
+>$(NC_OCC) app:disable "$(APP)"
 
 nc-config-get:
->@if [ -z "$(KEY)" ]; then scripts/lib/mklog error "Usage: make nc-config-get KEY=<config-key>"; exit 1; fi
->$(NC_OCC) config:system:get $(KEY)
+>@if [ -z "$(KEY)" ]; then scripts/lib/mklog error "usage: make nc-config-get KEY=<config-key>"; exit 1; fi
+>$(NC_OCC) config:system:get "$(KEY)"
 
 nc-config-set:
 >@if [ -z "$(KEY)" ] || [ -z "$(VALUE)" ]; then \
-    scripts/lib/mklog error "Usage: make nc-config-set KEY=<key> VALUE=<value> [TYPE=string|integer|boolean|array]"; \
+    scripts/lib/mklog error "usage: make nc-config-set KEY=<key> VALUE=<value> [TYPE=string|integer|boolean|array]"; \
     exit 1; \
   fi
->$(NC_OCC) config:system:set $(KEY) --value "$(VALUE)" $(TYPE:%=--type %)
+>$(NC_OCC) config:system:set "$(KEY)" --value "$(VALUE)" $(TYPE:%=--type %)
 
 # Set the default storage quota for NEW users (files app 'default_quota' —
 # an APP config, so nc-config-set (system config) is the wrong tool) and sync
 # the recovery manifest so a fresh install reproduces it.
 nc-default-user-quota:
 >@if [ -z "$(VALUE)" ]; then \
-    scripts/lib/mklog error "Usage: make nc-default-user-quota VALUE='100 GB'  (or 'none' for unlimited)"; \
+    scripts/lib/mklog error "usage: make nc-default-user-quota VALUE='100 GB'  (or 'none' for unlimited)"; \
     exit 1; \
   fi
 >$(NC_OCC) config:app:set files default_quota --value "$(VALUE)"
@@ -975,7 +999,7 @@ nc-users:
 >$(NC_OCC) user:list
 
 nc-user-add:
->@if [ -z "$(USER)" ]; then scripts/lib/mklog error "Usage: make nc-user-add USER=<uid> [PASS=<password>]"; exit 1; fi
+>@if [ -z "$(USER)" ]; then scripts/lib/mklog error "usage: make nc-user-add USER=<uid> [PASS=<password>]"; exit 1; fi
 >@if [ -n "$(PASS)" ]; then \
     docker exec -u www-data -e OC_PASS="$(PASS)" nextcloud php occ user:add --password-from-env "$(USER)"; \
   else \
@@ -983,11 +1007,11 @@ nc-user-add:
   fi
 
 nc-user-del:
->@if [ -z "$(USER)" ]; then scripts/lib/mklog error "Usage: make nc-user-del USER=<uid>"; exit 1; fi
+>@if [ -z "$(USER)" ]; then scripts/lib/mklog error "usage: make nc-user-del USER=<uid>"; exit 1; fi
 >$(NC_OCC) user:delete "$(USER)"
 
 nc-user-password:
->@if [ -z "$(USER)" ]; then scripts/lib/mklog error "Usage: make nc-user-password USER=<uid> [PASS=<password>]"; exit 1; fi
+>@if [ -z "$(USER)" ]; then scripts/lib/mklog error "usage: make nc-user-password USER=<uid> [PASS=<password>]"; exit 1; fi
 >@if [ -n "$(PASS)" ]; then \
     docker exec -u www-data -e OC_PASS="$(PASS)" nextcloud php occ user:resetpassword --password-from-env "$(USER)"; \
   else \
@@ -996,7 +1020,7 @@ nc-user-password:
 
 nc-user-setting:
 >@if [ -z "$(USER)" ] || [ -z "$(KEY)" ] || [ -z "$(VALUE)" ]; then \
-    scripts/lib/mklog error "Usage: make nc-user-setting USER=<uid> KEY=<setting-key> VALUE=<value>  (e.g. KEY=email)"; \
+    scripts/lib/mklog error "usage: make nc-user-setting USER=<uid> KEY=<setting-key> VALUE=<value>  (e.g. KEY=email)"; \
     exit 1; \
   fi
 >$(NC_OCC) user:setting "$(USER)" settings "$(KEY)" "$(VALUE)"
@@ -1019,13 +1043,13 @@ nc-talk-signaling:
 
 nc-talk-signaling-add:
 >@if [ -z "$(URL)" ] || [ -z "$(SECRET)" ]; then \
-    scripts/lib/mklog error "Usage: make nc-talk-signaling-add URL=<server-url> SECRET=<shared-secret>"; \
+    scripts/lib/mklog error "usage: make nc-talk-signaling-add URL=<server-url> SECRET=<shared-secret>"; \
     exit 1; \
   fi
 >$(NC_OCC) talk:signaling:add "$(URL)" "$(SECRET)"
 
 nc-talk-signaling-del:
->@if [ -z "$(URL)" ]; then scripts/lib/mklog error "Usage: make nc-talk-signaling-del URL=<server-url>"; exit 1; fi
+>@if [ -z "$(URL)" ]; then scripts/lib/mklog error "usage: make nc-talk-signaling-del URL=<server-url>"; exit 1; fi
 >$(NC_OCC) talk:signaling:delete "$(URL)"
 
 nc-talk-turn:
@@ -1033,17 +1057,17 @@ nc-talk-turn:
 
 nc-talk-turn-add:
 >@if [ -z "$(SERVER)" ] || [ -z "$(SECRET)" ]; then \
-    scripts/lib/mklog error "Usage: make nc-talk-turn-add SERVER='scheme host:port [--udp] [--tcp]' SECRET=<shared-secret>"; \
+    scripts/lib/mklog error "usage: make nc-talk-turn-add SERVER='scheme host:port [--udp] [--tcp]' SECRET=<shared-secret>"; \
     exit 1; \
   fi
 >$(NC_OCC) talk:turn:add $(SERVER) --secret "$(SECRET)"
 
 nc-talk-turn-del:
->@if [ -z "$(SERVER)" ]; then scripts/lib/mklog error "Usage: make nc-talk-turn-del SERVER='scheme host:port'"; exit 1; fi
+>@if [ -z "$(SERVER)" ]; then scripts/lib/mklog error "usage: make nc-talk-turn-del SERVER='scheme host:port'"; exit 1; fi
 >$(NC_OCC) talk:turn:delete $(SERVER)
 
 nc-2fa-enforce:
->@if [ -z "$(USER)" ]; then scripts/lib/mklog error "Usage: make nc-2fa-enforce USER=<uid>"; exit 1; fi
+>@if [ -z "$(USER)" ]; then scripts/lib/mklog error "usage: make nc-2fa-enforce USER=<uid>"; exit 1; fi
 >$(NC_OCC) twofactorauth:enforce "$(USER)"
 
 nc-logs:
@@ -1094,7 +1118,7 @@ git-add:
 
 git-com:
 >@if [ -z "$(MSG)" ]; then \
-    scripts/lib/mklog error "Usage: make git-com MSG=\"...\"  (MSG is required)"; \
+    scripts/lib/mklog error "usage: make git-com MSG=\"...\"  (MSG is required)"; \
     exit 1; \
   fi
 >cd $(REPO) && git commit -m "$(MSG)"
@@ -1110,7 +1134,7 @@ git-push:
 # Revert of a rewrite pushed this way: git reset --hard <refs/backup/* tip>, then
 # make git-force-push BRANCH=<branch>.
 git-force-push:
->@test -n "$(BRANCH)" || { scripts/lib/mklog error "Usage: make git-force-push BRANCH=<branch> [BRANCH2 …]"; exit 1; }
+>@[ -n "$(BRANCH)" ] || { scripts/lib/mklog error "usage: make git-force-push BRANCH=<branch> [BRANCH2 …]"; exit 1; }
 >cd $(REPO) && git push --force-with-lease origin $(BRANCH)
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1140,17 +1164,19 @@ help-more:
 # taildrop helpers
 # ─────────────────────────────────────────────────────────────────────────────
 .PHONY: taildrop-file taildrop-folder
-TAILDROP_HOST ?= server
 
-# make taildrop-file FILE=path [TAILDROP_HOST=server]    (sudo tailscale file cp)
-# make taildrop-folder DIR=path [TAILDROP_HOST=server]
+# Same device argument as backup/import-backups (TAILDROP, defined at the top).
+# make taildrop-file FILE=path TAILDROP=<device>    (sudo tailscale file cp)
+# make taildrop-folder DIR=path TAILDROP=<device>
 taildrop-file:
->@test -n "$(FILE)" || { echo "usage: make taildrop-file FILE=<path> [TAILDROP_HOST=<device>]"; exit 2; }
->@sudo tailscale file cp "$(FILE)" "$(TAILDROP_HOST):"
+>@[ -n "$(FILE)" ] || { scripts/lib/mklog error "usage: make taildrop-file FILE=<path> TAILDROP=<device>"; exit 1; }
+>@[ -n "$(TAILDROP)" ] || { scripts/lib/mklog error "usage: make taildrop-file FILE=<path> TAILDROP=<device>"; exit 1; }
+>@sudo tailscale file cp "$(FILE)" "$(TAILDROP):"
 
 taildrop-folder:
->@test -n "$(DIR)" || { echo "usage: make taildrop-folder DIR=<folder> [TAILDROP_HOST=<device>]"; exit 2; }
->@sudo tailscale file cp -r "$(DIR)" "$(TAILDROP_HOST):"
+>@[ -n "$(DIR)" ] || { scripts/lib/mklog error "usage: make taildrop-folder DIR=<folder> TAILDROP=<device>"; exit 1; }
+>@[ -n "$(TAILDROP)" ] || { scripts/lib/mklog error "usage: make taildrop-folder DIR=<folder> TAILDROP=<device>"; exit 1; }
+>@sudo tailscale file cp -r "$(DIR)" "$(TAILDROP):"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Goose recipes — reusable read-only agent tasks (recipes/*.yaml).
@@ -1173,11 +1199,11 @@ goose-audit:
 >@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe audit-server $(if $(FOCUS),--params focus_area=$(FOCUS),)
 
 goose-review:
->@test -n "$(MODULE)" || { echo "usage: make goose-review MODULE=<cloud|vault|mail|monitor|edge>"; exit 1; }
+>@[ -n "$(MODULE)" ] || { scripts/lib/mklog error "usage: make goose-review MODULE=<cloud|vault|mail|monitor|edge>"; exit 1; }
 >@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe review-module --params module=$(MODULE)
 
 goose-troubleshoot:
->@test -n "$(SERVICE)" || { echo "usage: make goose-troubleshoot SERVICE=<hostname|container|recipe>"; exit 1; }
+>@[ -n "$(SERVICE)" ] || { scripts/lib/mklog error "usage: make goose-troubleshoot SERVICE=<hostname|container|recipe>"; exit 1; }
 >@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe troubleshoot-service --params service=$(SERVICE)
 
 goose-check-backups:
@@ -1193,5 +1219,5 @@ goose-audit-docs:
 >@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe audit-docs $(if $(SCOPE),--params scope=$(SCOPE),)
 
 goose-deploy-plan:
->@test -n "$(CHANGE)" || { echo "usage: make goose-deploy-plan CHANGE='<what to change>'" ; exit 1; }
+>@[ -n "$(CHANGE)" ] || { scripts/lib/mklog error "usage: make goose-deploy-plan CHANGE='<what to change>'"; exit 1; }
 >@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe deployment-plan --params change=$(CHANGE)
