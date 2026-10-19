@@ -19,8 +19,7 @@
 #
 # Sources merged: OPTIMIZE.md (Debian 13 setup), the repo's tuned values
 # (config/sysctl, docker daemon, dnsmasq cache, storage-box swap), apt
-# autoremove/clean + docker prune (the retired `make cleanup` payload, minus
-# backup pruning), and
+# autoremove/clean + docker prune, and
 # standard high-performance-machine tuning (journald caps, inotify, noatime,
 # fstrim, THP=madvise, IRQ balance, earlyoom).
 #

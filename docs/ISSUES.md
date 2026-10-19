@@ -365,6 +365,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Reinstall mode removed from both scripts** — repair is the only mode a re-run offers (one yes/no confirmation), the installer never calls `uninstall.sh --reinstall`, and `--full`/`--reinstall`/`ACCEPT_CONSEQUENCES` are gone.
 - **Deprecated `nc-add-user` alias removed** — the Makefile recipe and its help line are gone; `nc-user-add` is the only name.
 - **Backup reads module state through the accessor** — `backup-bundles.sh` uses `scripts/lib/modules.sh` (`mod_all`/`mod_installed`) instead of sourcing `wizard.state` itself.
+- **Dead-record comments removed** — `optimize.sh` no longer names a retired `make cleanup`, `replace-string.sh` no longer recites its one-time use, and the Caddyfile no longer describes the wildcard cert it stopped using.
 - **Stale installer SSH rules lingered** — prior installs left `22/tcp` allow rules for old IPs (old machine IP + retired tailnet device); phase-1 and `finalize_hardening` now sweep any non-tailnet 22 rule.
 
 - **Hostname + login account + tailnet node renamed kefoCloud → kefomachine** — `data/instance.conf` HOSTNAME, all module `.env` instance blocks, the installer's `NODE_NAME`, `/etc/hostname`/`kefo-banner.sh`, the boot unit, and the Tailscale node (`tailscale up --hostname=kefomachine`) updated; `make render` re-derives every service `.env` and `data/rendered` so no hardcoded value remains, `git diff -- data/` stays empty, smoke still green.

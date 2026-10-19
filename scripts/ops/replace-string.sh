@@ -3,8 +3,7 @@
 # $GITHUB_USER-era side here — see docs/GUIDE.md lesson 2026-09-02). Replaces the
 # given <old> <new> string pairs in EVERY blob's content across all history,
 # preserving identities, messages, dates, merges, both roots and all paths.
-# Used 2026-09-03 to censor the retired personal email addresses from doc
-# history. Usage: scripts/ops/replace-string.sh <repo-dir> <old> <new> [...]
+# Usage: scripts/ops/replace-string.sh <repo-dir> <old> <new> [...]
 
 . "$(dirname "$(readlink -f "$0")")/../lib/instance.sh" 2>/dev/null || true
 set -euo pipefail
