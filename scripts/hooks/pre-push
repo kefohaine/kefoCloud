@@ -36,7 +36,7 @@ while read -r lref lsha rref rsha; do
   # Identity guard: refuse to push any commit whose author/committer is not a
   # GitHub identity. Root (`root@<host>`, the no-identity fallback) and any
   # invented/non-GitHub address are non-attributable and must never reach the
-  # remote (AGENTS rule 12); the installer sets the real identity at deploy time.
+  # remote (AGENTS rule 27); the installer sets the real identity at deploy time.
   # Runs before the fast-forward test so a NEW branch is scanned whole (rsha=0s).
   range="$lsha"; [ "$rsha" != "0000000000000000000000000000000000000000" ] && range="$rsha..$lsha"
   bad=$(git log --format='%ae%n%ce' "$range" 2>/dev/null \

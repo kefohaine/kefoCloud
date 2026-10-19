@@ -24,7 +24,7 @@ staged=$(git diff --cached --name-only)
 
 # 0. Identity guard: a commit must use the operator's logged-in GitHub identity,
 #    never root and never an invented fallback. A fresh host has no git identity,
-#    so git silently falls back to `root@<host>` (AGENTS rule 12) — and any other
+#    so git silently falls back to `root@<host>` (AGENTS rule 27) — and any other
 #    non-GitHub address is not attributable either. Only a GitHub identity is
 #    accepted: the account-noreply form git maps to the account
 #    (`<id>+<login>@users.noreply.github.com`) or GitHub's own web-commit form
