@@ -28,7 +28,15 @@ https://cube.{{DOMAIN}} {
         max_size 25m
     }
     header {
-        import security_headers
+        # Same set as the security_headers snippet EXCEPT X-Frame-Options:
+        # the Nextcloud mail_roundcube app embeds this install in an iframe, and
+        # X-Frame-Options: SAMEORIGIN (cube != cloud) makes the browser refuse
+        # it. The security property is kept by the CSP equivalent, scoped to
+        # the one origin allowed to frame this host.
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Content-Security-Policy "frame-ancestors 'self' https://cloud.{{DOMAIN}}"
     }
     reverse_proxy 172.22.0.10:80 {
         # strip roundcube's own security headers so the site-level set yields one value
