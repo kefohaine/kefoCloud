@@ -1,9 +1,11 @@
 x-mailu-env: &mailu-env
   env_file: .env
   environment:
-    # Mailu's own hostname lives on mailu.${DOMAIN} so it never overlaps the
-    # roundcube webmail vhost at mail.${DOMAIN} (operator request, 2026-10-19).
-    HOSTNAMES: "mailu.${DOMAIN}"
+    # Mailu's hostname is mail.${DOMAIN}: the same name Caddy serves the
+    # platform door on and the one whose cert signs SMTP/IMAP
+    # (TLS_FLAVOR=mail below). The webmail lives on its own door,
+    # cube.${DOMAIN} (container `roundcube`).
+    HOSTNAMES: "mail.${DOMAIN}"
     # The mail cache is `mailu-redis`, NOT `redis`: both compose files join the
     # same external `net` bridge, so a service named `redis` published a second
     # `redis` DNS alias next to the Nextcloud cache. Inside the cloud container
@@ -15,7 +17,7 @@ x-mailu-env: &mailu-env
     # `location {{ WEB_ADMIN }}` only inside `{% if ADMIN %}`, and it takes
     # WEB_ADMIN/WEBROOT_REDIRECT straight from the environment — neither is
     # defaulted by /config.py. Unset, the rendered config had no admin route at
-    # all and `/` fell through to `try_files $uri =404`, so mailu.${DOMAIN}
+    # all and `/` fell through to `try_files $uri =404`, so the platform door
     # answered 404 for every path (2026-10-19). ADMIN_ADDRESS alone is not
     # enough: it only feeds `set $admin {{ ADMIN_ADDRESS }}:8080;`.
     ADMIN: "true"
@@ -28,12 +30,13 @@ services:
   # `front` owns the public ports and TLS, `smtp`/`imap` speak the protocols on
   # the bridge, `antispam` is Rspamd, `admin` holds the SQLite config + CLI.
   # `webmail` is deliberately NOT started: Roundcube stays the webmail and is
-  # served by Caddy at mail.${DOMAIN} (container `roundcube` below). Mailu's
-  # own identity is mailu.${DOMAIN} — the two never share a name.
+  # served by Caddy at cube.${DOMAIN} (container `roundcube` below). Mailu owns
+  # mail.${DOMAIN} — web door, admin UI at /admin, and the SMTP/IMAP cert.
   #
   # TLS_FLAVOR=mail: no HTTP listener in front (Caddy owns 80/443 on the host);
   # SMTP/IMAP use the per-vhost LE cert for mail.${DOMAIN} from caddy_data,
-  # mounted as /certs/cert.pem + /certs/key.pem.
+  # mounted as /certs/cert.pem + /certs/key.pem — the front's own hostname, so
+  # SNI and the cert CN match.
   front:
     image: ghcr.io/mailu/nginx:2.0
     container_name: mailu-front
@@ -149,8 +152,8 @@ services:
         ipv4_address: 172.22.0.21
 
   roundcube:
-    # Webmail for the mail platform, unchanged: Caddy serves it at
-    # mail.${DOMAIN}. IMAP/SMTP now point at Mailu's imap/smtp containers.
+    # Webmail for the mail platform: Caddy serves it at cube.${DOMAIN}.
+    # IMAP/SMTP point at Mailu's imap/smtp containers.
     image: roundcube/roundcubemail:latest
     container_name: roundcube
     restart: unless-stopped
@@ -184,8 +187,10 @@ services:
       - ${DATA_DIR}/rendered/mailserver/roundcube-tls.inc.php:/var/roundcube/config/roundcube-tls.inc.php:ro
 
     extra_hosts:
-      # Mailu's own name (for SMTP/IMAP TLS name checks inside the bridge).
-      - "mailu.${DOMAIN}:172.22.0.9"
+      # The platform FQDN → mailu-front, so roundcube's tls://mail.${DOMAIN}
+      # STARTTLS path (modules/mailserver/roundcube-tls.inc.php) matches both
+      # the SNI and the cert.
+      - "mail.${DOMAIN}:172.22.0.9"
 
     networks:
       net:

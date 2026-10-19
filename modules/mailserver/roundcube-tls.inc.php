@@ -4,8 +4,8 @@
 // prefix, and Mailu's imap/smtp reject plaintext auth — so override both to
 // STARTTLS against the cert FQDN. The entrypoint includes every
 // /var/roundcube/config/*.php into config.docker.inc.php, which loads after the
-// env-derived settings. The FQDN is mapped to mailu-front's bridge IP via
-// `extra_hosts` in the compose file, so SNI + cert verification match.
+// env-derived settings. The FQDN is mailu-front's own hostname and is mapped to
+// its bridge IP via `extra_hosts` in the compose file, so SNI + cert match.
 $config['imap_host'] = 'tls://mail.{{DOMAIN}}:143';
 $config['smtp_host'] = 'tls://mail.{{DOMAIN}}:587';
 
