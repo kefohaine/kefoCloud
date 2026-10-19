@@ -11,6 +11,16 @@ x-mailu-env: &mailu-env
     # instance and every session SET hung on its MISCONF error (2026-10-19:
     # cloud.fxmq.net timed out with HTTP 000 while `occ status` was fine).
     REDIS_ADDRESS: "mailu-redis"
+    # The front's jinja template (/conf/nginx.conf in the image) emits
+    # `location {{ WEB_ADMIN }}` only inside `{% if ADMIN %}`, and it takes
+    # WEB_ADMIN/WEBROOT_REDIRECT straight from the environment — neither is
+    # defaulted by /config.py. Unset, the rendered config had no admin route at
+    # all and `/` fell through to `try_files $uri =404`, so mailu.${DOMAIN}
+    # answered 404 for every path (2026-10-19). ADMIN_ADDRESS alone is not
+    # enough: it only feeds `set $admin {{ ADMIN_ADDRESS }}:8080;`.
+    ADMIN: "true"
+    WEB_ADMIN: "/admin"
+    WEBROOT_REDIRECT: "/admin"
 
 services:
   # ── Mailu (front + postfix + dovecot + rspamd + admin) ────────────────────
