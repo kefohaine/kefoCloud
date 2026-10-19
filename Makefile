@@ -273,10 +273,11 @@ install-hooks:
 >@scripts/lib/mklog info "installed git hooks: pre-commit (identity + Caddy validate + app-vhost stub guard), prepare-commit-msg (auto-split per area), pre-push (live vhost smoke + history-rewrite warning + auto-split/revert)"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Mailserver Registry (Mailu `flask mailu` CLI — see `make help` > Mailserver
-# Registry). Passwords never land in shell history or the process list.
+# Mailboxes (Mailu `flask mailu` CLI — see `make help-more` > mail server).
+# Passwords never land in shell history or the process list.
 # Friends log in at https://mail.$(DOMAIN) with just the local part
-# (ROUNDCUBEMAIL_USERNAME_DOMAIN=$(DOMAIN)).
+# (ROUNDCUBEMAIL_USERNAME_DOMAIN=$(DOMAIN)); the full stack lives in the
+# Mailu section below (status, doctor, domains, aliases, limits, registry).
 # ─────────────────────────────────────────────────────────────────────────────
 
 .PHONY: mail-gen mail-gen-alias mail-del mail-del-alias mail-quota mail-password mail-card
@@ -304,10 +305,12 @@ mail-del:
   else scripts/lib/mklog error "$(MAIL) not found — nothing deleted"; exit 1; fi
 
 # Remove one target from an alias (Mailu aliases are a target list).
+# Mailu 2.0 exports an alias as {email, destination:[...]} — selection is by
+# email, and the list is rejoined into the comma string `alias` expects.
 mail-del-alias:
 >@[ -n "$(FROM)" ] && [ -n "$(TO)" ] || { scripts/lib/mklog error "usage: make mail-del-alias FROM=x@$(DOMAIN) TO=target@example.com"; exit 1; }
 >@local=$${FROM%@*}; dom=$${FROM#*@}; \
-  cur=$$(docker exec mailu-admin flask mailu config-export -j 2>/dev/null | jq -r --arg l "$$local" --arg d "$$dom" '.. | objects | select((.localpart?==$$l) and (.domain?==$$d)) | .destination // empty' | head -1); \
+  cur=$$(docker exec mailu-admin flask mailu config-export -j 2>/dev/null | jq -r --arg e "$(FROM)" '.alias[]? | select(.email==$$e) | (.destination // []) | if type=="array" then join(",") else . end' | head -1); \
   new=$$(printf '%s' "$$cur" | tr ',' '\n' | sed '/^$$/d' | grep -vxF "$(TO)" | paste -sd, -); \
   if [ -n "$$new" ]; then docker exec mailu-admin flask mailu alias "$$local" "$$dom" "$$new" >/dev/null; \
     scripts/lib/mklog info "alias $(FROM) -> $(TO) removed"; \
@@ -320,9 +323,14 @@ mail-quota:
 >@[ -n "$(QUOTA)" ] || { scripts/lib/mklog error "usage: make mail-quota [MAIL=name@$(DOMAIN)] QUOTA=2G (MAIL empty = set the default for mail-gen)"; exit 1; }
 >@echo "$(QUOTA)" | grep -qE '^([0-9]+(B|k|M|G|T)|0)$$' || { scripts/lib/mklog error "invalid QUOTA '$(QUOTA)' — B/k/M/G/T suffix, or 0 (no limit)"; exit 1; }
 >@if [ -n "$(MAIL)" ]; then \
-    local=$${MAIL%@*}; dom=$${MAIL#*@}; bytes=$$(numfmt --from=iec "$(QUOTA)" 2>/dev/null || echo "$(QUOTA)"); \
-    printf 'users:\n  - localpart: %s\n    domain: %s\n    quota_bytes: %s\n' "$$local" "$$dom" "$$bytes" | docker exec -i mailu-admin flask mailu config-update >/dev/null \
-      && scripts/lib/mklog info "quota for $(MAIL) set to $(QUOTA)"; \
+    local=$${MAIL%@*}; dom=$${MAIL#*@}; raw=$${QUOTA%B}; \
+    bytes=$$(numfmt --from=iec "$$raw" 2>/dev/null || echo "$$raw"); \
+    case "$$bytes" in ''|*[!0-9]*) scripts/lib/mklog error "cannot convert QUOTA '$(QUOTA)' to bytes"; exit 1;; esac; \
+    hash=$$(docker exec mailu-admin flask mailu config-export -j 2>/dev/null | jq -r --arg e "$(MAIL)" '.user[]? | select(.email==$$e) | .password // empty' | head -1); \
+    [ -n "$$hash" ] || { scripts/lib/mklog error "$(MAIL) not found — create it with make mail-gen"; exit 1; }; \
+    printf 'users:\n  - localpart: %s\n    domain: %s\n    quota_bytes: %s\n    password_hash: %s\n' "$$local" "$$dom" "$$bytes" "$$hash" \
+      | docker exec -i mailu-admin flask mailu config-update >/dev/null \
+      && scripts/lib/mklog info "quota for $(MAIL) set to $(QUOTA) ($$bytes bytes)"; \
   else printf '%s\n' "$(QUOTA)" > modules/mailserver/default-quota && scripts/lib/mklog info "default quota for mail-gen set to $(QUOTA) (modules/mailserver/default-quota) — git add/commit to keep it"; fi
 
 # Rotate a mailbox password. PWD empty = auto-generate a 16-char password and
@@ -339,18 +347,219 @@ mail-password:
 # and cannot be shown — rotate with mail-password.
 mail-card:
 >@[ -n "$(MAIL)" ] || { scripts/lib/mklog error "usage: make mail-card MAIL=name@$(DOMAIN)"; exit 1; }
->@local=$${MAIL%@*}; dom=$${MAIL#*@}; \
-  q=$$(docker exec mailu-admin flask mailu config-export -j 2>/dev/null | jq -r --arg l "$$local" --arg d "$$dom" '.. | objects | select((.localpart?==$$l) and (.domain?==$$d)) | .quota_bytes // empty' | head -1); \
-  if docker exec mailu-admin flask mailu config-export -j 2>/dev/null | jq -e --arg l "$$local" --arg d "$$dom" '[.. | objects | select((.localpart?==$$l) and (.domain?==$$d))] | length > 0' >/dev/null 2>&1; then \
-    scripts/lib/mklog info "address $(MAIL) — exists, quota $${q:-unlimited} bytes, webmail https://cube.$(DOMAIN) (login with '$$local')"; \
+>@local=$${MAIL%@*}; \
+  card=$$(docker exec mailu-admin flask mailu config-export -j 2>/dev/null | jq -r --arg e "$(MAIL)" '[.user[]? | select(.email==$$e)] as $$u | if ($$u|length)==0 then "" else "\($$u[0].email) \($$u[0].quota_bytes // "1G default") \($$u[0].global_admin // false)" end'); \
+  if [ -n "$$card" ]; then set -- $$card; q="$$2"; \
+    scripts/lib/mklog info "address $$1 — exists, quota $$q, webmail https://cube.$(DOMAIN) (login with '$$local')$$( [ "$$3" = true ] && echo ' · global admin' )"; \
     scripts/lib/mklog warn "password is hashed — rotate with make mail-password MAIL=$(MAIL)"; \
   else scripts/lib/mklog error "$(MAIL) not found — create with make mail-gen [MAIL=…]"; exit 1; fi
 
 mail-list:
 >@scripts/lib/mklog info "mailboxes for $(DOMAIN):"
 >@docker exec mailu-admin flask mailu config-export -j 2>/dev/null \
-  | jq -r '.. | objects | select(.localpart? and .domain?) | "\(.localpart)@\(.domain) \(.quota_bytes // "unlimited")"' \
+  | jq -r '.user[]? | "\(.email) \(.quota_bytes // "1G default")\(if .global_admin then " · global admin" else "" end)"' \
   | sort -u | while IFS= read -r row; do scripts/lib/mklog info "$$row"; done
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Mailserver stack (Mailu) — the compose unit itself. Lifecycle stays in the
+# generic dok-* set (dok-recreate-mailserver / dok-restart-mailserver /
+# dok-stop-mailserver / dok-logs-mailserver); everything here is mail-specific:
+# health, the /data ownership trap, per-service logs, domains, aliases, limits,
+# the admin password, registry export/import, queue, DKIM, TLS.
+# Every recipe reads the live .env — no instance value is hardcoded.
+# ─────────────────────────────────────────────────────────────────────────────
+
+.PHONY: mail-list mail-status mail-doctor mail-fix-perms mail-tls mail-logs mail-exec \
+        mail-queue mail-queue-flush mail-dkim mail-domains mail-domain-add \
+        mail-limits mail-manager mail-aliases mail-alias-add \
+        mail-admin-password mail-config-export mail-config-import
+
+MAIL_COMPOSE  := $(COMPOSE) $(REPO)/modules/mailserver/docker-compose.yml
+MAIL_ADMIN    := docker exec mailu-admin flask mailu
+MAIL_ENV      := $(REPO)/modules/mailserver/.env
+MAIL_CONTAINERS := mailu-front mailu-smtp mailu-imap mailu-antispam mailu-admin mailu-redis roundcube
+MAIL_SERVICES   := front smtp imap antispam admin redis roundcube
+# Host path of the container's /data, and of /dkim + /mail.
+MAIL_DATA_ROOT := $(or $(shell sed -n 's/^DATA_DIR=//p' $(MAIL_ENV) 2>/dev/null | head -1),$(REPO)/data)/mailserver
+MAIL_DATA      := $(MAIL_DATA_ROOT)/data
+
+# State/health table for every container in the mail stack, plus the image tag.
+mail-status:
+>@$(MAIL_COMPOSE) ps
+>@echo ""
+>@printf '  %-18s %-10s %s\n' CONTAINER STATE HEALTH
+>@for c in $(MAIL_CONTAINERS); do \
+    st=$$(docker inspect -f '{{.State.Status}}' $$c 2>/dev/null || echo missing); \
+    he=$$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}-{{end}}' $$c 2>/dev/null || echo -); \
+    printf '  %-18s %-10s %s\n' "$$c" "$$st" "$$he"; \
+  done
+>@echo ""
+>@scripts/lib/mklog info "image $$(docker inspect -f '{{.Config.Image}}' mailu-admin 2>/dev/null || echo '?') — admin https://mail.$(DOMAIN)/admin/ · webmail https://cube.$(DOMAIN)"
+
+# The 2026-10-19 outage in one command: /data was root:root 700, gunicorn runs
+# as uid 100, so every DB route 500'd ("unable to open database file") while the
+# healthcheck still said healthy. mail-doctor opens the DB AS uid 100:1000,
+# which is the only probe that actually reproduces the failure.
+mail-doctor:
+>@fail=0; \
+  echo "== /data ownership (admin runs as uid 100:1000)"; \
+  if stat -c '  uid:gid %u:%g  mode %a  %n' "$(MAIL_DATA)" "$(MAIL_DATA)/main.db" 2>/dev/null; then :; \
+  else scripts/lib/mklog error "$(MAIL_DATA) missing — check DATA_DIR in $(MAIL_ENV)"; fail=1; fi; \
+  if docker exec -u 100:1000 mailu-admin python3 -c 'import sqlite3;c=sqlite3.connect("file:/data/main.db?mode=ro",uri=True);print("  db ok —",c.execute("select count(*) from user").fetchone()[0],"mailboxes")' 2>/dev/null; then :; \
+  else scripts/lib/mklog error "admin cannot open /data/main.db as uid 100:1000 — every DB route returns 500; fix with: make mail-fix-perms"; fail=1; fi; \
+  echo "== admin http"; \
+  code=$$(curl -s -o /dev/null -w '%{http_code}' "https://mail.$(DOMAIN)/sso/login" 2>/dev/null || true); \
+  if [ "$$code" = 200 ]; then echo "  sso/login 200"; \
+  else scripts/lib/mklog error "sso/login returned $${code:-no answer} (500 = database, 404 = wrong route — the login page lives at /sso/login, not /admin/login)"; fail=1; fi; \
+  echo "== tls"; \
+  end=$$(timeout 8 openssl s_client -connect "mail.$(DOMAIN):443" -servername "mail.$(DOMAIN)" </dev/null 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null || true); \
+  if [ -n "$$end" ]; then echo "  mail.$(DOMAIN):443 $$end"; \
+  else scripts/lib/mklog error "no TLS answer on mail.$(DOMAIN):443"; fail=1; fi; \
+  echo "== containers"; \
+  for c in $(MAIL_CONTAINERS); do \
+    st=$$(docker inspect -f '{{.State.Status}}' $$c 2>/dev/null || echo missing); \
+    if [ "$$st" = running ]; then echo "  $$c running"; \
+    else scripts/lib/mklog error "$$c $$st"; fail=1; fi; \
+  done; \
+  exit $$fail
+
+# Re-own the bind mount as the app user. Targeted on purpose: a recursive chown
+# would also rewrite the dovecot mail store (/mail, a different uid) and break
+# IMAP delivery. main.db is the file sqlite needs write access to.
+mail-fix-perms:
+>@d="$(MAIL_DATA)"; \
+  [ -d "$$d" ] || { scripts/lib/mklog error "$$d missing — nothing to fix (check DATA_DIR in $(MAIL_ENV))"; exit 1; }; \
+  before=$$(stat -c '%u:%g %a' "$$d"); \
+  sudo chown 100:1000 "$$d" && sudo chmod 700 "$$d"; \
+  for f in main.db roundcube.db main.db-journal main.db-wal; do \
+    [ -e "$$d/$$f" ] && sudo chown 100:1000 "$$d/$$f"; \
+  done; \
+  scripts/lib/mklog info "$$d: $$before → 100:1000 700 (mail store left untouched)"; \
+  docker exec -u 100:1000 mailu-admin python3 -c 'import sqlite3;c=sqlite3.connect("file:/data/main.db?mode=ro",uri=True);print("info:  db readable again —",c.execute("select count(*) from user").fetchone()[0],"mailboxes")' \
+    || { scripts/lib/mklog error "still unreadable — container /data mount or ACLs, not ownership (see make mail-doctor)"; exit 1; }
+
+# Certificates the mail stack actually serves: 443 (Caddy/admin SSO), 993
+# (imaps), 465 (smtps). The mailu front reads $(MAIL_DATA_ROOT)/certs.
+mail-tls:
+>@for e in "https mail.$(DOMAIN) 443" "imaps 127.0.0.1 993" "smtps 127.0.0.1 465"; do \
+    set -- $$e; \
+    out=$$(echo | timeout 8 openssl s_client -connect "$$2:$$3" -servername "mail.$(DOMAIN)" 2>/dev/null | openssl x509 -noout -subject -enddate 2>/dev/null | tr '\n' ' ' || true); \
+    printf '  %-8s %-28s %s\n' "$$1" "$$2:$$3" "$${out:-no answer}"; \
+  done
+>@ls -1 "$(MAIL_DATA_ROOT)/certs" 2>/dev/null | sed 's/^/  cert file: /' || true
+
+# One service's log (docker logs mailu-<svc>). dok-logs-mailserver only knows
+# the container named after the compose service, so it tails admin alone.
+mail-logs:
+>@svc="$(SERVICE)"; svc=$${svc:-admin}; \
+  case " $(MAIL_SERVICES) " in *" $$svc "*) ;; \
+    *) scripts/lib/mklog error "unknown SERVICE '$$svc' — one of: $(MAIL_SERVICES)"; exit 1;; esac; \
+  ctr="mailu-$$svc"; [ "$$svc" = roundcube ] && ctr=roundcube; \
+  docker logs "$$ctr" --tail 50 -f
+
+# Escape hatch: anything the Mailu CLI or the image can run, inside mailu-admin.
+mail-exec:
+>@[ -n "$(CMD)" ] || { scripts/lib/mklog error "usage: make mail-exec CMD='<shell command>'  (e.g. CMD='flask mailu routes')"; exit 1; }
+>@docker exec -i mailu-admin sh -c "$(CMD)"
+
+mail-queue:
+>@docker exec mailu-smtp postqueue -p 2>/dev/null || { scripts/lib/mklog error "postqueue unavailable — is mailu-smtp running? (make mail-status)"; exit 1; }
+
+mail-queue-flush:
+>@docker exec mailu-smtp postqueue -f && scripts/lib/mklog info "queue flush requested — postfix retries every message now"
+
+# DKIM keys on disk (data/mailserver/dkim/<domain>.dkim.key). The public half
+# is the DNS TXT record at "<selector>._domainkey.<domain>"; Mailu's admin UI
+# shows it per domain ("DNS records").
+mail-dkim:
+>@n=0; \
+  for k in "$(MAIL_DATA_ROOT)"/dkim/*.dkim.key; do \
+    [ -e "$$k" ] || continue; n=$$((n+1)); \
+    d=$$(basename "$$k" .dkim.key); \
+    bits=$$(openssl rsa -in "$$k" -text -noout 2>/dev/null | sed -n '1s/.*(\([0-9]*\) bit.*/\1/p'); \
+    scripts/lib/mklog info "$$d — $$(basename "$$k") $${bits:+($$bits-bit)} · selector 'dkim' · TXT dkim._domainkey.$$d"; \
+  done; \
+  [ "$$n" -gt 0 ] || { scripts/lib/mklog error "no DKIM keys in $(MAIL_DATA_ROOT)/dkim — add the domain (make mail-domain-add MAIL_DOMAIN=…), or rspamd never generated one"; exit 1; }
+
+mail-domains:
+>@$(MAIL_ADMIN) config-export -j 2>/dev/null \
+  | jq -r '(.user // []) as $$u | (.domain // [])[] | .name as $$n | "\($$n) \([( $$u[] | select(.email | endswith("@" + $$n)) )] | length) mailbox(es)"' \
+  | while IFS= read -r row; do scripts/lib/mklog info "$$row"; done
+
+mail-domain-add:
+>@[ -n "$(MAIL_DOMAIN)" ] || { scripts/lib/mklog error "usage: make mail-domain-add MAIL_DOMAIN=<domain>"; exit 1; }
+>@$(MAIL_ADMIN) domain "$(MAIL_DOMAIN)" >/dev/null && scripts/lib/mklog info "domain $(MAIL_DOMAIN) added — publish its DKIM/TXT records (make mail-dkim) before sending as it"
+
+# Per-domain caps: users, aliases, total mailbox bytes (0 = unlimited).
+mail-limits:
+>@[ -n "$(MAIL_DOMAIN)" ] && [ -n "$(USERS)" ] && [ -n "$(ALIASES)" ] && [ -n "$(QUOTA)" ] \
+    || { scripts/lib/mklog error "usage: make mail-limits MAIL_DOMAIN=<domain> USERS=<n> ALIASES=<n> QUOTA=<2G|0>"; exit 1; }
+>@bytes=$$(numfmt --from=iec "$(QUOTA)" 2>/dev/null || echo "$(QUOTA)"); \
+  $(MAIL_ADMIN) setlimits "$(MAIL_DOMAIN)" "$(USERS)" "$(ALIASES)" "$$bytes" >/dev/null \
+    && scripts/lib/mklog info "$(MAIL_DOMAIN) limits: users=$(USERS) aliases=$(ALIASES) quota=$(QUOTA)"
+
+# USER takes the full address; the CLI wants localpart + domain separately.
+mail-manager:
+>@[ -n "$(MAIL_DOMAIN)" ] || { scripts/lib/mklog error "usage: make mail-manager MAIL_DOMAIN=<domain> USER=<addr@domain>"; exit 1; }
+>@case "$(USER)" in \
+    *@*) ;; \
+    *) scripts/lib/mklog error "USER must be a full address (USER='<addr@domain>') — the shell exports USER=$(USER), so it is never taken from the environment"; exit 1;; \
+  esac
+>@u="$(USER)"; $(MAIL_ADMIN) setmanager "$(MAIL_DOMAIN)" "$${u%@*}" >/dev/null \
+    && scripts/lib/mklog info "$${u%@*} is now a manager of $(MAIL_DOMAIN)"
+
+mail-aliases:
+>@$(MAIL_ADMIN) config-export -j 2>/dev/null \
+  | jq -r '(.alias // [])[] | "\(.email) → \((.destination // []) | if type==\"array\" then join(\", \") else . end)"' \
+  | while IFS= read -r row; do scripts/lib/mklog info "$$row"; done
+>@$(MAIL_ADMIN) config-export -j 2>/dev/null | jq -e '(.alias // []) | length > 0' >/dev/null 2>&1 \
+  || scripts/lib/mklog warn "no aliases yet — make mail-alias-add FROM=… TO=…"
+
+# Set (or replace) an alias target list. Mailu aliases are a single target
+# string; comma-separate several: TO='a@x.example,b@y.example'.
+mail-alias-add:
+>@[ -n "$(FROM)" ] && [ -n "$(TO)" ] \
+    || { scripts/lib/mklog error "usage: make mail-alias-add FROM=<addr> TO=<target[,target2]>"; exit 1; }
+>@$(MAIL_ADMIN) alias "$${FROM%@*}" "$${FROM#*@}" "$(TO)" >/dev/null \
+    && scripts/lib/mklog info "alias $(FROM) → $(TO)"
+
+# The Mailu (instance) admin login — NOT a mailbox password (that is
+# mail-password). The CLI shape is `admin <localpart> <domain> <password>`;
+# the malformed `flask mailu password admin fxmq.net 'admin123'` that took the
+# page down on 2026-10-19 was one argument too many and changed nothing.
+mail-admin-password:
+>@p="$(if $(filter command line,$(origin PWD)),$(PWD))"; gen=0; \
+  [ -n "$$p" ] || { p=$$(openssl rand -base64 12 | tr -d '\n'); gen=1; }; \
+  acct=$$(sed -n 's/^INITIAL_ADMIN_ACCOUNT=//p' $(MAIL_ENV) 2>/dev/null | head -1); acct=$${acct:-admin}; \
+  adom=$$(sed -n 's/^INITIAL_ADMIN_DOMAIN=//p' $(MAIL_ENV) 2>/dev/null | head -1); adom=$${adom:-$(DOMAIN)}; \
+  $(MAIL_ADMIN) admin "$$acct" "$$adom" "$$p" >/dev/null \
+    || { scripts/lib/mklog error "could not set the admin password for $$acct@$$adom"; exit 1; }; \
+  if [ "$$gen" = 1 ]; then scripts/lib/mklog info "admin $$acct@$$adom password: $$p (printed once)"; \
+  else scripts/lib/mklog info "admin $$acct@$$adom password updated"; fi; \
+  mode=$$(sed -n 's/^INITIAL_ADMIN_MODE=//p' $(MAIL_ENV) 2>/dev/null | head -1); \
+  if [ "$$mode" = update ]; then \
+    scripts/lib/mklog warn "INITIAL_ADMIN_MODE=update — the admin container resets this from INITIAL_ADMIN_PW on its next start; put the new password in $(MAIL_ENV) too, or it reverts"; \
+  fi
+
+# Full registry as JSON on stdout. FILE=<path> writes it to the host;
+# SECRETS=1 adds password hashes and the DKIM private keys (keep that file
+# private — it is not backed up and must never be committed).
+mail-config-export:
+>@f="$(FILE)"; s="$(if $(filter command line,$(origin SECRETS)),-s)"; \
+  if [ -n "$$f" ]; then \
+    $(MAIL_ADMIN) config-export -j $$s > "$$f" \
+      && scripts/lib/mklog info "registry written to $$f$$( [ -n "$$s" ] && echo ' (WITH secrets — do not commit, do not taildrop unencrypted)' )"; \
+  else \
+    $(MAIL_ADMIN) config-export -j $$s; \
+  fi
+
+# Apply a registry dump (domains/users/aliases) from a file. Export one first —
+# this MERGES into the live registry and overwrites entries named in the file.
+mail-config-import:
+>@[ -n "$(FILE)" ] || { scripts/lib/mklog error "usage: make mail-config-import FILE=<registry.yaml|registry.json>"; exit 1; }
+>@[ -r "$(FILE)" ] || { scripts/lib/mklog error "cannot read $(FILE)"; exit 1; }
+>@docker exec -i mailu-admin flask mailu config-import - < "$(FILE)" >/dev/null \
+    && scripts/lib/mklog info "registry imported from $(FILE) — verify with make mail-domains and make mail-list"
 
 # Regenerate the tail terminal's navigation catalogue from the Caddy vhost
 # files ($DATA_DIR/www/targets.json — GENERATED, do not hand-edit). Run after
