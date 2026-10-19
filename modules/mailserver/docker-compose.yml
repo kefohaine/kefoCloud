@@ -1,7 +1,9 @@
 x-mailu-env: &mailu-env
   env_file: .env
   environment:
-    HOSTNAMES: "mail.${DOMAIN}"
+    # Mailu's own hostname lives on mailu.${DOMAIN} so it never overlaps the
+    # roundcube webmail vhost at mail.${DOMAIN} (operator request, 2026-10-19).
+    HOSTNAMES: "mailu.${DOMAIN}"
 
 services:
   # ── Mailu (front + postfix + dovecot + rspamd + admin) ────────────────────
@@ -9,13 +11,14 @@ services:
   # `front` owns the public ports and TLS, `smtp`/`imap` speak the protocols on
   # the bridge, `antispam` is Rspamd, `admin` holds the SQLite config + CLI.
   # `webmail` is deliberately NOT started: Roundcube stays the webmail and is
-  # served by Caddy at mail.${DOMAIN} (container `roundcube` below).
+  # served by Caddy at mail.${DOMAIN} (container `roundcube` below). Mailu's
+  # own identity is mailu.${DOMAIN} — the two never share a name.
   #
   # TLS_FLAVOR=mail: no HTTP listener in front (Caddy owns 80/443 on the host);
   # SMTP/IMAP use the per-vhost LE cert for mail.${DOMAIN} from caddy_data,
   # mounted as /certs/cert.pem + /certs/key.pem.
   front:
-    image: mailu/nginx:2.0
+    image: ghcr.io/mailu/nginx:2.0
     container_name: mailu-front
     restart: unless-stopped
     <<: *mailu-env
@@ -51,7 +54,7 @@ services:
         ipv4_address: 172.22.0.9
 
   imap:
-    image: mailu/dovecot:2.0
+    image: ghcr.io/mailu/dovecot:2.0
     container_name: mailu-imap
     restart: unless-stopped
     <<: *mailu-env
@@ -65,7 +68,7 @@ services:
         ipv4_address: 172.22.0.17
 
   smtp:
-    image: mailu/postfix:2.0
+    image: ghcr.io/mailu/postfix:2.0
     container_name: mailu-smtp
     restart: unless-stopped
     <<: *mailu-env
@@ -79,7 +82,7 @@ services:
         ipv4_address: 172.22.0.18
 
   antispam:
-    image: mailu/rspamd:2.0
+    image: ghcr.io/mailu/rspamd:2.0
     container_name: mailu-antispam
     restart: unless-stopped
     <<: *mailu-env
@@ -94,7 +97,7 @@ services:
         ipv4_address: 172.22.0.19
 
   admin:
-    image: mailu/admin:2.0
+    image: ghcr.io/mailu/admin:2.0
     container_name: mailu-admin
     restart: unless-stopped
     <<: *mailu-env
@@ -112,7 +115,7 @@ services:
         ipv4_address: 172.22.0.20
 
   redis:
-    image: mailu/redis:2.0
+    image: redis:alpine
     container_name: mailu-redis
     restart: unless-stopped
     <<: *mailu-env
@@ -160,7 +163,8 @@ services:
       - ${DATA_DIR}/rendered/mailserver/roundcube-tls.inc.php:/var/roundcube/config/roundcube-tls.inc.php:ro
 
     extra_hosts:
-      - "mail.${DOMAIN}:172.22.0.9"
+      # Mailu's own name (for SMTP/IMAP TLS name checks inside the bridge).
+      - "mailu.${DOMAIN}:172.22.0.9"
 
     networks:
       net:
