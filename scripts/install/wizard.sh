@@ -2562,12 +2562,13 @@ nextcloud_setup() {
   docker exec -u www-data nextcloud php occ config:system:set mail_smtpauth --value true >/dev/null 2>&1
 
   # mail_roundcube (installed+enabled automatically when mail is on) wraps the
-  # Roundcube instance in an iframe; without externalLocation its own page is
-  # just the "you did not tell me where to find your configured Roundcube
-  # instance" error. cube.$DOMAIN is this stack's Roundcube (cube.caddy), so the
-  # installer always sets it — the app has no other place to learn the URL.
+  # Roundcube instance in an iframe and reads that iframe's DOM, so its URL
+  # must be same-origin with Nextcloud: cloud.$DOMAIN/roundcube/ is the proxy
+  # path on cloud.caddy (cube.$DOMAIN itself is cross-origin and throws).
+  # Without externalLocation the app's own page is just the "you did not tell
+  # me where to find your configured Roundcube instance" error.
   docker exec -u www-data nextcloud php occ config:app:set mail_roundcube externalLocation \
-    --value "https://cube.$DOMAIN" >/dev/null 2>&1 || true
+    --value "https://cloud.$DOMAIN/roundcube" >/dev/null 2>&1 || true
   # userChosenEmail is the app's own default and the only choice that leaves the
   # personal "Email Login Name" editable: with userPreferencesEmail/userIdEmail
   # the field is greyed out and the app silently feeds NC's UID or profile
@@ -2743,7 +2744,7 @@ nextcloud_setup() {
       # The wrapper is only usable if it knows where its Roundcube is and
       # leaves the personal login name editable (see the app-config block
       # above); verified here so repair mode re-applies both.
-      occ_check "https://cube.$DOMAIN" docker exec -u www-data nextcloud php occ config:app:get mail_roundcube externalLocation 2>/dev/null \
+      occ_check "https://cloud.$DOMAIN/roundcube" docker exec -u www-data nextcloud php occ config:app:get mail_roundcube externalLocation 2>/dev/null \
         || return 1
       occ_check "userChosenEmail" docker exec -u www-data nextcloud php occ config:app:get mail_roundcube emailAddressChoice 2>/dev/null \
         || return 1
@@ -2830,7 +2831,7 @@ nextcloud_occ_remediate() {
     # Login Name" editable and is the only choice that works with an empty NC
     # profile email.
     docker exec -u www-data nextcloud php occ config:app:set mail_roundcube externalLocation \
-      --value "https://cube.$DOMAIN" >/dev/null 2>&1 || true
+      --value "https://cloud.$DOMAIN/roundcube" >/dev/null 2>&1 || true
     docker exec -u www-data nextcloud php occ config:app:set mail_roundcube emailAddressChoice \
       --value userChosenEmail >/dev/null 2>&1 || true
   fi
@@ -3616,7 +3617,7 @@ recheck() {
     cert_*) local h=${1#cert_}; echo | timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$h.$DOMAIN" 2>/dev/null | openssl x509 -noout -issuer 2>/dev/null | grep -q "Let's Encrypt" ;;
     sweep) [ -z "$(sweep_hits)" ] ;;
     sslmode) ssl_mode_full ;;
-    nextcloud_setup) nextcloud_occ_remediate; if ! mod_on mail || { docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN" && docker exec -u www-data nextcloud php occ config:app:get mail_roundcube externalLocation 2>/dev/null | grep -qx "https://cube.$DOMAIN" && docker exec -u www-data nextcloud php occ config:app:get mail_roundcube emailAddressChoice 2>/dev/null | grep -qx "userChosenEmail"; }; then docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://talk.$DOMAIN/signaling" && docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "talk.$DOMAIN:3478" && docker exec -u www-data nextcloud php occ config:system:get trusted_domains 2>/dev/null | grep -qx "cloud.$DOMAIN"; else false; fi ;;
+    nextcloud_setup) nextcloud_occ_remediate; if ! mod_on mail || { docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN" && docker exec -u www-data nextcloud php occ config:app:get mail_roundcube externalLocation 2>/dev/null | grep -qx "https://cloud.$DOMAIN/roundcube" && docker exec -u www-data nextcloud php occ config:app:get mail_roundcube emailAddressChoice 2>/dev/null | grep -qx "userChosenEmail"; }; then docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://talk.$DOMAIN/signaling" && docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "talk.$DOMAIN:3478" && docker exec -u www-data nextcloud php occ config:system:get trusted_domains 2>/dev/null | grep -qx "cloud.$DOMAIN"; else false; fi ;;
     dkim_setup)      dig +short TXT "dkim._domainkey.$DOMAIN" @"$(dig +short NS "$DOMAIN" | head -1)" 2>/dev/null | tr -d '"' | grep -qE 'p=[A-Za-z0-9+/=]{100,}' ;;
     dns_mail_txt) mod_on mail || return 0; cf_mail_dns; local records; records=$(curl -fsS -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" 2>/dev/null) || return 1; printf '%s' "$records" | jq -e --arg d "$DOMAIN" --arg s "v=spf1 a:mail.$DOMAIN mx -all" --arg m 'v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s;' '[.result[] | {type,name,content}] as $r | [[$d,"MX"],["_dmarc."+$d,"TXT"]] as $fs | [($fs[] | . as $x | any($r[]; .type==$x[1] and .name==$x[0])), any($r[]; .type=="TXT" and .name==$d and .content==$s)] | all' >/dev/null ;;
     vaultwarden_setup) if mod_on mail; then . modules/vaultwarden/.env 2>/dev/null; mailbox_add "vaultwarden@$DOMAIN" "${SMTP_PASSWORD:-}" >/dev/null 2>&1; mailbox_exists "vaultwarden@$DOMAIN"; else false; fi ;;
