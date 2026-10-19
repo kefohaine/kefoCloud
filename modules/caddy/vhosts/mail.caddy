@@ -1,8 +1,12 @@
 # mail.{{DOMAIN}} — Roundcube webmail (Mailu platform).
-# TLS: Let's Encrypt DNS-01 via Cloudflare (same pattern as every vhost).
-# Mailu front reuses this cert for SMTP/IMAP TLS. The installer copies the
-# issued mail.{{DOMAIN}} pair from caddy_data to mailserver/certs (mounted at
-# /certs), so renewals are shared and front restarts on renewal.
+# TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
+# This is the roundcube DOOR cert — the webmail vhost terminates here, and
+# roundcube's own tls:// SMTP/IMAP client path to the mail platform verifies
+# against it. The installer copies the issued mail.{{DOMAIN}} pair from
+# caddy_data to mailserver/certs (mounted at /certs on mailu-front, which
+# terminates the SMTP/IMAP listeners), so renewals are shared and the front
+# restarts on renewal. Mailu's own identity is mailu.{{DOMAIN}} (dashboard,
+# also terminated by Caddy) — the two names never overlap.
 
 https://mail.{{DOMAIN}} {
     tls {
