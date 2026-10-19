@@ -19,13 +19,31 @@
 # Last-Modified deletes (no validators left to revalidate against) and the
 # legacy Pragma/Expires headers make every request hit the edge fresh.
 #
-# TLS — Caddy's own local CA (`tls internal`), never Let's Encrypt. The vhost
-# is tailnet-only, so there is no public ACME identifier to manage and no
-# per-identifier rate limit to trip; browsers show a one-time warning for the
-# untrusted local CA, which is expected. Caddy issues and stores the cert itself
-# (caddy_data), so no renewal or DNS-01 round-trip is involved.
+# TLS — Let's Encrypt DNS-01 via Cloudflare, same as every public vhost: the
+# operator asked for a trusted cert on the door too (no self-signed warning).
+# The name must resolve publicly for browsers to reach it by that name; if the
+# LE order cannot complete (e.g. the per-identifier rate limit), the installer
+# does NOT fail — it lists scripts/ops/tailscale-https.sh as a follow-up, which
+# exposes the door over Tailscale HTTPS instead (a different web address:
+# https://<machine>.<tailnet>.ts.net).
 https://tail.{{DOMAIN}} {
-    tls internal
+    tls {
+        # Fallback issuer chain: Let's Encrypt first, then Buypass Go SSL and
+        # ZeroSSL — free providers tried in order, so a per-issuer rate limit
+        # (5 orders/name/week on LE) never leaves a vhost without a cert.
+        issuer acme https://acme-v02.api.letsencrypt.org/directory {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+        issuer acme https://api.buypass.com/acme/directory {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+        issuer acme https://acme.zerossl.com/v2/DV90 {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+    }
     import compress
     header {
         import security_headers
