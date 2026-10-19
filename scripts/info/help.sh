@@ -156,19 +156,35 @@ make goose-audit-docs [SCOPE=<doc>]|find doc drift/stale/duplicate
 make goose-deploy-plan CHANGE=<what>|produce a deployment/upgrade plan
 EOF
 
-  sec "mail registry (webmail login = local part only)"
+  sec "mail server (Mailu stack — webmail login is the local part only)"
   rows <<'EOF'
+make mail-list|every mailbox with its quota (global admins flagged)
 make mail-gen|create a mailbox — empty MAIL / PWD / QUOTA = auto-generated (PWD printed once)
-make mail-gen-alias|disposable forwarding alias TO=<target> (random local part, same-domain refused)
-make mail-del|delete an address + all its stored mail (MAIL=<addr>)
-make mail-del-alias|remove one alias target (FROM=<addr> TO=<target>)
-make mail-quota|set a quota (MAIL=<addr> QUOTA=<2G>; no MAIL = the mail-gen default)
-make mail-password|rotate a mailbox password (MAIL=<addr>; empty PWD = new one printed once)
 make mail-card|one address card — exists, quota, webmail URL (MAIL=<addr>)
-make mail-list|list all mailboxes with quota
-EOF
-
-  rows <<'EOF'
+make mail-password|rotate a mailbox password (MAIL=<addr>; empty PWD = new one printed once)
+make mail-del|delete an address + all its stored mail (MAIL=<addr>)
+make mail-quota|set a quota (MAIL=<addr> QUOTA=<2G>; no MAIL = the mail-gen default)
+make mail-domains|every domain with its mailbox count
+make mail-domain-add|add a domain — MAIL_DOMAIN=<domain>
+make mail-limits|per-domain caps — MAIL_DOMAIN=<d> USERS=<n> ALIASES=<n> QUOTA=<2G, or 0 for none>
+make mail-manager|make a mailbox a manager of a domain — MAIL_DOMAIN=<d> USER=<addr>
+make mail-aliases|list every alias and its targets
+make mail-alias-add|set an alias target list — FROM=<addr> TO=<target[,target2]>
+make mail-gen-alias|disposable forwarding alias TO=<target> (random local part, same-domain refused)
+make mail-del-alias|remove one alias target (FROM=<addr> TO=<target>)
+make mail-admin-password|set the Mailu admin login (PWD empty = generated and printed once; warns when INITIAL_ADMIN_MODE=update will revert it)
+make mail-status|ps + per-container state and health + the running image tag
+make mail-doctor|one-shot triage — /data ownership, sqlite open as uid 100:1000, sso/login 200, TLS, every container running
+make mail-fix-perms|re-own data/mailserver/data as 100:1000 (the sqlite "unable to open database file" 500 — mail store untouched)
+make mail-tls|served certificates and expiry — https mail, imaps 993, smtps 465
+make mail-dkim|DKIM key per domain on disk + the TXT record to publish
+make mail-queue|list the postfix queue, per sender and recipient
+make mail-queue-flush|make postfix retry every queued message now
+make mail-logs|SERVICE=<front,smtp,imap,antispam,admin,redis,roundcube>, default admin — tail last 50
+make mail-exec|CMD='<shell command>' inside mailu-admin (escape hatch for any flask mailu command)
+make mail-config-export|dump the registry as JSON (FILE=<path> to save, SECRETS=1 to include hashes and keys)
+make mail-config-import|apply a registry dump — FILE=<yaml or json>, merges into the live registry
+make dok-recreate-mailserver|whole stack lifecycle — dok-restart-mailserver, dok-stop-mailserver, dok-logs-mailserver
 EOF
 
   sec "kuma accounts (Uptime Kuma)"
