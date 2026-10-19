@@ -29,9 +29,19 @@ case "$MAIL" in *@*) ;; *) MAIL="$MAIL@$DOMAIN" ;; esac
 localpart="${MAIL%@*}"; dom="${MAIL#*@}"
 docker exec mailu-admin flask mailu domain "$dom" >/dev/null 2>&1 || true
 docker exec mailu-admin flask mailu user "$localpart" "$dom" "$PWD" >/dev/null || exit 1
-bytes=$(numfmt --from=iec "$QUOTA" 2>/dev/null || echo "$QUOTA")
-printf 'users:\n  - localpart: %s\n    domain: %s\n    quota_bytes: %s\n' \
-  "$localpart" "$dom" "$bytes" \
-  | docker exec -i mailu-admin flask mailu config-update >/dev/null 2>&1 || true
+raw=${QUOTA%B}
+bytes=$(numfmt --from=iec "$raw" 2>/dev/null || echo "$raw")
+case "$bytes" in ''|*[!0-9]*) bytes=1000000000 ;; esac
+# config-update sets the password from password_hash and a missing hash means
+# password=None → NOT NULL violation → the WHOLE transaction (quota included)
+# rolls back silently. Carry the hash the CLI just stored, or the quota never
+# lands and every mailbox keeps the model default (2026-10-19).
+hash=$(docker exec mailu-admin flask mailu config-export -j 2>/dev/null \
+  | jq -r --arg e "$MAIL" '.user[]? | select(.email==$e) | .password // empty' | head -1)
+if [ -n "$hash" ]; then
+  printf 'users:\n  - localpart: %s\n    domain: %s\n    quota_bytes: %s\n    password_hash: %s\n' \
+    "$localpart" "$dom" "$bytes" "$hash" \
+    | docker exec -i mailu-admin flask mailu config-update >/dev/null 2>&1 || true
+fi
 
 echo "info:  mailbox $MAIL created — password: $PWD, quota: $QUOTA, webmail https://cube.$DOMAIN (login with the local part)"
