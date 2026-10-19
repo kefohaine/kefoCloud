@@ -681,10 +681,7 @@ NC_OCC := docker exec -u www-data nextcloud php occ
 	nc-config-get nc-config-set nc-users nc-user-add nc-user-del nc-user-password \
 	nc-user-setting nc-scan nc-groups nc-jobs nc-talk-signaling nc-talk-signaling-add \
 	nc-talk-signaling-del nc-talk-turn nc-talk-turn-add nc-talk-turn-del \
-	nc-2fa-enforce nc-logs nc-add-user mail-list
-
-nc-add-user:
->@$(MAKE) --no-print-directory -f "$(firstword $(MAKEFILE_LIST))" nc-user-add
+	nc-2fa-enforce nc-logs mail-list
 
 nc-occ:
 >@if [ -z "$(CMD)" ]; then \
