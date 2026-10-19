@@ -31,6 +31,8 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
+. "$ROOT/scripts/lib/instance.sh" 2>/dev/null || true
+. "$ROOT/scripts/lib/modules.sh"
 DATA="$ROOT/data"
 BUNDLES_DIR="$(mktemp -d)"
 trap 'rm -rf "$BUNDLES_DIR"' EXIT
@@ -66,10 +68,9 @@ TAILDROP="${TAILDROP:-}"
   exit 1
 }
 
-# ---- enabled modules (all ship; no selection) — from wizard.state ----
-STATE="${INSTALL_STATE:-$DATA/wizard.state}"
-[ -f "$STATE" ] || die "wizard.state not found — this host has not been installed"
-INSTALLED="$( ( . "$STATE" 2>/dev/null; printf '%s' "${enabled_modules:-}" ) 2>/dev/null )"
+# ---- enabled modules (all ship; no selection) — the shared accessor ----
+[ -f "${INSTALL_STATE:-$DATA/wizard.state}" ] || die "wizard.state not found — this host has not been installed"
+INSTALLED="$(for m in $(mod_all); do mod_installed "$m" && printf '%s ' "$m"; done)"
 [ -n "$INSTALLED" ] || die "no modules installed (wizard.state enabled_modules is empty)"
 
 # ---- resolve + verify the taildrop device ----
