@@ -30,9 +30,12 @@
 # box — auto-detected from the live system (compose files, systemctl, dpkg
 # — no hardcoded rosters) — and NEVER deletes operator data without an
 # explicit per-category prompt (no defaults — only an explicit yes removes):
-#   - the external machine NFS export (user files) — untouched, period
-#   - the Nextcloud local rollback copy, module data dirs, backups/ —
-#     per-category prompts, each requiring an explicit yes
+#   - the external machine's datadirectory — EXTERMINATED in full mode
+#     (NFS export line removed from /etc/exports, remote files rm -rf'd;
+#     only the reserved granular mode leaves the remote files in place)
+#   - data/ — removed WHOLE (no granular folder picks; removed modules' data
+#     dirs always go with them). There are NO partial teardowns: removing any
+#     module removes ALL of them, and data/ dies with them.
 #   - the repo clone — prompt, explicit yes required
 #   - sshd hardening — deliberately KEPT (removing the drop-in would
 #     re-enable password auth; weakening is never the uninstall's job)
@@ -48,13 +51,23 @@
 # and re-checked on Enter until all are green — then SUCCESS. Manual steps
 # are grouped as expected; real failures as unexpected.
 #
+# MODES (UNINSTALL_MODE, picked by argument — granular is NOT an operator mode):
+#   full (default; also --full / legacy --reinstall)
+#     the whole production stack and its data, verified gone. This is BOTH the
+#     reinstall hand-off (ACCEPT_CONSEQUENCES=1 → prompts skipped) and the
+#     manual operator run (the three consequence confirmations apply).
+#   granular (--granular)
+#     RESERVED for wizard.sh repair mode (requires WIZARD_REPAIR=1). wizard.state
+#     is the source of truth: ONLY disabled modules are torn down (containers,
+#     compose stacks, data dirs, stale .svc hashes) and only disabled doors'
+#     Cloudflare A records are deleted. wizard.state, .cred-*.sha and enabled
+#     modules are untouched — the repair run converges the rest itself.
+#   interactive (--interactive) — the legacy per-module scope prompts.
+#
 # Usage (root on the box, from the repo checkout):
-#   sudo bash scripts/install/uninstall.sh              # interactive teardown
-#   sudo bash scripts/install/uninstall.sh --reinstall  # stack-only teardown,
-#     no prompts, wizard.state dropped, then a VERIFICATION that the stack is
-#     really gone. Exit 0 = verified gone, 1 = something is left. This is the
-#     hand-off the installer calls for a reinstall (the installer only adds; every
-#     removal lives here).
+#   sudo bash scripts/install/uninstall.sh              # full teardown (warned)
+#   sudo bash scripts/install/uninstall.sh --reinstall  # same, non-warned when
+#     handed off by the installer (ACCEPT_CONSEQUENCES=1)
 #
 # Full log: $LOG_DIR/uninstall.log
 
@@ -69,7 +82,11 @@ OP_USER=root
 REPO="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
 PROJECT_DIR="$REPO/data"
 INSTALL_STATE="${INSTALL_STATE:-$PROJECT_DIR/wizard.state}"
-LOG_DIR="${LOG_DIR:-$PROJECT_DIR/logs}"
+# The log lives OUTSIDE data/ — data/ is wiped whole by this script, and the
+# log must survive its own teardown to be readable afterwards. Forced here
+# (NOT inherited): wizard.sh exports LOG_DIR=$DATA/logs, and the wizard hand-off
+# would otherwise put this log inside data/ — wiped by our own rm -rf mid-run.
+LOG_DIR="$REPO/scripts/install"
 LOG="$LOG_DIR/uninstall.log"
 ERR_TAGS=()
 declare -A ERR_DETAIL=()
@@ -120,6 +137,33 @@ ask() { # ask <var> <question> [ignored]  (ONLY the words yes/no; recorded as tr
   done
 }
 
+# Three consecutive consequence confirmations before ANYTHING is touched. The
+# installer's reinstall hand-off (which already asked its own questions) skips
+# them by passing ACCEPT_CONSEQUENCES=1 alongside its arguments.
+confirm_consequences() {
+  [ "${ACCEPT_CONSEQUENCES:-}" = "1" ] && { log "  consequences accepted in advance (ACCEPT_CONSEQUENCES=1) — prompts skipped"; return 0; }
+  local a
+  echo ""
+  echo " ── CONFIRMATION 1/3 — what dies ─────────────────────────────────────────"
+  echo "    ALL module containers and their config are removed; data/ is wiped"
+  echo "    WHOLE (no granular folder picks); the remote machine's NFS export"
+  echo "    line for the datadirectory is removed from its /etc/exports"
+  echo "    (remote files stay)."
+  read -rp "    Understand and want to proceed? (yes/no): " a || return 1
+  [ "${a,,}" = yes ] || return 1
+  echo " ── CONFIRMATION 2/3 — no way back ───────────────────────────────────────"
+  echo "    Everything removed here is IRREVERSIBLE: containers, config,"
+  echo "    data/ (module data, backups, logs, wizard.state) cannot be"
+  echo "    recovered. The installer can rebuild the stack, but NOT your data."
+  read -rp "    Accept irreversible loss? (yes/no): " a || return 1
+  [ "${a,,}" = yes ] || return 1
+  echo " ── CONFIRMATION 3/3 — last chance ───────────────────────────────────────"
+  read -rp "    FINAL: begin the uninstall now? (yes/no): " a || return 1
+  [ "${a,,}" = yes ] || return 1
+  echo "   confirmed — proceeding."
+  return 0
+}
+
 # There is no answer-sheet defaults file: every prompt is ALWAYS asked, only
 # the literal words yes/no are accepted, and nothing is removed unless the
 # operator answers yes.
@@ -141,11 +185,14 @@ ask() { # ask <var> <question> [ignored]  (ONLY the words yes/no; recorded as tr
 #       proceeds with the reinstall run
 #   1 = something is still there, or a removal failed, or the list could not be
 #       listed → the installer ABORTS the reinstall (it changes nothing)
-REINSTALL_MODE=false
+# ─────────────── modes: full / granular / interactive ─────────────────────
+UNINSTALL_MODE=full
 for _a in "$@"; do
   case "$_a" in
-    --reinstall) REINSTALL_MODE=true ;;
-    --mode=*)    UNINSTALL_MODE="${_a#--mode=}" ;;
+    --reinstall|--full) UNINSTALL_MODE=full ;;
+    --granular)         UNINSTALL_MODE=granular ;;
+    --interactive)      UNINSTALL_MODE=interactive ;;
+    --mode=*)           UNINSTALL_MODE="${_a#--mode=}" ;;
   esac
 done
 unset _a
@@ -154,21 +201,51 @@ unset _a
 # never disagree with what was removed.
 STACK_MODULES="cloud vault mail monitor"
 
-# Everything under data/ that the stack owns. The four module dirs come from
-# module_data_dirs; this adds the dirs no module claims (the edge's caddy_data,
-# the web root, the log namespace, the render output), so "stack gone" also
-# means "data/ really empty". $PROJECT_DIR itself is NOT removed while the
-# installer's carried-over log is being read back — the installer recreates the
-# directory and its fresh log right after this exits.
-stack_data_dirs() {
-  local d
-  local all="$PROJECT_DIR/caddy_data $PROJECT_DIR/cloud $PROJECT_DIR/vault \
-             $PROJECT_DIR/kuma $PROJECT_DIR/mailserver $PROJECT_DIR/pgdata \
-             $PROJECT_DIR/talk $PROJECT_DIR/download $PROJECT_DIR/www \
-             $PROJECT_DIR/rendered $PROJECT_DIR/backups"
-  for d in $all; do
-    [ -e "$d" ] && echo "$d"
-  done
+# data/ goes as ONE directory — no granular folder picks. The stack owns every
+# path under it (module dirs, caddy_data, rendered/, www/, logs, wizard.state),
+# so "stack gone" means data/ itself is gone. The installer recreates the
+# directory and its fresh log right after this exits. Guard: anything still
+# mounted under data/ (the Nextcloud NFS datadirectory) is unmounted first —
+# an rm -rf through a live mount would propagate INTO the storage export.
+# Before the wipe, the remote datadirectory export (make nc-datadir-nfs
+# export, recorded in data/.nc-import-source) is un-exported on the remote
+# machine — that one datadirectory line, no other exports — and (full mode
+# only) the remote datadirectory files are deleted. Granular mode leaves the
+# remote files in place.
+remove_remote_export() {
+  local marker="$PROJECT_DIR/data/.nc-import-source" tgt mnt
+  [ -f "$marker" ] || return 0
+  tgt="$(sed -n '1p' "$marker")"
+  mnt="$(sed -n '2p' "$marker")"
+  [ -n "$tgt" ] && [ -n "$mnt" ] || return 0
+  log "  un-exporting the remote datadirectory on $tgt ($mnt)"
+  ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "$tgt" \
+    "sed -i '\#^$mnt #d' /etc/exports && exportfs -ra" >>"$LOG" 2>&1 \
+    || fail data "remote export on $tgt not removed (run: ssh $tgt \"sed -i '\\#$mnt #d' /etc/exports && exportfs -ra\")"
+  # Full mode NEVER keeps the remote datadirectory: the NFS export line is
+  # removed above AND the datadirectory itself is exterminated on the remote
+  # machine (2026-10-19 — 'kept' wording was wrong for full/reinstall mode;
+  # only the reserved granular mode ever leaves the remote files in place).
+  if [ "${UNINSTALL_MODE:-full}" = full ]; then
+    log "  exterminating the remote datadirectory on $tgt ($mnt)"
+    ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "$tgt" \
+      "rm -rf -- '$mnt'" >>"$LOG" 2>&1 \
+      || fail data "remote datadirectory $mnt on $tgt not removed (run: ssh $tgt \"rm -rf -- '$mnt'\")"
+  fi
+}
+wipe_data() {
+  remove_remote_export
+  local m
+  # positional DIR arg lists submounts UNDER data/ only; --target would also
+  # return the mount containing data/ itself (i.e. /), unmounting the root fs
+  while read -r m; do
+    [ -n "$m" ] || continue
+    [ "$m" = "/" ] && continue
+    umount "$m" >>"$LOG" 2>&1 || fail data "mountpoint $m still mounted — not deleting data/"
+  done < <(findmnt -rn -o TARGET "$PROJECT_DIR" 2>/dev/null | grep -v '^/$')
+  [ ${#ERR_TAGS[@]} -gt 0 ] && return 1
+  rm -rf "$PROJECT_DIR" >>"$LOG" 2>&1 \
+    || fail data "$PROJECT_DIR not deleted"
 }
 
 # The verification: is the stack REALLY gone? Runs after the removal in
@@ -185,18 +262,9 @@ verify_stack_gone() {
     fi
   done
   docker network inspect net >/dev/null 2>&1 && t+="network "
-  # data/ itself counts: the stack owns everything inside it, so a leftover dir
-  # no module claims (rendered/, www/, caddy_data/, …) or a stray file is still
-  # a live stack's data. data/logs holds the installer's and this script's own
-  # logs and is recreated by the installer right after this exits — it is the
-  # one directory allowed to survive, and it is reported when it is all that is
-  # left behind (visible, not silent).
-  for d in "$PROJECT_DIR"/* "$PROJECT_DIR"/.[!.]*; do
-    [ -e "$d" ] || continue
-    [ "$(basename "$d")" = logs ] && continue
-    t+="data_$(basename "$d") "
-  done
-  [ -d "$PROJECT_DIR/logs" ] && log "  note: data/logs kept (holds this teardown's own log; the installer recreates its fresh wizard.log)"
+  # data/ itself counts, whole: the stack owns everything inside it, so any
+  # leftover (a module dir, rendered/, www/, a stray file) is a live stack.
+  [ -e "$PROJECT_DIR" ] && t+="data "
   [ -f "$INSTALL_STATE" ] && t+="state "
   # module compose files are repo-TRACKED and deliberately kept — they are the
   # framework, not stack state.
@@ -323,15 +391,14 @@ ask_inputs() {
   ask_modules
   # scope prompts only when NOT preselected by the whole-framework mode
   [ "${RM_EDGE:-false}" = true ] || ask RM_EDGE "Remove the edge (Caddy container)?"
-  ask RM_CADDY_DATA "  …and delete caddy_data/ (LE certs + CF token)?"
   [ "${RM_HOST:-false}" = true ] || ask RM_HOST "Remove the host services (goose, ttyd, dnsmasq, cron, fail2ban) + the stack's ufw rules?"
   [ "${RM_PKGS:-false}" = true ] || ask RM_PKGS "Purge the installed packages (docker, dnsmasq, fail2ban, …)?"
   # operator account root is never deleted (sole entry point) — no prompt
   [ "${RM_TAILNET:-false}" = true ] || ask RM_TAILNET "Remove this host from the tailnet (last step)?"
-  # data (each explicitly confirmed; the external machine export is never touched)
-  ask RM_MOD_DATA "Delete the data dirs of the modules being removed (vault/, kuma/, mailserver/, cloud/ local files)?"
-  ask RM_NCLOCAL  "Delete the Nextcloud local rollback copy (cloud/users.local-backup)?"
-  ask RM_BACKUPS  "Delete $PROJECT_DIR/backups/ (snapshots + secrets bundles)?"
+  # data: no granular picks, and NO partial teardowns — removing any module
+  # removes all of them, and data/ is wiped whole by wipe_data. Full mode
+  # exterminates the remote datadirectory too (export line + remote files).
+  RM_MOD_DATA=true
   ask RM_REPO     "Delete the repo clone at $REPO (scheduled after this script exits)?"
   local ml=""
   for k in cloud vault mail monitor; do
@@ -360,28 +427,6 @@ mod_rm() { # indirection: is module $1 selected for removal?
 }
 
 # ────────────── wizard.state teardown update (the one exception) ──────────
-
-# The enabled modules recorded BEFORE any removal (empty when there is no
-# state — nothing was installed). Read in a subshell so the state's secrets
-# never enter this script's environment.
-MODS_ORIGINAL=""
-if [ -f "$INSTALL_STATE" ]; then
-  MODS_ORIGINAL="$( ( . "$INSTALL_STATE" 2>/dev/null; printf '%s' "${enabled_modules:-}" ) 2>/dev/null )"
-fi
-
-# Rewrite ONLY enabled_modules + finished in $INSTALL_STATE, preserving every
-# other (secret) line. The installer is otherwise the sole writer; this is the
-# documented teardown exception.
-state_reset() {   # state_reset <enabled_modules> <finished>
-  [ -f "$INSTALL_STATE" ] || return 0
-  local tmp="$INSTALL_STATE.tmp.$$"
-  { grep -vE '^(enabled_modules|finished)=' "$INSTALL_STATE" 2>/dev/null || :
-    printf 'enabled_modules=%q\n' "$1"
-    printf 'finished=%q\n' "$2"
-  } > "$tmp"
-  chmod 600 "$tmp" 2>/dev/null || true
-  mv -f "$tmp" "$INSTALL_STATE" 2>/dev/null || rm -f "$tmp"
-}
 
 # ─────────────────────── phase: containers (reverse) ───────────────────────
 
@@ -435,7 +480,7 @@ remove_module() { # $1=module
         systemctl daemon-reload
         log "  NFS datadirectory unmounted (fstab entry removed; the storage export is untouched)"
       fi
-      if [ "${RM_NCLOCAL:-false}" = true ] && [ -d "$PROJECT_DIR/cloud/users.local-backup" ]; then
+      if [ -d "$PROJECT_DIR/cloud/users.local-backup" ]; then
         rm -rf "$PROJECT_DIR/cloud/users.local-backup" >>"$LOG" 2>&1 \
           || fail "rmmod_cloud" "local rollback copy not deleted"
       fi
@@ -491,12 +536,13 @@ remove_edge() {
   else
     log "  edge container not found running — nothing to remove"
   fi
-  if [ "${RM_CADDY_DATA:-false}" = true ] && [ -d "$PROJECT_DIR/caddy_data" ]; then
+  if [ -d "$PROJECT_DIR/caddy_data" ]; then
     rm -rf "$PROJECT_DIR/caddy_data" >>"$LOG" 2>&1 || fail edge "caddy_data not deleted"
     rm -rf "$PROJECT_DIR/download" >>"$LOG" 2>&1 || true
   fi
   # the shared bridge network goes only when nothing is attached anymore
-  docker network rm net >>"$LOG" 2>&1 || true
+  docker network inspect net >/dev/null 2>&1 && \
+    docker network rm net >>"$LOG" 2>&1 || true
 }
 
 remove_host() {
@@ -568,6 +614,7 @@ problem() {
     # --reinstall verification (the installer's hand-off): the stack must be gone
     container_*) echo "container ${1#container_} is still there" ;;
     network)  echo "the stack's docker network 'net' is still there" ;;
+    data)     echo "data/ is still there" ;;
     data_*)   echo "data/${1#data_} is still there" ;;
     state)    echo "wizard.state is still there" ;;
     edge)     echo "the edge (Caddy) is not fully removed" ;;
@@ -586,7 +633,7 @@ hint() {
     rmmod_*)  echo "run: docker ps -a; docker rm -f <the module's containers>; check $LOG, then re-check" ;;
     container_*) echo "run: docker rm -f ${1#container_}, then re-run: bash scripts/install/uninstall.sh --reinstall" ;;
     network)  echo "run: docker network rm net, then re-run: bash scripts/install/uninstall.sh --reinstall" ;;
-    data_*)   echo "run: rm -rf $PROJECT_DIR/${1#data_}, then re-run: bash scripts/install/uninstall.sh --reinstall" ;;
+    data*)    echo "run: rm -rf $PROJECT_DIR, then re-run: bash scripts/install/uninstall.sh --reinstall" ;;
     state)    echo "run: rm -f $INSTALL_STATE, then re-run: bash scripts/install/uninstall.sh --reinstall" ;;
     edge)     echo "run: docker rm -f <edge container>; docker network rm net; check $LOG, then re-check" ;;
     host_goose|host_dnsmasq) echo "run: systemctl disable --now ${1#host_}; rm -f /etc/systemd/system/${1#host_}.service; systemctl daemon-reload, then re-check" ;;
@@ -633,6 +680,11 @@ recheck() {
   esac
 }
 
+# Guarded ERR_DETAIL lookup: an empty error tag (fail with no tag, seen live
+# 2026-10-19) would make bash abort with "bad array subscript" — an empty key
+# is never looked up, so the summary always renders.
+err_d() { [ -n "$1" ] && printf ' (%s)' "${ERR_DETAIL[$1]:-}"; return 0; }
+
 is_expected() {
   case "$1" in
     host_ttyd) return 0 ;;  # the operator must re-run from outside ttyd — manual
@@ -660,7 +712,7 @@ resolve_errors() {
       local i
       for i in "${!exp[@]}"; do
         echo "   $((i+1)). ${exp[$i]}"
-        echo "      problem: $(problem "${exp[$i]}")${ERR_DETAIL[${exp[$i]}]:+ (${ERR_DETAIL[${exp[$i]}]})}"
+        echo "      problem: $(problem "${exp[$i]}")$(err_d "${exp[$i]}")"
         echo "      hint: $(hint "${exp[$i]}")"
       done
     fi
@@ -668,7 +720,7 @@ resolve_errors() {
       echo " Unexpected errors (${#unexp[@]}):"
       for i in "${!unexp[@]}"; do
         echo "   $((i+1)). ${unexp[$i]}"
-        echo "      problem: $(problem "${unexp[$i]}")${ERR_DETAIL[${unexp[$i]}]:+ (${ERR_DETAIL[${unexp[$i]}]})}"
+        echo "      problem: $(problem "${unexp[$i]}")$(err_d "${unexp[$i]}")"
         echo "      hint: $(hint "${unexp[$i]}")"
       done
     fi
@@ -700,20 +752,18 @@ success_block() {
     fi
   done
   [ "${RM_EDGE:-false}"    = true ] && echo "   removed    edge (Caddy)"
-  [ "${RM_CADDY_DATA:-false}" = true ] && echo "   removed    caddy_data/"
+  echo "   removed    caddy_data/"
   [ "${RM_HOST:-false}"    = true ] && echo "   removed    host services (goose, ttyd, dnsmasq, cron, fail2ban) + stack ufw ports"
   [ "${RM_PKGS:-false}"   = true ] && echo "   removed    packages (docker, dnsmasq, fail2ban, …)"
   # user root is never removed
   [ "${RM_TAILNET:-false}" = true ] && echo "   removed    tailnet membership"
   echo ""
-  echo " Kept (unless explicitly confirmed otherwise):"
-  echo "   - the external machine NFS export (user files) — untouched"
+  echo " Removed (always, no exceptions):"
+  echo "   - the remote datadirectory (NFS export line + remote files)"
+  echo ""
+  echo " Kept:"
   echo "   - sshd hardening (removing it would re-enable password auth)"
-  echo "   - $PROJECT_DIR/backups/"
   echo "   - $REPO"
-  if [ -f "$INSTALL_STATE" ]; then
-    echo "   - wizard.state: enabled_modules now '$(sed -n 's/^enabled_modules=//p' "$INSTALL_STATE")', finished=false"
-  fi
   echo ""
   echo " Follow-ups (manual, none block):"
   echo "   1. Cloudflare: the DNS records for this host remain — delete them in"
@@ -735,7 +785,7 @@ summary() {
       echo " Manual steps (expected):"
       for i in "${!exp[@]}"; do
         echo "   $((i+1)). ${exp[$i]}"
-        echo "      problem: $(problem "${exp[$i]}")${ERR_DETAIL[${exp[$i]}]:+ (${ERR_DETAIL[${exp[$i]}](})}"
+        echo "      problem: $(problem "${exp[$i]}")$(err_d "${exp[$i]}")"
         echo "      hint: $(hint "${exp[$i]}")"
       done
     fi
@@ -743,7 +793,7 @@ summary() {
       echo " Unexpected errors (${#unexp[@]}):"
       for i in "${!unexp[@]}"; do
         echo "   $((i+1)). ${unexp[$i]}"
-        echo "      problem: $(problem "${unexp[$i]}")${ERR_DETAIL[${unexp[$i]}]:+ (${ERR_DETAIL[${unexp[$i]}]})}"
+        echo "      problem: $(problem "${unexp[$i]}")$(err_d "${unexp[$i]}")"
         echo "      hint: $(hint "${unexp[$i]}")"
       done
     fi
@@ -758,13 +808,21 @@ trap summary EXIT
 reinstall_stack_only() {
   local k
   log "=== uninstall.sh --reinstall — production stack only (no host, no repo, no tailnet)"
+  # this mode has NO prompts: preselect the stack scope explicitly, otherwise
+  # the mod_rm guards below skip every module, leaving the containers
+  # attached to 'net' so the network rm fails
+  # and the verification reports a live stack (2026-10-19 uninstall.log bug).
+  for k in $STACK_MODULES; do
+    eval "RM_MOD_${k^^}=true"
+  done
+  RM_MOD_DATA=true
   echo ""
   echo "Uninstalling the production stack (hand-off from the installer):"
   for k in $STACK_MODULES; do
     mod_rm "$k" && { echo "   remove     $k"; }
   done
-  echo "   remove     edge (Caddy) + caddy_data/"
-  echo "   remove     data/ (module data, rendered config, logs, wizard.state)"
+  echo "   remove     edge (Caddy)"
+  echo "   remove     data/ whole (module data, rendered config, logs, wizard.state)"
   echo "   keep       the repo clone, host services, packages, root account, tailnet"
   echo ""
 
@@ -782,19 +840,82 @@ reinstall_stack_only() {
       ctn_list | grep -qx "$c" && docker rm -f "$c" >>"$LOG" 2>&1 || true
     done
   fi
-  docker network rm net >>"$LOG" 2>&1 || true
+  docker network inspect net >/dev/null 2>&1 && \
+    docker network rm net >>"$LOG" 2>&1 || true
 
-  local d
-  for d in $(stack_data_dirs); do
-    rm -rf "$d" >>"$LOG" 2>&1 || fail "data_$(basename "$d")" "$d not deleted"
-  done
-  # wizard.state lives in data/ and is written by the installer alone — this is
-  # the documented teardown exception: drop the record WITH its data, so no
-  # reader can see a finished install for a stack that no longer exists.
-  [ -f "$INSTALL_STATE" ] && rm -f "$INSTALL_STATE" >>"$LOG" 2>&1
+  # data/ goes whole — one wipe, no granular folder picks; wizard.state lives
+  # inside it and dies with it (the installer is its sole writer and recreates
+  # everything fresh on the rebuild).
+  wipe_data
 
   resolve_errors || return 1
   verify_stack_gone || return 1
+  return 0
+}
+
+# ─────────────── --granular: wizard repair's teardown hand-off ────────────
+# RESERVED for wizard.sh repair mode: wizard.sh calls this with WIZARD_REPAIR=1
+# instead of tearing down inline. wizard.state (sourced here) is the source of
+# truth — ONLY what the state says is disabled is removed:
+#   • disabled modules: compose down + containers, data dirs, stale .svc hashes
+#   • disabled doors' Cloudflare A records (creds read from wizard.state)
+# Enabled modules, wizard.state, .cred-*.sha and the edge are untouched; the
+# repair run converges everything else itself.
+granular_stack_only() {
+  if [ ! -f "$INSTALL_STATE" ]; then
+    echo "granular mode needs $INSTALL_STATE — wizard.state is the source of truth."
+    return 1
+  fi
+  if [ "${WIZARD_REPAIR:-}" != "1" ]; then
+    echo "granular mode is reserved for wizard.sh repair mode."
+    echo "For a manual teardown run: bash scripts/install/uninstall.sh   (full mode)"
+    return 1
+  fi
+  # wizard.state is written by the wizard with printf %q — safe to source
+  . "$INSTALL_STATE"
+  mod_on() { local n="MOD_${1^^}"; [ "${!n:-true}" = "true" ]; }
+  log "=== uninstall.sh --granular — wizard repair hand-off (wizard.state-driven)"
+
+  local k svc
+  for k in $STACK_MODULES; do
+    mod_on "$k" && continue
+    echo "   teardown   $k (disabled in wizard.state)"
+    RM_MOD_DATA=true remove_module "$k"
+    # cloud's database stack is its own compose project — down it too
+    [ "$k" = cloud ] && [ -f "$REPO/modules/nextcloud/docker-compose.db.yml" ] && \
+      docker compose -f "$REPO/modules/nextcloud/docker-compose.db.yml" down --remove-orphans >>"$LOG" 2>&1 || true
+    case "$k" in   # drop the stale service hashes so a later re-enable re-applies
+      cloud)   svc=nextcloud;;
+      vault)   svc=vaultwarden;;
+      mail)    svc=mailserver;;
+      monitor) svc=uptimekuma;;
+    esac
+    rm -f "$PROJECT_DIR/.svc-$svc.sha"
+  done
+
+  # disabled doors lose their Cloudflare A records (needs the wizard.state creds)
+  cf_a_del() { # cf_a_del <host> — remove the A record of a disabled door
+    command -v jq >/dev/null 2>&1 || return 0
+    [ -n "${CF_API_TOKEN:-}" ] && [ -n "${DOMAIN:-}" ] || return 0
+    local zid fqdn rid
+    zid=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
+      "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" 2>>"$LOG" \
+      | jq -r '.result[0].id // empty')
+    [ -n "$zid" ] || { fail dns "zone id for $DOMAIN not resolved"; return 0; }
+    fqdn="${1:+$1.}$DOMAIN"
+    rid=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
+      "https://api.cloudflare.com/client/v4/zones/$zid/dns_records?type=A&name=$fqdn" 2>>"$LOG" \
+      | jq -r '.result[0].id // empty')
+    [ -n "$rid" ] || return 0
+    curl -s -X DELETE -H "Authorization: Bearer $CF_API_TOKEN" \
+      "https://api.cloudflare.com/client/v4/zones/$zid/dns_records/$rid" >>"$LOG" 2>&1 || true
+    log "  A record removed: $fqdn (disabled in wizard.state)"
+  }
+  mod_on cloud   || cf_a_del cloud
+  mod_on vault   || cf_a_del vault
+  mod_on monitor || cf_a_del kuma
+  mod_on cloud && [ "${VIDEO_CALLING:-true}" = "false" ] && cf_a_del talk
+  mod_on mail    || cf_a_del mail
   return 0
 }
 
@@ -803,12 +924,30 @@ reinstall_stack_only() {
 main() {
   [ "$(id -u)" -eq 0 ] || { echo "Run as root: sudo bash scripts/install/uninstall.sh"; exit 1; }
   install -d -m 0755 "$LOG_DIR"
-  touch "$LOG" && chmod 640 "$LOG"
+  # clear the log at the start of EVERY run — each teardown logs from scratch
+  : > "$LOG" && chmod 640 "$LOG"
   banner
-  if [ "${REINSTALL_MODE:-false}" = true ]; then
-    reinstall_stack_only
-    exit $?
-  fi
+  case "${UNINSTALL_MODE:-full}" in
+    granular)
+      # wizard repair hand-off — no banner warnings, wizard.state-driven
+      granular_stack_only
+      exit $?
+      ;;
+    interactive)
+      confirm_consequences || { echo "   aborted — nothing was touched."; exit 1; }
+      legacy_interactive
+      ;;
+    *)
+      # full mode: the reinstall hand-off passes ACCEPT_CONSEQUENCES=1 (no
+      # warnings); a manual operator run gets the three confirmations.
+      confirm_consequences || { echo "   aborted — nothing was touched."; exit 1; }
+      reinstall_stack_only
+      exit $?
+      ;;
+  esac
+}
+
+legacy_interactive() {
   ask_inputs
   # nothing selected = nothing to do (all defaults are safe/keep)
   local any=false k
@@ -818,6 +957,12 @@ main() {
   for v in RM_EDGE RM_HOST RM_PKGS RM_USER RM_TAILNET; do
     [ "${!v:-false}" = true ] && any=true
   done
+  # NO partial teardowns: selecting any module for removal selects all of them.
+  if [ "$any" = true ]; then
+    for k in cloud vault mail monitor; do
+      eval "RM_MOD_${k^^}=true"
+    done
+  fi
   any_sel=$any
   if [ "$any" = false ]; then
     log "nothing selected — every prompt answered keep. Nothing was removed."
@@ -835,21 +980,14 @@ main() {
   [ "${RM_PKGS:-false}"    = true ] && remove_pkgs
   [ "${RM_USER:-false}"    = true ] && remove_user
   [ "${RM_TAILNET:-false}" = true ] && remove_tailnet
-  # backups/ on explicit confirm (after the stack is down)
-  if [ "${RM_BACKUPS:-false}" = true ] && [ -d "$PROJECT_DIR/backups" ]; then
-    rm -rf "$PROJECT_DIR/backups" >>"$LOG" 2>&1 || log "WARN: backups/ not deleted"
-  fi
-  # wizard.state teardown update (the one exception to the installer's sole
-  # write): drop the removed modules and clear the finished checkpoint so
-  # `make smoke` no longer treats this host as a finished install.
-  if [ -f "$INSTALL_STATE" ]; then
-    local keep="" m
-    for m in $MODS_ORIGINAL; do
-      mod_rm "$m" || keep+="$m "
-    done
-    state_reset "${keep% }" false
-    log "  wizard.state: enabled_modules='${keep% }' finished=false"
-  fi
+  # NO partial teardowns: removing any module removes all of them, and data/
+  # is wiped whole — backups/, logs and wizard.state all die with it (the
+  # installer recreates everything fresh on the rebuild).
+  local went=false m
+  for m in cloud vault mail monitor; do
+    mod_rm "$m" && went=true
+  done
+  [ "$went" = true ] && wipe_data
   resolve_errors
   restore_after_teardown
   # the repo clone LAST and only after this script exits — bash reads the

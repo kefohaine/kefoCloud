@@ -216,6 +216,12 @@ task_reinstall_skip() {   # task_reinstall_skip <task-function-name>
   # The row's status column is painted by task_end (it ends on [SKIP]); its time
   # is recorded here so the whole run reached it at this moment.
   TASK_TS[$TASK_CUR]=$(date +%H:%M:%S)
+  # END the task here: callers early-return after a skip and never reach their
+  # own task_end, so without this the row stays [EXEC] with its animator alive
+  # (and TASK_ACTIVE set) for the rest of the run — every later task stacks
+  # another animator on top and the checklist tears itself apart
+  # (2026-10-19, "to-do list completely broken after reinstall").
+  task_end
   return 0
 }
 TASK_TOTAL=${#TASK_NAMES[@]}
@@ -602,17 +608,33 @@ reinstall_handoff() {
   [ -f "$LOG" ] && cp -f "$LOG" "$carry" 2>/dev/null || true
 
   detail "  handing the removal to scripts/install/uninstall.sh --reinstall (the installer never removes)"
-  echo ""
-  # Interactive on purpose: the operator watches the teardown and its
-  # verification, then sees the installer take over again. Always return 0 to
-  # start the reinstall run.
-  UNS_INSTALLER=yes bash "$u" --reinstall
+  # Silent hand-off: uninstall.sh's whole output is captured (kept in the log,
+  # never printed). On success only one DONE tag prints; on failure only its
+  # error summary prints (2026-10-19 — operator asked for a quiet hand-off).
+  local uout; uout="$(mktemp /tmp/uninstall-handoff.XXXXXX)"
+  ACCEPT_CONSEQUENCES=1 UNS_INSTALLER=yes bash "$u" --reinstall >"$uout" 2>&1
   local rc=$?
 
   # data/ (and its logs) may be gone: reopen the log namespace, then restore
   # this run's own log on top of the fresh file.
   ensure_runtime_dirs
   init_log "$@"
+  # the teardown's own record goes to uninstall.log; the wizard.log gets the
+  # exit code only (the output itself is in uninstall.log)
+  { echo "=== uninstall.sh --reinstall output (rc=$rc) ==="; cat "$uout"; } \
+    >>"$LOG_DIR/uninstall.log" 2>/dev/null || true
+  if [ "$rc" != 0 ]; then
+    # uninstall.sh verified the box and found the stack still there — or its
+    # removal failed. Either way nothing is safe to reinstall onto. Only the
+    # error message prints; the full output is in uninstall.log.
+    echo ""
+    sed -n '/ERROR(S)/,$p' "$uout" | head -40
+    grep -q 'ERROR(S)' "$uout" || printf ' ERROR — uninstall.sh --reinstall failed (rc=%s, see %s/uninstall.log)\n' "$rc" "$LOG_DIR"
+    rm -f "$uout" 2>/dev/null || true
+    return 1
+  fi
+  rm -f "$uout" 2>/dev/null || true
+  printf '%s[DONE]%s Datadirectories have been exterminated successfully\n' "$C_GREEN" "$C_RST"
   if [ -f "$carry" ]; then
     # Kept for the record, with an explicit marker: the carried file is the
     # previous run's log, not this one's.
@@ -623,15 +645,6 @@ reinstall_handoff() {
     log "  previous wizard.log carried into this run's log (marker: 'carried over from the previous wizard.log')"
   fi
   log "  reinstall: uninstall.sh --reinstall exited $rc"
-
-  if [ "$rc" != 0 ]; then
-    # uninstall.sh verified the box and found the stack still there — or its
-    # removal failed. Either way nothing is safe to reinstall onto.
-    echo ""
-    msg " NOT FINISHED — the stack is not fully uninstalled (see $LOG_DIR/uninstall.log)."
-    echo " Nothing was reinstalled. Fix the items uninstall.sh listed, then re-run this installer."
-    return 1
-  fi
   detail "  verified gone — data/ is empty and nothing of the stack is left; reinstalling now"
   return 0
 }
@@ -769,6 +782,22 @@ ask_ssh_key() {
       [ -n "$key" ] || continue
       auth_add_key "$key"
     done <<< "$SSH_PUBKEYS"
+    # wizard.state is the ALLOWLIST: keys removed from it lose authorization
+    # (removed-value applies too). Only allowlist keys are kept, so a key added
+    # by hand outside the wizard is dropped on the next run — say so.
+    local _tmp _removed
+    _tmp=$(mktemp)
+    grep -vxF -f <(printf '%s\n' "$SSH_PUBKEYS") /root/.ssh/authorized_keys >"$_tmp" 2>/dev/null || true
+    _removed=$(grep -c . "$_tmp" 2>/dev/null || true)
+    if [ "${_removed:-0}" -gt 0 ]; then
+      cat "$_tmp" >>"$LOG"
+      grep -vxF -f <(printf '%s\n' "$SSH_PUBKEYS") /root/.ssh/authorized_keys \
+        >/root/.ssh/authorized_keys.tmp 2>/dev/null || true
+      mv /root/.ssh/authorized_keys.tmp /root/.ssh/authorized_keys
+      chmod 600 /root/.ssh/authorized_keys
+      detail "  SSH: $_removed key(s) no longer in wizard.state — authorization removed"
+    fi
+    rm -f "$_tmp"
     detail "  SSH: $(ssh_key_count) device key(s) from wizard.state already authorized — paste skipped"
     return 0
   fi
@@ -1395,11 +1424,19 @@ task_tailscale() {
   # `tailscale ip -4` still prints the stale address, so the old `if ! tailscale
   # ip -4` guard skipped the join and left the box permanently off-tailnet. Gate
   # on the live control-plane state (Self.Online) instead.
-  if [ "$(tailscale status --json 2>/dev/null | jq -r '.Self.Online // false')" != "true" ]; then
+  if cred_changed tailscale "$TS_AUTHKEY"; then
+    # wizard.state holds a DIFFERENT authkey than the one the node joined with:
+    # re-authenticate even though the node is online (true->new-value applies).
+    log "  TS_AUTHKEY changed in wizard.state — re-authenticating the node"
+    tailscale up --authkey="$TS_AUTHKEY" --force-reauth >>"$LOG" 2>&1 || fail tailscale_up
+  elif [ "$(tailscale status --json 2>/dev/null | jq -r '.Self.Online // false')" != "true" ]; then
     # No --hostname: the tailnet node adopts the OS hostname ($NODE_NAME) so the
     # sole entry point is root@$NODE_NAME (MagicDNS).
     tailscale up --authkey="$TS_AUTHKEY" >>"$LOG" 2>&1 || fail tailscale_up
+  else
+    detail "  node online, TS_AUTHKEY unchanged — join skipped"
   fi
+  cred_note tailscale "$TS_AUTHKEY"
   TS_IP=$(tailscale ip -4 2>/dev/null | head -1)
   [ -n "$TS_IP" ] && log "tailscale IP: $TS_IP" || fail ts_ip
   # A rejoin can hand the node a NEW tailnet IP, and dnsmasq binds its split-DNS
@@ -1845,22 +1882,121 @@ host_services() {
   fail2ban-client status sshd >/dev/null 2>&1 || fail fail2ban
 }
 
+# ── repair-mode skip helpers ────────────────────────────────────────────────
+# A REPAIR run must honor what is already applied: a service whose containers
+# are all running AND whose inputs hash unchanged since the run that brought
+# them up is left alone. Fresh runs and reinstalls always recreate — fresh has
+# nothing to compare against, reinstall deliberately rebuilds everything. The
+# hash covers everything that shapes the runtime config: the rendered instance
+# values plus every file in the module directory (compose files, .env,
+# Caddyfile/vhosts, Dockerfile, configs). It is recorded per service group in
+# data/.svc-<group>.sha by whichever run applied it, so a later repair that
+# finds the operator tweaked wizard.state or instance.conf re-applies exactly
+# the changed groups and skips the rest.
+container_running() {
+  [ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" = "true" ]
+}
+
+svc_inputs() { # svc_inputs <module-dir>... (relative to $REPO) -> sha256
+  {
+    printf -- '--- instance.conf\n'
+    cat "$DATA/instance.conf" 2>/dev/null
+    local d f
+    for d in "$@"; do
+      [ -d "$REPO/$d" ] || continue
+      while IFS= read -r -d '' f; do
+        printf -- '--- %s\n' "${f#"$REPO"/}"
+        cat "$f"
+      done < <(find "$REPO/$d" -type f -print0 2>/dev/null | sort -z)
+    done
+  } | sha256sum | cut -d' ' -f1
+}
+
+svc_skip_repair() { # svc_skip_repair <group> <dir>... -- <container>...
+  [ "${REPAIR:-false}" = true ] || return 1   # only repair honors applied state
+  local group=$1; shift
+  local dirs=() c old h
+  while [ $# -gt 0 ] && [ "$1" != "--" ]; do dirs+=("$1"); shift; done
+  [ "${1:-}" = "--" ] && shift
+  for c in "$@"; do container_running "$c" || return 1; done
+  h="$(svc_inputs "${dirs[@]}")"
+  old="$(cat "$DATA/.svc-$group.sha" 2>/dev/null || true)"
+  [ "$h" = "$old" ]
+}
+
+svc_note_applied() { # svc_note_applied <group> <dir>... -- (containers unused)
+  local group=$1; shift
+  local dirs=()
+  while [ $# -gt 0 ] && [ "$1" != "--" ]; do dirs+=("$1"); shift; done
+  svc_inputs "${dirs[@]}" > "$DATA/.svc-$group.sha" 2>/dev/null || true
+}
+
+# ── credential change detection ──
+# wizard.state is the source of truth: a credential (TS_AUTHKEY, CF_API_TOKEN)
+# whose value differs from the one recorded when it was last APPLIED is redone
+# on a repair; an unchanged credential is not re-applied. The value itself is
+# never written — only its sha256, in data/.cred-<name>.sha.
+cred_hash() { printf '%s' "$1" | sha256sum | cut -d' ' -f1; }
+cred_changed() { # cred_changed <name> <value> -> 0 when changed (or never recorded)
+  [ "${REPAIR:-false}" = true ] || return 1
+  [ "$(cred_hash "$2")" != "$(cat "$DATA/.cred-$1.sha" 2>/dev/null || true)" ]
+}
+cred_note() { cred_hash "$2" > "$DATA/.cred-$1.sha" 2>/dev/null || true; }
+
+# Toggling a module OFF in wizard.state (repair) hands the granular teardown to
+# uninstall.sh (--granular, WIZARD_REPAIR=1) — that mode is RESERVED for this
+# call: it removes only the disabled modules' containers, compose stacks, data
+# dirs and stale .svc hashes, and deletes disabled doors' CF A records.
+# true->false applies just like false->true; enabled modules are untouched and
+# the repair run below converges the rest itself.
+module_off_teardown() {
+  [ "${REPAIR:-false}" = true ] || return 0
+  log "  hand-off: granular teardown (uninstall.sh --granular)"
+  WIZARD_REPAIR=1 bash "$REPO/scripts/install/uninstall.sh" --granular >>"$LOG" 2>&1 \
+    || log "  granular teardown reported errors — see uninstall.log"
+  return 0
+}
+
 containers_up() {
   # The checklist's own [EXEC] animation is the progress indicator, so the Caddy
   # build prints nothing here (its verbose output goes to $LOG). The dok-recreate
   # recipe already falls back to docker build + compose up when compose's buildx
   # is too old (Debian trixie).
-  log "  recreate: caddy (image build)"
-  make dok-recreate-caddy >>"$LOG" 2>&1 || fail caddy
-  detail "  Caddy image built"
+  module_off_teardown
+  if svc_skip_repair caddy caddy -- caddy; then
+    # The inputs hash alone is not enough: a run that rendered new vhosts and
+    # died before dok-recreate leaves a noted hash and an edge still running
+    # the PREVIOUS config (live 2026-10-19: caddy skipped while LE 429-stalled
+    # because the fallback-chain vhosts were never loaded). If the newest
+    # rendered file is younger than the container, recreate anyway.
+    local started newest
+    started=$(docker inspect -f '{{.State.StartedAt}}' caddy 2>/dev/null | date -u -f - +%s 2>/dev/null || echo 0)
+    newest=$(find "$DATA/rendered/caddy" -type f -printf '%T@\n' 2>/dev/null | sort -n | tail -1)
+    newest=${newest%%.*}
+    if [ "${started:-0}" -ge "${newest:-0}" ]; then
+      detail "  caddy already up, inputs unchanged — skipped"
+    else
+      detail "  caddy running config predates rendered vhosts — recreating"
+      make dok-recreate-caddy >>"$LOG" 2>&1 || fail caddy
+      detail "  Caddy image rebuilt with current rendered config"
+    fi
+  else
+    log "  recreate: caddy (image build)"
+    make dok-recreate-caddy >>"$LOG" 2>&1 || fail caddy
+    detail "  Caddy image built"
+  fi
+  svc_note_applied caddy caddy --
   # PostgreSQL first — the nextcloud entrypoint's fresh install needs the DB
   # reachable (POSTGRES_HOST from .env, set by talk-gen above). Caddy's
   # DNS-01 issuance runs at startup, so the mail/turn certs the talk stack
   # and mailserver need are on disk by the time they start. Modules respect
   # the install-time choice (default: everything ON).
   if mod_on cloud; then
-    log "  recreate: nextcloud-db + nextcloud"
-    # ONE compose invocation for BOTH files. They live in the same directory
+    if svc_skip_repair nextcloud nextcloud -- nextcloud postgresql; then
+      detail "  nextcloud-db + nextcloud already up, inputs unchanged — skipped"
+    else
+      log "  recreate: nextcloud-db + nextcloud"
+      # ONE compose invocation for BOTH files. They live in the same directory
     # (modules/nextcloud/), so compose treats them as one project — and running
     # `up --remove-orphans` on either file ALONE sees the other file's containers
     # as orphans and DELETES them. That is exactly what happened on 2026-10-15:
@@ -1873,10 +2009,33 @@ containers_up() {
       -f "$REPO/modules/nextcloud/docker-compose.yml" \
       up -d --force-recreate --remove-orphans >>"$LOG" 2>&1 \
       || { fail nextcloud_db; fail nextcloud; }
+    fi
+    svc_note_applied nextcloud nextcloud --
   fi
-  mod_on vault && { log "  recreate: vaultwarden"; make dok-recreate-vaultwarden >>"$LOG" 2>&1 || fail vaultwarden; }
-  mod_on monitor && { log "  recreate: uptimekuma";  make dok-recreate-uptimekuma  >>"$LOG" 2>&1 || fail kuma; }
-  mod_on mail && { log "  recreate: mailserver";  make dok-recreate-mailserver  >>"$LOG" 2>&1 || fail mailserver; }
+  if mod_on vault; then
+    if svc_skip_repair vaultwarden vaultwarden -- vaultwarden; then
+      detail "  vaultwarden already up, inputs unchanged — skipped"
+    else
+      log "  recreate: vaultwarden"; make dok-recreate-vaultwarden >>"$LOG" 2>&1 || fail vaultwarden
+    fi
+    svc_note_applied vaultwarden vaultwarden --
+  fi
+  if mod_on monitor; then
+    if svc_skip_repair uptimekuma uptimekuma -- uptimekuma; then
+      detail "  uptimekuma already up, inputs unchanged — skipped"
+    else
+      log "  recreate: uptimekuma";  make dok-recreate-uptimekuma  >>"$LOG" 2>&1 || fail kuma
+    fi
+    svc_note_applied uptimekuma uptimekuma --
+  fi
+  if mod_on mail; then
+    if svc_skip_repair mailserver mailserver -- mailu-front; then
+      detail "  mailserver already up, inputs unchanged — skipped"
+    else
+      log "  recreate: mailserver";  make dok-recreate-mailserver  >>"$LOG" 2>&1 || fail mailserver
+    fi
+    svc_note_applied mailserver mailserver --
+  fi
 }
 
 kuma_seed() {
@@ -2472,7 +2631,12 @@ nextcloud_setup() {
       docker exec -u www-data nextcloud php occ talk:turn:add turns "talk.$DOMAIN:5349" "tcp" --secret "$TURN_SECRET" >/dev/null 2>&1 || true
     fi
   else
-    log "  video calling disabled — spreed/signaling/TURN not configured"
+    # wizard.state is the source of truth: VIDEO_CALLING toggled OFF in a repair
+    # removes the live pieces (app, signaling + TURN entries) — not just skips.
+    docker exec -u www-data nextcloud php occ app:remove spreed >>"$LOG" 2>&1 \
+      || docker exec -u www-data nextcloud php occ app:disable spreed >>"$LOG" 2>&1 || true
+    docker exec -u www-data nextcloud php occ talk:signaling:remove "https://talk.$DOMAIN/signaling" >/dev/null 2>&1 || true
+    log "  video calling disabled — spreed/signaling/TURN removed"
   fi
 
   if [ "${CLIENT_PUSH:-false}" = "true" ]; then
@@ -2482,7 +2646,11 @@ nextcloud_setup() {
       || log "  notify_push:setup failed — check the notify-push container and the /push route"
     docker exec -u www-data nextcloud php occ notify_push:self-test >/dev/null 2>&1 || true
   else
-    log "  client push disabled — notify_push not configured"
+    # wizard.state is the source of truth: CLIENT_PUSH toggled OFF in a repair
+    # removes the notify_push app (the container goes with the rendered compose).
+    docker exec -u www-data nextcloud php occ app:remove notify_push >>"$LOG" 2>&1 \
+      || docker exec -u www-data nextcloud php occ app:disable notify_push >>"$LOG" 2>&1 || true
+    log "  client push disabled — notify_push removed"
   fi
 
   # Background jobs via the host cron (config/cron/nextcloud, installed by install-config).
@@ -2859,13 +3027,24 @@ cf_mail_dns() {
       -d "{\"type\":\"A\",\"name\":\"$fqdn\",\"content\":\"$HOST_IP\",\"ttl\":1,\"proxied\":$2}" \
       >>"$LOG" 2>&1 || fail "dns_${1:-apex}"
   }
+  cf_a_del() { # cf_a_del <host> — remove an A record whose door was disabled
+    local fqdn rid
+    fqdn="${1:+$1.}$DOMAIN"
+    rid=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
+      "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$fqdn" \
+      | jq -r '.result[0].id // empty')
+    [ -n "$rid" ] || return 0
+    curl -s -X DELETE -H "Authorization: Bearer $CF_API_TOKEN" \
+      "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$rid" >>"$LOG" 2>&1 || true
+    detail "  A record removed: $fqdn (disabled in wizard.state)"
+  }
   # proxied (orange cloud): the apex + vault/kuma/www. talk rides on the cloud door.
   for h in "" cloud vault kuma www; do
     case "$h" in
       "")    cf_record "" true;;
-      cloud) mod_on cloud && cf_record "$h" false;;
-      vault) mod_on vault && cf_record "$h" true;;
-      kuma)  mod_on monitor && cf_record "$h" true;;
+      cloud) mod_on cloud && cf_record "$h" false || cf_a_del cloud;;
+      vault) mod_on vault && cf_record "$h" true  || cf_a_del vault;;
+      kuma)  mod_on monitor && cf_record "$h" true || cf_a_del kuma;;
       www)   cf_record "$h" true;;
     esac
   done
@@ -2874,7 +3053,14 @@ cf_mail_dns() {
   # (HTTP(S) only). Caddy still gets their LE certs via DNS-01. talk exists
   # only when video calling was enabled.
   mod_on cloud && [ "${VIDEO_CALLING:-true}" != "false" ] && cf_record talk false
+  mod_on cloud && [ "${VIDEO_CALLING:-true}" = "false" ] && cf_a_del talk
   mod_on mail  && cf_record mail false
+  mod_on mail || cf_a_del mail
+  # mailu.$DOMAIN is Mailu's OWN hostname (admin UI door) — DNS-only like mail,
+  # because it must never be proxied behind the CF edge (operator request,
+  # 2026-10-19: the two names must never overlap).
+  mod_on mail  && cf_record mailu false
+  mod_on mail || cf_a_del mailu
   mod_on mail && cf_mail_dns
   curl -s -X PATCH -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
     "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/settings/ssl" -d '{"value":"full"}' >>"$LOG" 2>&1 || true
@@ -2885,10 +3071,16 @@ cf_mail_dns() {
 }
 
 # ── tail door TLS ──────────────────────────────────────────────────────────
-# tail.$DOMAIN is served by Caddy's own vhost with `tls internal` (Caddy's local
-# CA, never Let's Encrypt): the vhost is tailnet-only, so it has no public ACME
-# identifier and no per-identifier rate limit. Caddy issues and stores the cert
-# itself; there is nothing to order or renew from the installer.
+# tail.$DOMAIN is attempted through Let's Encrypt like every other vhost (the
+# operator asked for a trusted cert there too — no `tls internal` any more).
+# Unlike the public vhosts, its failure is NEVER fatal and never blocks smoke:
+#   * the name is first auto-checked for public resolution — with no public
+#     record there is no usable ACME identifier, so the order is skipped;
+#   * a failed order (typically the Let's Encrypt per-identifier rate limit)
+#     sets TAIL_TLS_FALLBACK, and the success block lists ONE follow-up:
+#     run scripts/ops/tailscale-https.sh, which serves the door over
+#     Tailscale HTTPS instead (web address becomes
+#     https://<machine>.<tailnet>.ts.net — different by design).
 
 # Issuer of the cert Caddy presents for one vhost, polled while ACME finishes.
 cert_issuer() {
@@ -2896,7 +3088,11 @@ cert_issuer() {
   while [ $i -lt 45 ]; do
     iss=$(echo | timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$h.$DOMAIN" 2>/dev/null \
       | openssl x509 -noout -issuer 2>/dev/null | cut -d'=' -f2-)
-    case "$iss" in *"Let's Encrypt"*) break;; esac
+    # Any non-empty issuer counts: the vhost tls blocks carry a fallback chain
+    # (Let's Encrypt -> Buypass -> ZeroSSL), so a rate-limited LE order is
+    # legitimately replaced by another free provider's cert — that is success,
+    # not a stuck order (2026-10-19).
+    [ -n "$iss" ] && break
     i=$((i+2)); sleep 2
   done
   echo "$iss"
@@ -2904,14 +3100,24 @@ cert_issuer() {
 
 issue_certs() {
   local hosts="" h iss pending=()
+  TAIL_TLS_FALLBACK=false
   hosts="www"
   mod_on cloud   && hosts="$hosts cloud"
   mod_on cloud && [ "${VIDEO_CALLING:-true}" != "false" ] && hosts="$hosts talk"
   mod_on vault   && hosts="$hosts vault"
   mod_on monitor && hosts="$hosts kuma"
   mod_on mail    && hosts="$hosts mail"
-  # tail.$DOMAIN is absent on purpose: its `tls internal` cert is issued by
-  # Caddy's local CA, not ordered from Let's Encrypt.
+  mod_on mail    && hosts="$hosts mailu"
+  # tail.$DOMAIN joins the LE attempt, but only if it resolves publicly
+  # (auto check): with no public A record there is no ACME identifier to order
+  # for, and the Caddy TXT-only DNS-01 order would just spin. A miss is not a
+  # failure — it flags the tailscale-https follow-up instead.
+  if dig +short A "tail.$DOMAIN" @1.1.1.1 2>/dev/null | grep -q '^[0-9]'; then
+    hosts="$hosts tail"
+  else
+    TAIL_TLS_FALLBACK=true
+    detail "  tail.$DOMAIN does not resolve publicly — LE order skipped (follow-up: scripts/ops/tailscale-https.sh)"
+  fi
   for h in $hosts; do
     curl -sk --resolve "$h.$DOMAIN:443:127.0.0.1" -o /dev/null "https://$h.$DOMAIN/" >>"$LOG" 2>&1 || true
     sleep 3
@@ -2921,23 +3127,21 @@ issue_certs() {
   # outcomes are NOT the same and must not be treated as one:
   #   * empty issuer  = Caddy has not finished issuing yet (normal warm-up);
   #                     wait it out, never restart the edge for it.
-  #   * real issuer that is not Let's Encrypt = an order genuinely stuck, which
-  #     one restart re-attempts (observed on kuma.$DOMAIN: every other vhost
-  #     issued while that lock kept retrying).
+  #     Any non-empty issuer is success — the fallback chain (LE -> Buypass ->
+  #     ZeroSSL) may legitimately serve a non-LE cert when LE rate-limits.
   # Restarting on the empty case alone killed every live connection for nothing.
   local stuck=() h2
   for h in $hosts; do
     iss=$(cert_issuer "$h")
     case "$iss" in
-      *"Let's Encrypt"*) ;;
       "") pending+=("$h") ;;
-      *) stuck+=("$h") ;;
+      *)  detail "  $h.$DOMAIN cert issued by: $iss";;
     esac
   done
   if [ ${#pending[@]} -gt 0 ]; then
     detail "  ${#pending[@]} cert(s) still issuing (${pending[*]}) — waiting for Caddy to finish"
     for h2 in "${pending[@]}"; do
-      case "$(cert_issuer "$h2")" in *"Let's Encrypt"*) ;; *) stuck+=("$h2");; esac
+      case "$(cert_issuer "$h2")" in "" ) stuck+=("$h2");; esac
     done
   fi
   if [ ${#stuck[@]} -gt 0 ]; then
@@ -2949,12 +3153,35 @@ issue_certs() {
     sleep 5
   fi
   for h in $hosts; do
+    [ "$h" = tail ] && continue   # non-fatal: handled below
     iss=$(cert_issuer "$h")
     case "$iss" in
-      *"Let's Encrypt"*) ;;
-      *) fail "cert_$h" "issuer was: $iss";;
+      "" ) fail "cert_$h" "no cert issued for $h.$DOMAIN";;
+      *)   detail "  $h.$DOMAIN cert issuer: $iss";;
     esac
   done
+  # tail.$DOMAIN: a failed LE order must not abort the install. The common
+  # cause is the Let's Encrypt per-identifier rate limit (5 orders/name/week);
+  # the remedy is the same either way — the tailscale-https follow-up.
+  case " $hosts " in *" tail "*)
+    if [ -z "$(cert_issuer tail)" ]; then
+      # Nothing worked yet — kick the edge once more and give the fallback
+      # chain (LE -> Buypass -> ZeroSSL) a full second polling window before
+      # advising the Tailscale HTTPS follow-up. Tailscale-https is the LAST
+      # resort, only after every free issuer failed (2026-10-19).
+      docker restart caddy >>"$LOG" 2>&1 || true
+      sleep 5
+      curl -sk --resolve "tail.$DOMAIN:443:127.0.0.1" -o /dev/null "https://tail.$DOMAIN/" >>"$LOG" 2>&1 || true
+      if [ -z "$(cert_issuer tail)" ]; then
+        TAIL_TLS_FALLBACK=true
+        if docker logs caddy 2>&1 | grep -qi "rate limit"; then
+          detail "  tail.$DOMAIN no issuer in the fallback chain issued a cert (LE rate-limited, Buypass/ZeroSSL unavailable) — follow-up: scripts/ops/tailscale-https.sh"
+        else
+          detail "  tail.$DOMAIN cert did not issue from any fallback issuer — follow-up: scripts/ops/tailscale-https.sh"
+        fi
+      fi
+    fi
+  ;; esac
 }
 
 # Old-project references must not survive in anything the installer deploys
@@ -3030,6 +3257,7 @@ task_dns() {
   task_start
   task_reinstall_skip task_dns && return 0
   cf_dns
+  cred_note cloudflare "$CF_API_TOKEN"
   task_end
 }
 
@@ -3556,10 +3784,19 @@ success_block() {
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${VAULTWARDEN_ADMIN_USER:-admin@$DOMAIN}" "${VAULTWARDEN_ADMIN_PASSWORD:-<see modules/vaultwarden/.env>}" "$C_RST"
   mod_on monitor && printf '  %sUptime Kuma%s  https://kuma.%s    %sadmin / %s%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${KUMA_PASS:-(already set — rotate with: make kuma-passwd USER=admin PASS=…)}" "$C_RST"
-  mod_on mail && printf '  %sWebmail%s      https://mail.%s    %s(mailboxes via make mail-gen)%s\n' \
+  # Roundcube owns mail.$DOMAIN (webmail door); Mailu's own hostname is
+  # mailu.$DOMAIN (platform/admin door) — the names never overlap (2026-10-19).
+  mod_on mail && printf '  %sWebmail%s      https://mail.%s    %s(roundcube — mailboxes via make mail-gen)%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
-  printf '  %sShell%s        https://tail.%s   %s(tailnet-only, self-signed cert)%s\n' \
-    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
+  mod_on mail && printf '  %sMailu admin%s  https://mailu.%s   %s(Mailu platform door — its own name, never mail.%s)%s\n' \
+    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$DOMAIN" "$C_RST"
+  if [ "${TAIL_TLS_FALLBACK:-false}" = true ]; then
+    printf '  %sShell%s        %s(tailnet-only — run scripts/ops/tailscale-https.sh to serve it via tailscale)%s\n' \
+      "$C_PURPLE" "$C_RST" "$C_GREY" "$C_RST"
+  else
+    printf '  %sShell%s        https://tail.%s   %s(tailnet-only)%s\n' \
+      "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
+  fi
   printf '  %smachine IP%s %s    %sTailscale IP%s %s\n' \
     "$C_GREY" "$C_RST" "${HOST_IP:-?}" "$C_GREY" "$C_RST" "${TS_IP:-?}"
   echo ""
@@ -3586,6 +3823,9 @@ success_block() {
   fi
   n=$((n+1)); printf '   %d. Tailscale split-DNS: admin console -> DNS -> add %s -> %s\n' "$n" "$DOMAIN" "${TS_IP:-<tailscale IP>}"
   printf '      %sso tail.%s resolves for tailnet devices (dnsmasq on the machine already answers it)%s\n' "$C_GREY" "$DOMAIN" "$C_RST"
+  if [ "${TAIL_TLS_FALLBACK:-false}" = true ]; then
+    n=$((n+1)); printf '   %d. Run scripts/ops/tailscale-https.sh — the tail.%s LE order failed (often the LE rate limit), so the door is served over Tailscale HTTPS instead\n' "$n" "$DOMAIN"
+  fi
   if mod_on cloud; then
     n=$((n+1)); printf '   %d. %s(optional)%s Cloudflare WAF rule skip for cloud.%s (desktop sync)\n' "$n" "$C_GREY" "$C_RST" "$DOMAIN"
   fi
@@ -3749,7 +3989,7 @@ main() {
       # so a re-run after a green install works but does the work again. Say so,
       # because "repair" reads like "continue from where it stopped" (2026-10-16).
       if [ "${FINISHED:-false}" = "true" ]; then
-        msg "  previous run finished successfully — a repair re-runs the whole (idempotent) pipeline, it does not skip completed steps."
+        msg "  previous run finished successfully — a repair re-runs the pipeline but only re-applies what is missing or changed (enabled-in-state but not detected locally gets installed; running services with unchanged inputs are skipped)."
       fi
     fi
   else
