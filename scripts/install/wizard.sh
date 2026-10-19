@@ -2561,15 +2561,31 @@ nextcloud_setup() {
   # UI test email fails even though the credentials are valid.
   docker exec -u www-data nextcloud php occ config:system:set mail_smtpauth --value true >/dev/null 2>&1
 
+  # mail_roundcube (installed+enabled automatically when mail is on) wraps the
+  # Roundcube instance in an iframe; without externalLocation its own page is
+  # just the "you did not tell me where to find your configured Roundcube
+  # instance" error. cube.$DOMAIN is this stack's Roundcube (cube.caddy), so the
+  # installer always sets it — the app has no other place to learn the URL.
+  docker exec -u www-data nextcloud php occ config:app:set mail_roundcube externalLocation \
+    --value "https://cube.$DOMAIN" >/dev/null 2>&1 || true
+  # userChosenEmail is the app's own default and the only choice that leaves the
+  # personal "Email Login Name" editable: with userPreferencesEmail/userIdEmail
+  # the field is greyed out and the app silently feeds NC's UID or profile
+  # address to the IMAP/SMTP login — and our users have no NC email set, so the
+  # wrapper cannot log in at all. Each user then enters the mailbox address and
+  # password under Settings → Personal → Embedded RoundCube.
+  docker exec -u www-data nextcloud php occ config:app:set mail_roundcube emailAddressChoice \
+    --value userChosenEmail >/dev/null 2>&1 || true
+
   # Single-PHP instance: serverid (int 0-511) silences the "Configuration
   # server ID" setup check; AppAPI is disabled — no external apps are used
   # (the "AppAPI default deploy daemon" check only fires while it's enabled).
   if [ -z "$(docker exec -u www-data nextcloud php occ config:system:get serverid 2>/dev/null | tr -d '\n')" ]; then
     docker exec -u www-data nextcloud php occ config:system:set serverid --value 1 --type integer >/dev/null 2>&1 || true
   fi
-  # Upgrades from the web UI are allowed (the operator may prefer CLI, but the
-  # updater page must not be blocked by default).
-  docker exec -u www-data nextcloud php occ config:system:set upgrade.disable-web --value false --type boolean >/dev/null 2>&1 || true
+  # Web updater: re-asserted as the LAST step of this function (see below) —
+  # the image's config/upgrade-disable-web.config.php drop-in loads after
+  # config.php, so an occ write here would be silently overridden.
   # Default maintenance window: 3 AM in the instance timezone.
   docker exec -u www-data nextcloud php occ config:system:set maintenance_window_start --value 3 --type integer >/dev/null 2>&1 || true
 
@@ -2748,6 +2764,16 @@ nextcloud_setup() {
       log "  WARNING: occ wiring not confirmed after re-apply — non-fatal, no error raised (the wiring is idempotent and settles on its own; check $LOG if a UI symptom appears)"
     fi
   fi
+
+  # LAST (priority step): the web updater must be usable, so
+  # upgrade.disable-web has to be false — in the drop-in, not in config.php.
+  # Every config/*.config.php file is loaded AFTER config.php, and the image
+  # ships upgrade-disable-web.config.php with true; `occ config:system:set`
+  # writes config.php and the drop-in then silently wins (the key keeps
+  # reading back true). Rewriting the drop-in is what actually enables the
+  # updater page. www-data owns it, like the rest of the html tree.
+  docker exec -u www-data nextcloud php -r 'file_put_contents("/var/www/html/config/upgrade-disable-web.config.php", "<?php\n\$CONFIG = array (\n  \"upgrade.disable-web\" => false,\n);\n");' >/dev/null 2>&1 || true
+  docker exec -u www-data nextcloud php occ config:system:set upgrade.disable-web --value false --type boolean >/dev/null 2>&1 || true
 }
 
 # Automated remediation for a nextcloud_setup failure: re-apply the idempotent
