@@ -21,9 +21,10 @@ records, the certificates, and the module setup steps (`occ` wiring, Mailu mailb
 Kuma seed). The run ends with `write_state` (`finished=true`) → one `make smoke`, whose
 exit code is the verdict; a failure records `finished=false`. Log: `$DATA_DIR/logs/wizard.log`.
 
-Re-running the installer on a finished install offers **repair** (idempotent, add-only,
-never removes anything) or **reinstall** (hands the removal to
-`scripts/install/uninstall.sh --reinstall`, then rebuilds the production stack).
+Re-running the installer on a finished install offers **repair** after a yes/no
+confirmation (idempotent, add-only, never removes anything; answer `no` and it exits
+without touching the box). To rebuild from scratch, run `scripts/install/uninstall.sh`
+first, then the installer again.
 
 ## What the script does not do
 

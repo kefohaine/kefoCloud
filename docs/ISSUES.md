@@ -11,16 +11,6 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ## Open
 
-### Reinstall mode is still wired into the installer and the uninstaller
-- **File**: `scripts/install/wizard.sh` (`reinstall_handoff`, `REINSTALL`, `task_reinstall_skip`), `scripts/install/uninstall.sh` (`--reinstall`/`--full`, `ACCEPT_CONSEQUENCES`)
-- **Problem**: the operator asked for the whole reinstall path to be removed — repair mode should be the only mode offered when `wizard.state` exists, with no link between the two scripts and no `--full`/`ACCEPT_CONSEQUENCES` arguments. Both scripts still carry it, so the two entry points and their docs remain coupled.
-- **Fix**: delete the reinstall mode from both scripts (repair-only prompt, no hand-off, no `--reinstall`/`--full`, no `ACCEPT_CONSEQUENCES`), then re-audit GUIDE/README/ISSUES for the removed behaviour.
-
-### Hook comments cite the old AGENTS rule number for the identity guard
-- **File**: `scripts/hooks/pre-commit`, `scripts/hooks/pre-push`
-- **Problem**: both comments attribute the identity requirement to "AGENTS rule 12"; the rule is now 27. The guard itself is correct.
-- **Fix**: reword the comments to rule 27 and re-run `make install-hooks`.
-
 ### `http: vault` Kuma monitor watches a module that is not installed
 - **File**: the `uptimekuma` module's SQLite (`monitor` table)
 - **Problem**: the monitor `http: vault` points at `https://vault.$DOMAIN`, but the `vault` module is not in `enabled_modules` in `wizard.state` — no container, no route — so it is permanently down. That is a *not installed* module, NOT a tailnet-only route (the two are distinct: see GUIDE "Module state vs route exposure").
@@ -372,6 +362,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **`make fetch` splits module state from container state** — prints `finished` first, `modules` (installed/not-installed) independently of `containers` (running/stopped, repo-wide roster from live docker).
 - **Module record written empty** — the module writer used `${MOD_${m^^}:-true}` (bad bash substitution), so every install wrote an empty record and `make smoke` muted all module checks; now builds the var name first and indirects it.
 - **sshd base config drifted from the drop-in** — the installer hardened only `/etc/ssh/sshd_config.d/50-cloud-init.conf` while `/etc/ssh/sshd_config` kept `PermitRootLogin yes`/`PasswordAuthentication yes`/`X11Forwarding yes`; now the base config is sed-edited to match and `X11Forwarding no` is set, so on-disk == running config.
+- **Reinstall mode removed from both scripts** — repair is the only mode a re-run offers (one yes/no confirmation), the installer never calls `uninstall.sh --reinstall`, and `--full`/`--reinstall`/`ACCEPT_CONSEQUENCES` are gone.
 - **Stale installer SSH rules lingered** — prior installs left `22/tcp` allow rules for old IPs (old machine IP + retired tailnet device); phase-1 and `finalize_hardening` now sweep any non-tailnet 22 rule.
 
 - **Hostname + login account + tailnet node renamed kefoCloud → kefomachine** — `data/instance.conf` HOSTNAME, all module `.env` instance blocks, the installer's `NODE_NAME`, `/etc/hostname`/`kefo-banner.sh`, the boot unit, and the Tailscale node (`tailscale up --hostname=kefomachine`) updated; `make render` re-derives every service `.env` and `data/rendered` so no hardcoded value remains, `git diff -- data/` stays empty, smoke still green.

@@ -52,22 +52,20 @@
 # are grouped as expected; real failures as unexpected.
 #
 # MODES (UNINSTALL_MODE, picked by argument — granular is NOT an operator mode):
-#   full (default; also --full / legacy --reinstall)
-#     the whole production stack and its data, verified gone. This is BOTH the
-#     reinstall hand-off (ACCEPT_CONSEQUENCES=1 → prompts skipped) and the
-#     manual operator run (the three consequence confirmations apply).
+#   full (default, no argument)
+#     the whole production stack and its data, verified gone. The three
+#     consequence confirmations always apply.
 #   granular (--granular)
 #     RESERVED for wizard.sh repair mode (requires WIZARD_REPAIR=1). wizard.state
 #     is the source of truth: ONLY disabled modules are torn down (containers,
 #     compose stacks, data dirs, stale .svc hashes) and only disabled doors'
 #     Cloudflare A records are deleted. wizard.state, .cred-*.sha and enabled
 #     modules are untouched — the repair run converges the rest itself.
-#   interactive (--interactive) — the legacy per-module scope prompts.
+#   interactive (--interactive) — per-module scope prompts.
 #
 # Usage (root on the box, from the repo checkout):
-#   sudo bash scripts/install/uninstall.sh              # full teardown (warned)
-#   sudo bash scripts/install/uninstall.sh --reinstall  # same, non-warned when
-#     handed off by the installer (ACCEPT_CONSEQUENCES=1)
+#   sudo bash scripts/install/uninstall.sh               # full teardown (warned)
+#   sudo bash scripts/install/uninstall.sh --interactive # pick the scope
 #
 # Full log: $LOG_DIR/uninstall.log
 
@@ -137,11 +135,9 @@ ask() { # ask <var> <question> [ignored]  (ONLY the words yes/no; recorded as tr
   done
 }
 
-# Three consecutive consequence confirmations before ANYTHING is touched. The
-# installer's reinstall hand-off (which already asked its own questions) skips
-# them by passing ACCEPT_CONSEQUENCES=1 alongside its arguments.
+# Three consecutive consequence confirmations before ANYTHING is touched.
+# Nothing skips them: the full teardown is only ever a manual operator run.
 confirm_consequences() {
-  [ "${ACCEPT_CONSEQUENCES:-}" = "1" ] && { log "  consequences accepted in advance (ACCEPT_CONSEQUENCES=1) — prompts skipped"; return 0; }
   local a
   echo ""
   echo " ── CONFIRMATION 1/3 — what dies ─────────────────────────────────────────"
@@ -168,28 +164,10 @@ confirm_consequences() {
 # the literal words yes/no are accepted, and nothing is removed unless the
 # operator answers yes.
 
-# ─────────────── --reinstall: the installer's hand-off mode ───────────────
-# the installer is ADD-ONLY, so a reinstall hands the removal HERE:
-#   bash scripts/install/uninstall.sh --reinstall
-# Scope is pre-answered and contains NO prompts — a reinstall rebuilds the
-# production stack, so this mode removes exactly the stack and its data:
-#   modules (containers + data dirs) · edge (Caddy + caddy_data/)
-#   every module data dir including ones no module claims (pgdata, talk,
-#   rendered, www, download, mailserver, logs, …) · wizard.state
-# It NEVER touches the repo clone, the host services, the packages, the
-# operator account or the tailnet membership — those are the framework, and a
-# reinstall keeps them.
-#
-# Exit code is the SAFETY CHECK the installer depends on:
-#   0 = the stack is verifiably gone (every check below passed) → the installer
-#       proceeds with the reinstall run
-#   1 = something is still there, or a removal failed, or the list could not be
-#       listed → the installer ABORTS the reinstall (it changes nothing)
 # ─────────────── modes: full / granular / interactive ─────────────────────
 UNINSTALL_MODE=full
 for _a in "$@"; do
   case "$_a" in
-    --reinstall|--full) UNINSTALL_MODE=full ;;
     --granular)         UNINSTALL_MODE=granular ;;
     --interactive)      UNINSTALL_MODE=interactive ;;
     --mode=*)           UNINSTALL_MODE="${_a#--mode=}" ;;
@@ -222,11 +200,11 @@ remove_remote_export() {
   ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "$tgt" \
     "sed -i '\#^$mnt #d' /etc/exports && exportfs -ra" >>"$LOG" 2>&1 \
     || fail data "remote export on $tgt not removed (run: ssh $tgt \"sed -i '\\#$mnt #d' /etc/exports && exportfs -ra\")"
-  # Full mode NEVER keeps the remote datadirectory: the NFS export line is
-  # removed above AND the datadirectory itself is exterminated on the remote
-  # machine (2026-10-19 — 'kept' wording was wrong for full/reinstall mode;
-  # only the reserved granular mode ever leaves the remote files in place).
-  if [ "${UNINSTALL_MODE:-full}" = full ]; then
+  # Every teardown except the reserved granular mode removes the remote
+  # datadirectory: the NFS export line is removed above AND the directory
+  # itself is exterminated on the remote machine (2026-10-19 — 'kept' wording
+  # was wrong for a full teardown).
+  if [ "${UNINSTALL_MODE:-full}" != granular ]; then
     log "  exterminating the remote datadirectory on $tgt ($mnt)"
     ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "$tgt" \
       "rm -rf -- '$mnt'" >>"$LOG" 2>&1 \
@@ -248,9 +226,9 @@ wipe_data() {
     || fail data "$PROJECT_DIR not deleted"
 }
 
-# The verification: is the stack REALLY gone? Runs after the removal in
-# --reinstall mode. Every item below must be clean, so a half-removed stack can
-# never be reinstalled onto. Read-only: it inspects, it never deletes.
+# The verification: is the stack REALLY gone? Runs after the removal in full
+# mode. Every item below must be clean, so a half-removed stack is reported
+# instead of passing as done. Read-only: it inspects, it never deletes.
 verify_stack_gone() {
   local t=""
   local ctn="caddy nextcloud postgresql vaultwarden uptimekuma mailu-front mailu-imap mailu-smtp mailu-antispam mailu-admin mailu-redis roundcube talk-hpb talk-relay notify-push"
@@ -278,52 +256,14 @@ verify_stack_gone() {
     for i in "${!ERR_TAGS[@]}"; do
       echo "   - $(problem "${ERR_TAGS[$i]}")"
     done
-    echo " Reinstall aborted (the installer will not rebuild onto a live stack)."
-    log "  reinstall verification FAILED: ${ERR_TAGS[*]}"
+    echo " Teardown incomplete — resolve the items above, then re-run."
+    log "  teardown verification FAILED: ${ERR_TAGS[*]}"
     return 1
   fi
   echo ""
   echo " Stack verified gone: containers, network, data/ and wizard.state are all clear."
-  log "  reinstall verification passed — nothing of the stack is left"
+  log "  teardown verification passed — nothing of the stack is left"
   return 0
-}
-
-# Hand the box back to the installer after a teardown that left it unusable (the
-# stack and its data gone, nothing else touched) — that is exactly the state
-# the installer's reinstall gate expects, so it rebuilds the production stack with
-# freshly asked values and runs smoke last. Offered, never assumed: only an
-# explicit yes spawns it, and UNS_INSTALLER=yes (set by the installer's own
-# hand-off, one level down) suppresses it entirely so the two scripts can never
-# bounce the box between each other.
-ask_restore() {
-  local v="${UNINSTALL_RESTORE:-}" a
-  [ "${UNS_INSTALLER:-}" = yes ] && return 0
-  if [ -n "$v" ]; then
-    case "${v,,}" in
-      yes) RESTORE_AFTER=true ;; no) RESTORE_AFTER=false ;; *) v="" ;;
-    esac
-  fi
-  [ -n "$v" ] && return 0
-  while :; do
-    read -rp "Uninstall finished — run the installer to reinstall the stack now? (yes/no): " a || return 1
-    case "${a,,}" in
-      yes) RESTORE_AFTER=true;  return 0;;
-      no)  RESTORE_AFTER=false; return 0;;
-      *)   echo "   type yes or no.";;
-    esac
-  done
-}
-
-# Start the installer (never exec: this script's log stays the teardown's own).
-# data/ is gone, so the installer opens its fresh data/logs/wizard.log and asks
-# every value at the repair/reinstall gate.
-restore_after_teardown() {
-  [ "${RESTORE_AFTER:-false}" = true ] || return 0
-  echo ""
-  echo "Reinstalling the production stack: bash $REPO/scripts/install/wizard.sh"
-  echo "   …it will find data/ erased; answer 'reinstall' at its first prompt."
-  bash "$REPO/scripts/install/wizard.sh"
-  log "  the installer returned ($?) after the teardown hand-off"
 }
 
 ask_modules() {
@@ -404,19 +344,8 @@ ask_inputs() {
   for k in cloud vault mail monitor; do
     mod_rm "$k" && ml+="$k "
   done
-  # The real reinstall is the pair: this teardown, then the installer in reinstall
-  # mode on the emptied box. `any` is false when nothing is selected — an
-  # operator who only wants the stack rebuilt is sent straight to the installer
-  # (it can repair, no teardown needed).
-  if [ "${any_sel:-false}" != true ]; then
-    ask_restore
-  elif [ "${RM_MOD_DATA:-false}" = true ] && [ "${RM_TAILNET:-false}" != true ]; then
-    ask_restore    # data/ is gone but the box stays usable → offer the rebuild
-  else
-    echo ""
-    echo "Reinstall the production stack later with: bash $REPO/scripts/install/wizard.sh"
-    echo "   …answer 'reinstall' at its first prompt (repairs a running instance instead)."
-  fi
+  echo ""
+  echo "Rebuild the stack later with: bash $REPO/scripts/install/wizard.sh"
   echo "Teardown summary — modules: ${ml:-none}· edge: ${RM_EDGE:-false} · host: ${RM_HOST:-false} · pkgs: ${RM_PKGS:-false} · user: ${RM_USER:-false} · tailnet: ${RM_TAILNET:-false}"
   echo "Full log: $LOG"
 }
@@ -611,7 +540,7 @@ remove_tailnet() {
 problem() {
   case "$1" in
     rmmod_*)  echo "the ${1#rmmod_} module is not fully removed" ;;
-    # --reinstall verification (the installer's hand-off): the stack must be gone
+    # full-mode verification: the stack must be gone
     container_*) echo "container ${1#container_} is still there" ;;
     network)  echo "the stack's docker network 'net' is still there" ;;
     data)     echo "data/ is still there" ;;
@@ -631,10 +560,10 @@ problem() {
 hint() {
   case "$1" in
     rmmod_*)  echo "run: docker ps -a; docker rm -f <the module's containers>; check $LOG, then re-check" ;;
-    container_*) echo "run: docker rm -f ${1#container_}, then re-run: bash scripts/install/uninstall.sh --reinstall" ;;
-    network)  echo "run: docker network rm net, then re-run: bash scripts/install/uninstall.sh --reinstall" ;;
-    data*)    echo "run: rm -rf $PROJECT_DIR, then re-run: bash scripts/install/uninstall.sh --reinstall" ;;
-    state)    echo "run: rm -f $INSTALL_STATE, then re-run: bash scripts/install/uninstall.sh --reinstall" ;;
+    container_*) echo "run: docker rm -f ${1#container_}, then re-run: bash scripts/install/uninstall.sh" ;;
+    network)  echo "run: docker network rm net, then re-run: bash scripts/install/uninstall.sh" ;;
+    data*)    echo "run: rm -rf $PROJECT_DIR, then re-run: bash scripts/install/uninstall.sh" ;;
+    state)    echo "run: rm -f $INSTALL_STATE, then re-run: bash scripts/install/uninstall.sh" ;;
     edge)     echo "run: docker rm -f <edge container>; docker network rm net; check $LOG, then re-check" ;;
     host_goose|host_dnsmasq) echo "run: systemctl disable --now ${1#host_}; rm -f /etc/systemd/system/${1#host_}.service; systemctl daemon-reload, then re-check" ;;
     host_ttyd) echo "run scripts/install/uninstall.sh from SSH or a local terminal (not the ttyd web shell), then re-check" ;;
@@ -688,7 +617,7 @@ err_d() { [ -n "$1" ] && printf ' (%s)' "${ERR_DETAIL[$1]:-}"; return 0; }
 is_expected() {
   case "$1" in
     host_ttyd) return 0 ;;  # the operator must re-run from outside ttyd — manual
-    # --reinstall verification failures are UNEXPECTED: the teardown's own
+    # full-mode verification failures are UNEXPECTED: the teardown's own
     # removal is supposed to have left nothing behind, so a leftover is a bug in
     # it, not a manual step for the operator.
     container_*|network|data_*|state) return 1 ;;
@@ -801,23 +730,22 @@ summary() {
 }
 trap summary EXIT
 
-# ─────────────────────── --reinstall: stack only ──────────────────────────
-# No prompts: the installer already asked, and this mode is the installer's hand-off.
-# Removes the production stack and its data, verifies the box is clean, and
-# returns the verdict as its exit code (0 = gone, 1 = something is left).
-reinstall_stack_only() {
+# ─────────────────────── full: stack and data ─────────────────────────────
+# The default mode. Removes the production stack and its data, verifies the box
+# is clean, and returns the verdict as its exit code (0 = gone, 1 = something is left).
+full_teardown() {
   local k
-  log "=== uninstall.sh --reinstall — production stack only (no host, no repo, no tailnet)"
-  # this mode has NO prompts: preselect the stack scope explicitly, otherwise
-  # the mod_rm guards below skip every module, leaving the containers
-  # attached to 'net' so the network rm fails
-  # and the verification reports a live stack (2026-10-19 uninstall.log bug).
+  log "=== uninstall.sh — full teardown (production stack and data)"
+  # The stack scope is preselected explicitly, otherwise the mod_rm guards
+  # below skip every module, leaving the containers attached to 'net' so the
+  # network rm fails and the verification reports a live stack
+  # (2026-10-19 uninstall.log bug).
   for k in $STACK_MODULES; do
     eval "RM_MOD_${k^^}=true"
   done
   RM_MOD_DATA=true
   echo ""
-  echo "Uninstalling the production stack (hand-off from the installer):"
+  echo "Uninstalling the production stack:"
   for k in $STACK_MODULES; do
     mod_rm "$k" && { echo "   remove     $k"; }
   done
@@ -935,19 +863,18 @@ main() {
       ;;
     interactive)
       confirm_consequences || { echo "   aborted — nothing was touched."; exit 1; }
-      legacy_interactive
+      interactive_teardown
       ;;
     *)
-      # full mode: the reinstall hand-off passes ACCEPT_CONSEQUENCES=1 (no
-      # warnings); a manual operator run gets the three confirmations.
+      # full mode: the three confirmations always apply
       confirm_consequences || { echo "   aborted — nothing was touched."; exit 1; }
-      reinstall_stack_only
+      full_teardown
       exit $?
       ;;
   esac
 }
 
-legacy_interactive() {
+interactive_teardown() {
   ask_inputs
   # nothing selected = nothing to do (all defaults are safe/keep)
   local any=false k
@@ -963,11 +890,8 @@ legacy_interactive() {
       eval "RM_MOD_${k^^}=true"
     done
   fi
-  any_sel=$any
   if [ "$any" = false ]; then
     log "nothing selected — every prompt answered keep. Nothing was removed."
-    ask_restore
-    restore_after_teardown
     exit 0
   fi
   for k in cloud vault mail monitor; do
@@ -989,7 +913,6 @@ legacy_interactive() {
   done
   [ "$went" = true ] && wipe_data
   resolve_errors
-  restore_after_teardown
   # the repo clone LAST and only after this script exits — bash reads the
   # script from disk; deleting it mid-run can truncate execution
   if [ "${RM_REPO:-false}" = true ]; then
