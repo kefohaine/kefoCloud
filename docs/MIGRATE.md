@@ -1,41 +1,74 @@
-# Migration (new machine, new domain) — script-first
+# Migration (new machine, new domain)
 
-The primary path is the installer — a plug-and-play, **root-only** installer. It prompts for three values (domain, Cloudflare API token, Tailscale auth key), then runs unattended. `root@{{HOSTNAME}}` is the only entry point; no sudo user is created and there is no hand-off. It installs host services (docker, tailscale, dnsmasq, ttyd, ssh hardening, ufw, sysctl), clones the repo over **HTTPS** (public repo — no GitHub SSH key), and brings up the full stack: Caddy (`$DOMAIN`), Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Vaultwarden, Uptime Kuma and Mailu + Roundcube. It also creates the Cloudflare A records (`cloud`/`vault`/`kuma`/`www` proxied, `talk`/`mail` DNS-only), sets the zone SSL mode to full, triggers Let's Encrypt issuance, seeds Uptime Kuma, creates the Kuma admin user automatically (password printed once in the final summary), wires Nextcloud's Talk/SMTP/background-cron via `occ` (incl. `mail_smtpauth` so mail actually authenticates, trusted_proxies as an array, repair + DB indices so the setup check is clean, the updater-backup dir so the cleanup job stops warning, and the recovery manifests — users/groups/quotas/apps — from `make nc-capture`), publishes the mailserver's **DKIM TXT record via the Cloudflare API**, **Fully autonomous**: no manual confirmation steps block success — the only follow-ups are printed in the summary (Tailscale split-DNS, mailboxes, and the provider-side PTR record for external mail delivery).
+`make migrate` prints this runbook. The primary path is the installer: a **root-only**,
+prompt-once-unattended script. For the full prompt order and the run's behaviour see
+`docs/GUIDE.md` "First-time setup and migration"; this file is the migration procedure.
 
 ## Run it
 
-```
+```bash
 scp scripts/install/wizard.sh root@<new-machine>:
 ssh root@<new-machine>
 bash wizard.sh
 ```
 
-Enter the domain, CF token, and TS auth key when prompted. The script runs unattended as root; full log at `{{LOG_DIR}}/wizard.log`. Errors are printed numbered at the end, then a success summary with credentials.
+Every input is collected before any work and persisted to `data/wizard.state` as it is
+given, so an interrupted run resumes instead of re-asking. Then the run is unattended:
+host services (docker, tailscale, dnsmasq, ttyd, goose, fail2ban, ufw, sysctl), the full
+stack from `config/modules.conf` (Nextcloud app + PostgreSQL + Redis + Talk HPB/TURN,
+Caddy, Vaultwarden, Uptime Kuma, Mailu + Roundcube), the Cloudflare A/MX/SPF/DKIM/DMARC
+records, the certificates, and the module setup steps (`occ` wiring, Mailu mailboxes,
+Kuma seed). The run ends with `write_state` (`finished=true`) → one `make smoke`, whose
+exit code is the verdict; a failure records `finished=false`. Log: `$DATA_DIR/logs/wizard.log`.
 
-## What the script renames (nothing)
+Re-running the installer on a finished install offers **repair** (idempotent, add-only,
+never removes anything) or **reinstall** (hands the removal to
+`scripts/install/uninstall.sh --reinstall`, then rebuilds the production stack).
 
-The installer's legacy `renames()` step — which transformed a pre-migration clone (`homelab.com` → `$DOMAIN`, `modules/vhosts` → `modules/$DOMAIN`, `debian` → `root`, trimming to 4 containers) — was removed 2026-08-31. The canonical repo already carries the final naming ($DOMAIN / `root` / `tail.`), and the installer deploys it as-is.
+## What the script does not do
+
+- **Tailscale split DNS** — add `$DOMAIN` → this node's `100.x` in the admin console (the
+  host's dnsmasq already answers `tail.$DOMAIN`). Printed as a follow-up.
+- **Mailboxes** — create them with `make mail-gen [MAIL=…]` / `make mail-gen-alias TO=…`.
+  The installer creates only the app sender addresses (`nextcloud@`, `vaultwarden@`).
+- **Provider-side PTR** — only the machine provider can set reverse DNS. Printed as
+  follow-up 1 when the mail module is on.
+- **Cloudflare WAF rule skip for `cloud.$DOMAIN`** — optional; desktop/mobile sync is
+  bot-challenged otherwise (rationale in `docs/GUIDE.md`).
 
 ## Prerequisites (manual, unavoidable)
 
-- Cloudflare zone `$DOMAIN` exists (checked up front — the script exits with a clear message if not); API token with `Zone > DNS > Edit` for that zone.
-- Tailscale auth key (admin console → Settings → Keys).
-- Nothing GitHub-side: the repo is public and cloned over HTTPS (state is saved, so prompts are skipped on re-runs).
+- Cloudflare zone `$DOMAIN` exists (checked up front; the installer fails fast if not) and
+  an API token with `Zone > DNS > Edit` for it.
+- Tailscale auth key.
+- The device's public SSH key (ssh hardening is applied in the same run).
+- Nothing GitHub-side to type: the repo is public and cloned over HTTPS; the optional
+  collaborator step mints `/root/.ssh/github_key` and switches `origin` to SSH only once
+  GitHub accepts the key.
 
-## After the script finishes
+## Carrying existing data to a new machine
 
-1. Tailscale split-DNS (`$DOMAIN` → the new machine Tailscale IP) is printed as a follow-up, not a blocking step — it cannot be set with just an auth key. Add it in the admin console so `tail.$DOMAIN` resolves for tailnet devices (dnsmasq on the machine already answers it).
-2. Optional: Cloudflare WAF rule skip for `cloud.$DOMAIN` — Nextcloud desktop sync is bot-challenged otherwise (rationale in `docs/GUIDE.md`).
-3. Mailboxes are not scripted — create them with `make mail-gen [MAIL=…]` (or `mail-gen-alias TO=…` for a forwarder). The app SMTP sender mailboxes used for outbound mail are created automatically by the installer: `nextcloud@$DOMAIN` and `vaultwarden@$DOMAIN`.
-4. Doc pass: done for the Aug 2026 migration — the canonical repo now carries the `$DOMAIN` / `root` / `tail.` names in code, docs, and Makefile.
-
-## Self-hosted mail (Mailu + Roundcube)
-
-The installer brings up the mail platform too (`make dok-recreate-mailserver` → `mailserver` at 172.22.0.9 + `roundcube` at 172.22.0.10; the UFW ports are opened by the installer). What is NOT scripted: mailbox accounts (create with `make mail-gen [MAIL=…]`). To carry existing mail to a new machine:
-
-1. Operator-only (copy from the old host): `$DATA_DIR/mailserver/` (Maildirs, DMS config + DKIM keys, roundcube sqlite), `modules/mailserver/.env` (mailbox passwords), and the CF DNS records (MX, mail A DNS-only, SPF, DMARC, DKIM TXT).
-2. Re-issue the mail.$DOMAIN LE cert via the Caddy vhost; DMS reads it from caddy_data.
+1. `make backup TAILDROP=<device>` on the old host — ships `nextcloud-backup-*.tar.gz`
+   (PostgreSQL DB + datadir) and `other-backup-*.tar.gz` (vault / mailserver / kuma
+   datadirs) to a tailnet device.
+2. Install on the new machine, then `make import-backups TAILDROP=<device>` — it previews
+   the bundles and requires a typed `yes`.
+3. Copy `modules/*/.env` (gitignored secrets) from the old checkout, then `make render`
+   and recreate the affected units.
+4. Mail: the bundles carry `mailserver/mail`, `mailserver/data`, `mailserver/dkim` and
+   `mailserver/roundcube`; re-publish the DKIM TXT from the carried keys (the installer's
+   `dkim_setup` reads Mailu's own public key) and keep the domain's MX/SPF/DMARC records.
+5. Data-only restore is safe; the database stays on the main machine unless
+   `make nc-datadir-nfs` moved the datadirectory (the DB never moves with it).
 
 ## Manual fallback
 
-If the script can't be used, it automates exactly: host packages + `root` user + sshd hardening + docker daemon.json + `tailscale up` + ufw + repo clone + `docker network create net --subnet=172.22.0.0/16` + `make install-config` + `make dok-recreate-caddy`, then the Nextcloud DB + app in ONE invocation (`docker compose -f modules/nextcloud/docker-compose.db.yml -f modules/nextcloud/docker-compose.yml up -d --force-recreate --remove-orphans` — the two files share a project directory, so the separate `dok-recreate-nextcloud-db` / `dok-recreate-nextcloud` targets orphan and delete each other's containers), then `make dok-recreate-vaultwarden|dok-recreate-uptimekuma|dok-recreate-mailserver` + CF DNS records + cert triggers. Optional data restore: on a tailnet-joined new device, `make backup TAILDROP=<new-device>` on the old host then `make import-backups TAILDROP=<new-device>` on the new host; the recipe previews available bundles and requires a typed `yes` before transferring (no `DRYRUN=1` flag needed). This carries the PostgreSQL DB as well (the rsync path only moved datadirs) and works whether the datadir is local or external.
+If the script cannot be used, it automates exactly: host packages + `root` login +
+sshd hardening + `/etc/docker/daemon.json` + `tailscale up` + ufw + dnsmasq + the repo
+clone + `docker network create net --subnet=172.22.0.0/16` + `make install-config`, then
+the Nextcloud DB and app in ONE invocation (`docker compose -f
+modules/nextcloud/docker-compose.db.yml -f modules/nextcloud/docker-compose.yml up -d
+--force-recreate --remove-orphans` — running either file alone orphans and deletes the
+other's containers), then `make dok-recreate-caddy`, `make dok-recreate-vaultwarden`,
+`make dok-recreate-uptimekuma`, `make dok-recreate-mailserver`, the CF records, the
+certificates and `make smoke`.

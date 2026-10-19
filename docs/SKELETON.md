@@ -97,9 +97,6 @@ mv /root/github/<old> /root/github/<new>
 make render && make update
 ```
 
-`scripts/install/migrate-layout.sh` (the 2026-09-22 layout move) is the same
-shape with the safety rails: preflight checks, a same-filesystem `mv`, an edge
-config gate and a rollback image tag.
 
 ## Compose substitution, in practice
 

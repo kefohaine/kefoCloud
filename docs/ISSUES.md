@@ -11,6 +11,16 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ## Open
 
+### Reinstall mode is still wired into the installer and the uninstaller
+- **File**: `scripts/install/wizard.sh` (`reinstall_handoff`, `REINSTALL`, `task_reinstall_skip`), `scripts/install/uninstall.sh` (`--reinstall`/`--full`, `ACCEPT_CONSEQUENCES`)
+- **Problem**: the operator asked for the whole reinstall path to be removed — repair mode should be the only mode offered when `wizard.state` exists, with no link between the two scripts and no `--full`/`ACCEPT_CONSEQUENCES` arguments. Both scripts still carry it, so the two entry points and their docs remain coupled.
+- **Fix**: delete the reinstall mode from both scripts (repair-only prompt, no hand-off, no `--reinstall`/`--full`, no `ACCEPT_CONSEQUENCES`), then re-audit GUIDE/README/ISSUES for the removed behaviour.
+
+### Hook comments cite the old AGENTS rule number for the identity guard
+- **File**: `scripts/hooks/pre-commit`, `scripts/hooks/pre-push`
+- **Problem**: both comments attribute the identity requirement to "AGENTS rule 12"; the rule is now 27. The guard itself is correct.
+- **Fix**: reword the comments to rule 27 and re-run `make install-hooks`.
+
 ### `http: vault` Kuma monitor watches a module that is not installed
 - **File**: the `uptimekuma` module's SQLite (`monitor` table)
 - **Problem**: the monitor `http: vault` points at `https://vault.$DOMAIN`, but the `vault` module is not in `enabled_modules` in `wizard.state` — no container, no route — so it is permanently down. That is a *not installed* module, NOT a tailnet-only route (the two are distinct: see GUIDE "Module state vs route exposure").
@@ -161,10 +171,6 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Fix**: `systemctl stop goose` when not in use; `systemctl start goose` before use.
 - **Why approval**: operator convenience trade-off (cold start latency vs. idle RAM).
 
-#### `datadir-nfs.sh` re-prompts for the external root password on every run
-- **File**: `scripts/ops/datadir-nfs.sh` (deleted — the datadir-mover is now `scripts/ops/nc-datadir-nfs.sh`)
-- **Status**: no longer applicable — `make nc-datadir-nfs` authenticates the external machine with keys (`accept-new`; `SSH_PASS` opt-in only) and no longer prompts for a root password or auth key on the re-check path.
-
 #### Nextcloud Talk: no Client Push proxy
 - **File**: `modules/nextcloud/docker-compose.yml` (Talk stack: `talk-hpb` HPB + `talk-relay` already deployed)
 - **Problem**: mobile push notifications are delayed — no push proxy (UnifiedPush / nextcloud-push) is installed. The old entry's "no HPB" premise is stale: the Go signaling server (strukturag/nextcloud-spreed-signaling) has run since the 2026-08-30 rebuild.
@@ -185,7 +191,6 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 ## Planned ideas
 
 Future roadmap, operator-reviewed later; when one is picked up it moves to Open, when done it lands in Solved.
-Implemented 2026-09-06 (→ Solved): installer per-module prompts + `scripts/install/defaults/install.conf` (default all ON), the token/terms reference (now `docs/SKELETON.md`), the original `make status` merge (later rebuilt 2026-09-11 as `scripts/status.sh`), `make taildrop-file|folder`, `TARGET=` dispatchers for the dok actions, Debian-system wording in README/www.
 
 #### social.$DOMAIN — Mastodon (or the minimal fediverse alternative)
 - **Status**: operator is thinking it through (2026-09-12) — do not start without the go-ahead.
