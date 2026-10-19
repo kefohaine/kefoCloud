@@ -3096,7 +3096,7 @@ issue_certs() {
   mod_on vault   && hosts="$hosts vault"
   mod_on monitor && hosts="$hosts kuma"
   mod_on mail    && hosts="$hosts mail"
-  mod_on mail    && hosts="$hosts mailu"
+  mod_on mail    && hosts="$hosts cube"
   # tail.$DOMAIN joins the attempt like every other vhost. DNS-01 does not
   # need a public A record (Caddy answers the TXT challenge directly), and NO
   # DNS record is created for tail.$DOMAIN by design — it stays tailnet-only.
