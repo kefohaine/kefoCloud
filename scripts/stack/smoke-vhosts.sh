@@ -130,15 +130,29 @@ check() {
 # ends up deleted), so the fix is header_down at the proxy + a set-only
 # snippet. A regression (missing or duplicated XFO/XCTO/HSTS — the
 # scan.nextcloud.com flags) must fail the smoke and block the push.
+# A fifth argument of `framed` marks a vhost that one sibling origin must be
+# allowed to frame (cube, embedded by the Nextcloud mail_roundcube app): there
+# X-Frame-Options must be ABSENT and the anti-framing property must instead be
+# carried by a CSP frame-ancestors naming cloud.$DOMAIN. Requiring XFO=0 keeps
+# the check honest — a stale SAMEORIGIN there breaks the iframe, and dropping
+# the header without the CSP would silently un-frame-bust the host.
 check_sec_headers() {
-  local name="$1" host="$2" path="${3:-/}" desc="${4:-}"
+  local name="$1" host="$2" path="${3:-/}" desc="${4:-}" framed="${5:-}"
   local args=(--resolve "$host:443:127.0.0.1" -sI --max-time 12)
-  local xfo xcto hsts
-  xfo=$(curl "${args[@]}" "https://$host$path" | grep -icE '^x-frame-options: SAMEORIGIN')
-  xcto=$(curl "${args[@]}" "https://$host$path" | grep -icE '^x-content-type-options: nosniff')
-  hsts=$(curl "${args[@]}" "https://$host$path" | grep -icE '^strict-transport-security: max-age=31536000')
-  if [ "$xfo" != 1 ] || [ "$xcto" != 1 ] || [ "$hsts" != 1 ]; then
-    say "FAIL $name sec-headers: xfo=$xfo xcto=$xcto hsts=$hsts (want exactly 1 each) — https://$host$path"; bad
+  local hdrs xfo_want xfo xcto hsts csp=0
+  hdrs=$(curl "${args[@]}" "https://$host$path")
+  xfo=$(grep -icE '^x-frame-options: SAMEORIGIN' <<<"$hdrs")
+  xcto=$(grep -icE '^x-content-type-options: nosniff' <<<"$hdrs")
+  hsts=$(grep -icE '^strict-transport-security: max-age=31536000' <<<"$hdrs")
+  if [ "$framed" = framed ]; then
+    xfo_want=0
+    csp=$(grep -icE "^content-security-policy: .*frame-ancestors 'self' https://cloud\.$DOMAIN" <<<"$hdrs")
+  else
+    xfo_want=1
+    csp=1
+  fi
+  if [ "$xfo" != "$xfo_want" ] || [ "$xcto" != 1 ] || [ "$hsts" != 1 ] || [ "$csp" != 1 ]; then
+    say "FAIL $name sec-headers: xfo=$xfo(want $xfo_want) xcto=$xcto hsts=$hsts frame-ancestors=$csp (want exactly 1 each) — https://$host$path"; bad
   else
     say "ok   $name sec-headers${desc:+ — }$desc"
   fi
@@ -292,7 +306,7 @@ check mail "mail.$DOMAIN" "/" "200 301 302 307 308" html "Mailu platform door"
 check_sec_headers mail "mail.$DOMAIN" "/" "one of each"
 check_tls "mail.$DOMAIN"
 check cube "cube.$DOMAIN" "/" "200 301 302 307 308" html "Roundcube webmail"
-check_sec_headers cube "cube.$DOMAIN" "/" "one of each"
+check_sec_headers cube "cube.$DOMAIN" "/" "no XFO, CSP frame-ancestors for cloud" framed
 check_tls "cube.$DOMAIN"
 
 # SMTP 25/587 + IMAPS 993 must answer.
