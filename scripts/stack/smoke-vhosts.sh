@@ -308,6 +308,21 @@ check_tls "mail.$DOMAIN"
 check cube "cube.$DOMAIN" "/" "200 301 302 307 308" html "Roundcube webmail"
 check_sec_headers cube "cube.$DOMAIN" "/" "no XFO, CSP frame-ancestors for cloud" framed
 check_tls "cube.$DOMAIN"
+# Same-origin webmail path the mail_roundcube app embeds (cloud.caddy); the app
+# reads the iframe DOM, so a cross-origin cube.$DOMAIN fails regardless.
+if mod_in cloud; then
+  check rc-cloud "cloud.$DOMAIN" "/roundcube/" "200" html "Roundcube on the cloud door (same-origin iframe)"
+  # Roundcube must generate its URLs under the prefix (request_path comes from
+  # X-Forwarded-Prefix); a bare `action="/?` means the form would leave the route.
+  # Capture the body first: `curl | grep -q` under `set -o pipefail` reports the
+  # SIGPIPE curl gets when grep exits at the first match as a failed pipeline.
+  rc_body=$(curl -s --max-time 12 --resolve "cloud.$DOMAIN:443:127.0.0.1" "https://cloud.$DOMAIN/roundcube/")
+  if grep -q 'action="/roundcube/' <<<"$rc_body"; then
+    say "ok   rc-cloud-prefix — Roundcube keeps the /roundcube/ base path"
+  else
+    say "FAIL rc-cloud-prefix: /roundcube/ does not keep its prefix in generated URLs"; bad
+  fi
+fi
 
 # SMTP 25/587 + IMAPS 993 must answer.
 for port in 25 587; do
