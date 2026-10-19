@@ -3037,13 +3037,13 @@ cf_mail_dns() {
   # only when video calling was enabled.
   mod_on cloud && [ "${VIDEO_CALLING:-true}" != "false" ] && cf_record talk false
   mod_on cloud && [ "${VIDEO_CALLING:-true}" = "false" ] && cf_a_del talk
+  # mail.$DOMAIN is Mailu's own hostname (platform door + admin UI + the
+  # SMTP/IMAP cert) — DNS-only, it must never sit behind the CF proxy. The
+  # webmail door cube.$DOMAIN is plain HTTP and is proxied like vault/kuma.
   mod_on mail  && cf_record mail false
   mod_on mail || cf_a_del mail
-  # mailu.$DOMAIN is Mailu's OWN hostname (admin UI door) — DNS-only like mail,
-  # because it must never be proxied behind the CF edge (operator request,
-  # 2026-10-19: the two names must never overlap).
-  mod_on mail  && cf_record mailu false
-  mod_on mail || cf_a_del mailu
+  mod_on mail  && cf_record cube true
+  mod_on mail || cf_a_del cube
   mod_on mail && cf_mail_dns
   curl -s -X PATCH -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
     "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/settings/ssl" -d '{"value":"full"}' >>"$LOG" 2>&1 || true
@@ -3256,12 +3256,11 @@ task_dns() {
 # picks the renewed file up. Idempotent.
 mail_tls_certs() {
   mod_on mail || return 0
-  # Strict door separation (2026-10-19): the mail.$DOMAIN cert belongs to the
-# ROUNDRCUBE webmail door (its HTTPS vhost via Caddy) plus roundcube's own
-# tls:// SMTP/IMAP client path — it is NOT a "Mailu cert". Mailu's own identity
-# is mailu.$DOMAIN, terminated by Caddy. The cert may sit under ANY issuer
-# directory (LE acme-v02, Buypass or ZeroSSL fallback), so search them all
-# instead of hard-coding the LE path.
+  # One door, one cert: mail.$DOMAIN is mailu-front's own hostname — Caddy's
+  # HTTPS vhost for the platform door, and the cert the front loads for
+  # SMTP/IMAP (TLS_FLAVOR=mail), so SNI and CN agree. The cert may sit under ANY
+  # issuer directory (LE acme-v02, Buypass or ZeroSSL fallback), so search them
+  # all instead of hard-coding the LE path.
   local d="" base f
   for f in "$DATA"/caddy_data/caddy/certificates/*/mail.$DOMAIN/mail.$DOMAIN.crt; do
     [ -s "$f" ] && { d="${f%/*}"; break; }
@@ -3279,7 +3278,7 @@ mail_tls_certs() {
   # (byte-identical cert/key on a re-run must not bounce the mail edge).
   if cmp -s "$d/mail.$DOMAIN.crt" "$DATA/mailserver/certs/cert.pem" \
      && cmp -s "$d/mail.$DOMAIN.key" "$DATA/mailserver/certs/key.pem"; then
-    detail "  TLS cert unchanged (mail.$DOMAIN — roundcube door) — no restart"
+    detail "  TLS cert unchanged (mail.$DOMAIN — platform door) — no restart"
     return 0
   fi
   cp -f "$d/mail.$DOMAIN.crt" "$DATA/mailserver/certs/cert.pem"
@@ -3287,7 +3286,7 @@ mail_tls_certs() {
   chmod 0644 "$DATA/mailserver/certs/cert.pem"
   chmod 0600 "$DATA/mailserver/certs/key.pem"
   docker restart mailu-front >>"$LOG" 2>&1 || true
-  detail "  TLS cert installed (mail.$DOMAIN — roundcube door: webmail vhost + SMTP/IMAP)"
+  detail "  TLS cert installed (mail.$DOMAIN — platform door: vhost + SMTP/IMAP)"
 }
 
 task_certs() {
@@ -3795,12 +3794,12 @@ success_block() {
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${VAULTWARDEN_ADMIN_USER:-admin@$DOMAIN}" "${VAULTWARDEN_ADMIN_PASSWORD:-<see modules/vaultwarden/.env>}" "$C_RST"
   mod_on monitor && printf '  %sUptime Kuma%s  https://kuma.%s    %sadmin / %s%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${KUMA_PASS:-(already set — rotate with: make kuma-passwd USER=admin PASS=…)}" "$C_RST"
-  # Roundcube owns mail.$DOMAIN (webmail door); Mailu's own hostname is
-  # mailu.$DOMAIN (platform/admin door) — the names never overlap (2026-10-19).
-  mod_on mail && printf '  %sWebmail%s      https://mail.%s    %s(roundcube — mailboxes via make mail-gen)%s\n' \
+  # Mailu owns mail.$DOMAIN (platform door, admin UI at /admin, SMTP/IMAP cert);
+  # Roundcube has its own door on cube.$DOMAIN.
+  mod_on mail && printf '  %sMailu admin%s  https://mail.%s/admin   %s(mailboxes via make mail-gen)%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
-  mod_on mail && printf '  %sMailu admin%s  https://mailu.%s   %s(Mailu platform door — its own name, never mail.%s)%s\n' \
-    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$DOMAIN" "$C_RST"
+  mod_on mail && printf '  %sWebmail%s      https://cube.%s   %s(roundcube)%s\n' \
+    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
   if [ "${TAIL_TLS_FALLBACK:-false}" = true ]; then
     printf '  %sShell%s        %s(tailnet-only — run scripts/ops/tailscale-https.sh to serve it via tailscale)%s\n' \
       "$C_PURPLE" "$C_RST" "$C_GREY" "$C_RST"
