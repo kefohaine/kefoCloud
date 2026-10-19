@@ -30,11 +30,6 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Problem**: AGENTS rule 29 lets an agent exercise a script only through a dry/plan mode or a fixture target; apart from `optimize.sh --dry-run` and `restore-data.sh`'s preview, these have neither, so a change to one of them cannot be verified by an agent without a real run.
 - **Fix (candidate, not approved)**: add a `DRYRUN=1` path that prints the plan and exits before the first mutation, starting with the scripts that write state (`talk-gen.sh`, `nc-capture.sh`, `stack-up.sh`).
 
-#### Pre-2026-10-17 history still bundles areas and lacks revert recipes
-- **File**: git history (`make git-audit RANGE=origin/main` lists every one of them)
-- **Problem**: the one-change rule (AGENTS 26) and the revert-recipe rule (10) were enforced from 2026-10-17 onward, so everything published before that predates both — many commits span several areas and no significant commit carried a `Revert:` line. The pre-push audit only sees the range being pushed, so this backlog is invisible to it.
-- **Fix**: leave it (the rules are not retroactive and a full-history rewrite risks the GitHub web index — see `docs/GUIDE.md` "History rewrites"); or rewrite it deliberately — a separate job: `make git-split` only touches LOCAL (unpushed) commits and refuses published ones by design, so clearing this backlog needs an explicit full-history rewrite with its GitHub-index fallout accepted.
-
 #### Destructive make recipes run with no confirmation guard
 - **File**: `Makefile`
 - **Problem**: several recipes destroy data or overwrite live state with no prompt and no automatic backup. Data-destroying: `nc-user-del` / `mail-del` / `kuma-del-user` (user + data), `connect` → datadirectory (moves the datadirectory and can delete the local copy). Live-state overwriting: `install-config` (overwrites host config, restarts sshd/dnsmasq), `update` (pull/recreate; the apt half is now the separate `apt-upgrade`), `dok-recreate-all` / `dok-stop-all` / `dok-recreate-nextcloud-db`. Data restore is taildrop-only via `make backup TAILDROP=<device>` + `make import-backups`. Interrupting: `install-config`/`update` (recreate or restart units) and `connect` (datadirectory).
@@ -425,3 +420,4 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Nextcloud occ wiring never raises an error** — the wiring verification was failing then self-healing (a cold-cache race that wasted a minute per run); it now re-applies the idempotent wiring a bounded number of times and logs, never tagging `nextcloud_setup`, with the occ checks shortened (12x1 s, was 30x2 s).
 - **Transient error/prompt blocks clear themselves** — the resolve-error block (inline on a failed task) and the Nextcloud apps plan/confirm are counted as tail lines and wiped when done, so the checklist returns to view instead of the block lingering.
 - **`tail.$DOMAIN` serves from Caddy with `tls internal`** — the tailscale-serve endpoint was dropped for a normal Caddy vhost with Caddy's local CA (no LE order, no rate limit); tailnet clients accept the one-time self-signed warning.
+- **Pre-2026-10-17 history backlog claim retracted** — `make git-audit RANGE=origin/main` reports every published commit compliant, so there is no bundle/revert backlog to rewrite.
