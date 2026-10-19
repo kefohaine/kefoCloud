@@ -1,5 +1,6 @@
 # mailu.{{DOMAIN}} — Mailu's own door (admin UI + the platform as served by
-# mailu-front at 172.22.0.10:80). Deliberately separate from mail.{{DOMAIN}},
+# mailu-front at 172.22.0.9:80 — NOT 172.22.0.10, which is the roundcube
+# container behind mail.{{DOMAIN}}). Deliberately separate from mail.{{DOMAIN}},
 # which is the roundcube webmail door — the two names never overlap
 # (operator request, 2026-10-19).
 # TLS: DNS-01 via Cloudflare, with fallback ACME issuers when Let's Encrypt
@@ -27,7 +28,7 @@ https://mailu.{{DOMAIN}} {
     header {
         import security_headers
     }
-    reverse_proxy 172.22.0.10:80 {
+    reverse_proxy 172.22.0.9:80 {
         # strip Mailu front's own security headers so the site-level set
         # yields one value per field
 		header_down -X-Frame-Options
