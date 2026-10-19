@@ -1631,7 +1631,10 @@ seed_stack() {
     mseed MESSAGE_SIZE_LIMIT 52428800
     mseed INITIAL_ADMIN_ACCOUNT admin
     mseed INITIAL_ADMIN_DOMAIN "$DOMAIN"
-    mseed INITIAL_ADMIN_MODE update
+    mseed INITIAL_ADMIN_MODE ifmissing
+    # Installs seeded before this fix carry `update`; force the safe mode so a
+    # repair converges instead of reverting the admin password on every start.
+    sed -i 's/^INITIAL_ADMIN_MODE=.*/INITIAL_ADMIN_MODE=ifmissing/' "$menv"
     if ! grep -q '^SECRET_KEY=.' "$menv"; then
       mseed SECRET_KEY "$(openssl rand -hex 16)"
     fi
@@ -2891,6 +2894,19 @@ req = urllib.request.Request(f"https://api.cloudflare.com/client/v4/zones/{zone}
 sys.exit(0 if json.loads(urllib.request.urlopen(req).read().decode()).get("success") else 1)
 EOF
   detail "DKIM published: $sel._domainkey TXT for $DOMAIN (PTR remains provider-side)"
+  # Drop the retired empty "*._domainkey v=DKIM1; p=" wildcard left by older
+  # installs: it reads as a revoked key for every selector that has no exact
+  # record, and the only record that matters is dkim._domainkey above.
+  for id in $(curl -s -G -H "Authorization: Bearer $CF_API_TOKEN" \
+      --data-urlencode "type=TXT" --data-urlencode "name=*._domainkey.$DOMAIN" \
+      "https://api.cloudflare.com/client/v4/zones/$zone/dns_records" \
+      | python3 -c 'import sys,json
+for r in (json.load(sys.stdin).get("result") or []):
+    if (r.get("content") or "").strip() == "v=DKIM1; p=":
+        print(r["id"])' 2>/dev/null); do
+    curl -s -X DELETE -H "Authorization: Bearer $CF_API_TOKEN" \
+      "https://api.cloudflare.com/client/v4/zones/$zone/dns_records/$id" >/dev/null
+  done
 }
 
 ssl_mode_full() {
@@ -2964,9 +2980,9 @@ cf_mail_dns() {
     *) cf_mail_record TXT "$DOMAIN" "$spf" ;;
   esac
   cf_mail_record MX "$DOMAIN" "$mx" 10
-  # DKIM placeholder: a wildcard TXT so selectors exist before Rspamd signs
-  # (dkim_setup publishes the real dkim._domainkey record right after).
-  cf_mail_record TXT '*._domainkey' 'v=DKIM1; p='
+  # No wildcard *._domainkey placeholder: dkim_setup publishes the only record
+  # that matters, dkim._domainkey with the real public key. An empty
+  # "v=DKIM1; p=" wildcard is a revoked-key record and only confuses the zone.
   cf_mail_record TXT '_dmarc' 'v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s;'
   # SPF/DKIM/DMARC still can't authorize a relay by themselves without a
   # published PTR, but only the provider can create it — reported in the
@@ -3460,7 +3476,7 @@ problem() {
     sslmode)        echo "Cloudflare SSL/TLS mode is not Full (or strict)" ;;
     nextcloud_setup) echo "Nextcloud occ wiring incomplete (Talk signaling/TURN, SMTP, background cron)" ;;
     dkim_setup)      echo "DKIM key / dkim._domainkey TXT record not published" ;;
-    dns_mail_txt)   echo "one or more mail records (MX, SPF, wildcard DKIM placeholder, DMARC) are missing" ;;
+    dns_mail_txt)   echo "one or more mail records (MX, SPF, DMARC) are missing" ;;
     vaultwarden_setup) echo "Vaultwarden SMTP sender mailbox missing (vaultwarden@$DOMAIN)" ;;
     vaultwarden_admin) echo "the default vaultwarden account is missing" ;;
     clone)          echo "repo clone failed" ;;
@@ -3500,7 +3516,7 @@ hint() {
     sslmode)        echo "Cloudflare dashboard -> SSL/TLS -> Overview -> set mode to Full (or Full strict), then re-check" ;;
     nextcloud_setup) echo "the occ wiring is re-applied automatically on each re-check (nextcloud_occ_remediate); if it still fails, ensure the nextcloud/talk containers are up (make dok-recreate-nextcloud) and the mail module's SMTP_PASSWORD exists in modules/nextcloud/.env — see the nextcloud_setup function in this script, then re-check" ;;
     dkim_setup)      echo "re-run the wizard (dkim_setup generates the key through Mailu's ORM when the domain has none), verify the CF token has Zone > DNS > Edit, then dig @<zone NS> TXT dkim._domainkey.$DOMAIN" ;;
-    dns_mail_txt)   echo "the installer retries the MX, SPF, wildcard DKIM placeholder and DMARC records on re-check; verify the token has Zone > DNS > Edit and inspect Cloudflare DNS for $DOMAIN (MX -> mail.$DOMAIN, TXT v=spf1 a:mail.$DOMAIN mx -all, *._domainkey, _dmarc)" ;;
+    dns_mail_txt)   echo "the installer retries the MX, SPF and DMARC records on re-check; verify the token has Zone > DNS > Edit and inspect Cloudflare DNS for $DOMAIN (MX -> mail.$DOMAIN, TXT v=spf1 a:mail.$DOMAIN mx -all, _dmarc)" ;;
     vaultwarden_setup) echo "the mail step waits for the mailserver's account API (mail_wait_ready) then retries the add — a repeat failure means SMTP_PASSWORD is missing from modules/vaultwarden/.env; verify the mail module is enabled (else this step is skipped) and that the mailserver container is healthy (make smoke), then re-check" ;;
     vaultwarden_admin) echo "run: make vaultwarden-list-users / vaultwarden-add-user EMAIL=… PASS=… (scripts/modules/vaultwarden-user.sh); the account needs the vaultwarden container's DB, then re-check" ;;
     clone)          echo "the clone is HTTPS (the repo is public) — check network/DNS, then re-check" ;;
@@ -3542,7 +3558,7 @@ recheck() {
     sslmode) ssl_mode_full ;;
     nextcloud_setup) nextcloud_occ_remediate; if ! mod_on mail || docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN"; then docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://talk.$DOMAIN/signaling" && docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "talk.$DOMAIN:3478" && docker exec -u www-data nextcloud php occ config:system:get trusted_domains 2>/dev/null | grep -qx "cloud.$DOMAIN"; else false; fi ;;
     dkim_setup)      dig +short TXT "dkim._domainkey.$DOMAIN" @"$(dig +short NS "$DOMAIN" | head -1)" 2>/dev/null | tr -d '"' | grep -qE 'p=[A-Za-z0-9+/=]{100,}' ;;
-    dns_mail_txt) mod_on mail || return 0; cf_mail_dns; local records; records=$(curl -fsS -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" 2>/dev/null) || return 1; printf '%s' "$records" | jq -e --arg d "$DOMAIN" --arg s "v=spf1 a:mail.$DOMAIN mx -all" --arg k 'v=DKIM1; p=' --arg m 'v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s;' '[.result[] | {type,name,content}] as $r | [[$d,"MX"],["*._domainkey."+$d,"TXT"],["_dmarc."+$d,"TXT"]] as $fs | [($fs[] | . as $x | any($r[]; .type==$x[1] and .name==$x[0])), any($r[]; .type=="TXT" and .name==$d and .content==$s)] | all' >/dev/null ;;
+    dns_mail_txt) mod_on mail || return 0; cf_mail_dns; local records; records=$(curl -fsS -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" 2>/dev/null) || return 1; printf '%s' "$records" | jq -e --arg d "$DOMAIN" --arg s "v=spf1 a:mail.$DOMAIN mx -all" --arg m 'v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s;' '[.result[] | {type,name,content}] as $r | [[$d,"MX"],["_dmarc."+$d,"TXT"]] as $fs | [($fs[] | . as $x | any($r[]; .type==$x[1] and .name==$x[0])), any($r[]; .type=="TXT" and .name==$d and .content==$s)] | all' >/dev/null ;;
     vaultwarden_setup) if mod_on mail; then . modules/vaultwarden/.env 2>/dev/null; mailbox_add "vaultwarden@$DOMAIN" "${SMTP_PASSWORD:-}" >/dev/null 2>&1; mailbox_exists "vaultwarden@$DOMAIN"; else false; fi ;;
     vaultwarden_admin) [ -n "${VAULTWARDEN_ADMIN_USER:-}" ] && bash "$REPO/scripts/modules/vaultwarden-user.sh" list 2>/dev/null | grep -qF "$VAULTWARDEN_ADMIN_USER" ;;
     *) false ;;
