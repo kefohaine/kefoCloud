@@ -4,6 +4,13 @@ x-mailu-env: &mailu-env
     # Mailu's own hostname lives on mailu.${DOMAIN} so it never overlaps the
     # roundcube webmail vhost at mail.${DOMAIN} (operator request, 2026-10-19).
     HOSTNAMES: "mailu.${DOMAIN}"
+    # The mail cache is `mailu-redis`, NOT `redis`: both compose files join the
+    # same external `net` bridge, so a service named `redis` published a second
+    # `redis` DNS alias next to the Nextcloud cache. Inside the cloud container
+    # the name resolved to both IPs, phpredis round-robined onto Mailu's
+    # instance and every session SET hung on its MISCONF error (2026-10-19:
+    # cloud.fxmq.net timed out with HTTP 000 while `occ status` was fine).
+    REDIS_ADDRESS: "mailu-redis"
 
 services:
   # ── Mailu (front + postfix + dovecot + rspamd + admin) ────────────────────
@@ -38,7 +45,7 @@ services:
       - ${DATA_DIR}/mailserver/certs:/certs:ro
       - ${DATA_DIR}/mailserver/overrides/nginx:/overrides:ro
     depends_on:
-      - redis
+      - mailu-redis
       - imap
       - smtp
       - admin
@@ -114,7 +121,7 @@ services:
       net:
         ipv4_address: 172.22.0.20
 
-  redis:
+  mailu-redis:
     image: redis:alpine
     container_name: mailu-redis
     restart: unless-stopped
