@@ -34,5 +34,6 @@ https://mailu.{{DOMAIN}} {
 		header_down -X-Frame-Options
 		header_down -X-Content-Type-Options
 		header_down -Referrer-Policy
+		header_down -Strict-Transport-Security
     }
 }
