@@ -342,7 +342,7 @@ mail-card:
 >@local=$${MAIL%@*}; dom=$${MAIL#*@}; \
   q=$$(docker exec mailu-admin flask mailu config-export -j 2>/dev/null | jq -r --arg l "$$local" --arg d "$$dom" '.. | objects | select((.localpart?==$$l) and (.domain?==$$d)) | .quota_bytes // empty' | head -1); \
   if docker exec mailu-admin flask mailu config-export -j 2>/dev/null | jq -e --arg l "$$local" --arg d "$$dom" '[.. | objects | select((.localpart?==$$l) and (.domain?==$$d))] | length > 0' >/dev/null 2>&1; then \
-    scripts/lib/mklog info "address $(MAIL) — exists, quota $${q:-unlimited} bytes, webmail https://mail.$(DOMAIN) (login with '$$local')"; \
+    scripts/lib/mklog info "address $(MAIL) — exists, quota $${q:-unlimited} bytes, webmail https://cube.$(DOMAIN) (login with '$$local')"; \
     scripts/lib/mklog warn "password is hashed — rotate with make mail-password MAIL=$(MAIL)"; \
   else scripts/lib/mklog error "$(MAIL) not found — create with make mail-gen [MAIL=…]"; exit 1; fi
 
