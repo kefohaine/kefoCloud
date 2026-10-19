@@ -34,4 +34,4 @@ printf 'users:\n  - localpart: %s\n    domain: %s\n    quota_bytes: %s\n' \
   "$localpart" "$dom" "$bytes" \
   | docker exec -i mailu-admin flask mailu config-update >/dev/null 2>&1 || true
 
-echo "info:  mailbox $MAIL created — password: $PWD, quota: $QUOTA, webmail https://mail.$DOMAIN (login with the local part)"
+echo "info:  mailbox $MAIL created — password: $PWD, quota: $QUOTA, webmail https://cube.$DOMAIN (login with the local part)"
