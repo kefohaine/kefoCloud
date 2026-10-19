@@ -61,7 +61,11 @@ services:
       - admin
       - antispam
     healthcheck:
-      test: ["CMD-SHELL", "ss -tln | grep -Eq '0.0.0.0:(25|465|587|993)\\b'"]
+      # The mailu nginx image ships no `ss`, `nc`, `grep` or `awk` — only shell
+      # builtins — so the probe reads /proc/net/tcp directly: state 0A is
+      # LISTEN, and the hex ports are 25/465/587/993. (2026-10-19: the old
+      # `ss | grep` test reported the container unhealthy forever.)
+      test: ["CMD-SHELL", "while read -r sl l r s rest; do [ \"$$s\" = 0A ] || continue; case \"$$l\" in *:0019|*:01D1|*:024B|*:03E1) exit 0;; esac; done < /proc/net/tcp; exit 1"]
       interval: 30s
       timeout: 5s
       retries: 5
