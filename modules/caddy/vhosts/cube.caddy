@@ -29,10 +29,8 @@ https://cube.{{DOMAIN}} {
     }
     header {
         # Same set as the security_headers snippet EXCEPT X-Frame-Options:
-        # the Nextcloud mail_roundcube app embeds this install in an iframe, and
-        # X-Frame-Options: SAMEORIGIN (cube != cloud) makes the browser refuse
-        # it. The security property is kept by the CSP equivalent, scoped to
-        # the one origin allowed to frame this host.
+        # framing is governed by the CSP frame-ancestors below, naming the one
+        # trusted sibling origin (cloud) instead.
         Strict-Transport-Security "max-age=31536000"
         X-Content-Type-Options "nosniff"
         Referrer-Policy "strict-origin-when-cross-origin"

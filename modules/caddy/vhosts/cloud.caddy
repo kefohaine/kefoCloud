@@ -38,6 +38,21 @@ https://cloud.{{DOMAIN}} {
     respond @blocked "not found" 404
     redir /.well-known/carddav /remote.php/dav 308
     redir /.well-known/caldav /remote.php/dav 308
+    # Roundcube webmail under THIS origin, for the mail_roundcube app: the app
+    # reads the iframe's contentDocument and contentWindow.location to detect
+    # the login page, and a cross-origin iframe (cube.{{DOMAIN}}) throws, so it
+    # only works same-origin. The prefix is stripped for roundcube's Apache
+    # (its DocumentRoot has no /roundcube) and forwarded so Roundcube rebuilds
+    # its absolute URLs with it (modules/mailserver/roundcube-tls.inc.php).
+    redir /roundcube /roundcube/ 308
+    handle_path /roundcube/* {
+        reverse_proxy 172.22.0.10:80 {
+            header_up X-Forwarded-Prefix /roundcube
+            # roundcube sends its own X-Frame-Options; strip it so the
+            # site-level set below yields one value
+            header_down -X-Frame-Options
+        }
+    }
 {{IF CLIENT_PUSH}}
     # notify_push websocket/HTTP endpoint (container on 172.22.0.16). The app's
     # base_endpoint is https://cloud.{{DOMAIN}}/push, so the prefix is kept.
