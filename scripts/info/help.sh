@@ -57,7 +57,7 @@ EOF
   sec "migrate / restore"
   rows <<'EOF'
 make migrate|print the migration runbook (docs/MIGRATE.md)
-make deploy|restore a host — config/ → live paths + the newest secrets bundle
+make deploy|restore a host — config/ → live paths (same body as install-config)
 EOF
 
   sec "git"
@@ -81,8 +81,8 @@ EOF
 
   sec "host units (systemd)"
   rows <<'EOF'
-make systemd-restart-<svc>|restart one host unit — systemd-restart-all for every unit
-make systemd-log-<svc>|follow one host unit's journal (last 50) — systemd-log-all for every unit
+make systemd-restart TARGET=<svc>|restart one host unit — or append -<svc> / -all
+make systemd-log TARGET=<svc>|follow one host unit's journal (last 50) — same -<svc> / -all forms
 EOF
 
   sec "tmux sessions"
@@ -115,7 +115,7 @@ make install-dnsmasq-override|dnsmasq drop-in override → /etc/systemd/system/d
 make install-docker|daemon.json → /etc/docker (docker daemon restart needed to apply)
 make install-sysctl|99-kefo.conf → /etc/sysctl.d
 make install-cron|nextcloud → /etc/cron.d (occ cron every 5 min)
-make install-hooks|git hooks — pre-commit (GitHub-identity + edge guard), pre-push (smoke + history-rewrite warning)
+make install-hooks|git hooks — pre-commit (GitHub-identity + edge guard), prepare-commit-msg (auto-split per area), pre-push (smoke + history-rewrite warning + auto-split/revert)
 EOF
 
 
@@ -139,8 +139,8 @@ EOF
 
   sec "taildrop (send to another tailnet device)"
   rows <<'EOF'
-make taildrop-file|FILE=<path> [TAILDROP_HOST=<device>] — send one file
-make taildrop-folder|DIR=<folder> [TAILDROP_HOST=<device>] — send a folder (-r)
+make taildrop-file|FILE=<path> TAILDROP=<device> — send one file
+make taildrop-folder|DIR=<folder> TAILDROP=<device> — send a folder (-r)
 EOF
 
   sec "goose recipes (read-only agent tasks — recipes/*.yaml)"
