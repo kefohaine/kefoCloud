@@ -1080,7 +1080,7 @@ github_set_origin() {
 }
 
 # Write the collected operator identity into the checkout's REPO-LOCAL git
-# config. Nothing must ever commit or push as root (AGENTS rule 12): a fresh
+# config. Nothing must ever commit or push as root (AGENTS rule 27): a fresh
 # host has no global git identity, so without this a later `git commit` by the
 # operator or an agent silently falls back to `root@<host>`. The identity is
 # collected up front; a non-collaborator run has none, in which case the
