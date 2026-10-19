@@ -203,7 +203,6 @@ make nc-config-set|occ config:system:set — KEY=<key> VALUE=<value> [TYPE=…]
 make nc-default-user-quota|default quota for NEW users — VALUE=<quota> (syncs the recovery manifest)
 make nc-users|occ user:list
 make nc-user-add|add a user — USER=<uid> [PASS=…] (prompts without PASS)
-make nc-add-user|deprecated alias — use nc-user-add (still works, warns)
 make nc-user-del|delete a user — USER=<uid>
 make nc-user-password|reset a user's password — USER=<uid> [PASS=…]
 make nc-user-setting|set a user setting — USER=<uid> KEY=<key> VALUE=<value> (e.g. KEY=email)
