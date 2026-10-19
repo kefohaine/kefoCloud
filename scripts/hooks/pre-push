@@ -72,6 +72,21 @@ while read -r lref lsha rref rsha; do
     fi
   fi
 
+  # Remote-landed commits (GitHub web editor, another host) ran no local hook,
+  # so the pushed range above never sees them. Audit whatever the remote has
+  # that this checkout does not (`$lsha..$rsha`) and REPORT it: those commits
+  # are published, so git-split refuses them (rule 17) — a fix is an explicit
+  # rewrite decision, never something this hook may do on its own.
+  remote_only="$lsha..$rsha"
+  if [ -n "$(git rev-list "$remote_only" 2>/dev/null | head -1)" ] \
+     && [ -f "$repo/scripts/info/git-audit.sh" ]; then
+    if ! bash "$repo/scripts/info/git-audit.sh" "$remote_only" >/dev/null 2>&1; then
+      echo "pre-push: WARNING — published commits on the remote also break the commit-hygiene rules:"
+      bash "$repo/scripts/info/git-audit.sh" "$remote_only" | sed 's/^/  /'
+      echo "  They are already published: git-split refuses them (rule 17), so rewriting needs an explicit decision."
+    fi
+  fi
+
   if ! git merge-base --is-ancestor "$rsha" "$lsha" 2>/dev/null; then
     echo "pre-push: WARNING — this push replaces existing remote history (not a fast-forward)."
     echo "  After it lands, github.com may 404/500 while git stays healthy (2026-09-03 lesson)."
