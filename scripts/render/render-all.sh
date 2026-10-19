@@ -74,8 +74,10 @@ if command -v rsync >/dev/null 2>&1; then
   # and identities_level). Without this the mount source is missing, Docker
   # creates an empty DIRECTORY at that path, and the override silently never
   # loads — roundcube then talks plaintext to mailu-imap and login fails with
-  # "Empty startup greeting".
-  rsync -a --delete "$TMP/mailserver/" "$OUT/mailserver/"
+  # "Empty startup greeting". --inplace is required: roundcube mounts the
+  # single file, and a rename would leave the container reading the old inode
+  # (same trap as the $OUT/caddy directory above).
+  rsync -a --inplace --delete "$TMP/mailserver/" "$OUT/mailserver/"
 else
   # Fallback: copy over, then remove files whose source is gone. Never rm -rf.
   cp -a "$TMP/." "$OUT/"
