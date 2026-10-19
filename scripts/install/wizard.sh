@@ -277,6 +277,17 @@ _task_row() {
 # deliberately NO DECSC/DECRC (`\033[s`/`\033[u`): some terminals honour it and
 # some ignore it, and where it is ignored the old relative-move version walked
 # down the screen (2026-10-16, "repository management goes wild").
+# Physical screen rows a string occupies at the current terminal width (ANSI
+# escapes are zero-width). _TAIL counts SCREEN rows, so every console write must
+# be counted through this — a ~90-col Enter prompt wraps to 2 rows and counting
+# it as 1 drifted every later relative move one row down, tearing the checklist
+# ("[DONE] Nextcloud Setupp", 2026-10-19).
+_wrapped_rows() { # _wrapped_rows <string> -> prints physical row count
+  local plain len cols="${_COLS:-80}"
+  plain=$(printf '%s' "$1" | sed 's/\x1b\[[0-9;]*m//g')
+  len=${#plain}; [ "$len" -lt 1 ] && len=1
+  echo $(( (len + cols - 1) / cols ))
+}
 # Print one console line below the block, counting it whenever the block is
 # drawn (so a prompt/error printed between tasks is still counted and can be
 # cleared before the checklist resumes).
@@ -289,6 +300,14 @@ _task_row() {
 # management goes wild"). Emitting CR explicitly makes every write
 # column-independent of the tty's NL policy.
 _note() {
+  # A background animator redraws the running row 10x/s with the _TAIL it
+  # inherited at fork time — it cannot see a note growing the tail, so its next
+  # frame lands ON the note line and tears the checklist apart (2026-10-19,
+  # "[EXEC] Nextcloud Setup / [WAIT] Vaultwarden Setup" interleaved garbage
+  # after a WARN). Stop the animator, print, then restart it with the new tail.
+  if [ -n "$ANIM_PID" ]; then
+    kill "$ANIM_PID" 2>/dev/null; wait "$ANIM_PID" 2>/dev/null; ANIM_PID=
+  fi
   printf '\r%s\n' "$*"
   if [ -n "$TASK_DRAWN" ]; then
     # Count PHYSICAL rows, not logical lines: _TAIL is the number of screen rows
@@ -296,10 +315,12 @@ _note() {
     # terminal (wrapped to 2+ rows) must count as 2+ or the relative move lands
     # one row too high and every later row shifts (the wrap half of the same
     # 2026-10-16 drift). ANSI escapes have zero width, so strip them first.
-    local plain len cols="${_COLS:-80}"
-    plain=$(printf '%s' "$*" | sed 's/\x1b\[[0-9;]*m//g')
-    len=${#plain}; [ "$len" -lt 1 ] && len=1
-    _TAIL=$(( ${_TAIL:-0} + (len + cols - 1) / cols ))
+    _TAIL=$(( ${_TAIL:-0} + $(_wrapped_rows "$*") ))
+  fi
+  # Restart the animator now that _TAIL reflects the note (running row only).
+  if [ -z "$ANIM_PID" ] && [ -n "$TASK_DRAWN" ] && [ -n "$TASK_ACTIVE" ] \
+     && [ "${TASK_STATE[$TASK_CUR]:-}" = run ] && [ "${_ANIM_PAUSE:-0}" -eq 0 ]; then
+    _task_anim "$TASK_CUR" & ANIM_PID=$!
   fi
   return 0
 }
@@ -599,6 +620,12 @@ ensure_runtime_dirs() {
 # recent wizard.log is preserved at the repo root first and read back into this
 # run's fresh data/logs/wizard.log (one run, one log, as always).
 reinstall_handoff() {
+  # Repair NEVER hands off to uninstall.sh: repair is add-only/skip-based by
+  # design (2026-10-19). If repair mode ever reaches this function, refuse.
+  if [ "${REPAIR:-false}" = "true" ]; then
+    fail reinstall "repair mode must never run uninstall.sh — refusing the hand-off"
+    return 1
+  fi
   local u="$REPO/scripts/install/uninstall.sh"
   local carry="$REPO/.reinstall-wizard.log" ts
   if [ ! -f "$u" ]; then
@@ -1281,7 +1308,7 @@ task_packages() {
   # bzip2 the extraction fails and goose lands in the error list as a phantom
   # "unexpected error" whose real cause is a missing extractor.
   # dnsutils = dig: the dkim_setup re-check and its hint query the zone's
-  # nameserver directly ("dig +short TXT mail._domainkey.$DOMAIN @<zone NS>").
+  # nameserver directly ("dig +short TXT dkim._domainkey.$DOMAIN @<zone NS>").
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     git curl make sudo dnsmasq ufw jq apache2-utils fail2ban sqlite3 python3-yaml tmux bzip2 dnsutils >>"$LOG" 2>&1 || fail apt
   task_end
@@ -1610,9 +1637,17 @@ prep_dirs() {
   need_chown $ROOT/data/vault/data 1000      && sudo chown -R 1000:1000 $ROOT/data/vault/data
   # Mailu containers run as root (front/postfix/dovecot/admin drop privileges
   # per-process); their bind mounts stay root-owned. Roundcube remains uid 33.
-  for d in data mail filter dkim redis certs overrides; do
+  # mailserver/redis is the EXCEPTION and must NOT be root-owned: redis:alpine
+  # re-execs redis-server as its `redis` user (uid 999/gid 1000) via su-exec, so
+  # a root:root 0700 mount makes every BGSAVE fail ("Failed opening the temp RDB
+  # file ... Permission denied"). Redis then enters MISCONF, stop-writes-on-
+  # bgsave-error rejects every write and — because the mail cache used to share
+  # the `redis` DNS name with the Nextcloud cache — Nextcloud's session writes
+  # retried forever and php-fpm hung (2026-10-19: smoke FAIL cloud HTTP 000).
+  for d in data mail filter dkim certs overrides; do
     need_chown "$ROOT/data/mailserver/$d" 0 && sudo chown -R root:root "$ROOT/data/mailserver/$d"
   done
+  need_chown "$ROOT/data/mailserver/redis" 999 && sudo chown -R 999:1000 "$ROOT/data/mailserver/redis"
   need_chown $ROOT/data/mailserver/roundcube 33 && sudo chown -R 33:33 $ROOT/data/mailserver/roundcube
   # root-owned: talk configs (talk-gen), the public drop folder and the
   # instance web root (read-only from the edge container).
@@ -1632,7 +1667,7 @@ prep_dirs() {
   local d want got
   for spec in "cloud/html 33" "cloud/users 33" "vault/data 1000" \
               "mailserver/data 0" "mailserver/mail 0" "mailserver/dkim 0" \
-              "mailserver/roundcube 33"; do
+              "mailserver/redis 999" "mailserver/roundcube 33"; do
     set -- $spec; d="$DATA/$1"; want="$2"
     got=$(stat -c '%u' "$d" 2>/dev/null || echo "")
     [ "$got" = "$want" ] || fail prep_dirs "$d is owned by uid ${got:-?} — its container runs as uid $want (see prep_dirs in this script)"
@@ -2036,6 +2071,73 @@ containers_up() {
     fi
     svc_note_applied mailserver mailserver --
   fi
+  redis_door_sanity
+}
+
+# ── cloud cache door ────────────────────────────────────────────────────────
+# cloud and mail share the external `net` bridge. When the mail cache is again
+# published under the name `redis`, the cloud container resolves that name to
+# BOTH caches, phpredis round-robins onto Mailu's instance and every Nextcloud
+# session SET waits on its MISCONF error — all php-fpm children end up blocked
+# and cloud.$DOMAIN stops answering, while `occ status` (a separate CLI process)
+# still looks healthy. That is exactly the 2026-10-19 smoke failure (cloud HTTP
+# 000 + xfo/xcto/hsts=0) and the reason notify_push:setup never succeeded.
+# Detect the duplicate name (and a cache that refuses writes), drop the alias by
+# recreating the mail stack, restart nextcloud to kill the wedged workers and
+# their dead phpredis connections, then verify. Idempotent: a healthy stack
+# logs one line and touches nothing.
+redis_door_sanity() {
+  mod_on cloud || return 0
+  docker exec nextcloud true >/dev/null 2>&1 || return 0
+  local ips set i=0
+  ips=$(docker exec nextcloud getent hosts redis 2>/dev/null | awk '{print $1}' | sort -u | wc -l)
+  set=$(_redis_probe)
+  if [ "${ips:-0}" -le 1 ] && [ "$set" = ok ]; then
+    detail "  cloud cache redis: single address, writes accepted"
+    return 0
+  fi
+  log "  cloud cache redis UNHEALTHY: ${ips:-?} address(es) for 'redis', write=${set:-failed} — repairing"
+  # The duplicate alias can only come from the mail stack; its compose file now
+  # names that service mailu-redis, so a recreate removes the bogus `redis` name.
+  # A RENAMED service keeps its old container under the same container_name, and
+  # compose refuses to create the new one ("name is already in use") before
+  # --remove-orphans gets a chance — drop the stale container first.
+  if mod_on mail; then
+    local svc
+    svc=$(docker inspect mailu-redis --format '{{index .Config.Labels "com.docker.compose.service"}}' 2>/dev/null || true)
+    if [ -n "$svc" ] && [ "$svc" != mailu-redis ]; then
+      log "  mail cache container still labelled '${svc}' — removing it before the recreate"
+      docker rm -f mailu-redis >>"$LOG" 2>&1 || true
+    fi
+    make dok-recreate-mailserver >>"$LOG" 2>&1 || log "  mailserver recreate failed — see $LOG"
+  fi
+  # Blocked workers never recover and hold a dead phpredis connection: only a
+  # restart drops them.
+  docker restart nextcloud >>"$LOG" 2>&1 || log "  nextcloud restart failed — see $LOG"
+  while [ $i -lt 60 ]; do
+    set=$(_redis_probe)
+    if [ "$set" = ok ]; then
+      ips=$(docker exec nextcloud getent hosts redis 2>/dev/null | awk '{print $1}' | sort -u | wc -l)
+      if [ "${ips:-0}" -le 1 ]; then
+        detail "  cloud cache redis: repaired (single address, writes accepted)"
+        return 0
+      fi
+    fi
+    sleep 2; i=$((i+2))
+  done
+  fail redis_door_sanity "'redis' still ambiguous or read-only inside the cloud container — check modules/mailserver/docker-compose.yml (service must be mailu-redis) and that data/mailserver/redis is owned 999:1000"
+}
+
+# _redis_probe → ok | misconf | rejected | unreachable (echoed, never fatal).
+_redis_probe() {
+  timeout 25 docker exec -u www-data nextcloud php -r '
+try {
+  $r = new Redis();
+  if (!$r->connect("redis", 6379, 2)) { echo "unreachable"; exit; }
+  echo $r->set("kefo:probe", 1) ? "ok" : "rejected";
+} catch (Throwable $e) {
+  echo strpos($e->getMessage(), "MISCONF") !== false ? "misconf" : "unreachable";
+}' 2>/dev/null || echo unreachable
 }
 
 kuma_seed() {
@@ -2087,10 +2189,15 @@ kuma_seed() {
 # Readiness probes the CLI itself, not a mailbox list.
 mail_wait_ready() {
   local i=0
-  while [ $i -lt 300 ]; do
+  while [ $i -lt 60 ]; do
+    # `flask mailu --help` trips a Flask 2.2 context-pop assertion in Mailu 2.0
+    # and always fails — probe with a real, idempotent command instead.
     if docker exec mailu-admin true >/dev/null 2>&1 \
-       && docker exec mailu-admin flask mailu --help >/dev/null 2>&1; then
-      log "  Mailu admin CLI ready after ${i}s"
+       && docker exec mailu-admin flask mailu config-export -j >/dev/null 2>&1; then
+      # Only worth a log line when the caller actually had to wait: every
+      # re-run of vaultwarden/nextcloud/dkim_setup probes this again and the
+      # per-caller "ready after 0s" line just spams the log (2026-10-19).
+      [ "$i" -gt 0 ] && log "  Mailu admin CLI ready after ${i}s"
       # Ensure the primary domain object exists before any mailbox is created.
       docker exec mailu-admin flask mailu domain "$DOMAIN" >/dev/null 2>&1 || true
       return 0
@@ -2101,7 +2208,7 @@ mail_wait_ready() {
     fi
     sleep 5; i=$((i+5))
   done
-  fail mailserver "Mailu admin CLI did not answer after 5 min"
+  fail mailserver "Mailu admin CLI did not answer after 60s"
   return 1
 }
 
@@ -2112,7 +2219,7 @@ mailbox_exists() {
   local localpart="${1%@*}" dom="${1#*@}"
   docker exec mailu-admin flask mailu config-export -j 2>/dev/null \
     | jq -e --arg l "$localpart" --arg d "$dom" \
-        '[.. | objects | select((.localpart? == $l) and (.domain? == $d))] | length > 0' \
+        '[.. | objects | select((.email? // "") == ($l + "@" + $d))] | length > 0' \
         >/dev/null 2>&1
 }
 
@@ -2165,7 +2272,7 @@ mail_quota_set() {
 # cloud module, driven by config/cloud/apps.conf (optional, operator-owned, empty
 # by default: only the operator's own extra apps, read on a fresh install).
 # contacts (install&enable) and app_api (install&disable) are ENFORCED, plus
-# spreed/roundcube/notify_push when their cloud option is on — never shown in
+# spreed/mail_roundcube/notify_push when their cloud option is on — never shown in
 # the plan, applied silently and logged only. The
 # config is the *intent*; this
 # reads the live instance once (occ app:list) and applies actions against real
@@ -2217,9 +2324,10 @@ ask_nc_apps() {
   fi
   if mod_on mail; then
     # Roundcube webmail app: the mail module owns the mail platform; this only
-    # adds its Nextcloud front-end (no mailserver changes).
-    install["roundcube"]=1; seen["roundcube"]=1
-    ENFORCED="$ENFORCED roundcube"
+    # adds its Nextcloud front-end (app id mail_roundcube in the appstore —
+    # "roundcube" is a different, stale app; no mailserver changes).
+    install["mail_roundcube"]=1; seen["mail_roundcube"]=1
+    ENFORCED="$ENFORCED mail_roundcube"
   fi
   if [ "${CLIENT_PUSH:-false}" = "true" ]; then
     install["notify_push"]=1; seen["notify_push"]=1
@@ -2286,7 +2394,7 @@ ask_nc_apps() {
   # apps.conf entries are shown and confirmed — and when the config holds none,
   # there is no plan to show and no prompt to answer.
   local ipl ids dis rem
-  ipl=$(printf '%s\n' "${!install[@]}"     | grep -vx -e spreed -e contacts -e roundcube -e notify_push | paste -sd', ' -)
+  ipl=$(printf '%s\n' "${!install[@]}"     | grep -vx -e spreed -e contacts -e mail_roundcube -e notify_push | paste -sd', ' -)
   ids=$(printf '%s\n' "${!install_dis[@]}" | grep -vx -e app_api   | paste -sd', ' -)
   dis=$(printf '%s\n' "${!disable[@]}"     | paste -sd', ' -)
   rem=$(printf '%s\n' "${!remove[@]}"      | paste -sd', ' -)
@@ -2509,7 +2617,11 @@ nextcloud_setup() {
   # "installed: false", and no occ step below ever runs (2026-09-25). So do
   # the install here when occ says it is missing — same options the entrypoint
   # would use, taken from the same .env.
-  if ! docker exec -u www-data nextcloud php occ status 2>/dev/null | grep -q "installed: true"; then
+  if docker exec -u www-data nextcloud php occ status 2>/dev/null | grep -q "installed: false"; then
+    # Require an EXPLICIT "installed: false": a transient occ/DB failure must
+    # not be mistaken for a missing install and trigger maintenance:install,
+    # which does not even exist once the instance IS installed ("Command
+    # 'maintenance:install' is not defined", 2026-10-19).
     log "  nextcloud reports not-installed — running occ maintenance:install"
     if docker exec -u www-data nextcloud php occ maintenance:install -n \
          --admin-user "${NEXTCLOUD_ADMIN_USER:-admin}" \
@@ -2642,9 +2754,17 @@ nextcloud_setup() {
   if [ "${CLIENT_PUSH:-false}" = "true" ]; then
     # notify_push: the app is installed by ask_nc_apps; setup points it at the
     # Caddy route and verifies the backend answers (needs the container up).
-    docker exec -u www-data nextcloud php occ notify_push:setup "https://cloud.$DOMAIN/push" >/dev/null 2>&1 \
-      || log "  notify_push:setup failed — check the notify-push container and the /push route"
-    docker exec -u www-data nextcloud php occ notify_push:self-test >/dev/null 2>&1 || true
+    # A still-booting push container fails the first attempt — retry before
+    # declaring failure. A redis MISCONF used to fail every attempt too; that
+    # was the cloud cache resolving to Mailu's read-only redis, fixed in
+    # redis_door_sanity (compose service renamed to mailu-redis).
+    local _np_try=0
+    until docker exec -u www-data nextcloud php occ notify_push:setup "https://cloud.$DOMAIN/push" >/dev/null 2>&1; do
+      _np_try=$((_np_try+1))
+      [ "$_np_try" -ge 3 ] && { log "  notify_push:setup failed after 3 attempts — check the notify-push container and the /push route"; break; }
+      sleep 5
+    done
+    [ "$_np_try" -lt 3 ] && docker exec -u www-data nextcloud php occ notify_push:self-test >/dev/null 2>&1 || true
   else
     # wizard.state is the source of truth: CLIENT_PUSH toggled OFF in a repair
     # removes the notify_push app (the container goes with the rendered compose).
@@ -2874,40 +2994,51 @@ vaultwarden_admin() {
 # extracted. Runs after Mailu is up (task_mail) and never writes a truncated key.
 dkim_setup() {
   cd "$REPO" || exit 1
-  local rec value zone id i=0
-  # Wait for the admin CLI, then make sure the domain (and thus its DKIM key)
-  # exists.
-  while [ $i -lt 90 ]; do
-    docker exec mailu-admin flask mailu --help >/dev/null 2>&1 && break
+  local rec value zone id sel=dkim i=0
+  # Wait for the admin CLI (a real command: `flask mailu --help` trips a Flask
+  # 2.2 context-pop assertion in Mailu 2.0 and always fails), then make sure the
+  # domain row exists.
+  while [ $i -lt 30 ]; do
+    docker exec mailu-admin flask mailu config-export -j >/dev/null 2>&1 && break
     sleep 2; i=$((i+2))
   done
   docker exec mailu-admin flask mailu domain "$DOMAIN" >/dev/null 2>&1 || true
-  # Mailu keeps the private key under /dkim; the public TXT may live beside it or
-  # only be exposed through config-export. Try both, and accept the long p= value.
-  rec=$(docker exec mailu-admin sh -c 'cat /dkim/'"$DOMAIN"'/*.txt 2>/dev/null' 2>/dev/null \
-    | grep -oE 'p=[A-Za-z0-9+/=]{50,}' | sed 's/^p=//' | head -1)
-  [ -n "$rec" ] || rec=$(docker exec mailu-admin flask mailu config-export --dns -j 2>/dev/null \
-    | jq -r '.. | strings' 2>/dev/null | grep -oE 'p=[A-Za-z0-9+/=]{50,}' | sed 's/^p=//' | head -1)
-  [ -n "$rec" ] || fail dkim_setup "no public key (open the Mailu admin UI and generate DKIM for $DOMAIN)"
+  # `flask mailu domain` only creates the row — it never generates a DKIM key,
+  # and Mailu writes the private key to /dkim/<domain>.<selector>.key (not a
+  # .txt next to it) and hides dkim_key from config-export. Go through the ORM:
+  # generate the key when missing, then read its public part.
+  rec=$(docker exec -e DOMAIN="$DOMAIN" mailu-admin python3 -c '
+from mailu import create_app, models
+app = create_app()
+with app.app_context():
+    d = models.Domain.query.get(__import__("os").environ["DOMAIN"])
+    if not d:
+        raise SystemExit(1)
+    if not d.dkim_key:
+        d.generate_dkim_key()
+        models.db.session.commit()
+    print(d.dkim_publickey)
+' 2>/dev/null | tr -d '\r\n')
+  [ -n "$rec" ] || { fail dkim_setup "no public key (Mailu refused to generate one for $DOMAIN)"; return 1; }
   value="v=DKIM1; k=rsa; p=$rec"
   zone=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" \
     | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['result'][0]['id'] if d.get('result') else '')" 2>/dev/null)
-  [ -n "$zone" ] || fail dkim_setup "zone lookup"
+  [ -n "$zone" ] || { fail dkim_setup "zone lookup"; return 1; }
   for id in $(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
-      "https://api.cloudflare.com/client/v4/zones/$zone/dns_records?type=TXT&name=mail._domainkey.$DOMAIN" \
+      "https://api.cloudflare.com/client/v4/zones/$zone/dns_records?type=TXT&name=$sel._domainkey.$DOMAIN" \
       | python3 -c "import sys,json; [print(r['id']) for r in (json.load(sys.stdin).get('result') or [])]" 2>/dev/null); do
     curl -s -X DELETE -H "Authorization: Bearer $CF_API_TOKEN" \
       "https://api.cloudflare.com/client/v4/zones/$zone/dns_records/$id" >/dev/null
   done
-  python3 - "$CF_API_TOKEN" "$zone" "$value" <<'EOF' || fail dkim_setup "record publish"
+  python3 - "$CF_API_TOKEN" "$zone" "$value" "$sel" <<'EOF' || { fail dkim_setup "record publish"; return 1; }
 import sys, json, urllib.request
-tok, zone, val = sys.argv[1], sys.argv[2], sys.argv[3]
+tok, zone, val, sel = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 req = urllib.request.Request(f"https://api.cloudflare.com/client/v4/zones/{zone}/dns_records",
-  data=json.dumps({"type": "TXT", "name": "mail._domainkey", "content": val, "ttl": 1, "proxied": False}).encode(),
+  data=json.dumps({"type": "TXT", "name": f"{sel}._domainkey", "content": val, "ttl": 1, "proxied": False}).encode(),
   headers={"Authorization": "Bearer " + tok, "Content-Type": "application/json"}, method="POST")
 sys.exit(0 if json.loads(urllib.request.urlopen(req).read().decode()).get("success") else 1)
 EOF
-  detail "DKIM published: mail._domainkey TXT for $DOMAIN (PTR remains provider-side)"
+  detail "DKIM published: $sel._domainkey TXT for $DOMAIN (PTR remains provider-side)"
 }
 
 ssl_mode_full() {
@@ -2982,7 +3113,7 @@ cf_mail_dns() {
   esac
   cf_mail_record MX "$DOMAIN" "$mx" 10
   # DKIM placeholder: a wildcard TXT so selectors exist before Rspamd signs
-  # (dkim_setup publishes the real mail._domainkey record right after).
+  # (dkim_setup publishes the real dkim._domainkey record right after).
   cf_mail_record TXT '*._domainkey' 'v=DKIM1; p='
   cf_mail_record TXT '_dmarc' 'v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s;'
   # SPF/DKIM/DMARC still can't authorize a relay by themselves without a
@@ -3083,6 +3214,12 @@ cf_mail_dns() {
 #     https://<machine>.<tailnet>.ts.net — different by design).
 
 # Issuer of the cert Caddy presents for one vhost, polled while ACME finishes.
+cert_issuer_now() {
+  # Single-shot check (no polling): is a cert already being served for $1.$DOMAIN?
+  echo | timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$1.$DOMAIN" 2>/dev/null \
+    | openssl x509 -noout -issuer 2>/dev/null | cut -d'=' -f2-
+}
+
 cert_issuer() {
   local h="$1" i=0 iss=""
   while [ $i -lt 45 ]; do
@@ -3108,16 +3245,27 @@ issue_certs() {
   mod_on monitor && hosts="$hosts kuma"
   mod_on mail    && hosts="$hosts mail"
   mod_on mail    && hosts="$hosts mailu"
-  # tail.$DOMAIN joins the LE attempt, but only if it resolves publicly
-  # (auto check): with no public A record there is no ACME identifier to order
-  # for, and the Caddy TXT-only DNS-01 order would just spin. A miss is not a
-  # failure — it flags the tailscale-https follow-up instead.
-  if dig +short A "tail.$DOMAIN" @1.1.1.1 2>/dev/null | grep -q '^[0-9]'; then
-    hosts="$hosts tail"
-  else
-    TAIL_TLS_FALLBACK=true
-    detail "  tail.$DOMAIN does not resolve publicly — LE order skipped (follow-up: scripts/ops/tailscale-https.sh)"
-  fi
+  # tail.$DOMAIN joins the attempt like every other vhost. DNS-01 does not
+  # need a public A record (Caddy answers the TXT challenge directly), and NO
+  # DNS record is created for tail.$DOMAIN by design — it stays tailnet-only.
+  # Every provider in the fallback chain gets its one attempt before the
+  # tailscale-https follow-up is even considered (2026-10-19).
+  hosts="$hosts tail"
+  # Never re-issue an already-successful cert: a host that already serves one
+  # is skipped entirely — no trigger request, no order, no poll (each ACME
+  # order counts against provider rate limits even when answered from cache,
+  # 2026-10-19).
+  local fresh=() iss
+  for h in $hosts; do
+    iss=$(cert_issuer_now "$h")
+    if [ -n "$iss" ]; then
+      detail "  $h.$DOMAIN cert already issued ($iss) — not re-issuing"
+    else
+      fresh+=("$h")
+    fi
+  done
+  hosts="${fresh[*]}"
+  [ -z "$hosts" ] && return 0
   for h in $hosts; do
     curl -sk --resolve "$h.$DOMAIN:443:127.0.0.1" -o /dev/null "https://$h.$DOMAIN/" >>"$LOG" 2>&1 || true
     sleep 3
@@ -3144,42 +3292,34 @@ issue_certs() {
       case "$(cert_issuer "$h2")" in "" ) stuck+=("$h2");; esac
     done
   fi
-  if [ ${#stuck[@]} -gt 0 ]; then
-    detail "  ${#stuck[@]} cert order(s) stuck (${stuck[*]}) — restarting Caddy to re-attempt"
-    # The container is named `caddy` (compose container_name), not $DOMAIN —
-    # restarting "$DOMAIN" always failed with "No such container" and the
-    # re-attempt never happened (2026-09-25).
-    docker restart caddy >>"$LOG" 2>&1 || true
-    sleep 5
-  fi
+  # ONE issuance attempt per provider per run: the trigger round above is the
+  # only wake-up, and Caddy's fallback chain (LE -> Buypass -> ZeroSSL) is
+  # tried exactly once. There is deliberately NO restart/re-attempt — repeated
+  # order attempts are what piles up against the per-provider rate limits
+  # (LE 429, 2026-10-19). If an order is still pending, we only WAIT (the
+  # final loop polls again); if every provider exhausted its one attempt, the
+  # run fails with the follow-up, not another order.
   for h in $hosts; do
     [ "$h" = tail ] && continue   # non-fatal: handled below
     iss=$(cert_issuer "$h")
     case "$iss" in
-      "" ) fail "cert_$h" "no cert issued for $h.$DOMAIN";;
+      "" ) fail "cert_$h" "no cert issued for $h.$DOMAIN (one attempt per issuer made — wait out the provider rate limit and re-run)";;
       *)   detail "  $h.$DOMAIN cert issuer: $iss";;
     esac
   done
-  # tail.$DOMAIN: a failed LE order must not abort the install. The common
-  # cause is the Let's Encrypt per-identifier rate limit (5 orders/name/week);
-  # the remedy is the same either way — the tailscale-https follow-up.
+  # tail.$DOMAIN: a failed order must not abort the install. tailscale-https
+  # is ONLY a last resort — advised as a WARN after every provider in the
+  # fallback chain had its single attempt (2026-10-19).
   case " $hosts " in *" tail "*)
     if [ -z "$(cert_issuer tail)" ]; then
-      # Nothing worked yet — kick the edge once more and give the fallback
-      # chain (LE -> Buypass -> ZeroSSL) a full second polling window before
-      # advising the Tailscale HTTPS follow-up. Tailscale-https is the LAST
-      # resort, only after every free issuer failed (2026-10-19).
-      docker restart caddy >>"$LOG" 2>&1 || true
-      sleep 5
-      curl -sk --resolve "tail.$DOMAIN:443:127.0.0.1" -o /dev/null "https://tail.$DOMAIN/" >>"$LOG" 2>&1 || true
-      if [ -z "$(cert_issuer tail)" ]; then
-        TAIL_TLS_FALLBACK=true
-        if docker logs caddy 2>&1 | grep -qi "rate limit"; then
-          detail "  tail.$DOMAIN no issuer in the fallback chain issued a cert (LE rate-limited, Buypass/ZeroSSL unavailable) — follow-up: scripts/ops/tailscale-https.sh"
-        else
-          detail "  tail.$DOMAIN cert did not issue from any fallback issuer — follow-up: scripts/ops/tailscale-https.sh"
-        fi
+      TAIL_TLS_FALLBACK=true
+      if docker logs caddy 2>&1 | grep -qi "rate limit"; then
+        warn cert_tail "tail.$DOMAIN no issuer in the fallback chain issued a cert (rate-limited) — last resort: scripts/ops/tailscale-https.sh"
+      else
+        warn cert_tail "tail.$DOMAIN cert did not issue from any fallback issuer — last resort: scripts/ops/tailscale-https.sh"
       fi
+    else
+      detail "  tail.$DOMAIN cert issued by: $(cert_issuer tail)"
     fi
   ;; esac
 }
@@ -3267,17 +3407,38 @@ task_dns() {
 # picks the renewed file up. Idempotent.
 mail_tls_certs() {
   mod_on mail || return 0
-  local d="$DATA/caddy_data/caddy/certificates/acme-v02.api.letsencrypt.org-directory/mail.$DOMAIN"
+  # Strict door separation (2026-10-19): the mail.$DOMAIN cert belongs to the
+# ROUNDRCUBE webmail door (its HTTPS vhost via Caddy) plus roundcube's own
+# tls:// SMTP/IMAP client path — it is NOT a "Mailu cert". Mailu's own identity
+# is mailu.$DOMAIN, terminated by Caddy. The cert may sit under ANY issuer
+# directory (LE acme-v02, Buypass or ZeroSSL fallback), so search them all
+# instead of hard-coding the LE path.
+  local d="" base f
+  for f in "$DATA"/caddy_data/caddy/certificates/*/mail.$DOMAIN/mail.$DOMAIN.crt; do
+    [ -s "$f" ] && { d="${f%/*}"; break; }
+  done
   local i=0
-  while [ $i -lt 30 ] && [ ! -s "$d/mail.$DOMAIN.crt" ]; do sleep 2; i=$((i+2)); done
-  [ -s "$d/mail.$DOMAIN.crt" ] || { log "  mail cert not issued yet — Mailu keeps the previous cert"; return 0; }
+  while [ $i -lt 30 ] && [ -z "$d" ]; do
+    sleep 2; i=$((i+2))
+    for f in "$DATA"/caddy_data/caddy/certificates/*/mail.$DOMAIN/mail.$DOMAIN.crt; do
+      [ -s "$f" ] && { d="${f%/*}"; break; }
+    done
+  done
+  [ -n "$d" ] || { log "  mail cert not issued yet — Mailu keeps the previous cert"; return 0; }
   install -d -m 0755 "$DATA/mailserver/certs"
+  # Idempotency: restart mailu-front only when the cert actually changed
+  # (byte-identical cert/key on a re-run must not bounce the mail edge).
+  if cmp -s "$d/mail.$DOMAIN.crt" "$DATA/mailserver/certs/cert.pem" \
+     && cmp -s "$d/mail.$DOMAIN.key" "$DATA/mailserver/certs/key.pem"; then
+    detail "  TLS cert unchanged (mail.$DOMAIN — roundcube door) — no restart"
+    return 0
+  fi
   cp -f "$d/mail.$DOMAIN.crt" "$DATA/mailserver/certs/cert.pem"
   cp -f "$d/mail.$DOMAIN.key" "$DATA/mailserver/certs/key.pem"
   chmod 0644 "$DATA/mailserver/certs/cert.pem"
   chmod 0600 "$DATA/mailserver/certs/key.pem"
   docker restart mailu-front >>"$LOG" 2>&1 || true
-  detail "  Mailu TLS cert installed (mail.$DOMAIN)"
+  detail "  TLS cert installed (mail.$DOMAIN — roundcube door: webmail vhost + SMTP/IMAP)"
 }
 
 task_certs() {
@@ -3344,15 +3505,21 @@ pause_and_resolve() {
     # here, so stop LOUD instead of running on through the rest of the checklist.
     if [ ! -t 0 ]; then _tail_clear; _task_resume; return 1; fi
     printf '%s[INFO]%s Fix / complete the items above, then press Enter to re-check (Ctrl-C aborts): ' "$C_GREY" "$C_RST"
+    # The prompt line wraps to 2+ screen rows at 80 cols — count it via the same
+    # physical-row rule as _note, or every Enter cycle drifts the checklist one
+    # row down (the "Nextcloud Setupp" tear, 2026-10-19).
+    local _pn="[INFO] Fix / complete the items above, then press Enter to re-check (Ctrl-C aborts): "
+    local _pnrows=$(_wrapped_rows "$_pn")
     # Aborted (Ctrl-C / EOF) with the error still open → hard stop.
-    read -r _ || { _task_count 1; _tail_clear; _task_resume; return 1; }
-    _task_count 1
+    read -r _ || { _task_count "$_pnrows"; _tail_clear; _task_resume; return 1; }
+    _task_count "$_pnrows"
     still=()
     for tag in "${ERR_TAGS[@]}"; do
       # Re-run the tag's own idempotent setup first (a recorded setup failure is
       # not a boolean to probe), then inspect the state it leaves.
       case "$tag" in
         dkim_setup) mail_wait_ready 2>/dev/null || true; dkim_setup ;;
+        nextcloud_setup) mail_wait_ready 2>/dev/null || true; nextcloud_setup ;;
         vaultwarden_setup) vaultwarden_setup ;;
       esac
       if recheck "$tag"; then
@@ -3445,7 +3612,7 @@ problem() {
     sweep)          echo "old project name is still referenced in the repo tree" ;;
     sslmode)        echo "Cloudflare SSL/TLS mode is not Full (or strict)" ;;
     nextcloud_setup) echo "Nextcloud occ wiring incomplete (Talk signaling/TURN, SMTP, background cron)" ;;
-    dkim_setup)      echo "DKIM key / mail._domainkey TXT record not published" ;;
+    dkim_setup)      echo "DKIM key / dkim._domainkey TXT record not published" ;;
     dns_mail_txt)   echo "one or more mail records (MX, SPF, wildcard DKIM placeholder, DMARC) are missing" ;;
     vaultwarden_setup) echo "Vaultwarden SMTP sender mailbox missing (vaultwarden@$DOMAIN)" ;;
     vaultwarden_admin) echo "the default vaultwarden account is missing" ;;
@@ -3485,7 +3652,7 @@ hint() {
     sweep)          echo "rename or remove the files listed by: grep -rlI $GITHUB_USER $REPO --exclude-dir=.git --exclude-dir=docs --exclude-dir=archives --exclude-dir=scripts, then re-check" ;;
     sslmode)        echo "Cloudflare dashboard -> SSL/TLS -> Overview -> set mode to Full (or Full strict), then re-check" ;;
     nextcloud_setup) echo "the occ wiring is re-applied automatically on each re-check (nextcloud_occ_remediate); if it still fails, ensure the nextcloud/talk containers are up (make dok-recreate-nextcloud) and the mail module's SMTP_PASSWORD exists in modules/nextcloud/.env — see the nextcloud_setup function in this script, then re-check" ;;
-    dkim_setup)      echo "open the Mailu admin UI (localhost:8081 via SSH tunnel) and generate DKIM for $DOMAIN (or run: docker exec mailu-admin flask mailu domain $DOMAIN), verify the CF token has Zone > DNS > Edit, then dig @<zone NS> TXT mail._domainkey.$DOMAIN" ;;
+    dkim_setup)      echo "re-run the wizard (dkim_setup generates the key through Mailu's ORM when the domain has none), verify the CF token has Zone > DNS > Edit, then dig @<zone NS> TXT dkim._domainkey.$DOMAIN" ;;
     dns_mail_txt)   echo "the installer retries the MX, SPF, wildcard DKIM placeholder and DMARC records on re-check; verify the token has Zone > DNS > Edit and inspect Cloudflare DNS for $DOMAIN (MX -> mail.$DOMAIN, TXT v=spf1 a:mail.$DOMAIN mx -all, *._domainkey, _dmarc)" ;;
     vaultwarden_setup) echo "the mail step waits for the mailserver's account API (mail_wait_ready) then retries the add — a repeat failure means SMTP_PASSWORD is missing from modules/vaultwarden/.env; verify the mail module is enabled (else this step is skipped) and that the mailserver container is healthy (make smoke), then re-check" ;;
     vaultwarden_admin) echo "run: make vaultwarden-list-users / vaultwarden-add-user EMAIL=… PASS=… (scripts/modules/vaultwarden-user.sh); the account needs the vaultwarden container's DB, then re-check" ;;
@@ -3527,7 +3694,7 @@ recheck() {
     sweep) [ -z "$(sweep_hits)" ] ;;
     sslmode) ssl_mode_full ;;
     nextcloud_setup) nextcloud_occ_remediate; if ! mod_on mail || docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN"; then docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://talk.$DOMAIN/signaling" && docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "talk.$DOMAIN:3478" && docker exec -u www-data nextcloud php occ config:system:get trusted_domains 2>/dev/null | grep -qx "cloud.$DOMAIN"; else false; fi ;;
-    dkim_setup)      dig +short TXT "mail._domainkey.$DOMAIN" @"$(dig +short NS "$DOMAIN" | head -1)" 2>/dev/null | grep -qE 'p=[A-Za-z0-9+/=]{100,}' ;;
+    dkim_setup)      dig +short TXT "dkim._domainkey.$DOMAIN" @"$(dig +short NS "$DOMAIN" | head -1)" 2>/dev/null | tr -d '"' | grep -qE 'p=[A-Za-z0-9+/=]{100,}' ;;
     dns_mail_txt) mod_on mail || return 0; cf_mail_dns; local records; records=$(curl -fsS -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" 2>/dev/null) || return 1; printf '%s' "$records" | jq -e --arg d "$DOMAIN" --arg s "v=spf1 a:mail.$DOMAIN mx -all" --arg k 'v=DKIM1; p=' --arg m 'v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s;' '[.result[] | {type,name,content}] as $r | [[$d,"MX"],["*._domainkey."+$d,"TXT"],["_dmarc."+$d,"TXT"]] as $fs | [($fs[] | . as $x | any($r[]; .type==$x[1] and .name==$x[0])), any($r[]; .type=="TXT" and .name==$d and .content==$s)] | all' >/dev/null ;;
     vaultwarden_setup) if mod_on mail; then . modules/vaultwarden/.env 2>/dev/null; mailbox_add "vaultwarden@$DOMAIN" "${SMTP_PASSWORD:-}" >/dev/null 2>&1; mailbox_exists "vaultwarden@$DOMAIN"; else false; fi ;;
     vaultwarden_admin) [ -n "${VAULTWARDEN_ADMIN_USER:-}" ] && bash "$REPO/scripts/modules/vaultwarden-user.sh" list 2>/dev/null | grep -qF "$VAULTWARDEN_ADMIN_USER" ;;
@@ -3577,6 +3744,7 @@ resolve_errors() {
     printf '%s[INFO]%s Fix / complete the items above, then press Enter to re-check (Ctrl-C aborts): ' "$C_GREY" "$C_RST"
     read -r input \
       || { _note "No terminal input — aborting."; exit 1; }
+    _task_count "$(_wrapped_rows "[INFO] Fix / complete the items above, then press Enter to re-check (Ctrl-C aborts): ")"
     local still=()
     for tag in "${remaining[@]}"; do
       # A recorded setup failure is not a boolean to probe — re-RUN its setup
