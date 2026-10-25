@@ -2592,7 +2592,7 @@ nextcloud_setup() {
 
   if [ "${VIDEO_CALLING:-true}" != "false" ]; then
     # Talk signaling — ONE entry (the public URL): NC 34 deprecates multiple
-    # high-performance backends. Clients get wss://talk.$DOMAIN/signaling; the
+    # high-performance backends. Clients get wss://talk.$DOMAIN/signaling/spreed; the
     # signaling server reaches NC back via its own [backend1] urls (extra_hosts),
     # so no internal URL registration is needed.
     local sig
