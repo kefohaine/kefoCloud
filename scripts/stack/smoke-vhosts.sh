@@ -227,7 +227,10 @@ if [ "$(state_get VIDEO_CALLING)" != "false" ]; then
   # talk.$DOMAIN — Talk HPB + TURN. The backend API must answer with the
   # signaling server's Welcome JSON and the client websocket route must reject
   # an unauthenticated handshake (400/426/101). A bare `respond "ok"` stub
-  # returns 200 on both and fails here — the ok-stub guard for Talk.
+  # returns 200 on both and fails here — the ok-stub guard for Talk. Probe
+  # /signaling/spreed, the path the Talk client actually upgrades on (the app
+  # appends /spreed to the registered signaling URL); probing bare /signaling
+  # validated a route no client uses.
   check talk-root "talk.$DOMAIN" "/" "200" "" "Talk signaling served"
   talk_welcome=$(curl -s --max-time 12 --resolve "talk.$DOMAIN:443:127.0.0.1" "https://talk.$DOMAIN/signaling/api/v1/welcome" 2>/dev/null)
   if ! echo "$talk_welcome" | grep -q '"Welcome"'; then
@@ -237,7 +240,7 @@ if [ "$(state_get VIDEO_CALLING)" != "false" ]; then
   fi
   talk_ws=$(curl -s -o /dev/null -w '%{http_code}' --http1.1 --max-time 12 --resolve "talk.$DOMAIN:443:127.0.0.1" \
     -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
-    "https://talk.$DOMAIN/signaling" 2>/dev/null)
+    "https://talk.$DOMAIN/signaling/spreed" 2>/dev/null)
   if [ "$talk_ws" != "400" ] && [ "$talk_ws" != "426" ] && [ "$talk_ws" != "101" ]; then
     say "FAIL talk-signaling: websocket handshake got HTTP $talk_ws (want 400/426/101 — signaling server must answer)"; bad
   else
