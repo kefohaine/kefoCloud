@@ -912,7 +912,7 @@ NC_OCC := docker exec -u www-data nextcloud php occ
 	nc-maintenance-on nc-maintenance-off nc-repair nc-db-indices nc-db-columns \
 	nc-db-primary-keys nc-db-bigint nc-apps nc-app-enable nc-app-disable \
 	nc-config-get nc-config-set nc-users nc-user-add nc-user-del nc-user-password \
-	nc-user-setting nc-scan nc-groups nc-jobs nc-talk-signaling nc-talk-signaling-add \
+	nc-user-setting nc-scan nc-groups nc-jobs nc-talk-signaling nc-core-update nc-app-update \
 	nc-talk-signaling-del nc-talk-turn nc-talk-turn-add nc-talk-turn-del \
 	nc-2fa-enforce nc-logs
 
@@ -934,6 +934,16 @@ nc-update-check:
 
 nc-upgrade:
 >$(NC_OCC) upgrade
+
+# Core update by compose image tag (the web updater also works — data/cloud/html
+# is a host bind mount, so its result survives recreates — this keeps the tag in
+# step with the installed code). Without VERSION it resolves the latest patch of
+# the running major from Docker Hub, and refuses a downgrade.
+nc-core-update:
+>@VERSION=$(VERSION) $(REPO)/scripts/modules/nc-core-update.sh
+
+nc-app-update:
+>$(NC_OCC) app:update --all
 
 nc-cron:
 >$(NC_OCC) background:cron
