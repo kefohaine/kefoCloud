@@ -221,6 +221,8 @@ hdr cloud "Cloud — Nextcloud + Talk (module: cloud)"
 check cloud "cloud.$DOMAIN" "/" "200 301 302 307 308" html "Nextcloud answers"
 check_sec_headers cloud "cloud.$DOMAIN" "/" "one of each"
 check_tls "cloud.$DOMAIN"
+# Web updater: must be reachable (not Caddy's "not found") and actually present.
+check updater "cloud.$DOMAIN" "/updater/" "200" html "Web updater reachable"
 
 # Talk is optional (wizard.state VIDEO_CALLING); skip its checks when off.
 if [ "$(state_get VIDEO_CALLING)" != "false" ]; then
