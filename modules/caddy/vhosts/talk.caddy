@@ -1,11 +1,12 @@
 # talk.{{DOMAIN}} — Nextcloud Talk High Performance Backend (signaling) + TURN.
 #
-# /signaling* reverse-proxies the spreed-signaling websocket (container
-# talk-hpb at 172.22.0.12:8080) — this is the wss:// endpoint Talk
-# clients connect to. Everything else answers a plain ok by design: the
-# vhost exists so clients have a public websocket URL and so Caddy issues
-# the talk.{{DOMAIN}} LE cert (DNS-01) that talk-relay (coturn) reuses for
-# TURNS on 5349.
+# /signaling/spreed reverse-proxies the spreed-signaling websocket (container
+# talk-hpb at 172.22.0.12:8080) — this is the wss:// endpoint Talk clients
+# connect to (they append /spreed to the registered …/signaling URL), and
+# /signaling/api/* proxies its REST API. A bare /signaling and everything
+# else answers a plain ok by design: the vhost exists so clients have a
+# public websocket URL and so Caddy issues the talk.{{DOMAIN}} LE cert
+# (DNS-01) that talk-relay (coturn) reuses for TURNS on 5349.
 #
 # The talk.{{DOMAIN}} A record MUST stay DNS-only (grey cloud) at Cloudflare:
 # TURN speaks UDP/TCP on 3478/5349 + relay 49160-49200, which the CF proxy
@@ -37,16 +38,18 @@ https://talk.{{DOMAIN}} {
     # The Go signaling server serves the websocket at /spreed and the REST
     # API at /api/v1/*. Nextcloud registers the signaling URL as
     # https://talk.{{DOMAIN}}/signaling (see `occ talk:signaling:list`), and
-    # Nextcloud Talk's REST calls use https://talk.{{DOMAIN}}/signaling/api/v1/*,
-    # so Caddy rewrites both: /signaling -> /spreed and /signaling/api* -> /api*.
+    # the Talk web client appends `/spreed` to that URL for the websocket
+    # (`getWebSocketUrl()` in the spreed bundle), so the client connects to
+    # /signaling/spreed and Caddy strips the prefix: /signaling/spreed ->
+    # /spreed, /signaling/api* -> /api*.
 
-    # Websocket: exact /signaling -> /spreed on the signaling backend.
-    # Non-regex literal-path rewrite: /signaling -> /spreed (Caddy's `rewrite`
-    # preserves the websocket upgrade; the Go signaling server speaks plain
-    # HTTP/1.1, and real clients use the H1.1 upgrade handshake which
-    # `reverse_proxy` bridges).
-    handle /signaling {
-        rewrite /spreed
+    # Websocket: /signaling/spreed -> /spreed on the signaling backend.
+    # Non-regex literal-path rewrite (Caddy's `rewrite` preserves the websocket
+    # upgrade; the Go signaling server speaks plain HTTP/1.1, and real clients
+    # use the H1.1 upgrade handshake which `reverse_proxy` bridges). Matching
+    # the bare /signaling instead routes the client's real path to the ok stub.
+    handle /signaling/spreed {
+        rewrite /signaling/spreed /spreed
         reverse_proxy 172.22.0.12:8080
     }
 
