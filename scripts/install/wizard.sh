@@ -2773,15 +2773,44 @@ nextcloud_setup() {
     fi
   fi
 
-  # LAST (priority step): the web updater must be usable, so
-  # upgrade.disable-web has to be false — in the drop-in, not in config.php.
-  # Every config/*.config.php file is loaded AFTER config.php, and the image
-  # ships upgrade-disable-web.config.php with true; `occ config:system:set`
-  # writes config.php and the drop-in then silently wins (the key keeps
-  # reading back true). Rewriting the drop-in is what actually enables the
-  # updater page. www-data owns it, like the rest of the html tree.
+  # LAST (priority step): the web updater is ON, unconditionally.
+  # `updatenotification` gates the admin's "Open updater" button on
+  # `webUpdaterEnabled` = !upgrade.disable-web, so the key must be false, and
+  # the independent updater app must exist at /var/www/html/updater (the FPM
+  # image ships no such tree; Caddy must not block the path either — see
+  # modules/caddy/vhosts/cloud.caddy). /var/www/html here is the HOST bind
+  # mount data/cloud/html, not the image filesystem, so an update the updater
+  # performs survives container recreation; only the compose image tag then
+  # lags the installed code (that is why nc-core-update.sh refuses a downgrade).
+  # Written into the drop-in, not only config.php: every config/*.config.php
+  # loads AFTER config.php, so an occ-only write is silently overridden and the
+  # key keeps reading back the image default.
   docker exec -u www-data nextcloud php -r 'file_put_contents("/var/www/html/config/upgrade-disable-web.config.php", "<?php\n\$CONFIG = array (\n  \"upgrade.disable-web\" => false,\n);\n");' >/dev/null 2>&1 || true
   docker exec -u www-data nextcloud php occ config:system:set upgrade.disable-web --value false --type boolean >/dev/null 2>&1 || true
+
+  # Updater tree, pinned to the running server's major. The release tarball is
+  # self-contained (index.php is the built web updater, vendor/ ships with it).
+  # Idempotent: an existing index.php is left alone — keeping it current is the
+  # updater's own job, and a rewrite mid-update would be fatal.
+  local nc_major upd_tag upd_tmp
+  upd_tmp="${ROOT}/data/cloud/html/updater"
+  if [ ! -f "$upd_tmp/index.php" ]; then
+    nc_major=$(docker exec -u www-data nextcloud php occ config:system:get version 2>/dev/null | tr -d '\r\n')
+    nc_major=${nc_major%%.*}
+    upd_tag=$(curl -fsSL --max-time 20 "https://api.github.com/repos/nextcloud/updater/tags?per_page=100" 2>/dev/null \
+      | sed -n 's/.*"name": *"\(v'"${nc_major:-x}"'\.[0-9.]*\)".*/\1/p' | head -1)
+    [ -n "$upd_tag" ] || upd_tag="v${nc_major}.0.0"
+    rm -rf "$upd_tmp.tmp" && mkdir -p "$upd_tmp.tmp"
+    if curl -fsSL --max-time 120 "https://github.com/nextcloud/updater/archive/refs/tags/${upd_tag}.tar.gz" \
+         | tar xz -C "$upd_tmp.tmp" --strip-components=1 2>/dev/null; then
+      rm -rf "$upd_tmp" && mv "$upd_tmp.tmp" "$upd_tmp"
+      sudo chown -R 33:33 "$upd_tmp"
+      log "  web updater tree installed at data/cloud/html/updater ($upd_tag)"
+    else
+      rm -rf "$upd_tmp.tmp"
+      log "  WARNING: could not fetch the web updater tree ($upd_tag) — the Open updater button will 404 until data/cloud/html/updater exists"
+    fi
+  fi
 
   # FINAL: recycle the web workers. occ runs in its own process, while app
   # config is cached per PHP-FPM worker in APCu (memcache.local = APCu,
