@@ -139,7 +139,7 @@ services:
         ipv4_address: 172.22.0.20
 
   mailu-redis:
-    image: redis:alpine
+    image: redis:8-alpine
     container_name: mailu-redis
     restart: unless-stopped
     <<: *mailu-env
@@ -154,7 +154,7 @@ services:
   roundcube:
     # Webmail for the mail platform: Caddy serves it at cube.${DOMAIN}.
     # IMAP/SMTP point at Mailu's imap/smtp containers.
-    image: roundcube/roundcubemail:latest
+    image: roundcube/roundcubemail:1.7.4-apache
     container_name: roundcube
     restart: unless-stopped
 
