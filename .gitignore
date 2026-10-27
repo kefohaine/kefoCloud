@@ -5,6 +5,5 @@ __pycache__
 *.pyc
 .env
 modules/*/.env
-config/goose/goose.env
 config/cloud/apps.conf
 /data/
