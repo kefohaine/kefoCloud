@@ -87,9 +87,6 @@ EOF
 
   sec "tmux sessions"
   rows <<'EOF'
-make ttyd-devices|list the per-device web-terminal sessions on the tail page
-make ttyd-add NAME=<dev>|create + list a session for a tailnet device (/ttyd?arg=<dev>)
-make ttyd-rm NAME=<dev>|kill + unlist that session
 make tmux-new TAG=<tag>|create a detached session
 make tmux-open TAG=<tag>|attach to a session (Ctrl-b d detaches)
 make tmux-kill TAG=<tag>|kill a session
@@ -106,8 +103,8 @@ more() {
   sec "config → live (host bootstrap)"
   rows <<'EOF'
 make install-config|one-shot host bootstrap — copy every config/ file to its live path
-make install-goose|goose.service → /etc/systemd/system (+ generate goose.env if missing)
-make goose-tokens|goose token policy → live settings store + goose.env + login-shell caps (idempotent)
+make install-goose|goose.service → /etc/systemd/system (+ create/migrate data/goose/.env if missing)
+make goose-tokens|goose token policy → live settings store + data/goose/.env + login-shell caps (idempotent)
 make install-ttyd|ttyd.service → /etc/systemd/system (refuses to run from inside ttyd)
 make install-ssh|50-cloud-init.conf → sshd_config.d (validates with sshd -t, then restarts)
 make install-dnsmasq-conf|10-tailnet.conf → /etc/dnsmasq.d
@@ -123,6 +120,7 @@ EOF
   rows <<'EOF'
 make nc-datadir-nfs|make an external machine the permanent live Nextcloud datadir host over the tailnet (export moves THIS datadir remotely; import restores THIS host's own previously-exported datadir); the database stays local
 make talk-gen|generate NC-stack secrets + Talk/TURN configs (idempotent)
+make talk-config|force every Talk call through the HPB signalling server + our TURN server (occ)
 make nc-capture|snapshot live NC users/groups/quotas → recovery manifests (outside the repo)
 make kuma-import|import an adapted Uptime Kuma db (KUMA_DB=<path>)
 make gh-web-health|check the GitHub web git-data endpoints (after a history rewrite)

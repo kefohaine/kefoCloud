@@ -24,6 +24,9 @@
 set -uo pipefail
 
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# DATA_DIR comes from data/instance.conf (instance.sh falls back to $repo_dir/data)
+. "$repo_dir/scripts/lib/instance.sh" 2>/dev/null || true
+: "${DATA_DIR:=$repo_dir/data}"
 policy="$repo_dir/config/goose/token-policy.yaml"
 briefing="$repo_dir/config/goose/briefing.md"
 mode="${1:-apply}"
@@ -129,12 +132,12 @@ esac
 # NOT from the settings store: the store key alone injects nothing (verified
 # 2026-09-20 — an env-supplied MOIM text landed in the reply, a store-only one
 # did not), so publish it into both environments goose runs in. The unit reads
-# /etc/goose/goose.env through EnvironmentFile= — append only, never read it
+# $DATA_DIR/goose/.env through EnvironmentFile= — append only, never read it
 # back (it holds the server secret); ttyd and interactive CLI sessions get a
 # login shell via /etc/profile.d/. goose reads the environment at process
 # start, so a running `goose serve` needs `make systemd-restart-goose`.
 if [ "$mode" = apply ]; then
-  env_file=/etc/goose/goose.env
+  env_file=${DATA_DIR:?}/goose/.env
   env_line="GOOSE_MOIM_MESSAGE_FILE=$briefing"
   if sudo test -s "$env_file"; then
     if ! sudo grep -qxF "$env_line" "$env_file"; then
