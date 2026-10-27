@@ -3,7 +3,7 @@
 #
 # Two outputs, from one source of values:
 #
-#   1. data/rendered/caddy/   the edge tree (Caddyfile, vhosts/, www/) with
+#   1. data/rendered/caddy/   the edge tree (Caddyfile, vhosts/) with
 #                             every {{TOKEN}} replaced. The edge container
 #                             mounts THIS, never the repo, so the checkout
 #                             can stay a pure skeleton.
@@ -41,10 +41,17 @@ DATA_DIR="$(val DATA_DIR)"; [ -n "$DATA_DIR" ] || DATA_DIR="$ROOT/data"
 TMP="$(dirname "$OUT")/.render-tmp.$$"
 rm -rf "$TMP"; mkdir -p "$TMP/caddy" "$TMP/config"
 
-render_tree() {   # render_tree <src-dir> <dest-dir> [exclude-name]
-  local src="$1" dst="$2" skip="${3:-}" rel
+render_tree() {   # render_tree <src-dir> <dest-dir> [exclude-name...]
+  local src="$1" dst="$2"; shift 2
+  local -a skips=("$@"); local rel sk
   ( cd "$src" && find . -type f ) | sed 's|^\./||' | while IFS= read -r rel; do
-    [ "$rel" = "$skip" ] && continue
+    # each exclude names a FILE or a whole SUBDIRECTORY (config/pages is not
+    # host config — it renders into the web roots instead)
+    for sk in "${skips[@]}"; do
+      [ -z "$sk" ] && continue
+      [ "$rel" = "$sk" ] && continue 2
+      case "$rel" in "$sk"/*) continue 2 ;; esac
+    done
     mkdir -p "$dst/$(dirname "$rel")"
     chmod 0755 "$dst" "$dst/$(dirname "$rel")" 2>/dev/null || true
     "$RENDER" "$src/$rel" "$dst/$rel" || exit 1
@@ -61,9 +68,9 @@ if [ "$(val VIDEO_CALLING)" = "false" ]; then
   rm -f "$TMP/caddy/vhosts/talk.caddy"
 fi
 render_tree "$ROOT/modules/mailserver" "$TMP/mailserver" docker-compose.yml
-render_tree "$ROOT/config" "$TMP/config" instance.defaults www
-# (skip www: config/www holds TEMPLATE web pages, not host config — they belong
-#  in the web root, rendered below, not under /etc)
+render_tree "$ROOT/config" "$TMP/config" instance.defaults pages
+# (skip pages: config/pages/ holds TEMPLATE web pages, not host config — they
+#  belong in the web roots under data/pages/, rendered below, not under /etc)
 
 # Swap in place (keeps the mounted inode alive), then drop the scratch tree.
 mkdir -p "$OUT/caddy" "$OUT/config" "$OUT/mailserver"
@@ -88,12 +95,16 @@ else
 fi
 rm -rf "$TMP"
 
-# Web root ($DATA/www): the TEMPLATE pages from config/www are rendered
-# straight into it. Operator pages in there are never touched (nothing is
+# Web roots: ONE directory per vhost, both under $DATA_DIR/pages/ so no repo
+# path and no instance path share a name. config/pages/<vhost> is rendered into
+# data/pages/<vhost>: today only tail/ carries a template (the tailnet door
+# list). Operator pages in data/pages/www are never touched (nothing is
 # deleted) — only the template files are (re)written, because they are part of
-# the access layer, not content. Today that is the tail door list.
-mkdir -p "$DATA_DIR/www"
-render_tree "$ROOT/config/www" "$DATA_DIR/www"
+# the access layer, not content.
+for _v in www tail; do
+  mkdir -p "$DATA_DIR/pages/$_v"
+  [ -d "$ROOT/config/pages/$_v" ] && render_tree "$ROOT/config/pages/$_v" "$DATA_DIR/pages/$_v"
+done
 
 # ── instance block for compose ──────────────────────────────────────────────
 block() {
