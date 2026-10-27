@@ -69,7 +69,7 @@ https://tail.{{DOMAIN}} {
         # path is /ttyd (ttyd -b /ttyd), so the full path is proxied as-is —
         # do not strip the prefix.
         handle /ttyd* {
-            reverse_proxy 172.22.0.1:7681 {
+            reverse_proxy 127.0.0.1:7681 {
                 transport http {
                     versions 1.1
                 }
