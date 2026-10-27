@@ -5,16 +5,15 @@
 # hardcoded anywhere: add a vhost file (or a public path inside one) and it
 # shows up in the terminal's prediction after the next run.
 #
-# Output: $DATA_DIR/www/targets.json (GENERATED — do not hand-edit).
+# Output: $DATA_DIR/pages/tail/targets.json (GENERATED — do not hand-edit).
 # Refresh: `make tail-targets` (also run by `make install-config`).
 #
 # WHAT IS IN IT: only the TAILNET-only routes of this instance — the routes of
-# the tail vhost itself (the shell, one card per registered device session),
-# derived from modules/caddy/vhosts/tail.caddy. PUBLIC routes are deliberately
-# NOT listed any more (operator request 2026-09-22): this page is the tailnet
-# door list, not a directory of everything the domain serves. Nothing is
-# hardcoded — add a route to tail.caddy (or a device with `make ttyd-add`) and
-# it appears here after the next run.
+# the tail vhost itself (one shell: the single `main` tmux session behind
+# /ttyd), derived from modules/caddy/vhosts/tail.caddy. PUBLIC routes are
+# deliberately NOT listed (operator request 2026-09-22): this page is the
+# tailnet door list, not a directory of everything the domain serves. Nothing is
+# hardcoded — add a route to tail.caddy and it appears here after the next run.
 #
 # Reminder on the vocabulary: a module that is NOT INSTALLED has no route at
 # all and never appears here — this list is about routes that exist and are
@@ -53,16 +52,6 @@ def tail_vhost():
             return m.group(1), src
     return None, None
 
-# Per-device web-terminal sessions (make ttyd-add / ttyd-rm). One ttyd listener
-# serves them all as /ttyd?arg=<name>, so a device adds a CARD here, never a
-# vhost and never a port.
-def device_sessions():
-    reg = os.path.join(DATA, "ttyd-devices.conf")
-    if not os.path.exists(reg):
-        return []
-    return [l.strip() for l in open(reg, encoding="utf-8")
-            if l.strip() and not l.strip().startswith("#")]
-
 host, src = tail_vhost()
 pages = {}
 if src:
@@ -87,15 +76,12 @@ if src:
         else:
             add(arg)
 
-for dev in device_sessions():
-    pages["ttyd?arg=%s" % dev] = "/ttyd?arg=%s" % dev
-
 targets = []
 if host:
     targets.append({"name": "tail", "host": host, "url": "/",
                     "pages": {k: pages[k] for k in sorted(pages)}})
 
-out_dir = os.path.join(DATA, "www")
+out_dir = os.path.join(DATA, "pages", "tail")
 os.makedirs(out_dir, exist_ok=True)
 out = os.path.join(out_dir, "targets.json")
 with open(out, "w", encoding="utf-8") as fh:
