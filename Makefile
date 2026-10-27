@@ -1077,7 +1077,7 @@ nc-talk-turn:
 
 nc-talk-turn-add:
 >@if [ -z "$(SERVER)" ] || [ -z "$(SECRET)" ]; then \
-    scripts/lib/mklog error "usage: make nc-talk-turn-add SERVER='scheme host:port [--udp] [--tcp]' SECRET=<shared-secret>"; \
+    scripts/lib/mklog error "usage: make nc-talk-turn-add SERVER='<schemes> <host:port> <protocols>' SECRET=<shared-secret>  (schemes: turn|turns|turn,turns; protocols: udp|tcp|udp,tcp — positional, spreed has no --udp/--tcp)"; \
     exit 1; \
   fi
 >$(NC_OCC) talk:turn:add $(SERVER) --secret "$(SECRET)"
