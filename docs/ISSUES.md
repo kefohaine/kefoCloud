@@ -91,6 +91,20 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **File**: `modules/uptimekuma/docker-compose.yml` (ro socket).
 - **Problem**: a container with the docker socket is host root — a compromise of either is host root. `no-new-privileges` does not neutralise the socket. Accepted because the monitoring module needs the socket.
 - **Status**: accepted, documented. Tracked for the edge/agent work: any socket holder should be treated as host root when writing policy.
+#### ttyd hands host root to every container
+- **File**: `config/ttyd/ttyd.service` (binds `172.22.0.1:7681`), `Makefile` (`install-config`'s `ufw allow from 172.22.0.0/16 to any port 7681`)
+- **Problem**: ttyd runs as `root` with no second credential, and it listens on the `net` bridge gateway — so ANY container on `net` (a web app, a `:latest` image, a compromised Nextcloud app) can `curl http://172.22.0.1:7681/ttyd` and get an unauthenticated root shell on the host, bypassing Tailscale entirely. Caddy runs host-networked, so the bridge bind buys nothing for the legitimate path.
+- **Fix**: bind `127.0.0.1:7681` (`-i 127.0.0.1`), drop the `172.22.0.0/16 → 7681` ufw rule, and point the tail vhost's `/ttyd` `reverse_proxy` at `127.0.0.1:7681`. Verify: a container-side `curl` must be refused, `/ttyd` must still work from a tailnet client.
+- **Why approval**: it edits the one door the operator uses to reach the host — see AGENTS rule 10.
+#### Unpinned `:latest` images (Vaultwarden, Roundcube, notify_push, Talk HPB, Mailu cache)
+- **File**: `modules/vaultwarden/docker-compose.yml`, `modules/mailserver/docker-compose.yml` (`redis:alpine`, `roundcube/roundcubemail:latest`), `modules/nextcloud/docker-compose.yml` (`notify_push:latest`, `nextcloud-spreed-signaling:latest`)
+- **Problem**: `:latest` silently moves a running service to a new upstream build on the next `make update` — unreviewed code holding user data (Vaultwarden), mailboxes (Roundcube) or a host-adjacent role, with no version to roll back to. Every other image is pinned (Mailu `2.0`, `nextcloud:34.0.x`, `coturn:4.6`, `postgres:17-alpine`).
+- **Fix**: pin each to its current major/minor tag and bump deliberately (as `nextcloud` does via `make nc-core-update`); `docker inspect` the running containers for the tags in use.
+#### Kernel hardening still at distro defaults
+- **File**: `config/sysctl/99-kefo.conf`
+- **Problem**: `kernel.yama.ptrace_scope` and `kernel.kptr_restrict` are unset (both 0), so any same-uid process can ptrace another — the goose agent holds provider keys in memory — and kernel pointers are printable to unprivileged readers. `kernel.dmesg_restrict` is already 1.
+- **Fix**: add `kernel.yama.ptrace_scope = 1` and `kernel.kptr_restrict = 2`, then `make install-sysctl`. Do NOT tighten `net.ipv4.conf.all.rp_filter` — Tailscale's exit-node routing relies on it staying 0.
+- **Why approval**: kernel-wide change (AGENTS rule 17).
 #### goose server secret is in git history
 - **File**: `config/goose/goose.service` (history)
 - **Problem**: the installer used to `sed` a generated `GOOSE_SERVER__SECRET_KEY` into the tracked unit, so a real key sits in git history. The repo now uses `EnvironmentFile=/etc/goose/goose.env` (root:root 0640), but the old value is still in history and unrotated.
