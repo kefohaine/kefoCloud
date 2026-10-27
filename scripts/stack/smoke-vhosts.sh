@@ -196,12 +196,12 @@ hdr core "Edge — Caddy · www (core)"
 check_ctns edge "caddy"
 
 # www: the instance homepage + the drop folder + every page the operator has
-# actually put in the web root ($DATA/www). Derived from the files present, so
+# actually put in the web root ($DATA/pages/www). Derived from the files present, so
 # no page name is hardcoded and a fresh install (placeholder page only) passes.
 check apex         "$DOMAIN"     "/"          "200 301 302 307 308" ""    "bare domain reaches the homepage"
 check www          "www.$DOMAIN" "/"          "200 301 302 307 308" ""    "homepage"
 check www-download "www.$DOMAIN" "/download/" "200 301 302 307 308" html "public drop folder browses"
-for f in "$ROOT/data/www"/*.html; do
+for f in "$ROOT/data/pages/www"/*.html; do
   [ -f "$f" ] || continue
   pg="$(basename "$f" .html)"
   case "$pg" in index|tail) continue ;; esac
