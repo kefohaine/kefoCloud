@@ -223,7 +223,7 @@ make nc-user-setting|set a user setting — USER=<uid> KEY=<key> VALUE=<value> (
 make nc-scan|rescan the file cache — USER=<uid>, default --all
 make nc-groups|occ group:list (nc-jobs = background-job list)
 make nc-talk-signaling|list Talk signaling servers (add/del: nc-talk-signaling-add/-del URL=… SECRET=…)
-make nc-talk-turn|list TURN servers (add/del: nc-talk-turn-add/-del SERVER='scheme host:port' SECRET=…)
+make nc-talk-turn|list TURN servers (add/del: nc-talk-turn-add SERVER='<schemes> <host:port> <protocols>' SECRET=…)
 make nc-2fa-enforce|enforce two-factor auth — USER=<uid>
 make nc-logs|tail the Nextcloud log (N=<lines>, default 100)
 EOF
