@@ -110,7 +110,7 @@ services:
         ipv4_address: 172.22.0.11
 
   hpb:
-    image: strukturag/nextcloud-spreed-signaling:latest
+    image: strukturag/nextcloud-spreed-signaling:2.1.1
     container_name: talk-hpb
     restart: unless-stopped
     # Optional: only started when the operator enabled video calling
@@ -187,7 +187,7 @@ services:
     # https://cloud.${DOMAIN}/push/* here; the app's base endpoint is set by
     # `occ notify_push:setup` in the installer. Only started when the operator
     # enabled client push (COMPOSE_PROFILES=push).
-    image: ghcr.io/nextcloud/notify_push:latest
+    image: ghcr.io/nextcloud/notify_push:v1.4.1
     container_name: notify-push
     restart: unless-stopped
     profiles: ["push"]
