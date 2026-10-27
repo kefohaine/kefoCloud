@@ -21,6 +21,9 @@ REPO       := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 # The single untracked source of instance values (see config/instance.defaults).
 CONF       := $(REPO)/data/instance.conf
 DOMAIN     := $(shell sed -n 's/^DOMAIN=//p' $(CONF) 2>/dev/null | head -1)
+# Instance tree (untracked). Read from the same conf the renderer uses, so a
+# host that moved data/ keeps working; the repo-relative path is the norm.
+DATA_DIR   := $(or $(shell sed -n 's/^DATA_DIR=//p' $(CONF) 2>/dev/null | head -1),$(REPO)/data)
 RENDER_DIR := $(REPO)/data/rendered
 COMPOSE  := docker compose -f
 CONTAINERS := caddy uptimekuma nextcloud vaultwarden mailserver roundcube
@@ -209,24 +212,15 @@ systemd-action:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: fetch fetch-more render tail-targets ttyd-devices ttyd-add ttyd-rm smoke gh-web-health install-hooks update apt-upgrade install-config help talk-gen nc-capture nc-default-user-quota
+.PHONY: fetch fetch-more render tail-targets smoke talk-config gh-web-health install-hooks update apt-upgrade install-config help talk-gen nc-capture nc-default-user-quota
 .PHONY: kuma-import kuma-list-users kuma-add-user kuma-passwd kuma-del-user
 .PHONY: vaultwarden-list-users vaultwarden-add-user vaultwarden-del-user
 .PHONY: deploy backup nc-datadir-nfs import-backups
 
-# Per-tailnet-device web-terminal sessions: one named tmux session each, served
-# by the SINGLE ttyd listener as /ttyd?arg=<name> and listed on the tail page.
-# No new port, no new vhost — see scripts/access/ttyd-devices.sh for why that matters.
-ttyd-devices:
->@bash scripts/access/ttyd-devices.sh list
-
-ttyd-add:
->@[ "$(origin NAME)" = "command line" ] || { scripts/lib/mklog error "usage: make ttyd-add NAME=<device>"; exit 1; }
->@bash scripts/access/ttyd-devices.sh add "$(NAME)"
-
-ttyd-rm:
->@[ "$(origin NAME)" = "command line" ] || { scripts/lib/mklog error "usage: make ttyd-rm NAME=<device>"; exit 1; }
->@bash scripts/access/ttyd-devices.sh rm "$(NAME)"
+# The web terminal is ONE page and ONE shell: tail.$DOMAIN/ttyd attaches the
+# single `main` tmux session (created by tmux-main.service at boot, or on first
+# attach). There is no per-device registry and no way to name a session from the
+# URL — a second shell is a tmux window INSIDE main (make tmux-new / tmux-open).
 
 # AIO dashboard (scripts/info/fetch.sh): host perf (uptime, load, cpu, memory,
 # swap, disk), all available modules (installed green / uninstalled red),
@@ -587,8 +581,8 @@ mail-config-import:
     && scripts/lib/mklog info "registry imported from $(FILE) — verify with make mail-domains and make mail-list"
 
 # Regenerate the tail terminal's navigation catalogue from the Caddy vhost
-# files ($DATA_DIR/www/targets.json — GENERATED, do not hand-edit). Run after
-# adding a vhost or a public path; `make install-config` runs it too.
+# files ($DATA_DIR/pages/tail/targets.json — GENERATED, do not hand-edit). Run
+# after adding a vhost or a public path; `make install-config` runs it too.
 tail-targets:
 >@bash scripts/access/tail-targets.sh
 
@@ -638,6 +632,22 @@ vaultwarden-del-user:
 talk-gen:
 >@bash scripts/modules/talk-gen.sh
 
+# Force EVERY Talk call through this stack's signalling server and media path —
+# not only the calls that happen to need media relay:
+#  * signaling_mode=external — pins the high-performance backend for every
+#    conversation, 1:1 calls included. Without the explicit pin Talk DERIVES the
+#    mode from the server list and falls back to internal signalling (no HPB at
+#    all: no chat relay, no participant relay) whenever that list looks empty.
+#  * stun_servers — replaces the third-party default (stun.nextcloud.com:443)
+#    with our own coturn, so every candidate a client learns comes from this
+#    host and no call depends on Nextcloud's public STUN. TURN (udp/tcp 3478,
+#    tls 5349) is registered by `make nc-talk-turn-add` / the installer and is
+#    the only ICE server that can produce a relayed candidate.
+talk-config:
+>@$(NC_OCC) config:app:set spreed signaling_mode --value external
+>@$(NC_OCC) config:app:set spreed stun_servers --value '["stun:talk.$(DOMAIN):3478"]'
+>@scripts/lib/mklog info "Talk: every call pinned to the HPB (signaling_mode=external); STUN/TURN = talk.$(DOMAIN)"
+
 # Snapshot the live NC users/groups/quotas into cloud/recovery/ outside the
 # repo (generated recovery manifests — the installer recreates exactly this
 # state on fresh installs; re-run after any user/group change).
@@ -675,7 +685,7 @@ define install_config_cmds
   else \
     scripts/lib/mklog info "ttyd already installed at $$(command -v ttyd)"; \
   fi
-sudo test -s /etc/goose/goose.env || { sudo install -d -m 0755 /etc/goose; echo "GOOSE_SERVER__SECRET_KEY=$$(openssl rand -hex 32)" | sudo tee /etc/goose/goose.env >/dev/null; sudo chown root:root /etc/goose/goose.env; sudo chmod 0640 /etc/goose/goose.env; }
+sudo install -d -m 0700 $(DATA_DIR)/goose; if sudo test -s $(DATA_DIR)/goose/.env; then :; elif sudo test -s /etc/goose/goose.env; then scripts/lib/mklog info "goose env: migrating /etc/goose/goose.env -> $(DATA_DIR)/goose/.env"; sudo cp -p /etc/goose/goose.env $(DATA_DIR)/goose/.env; else echo "GOOSE_SERVER__SECRET_KEY=$$(openssl rand -hex 32)" | sudo tee $(DATA_DIR)/goose/.env >/dev/null; fi; sudo chown root:root $(DATA_DIR)/goose/.env; sudo chmod 0600 $(DATA_DIR)/goose/.env
 sudo cp $(RENDER_DIR)/config/goose/goose.service /etc/systemd/system/goose.service
 bash $(REPO)/scripts/info/goose-tokens.sh
 sudo cp $(RENDER_DIR)/config/ssh/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf
@@ -712,7 +722,7 @@ sudo chmod 0644 /etc/cron.d/nextcloud
 # config/docker/daemon.json (10m x3); no journald drop-in exists —
 # caps — nothing here logs unboundedly, and nothing uses chronicle-style
 # per-event logging.
-sudo install -d -m 0755 $(REPO)/data/logs
+sudo install -d -m 0755 $(DATA_DIR)/logs
 sudo cp $(RENDER_DIR)/config/logrotate/instance /etc/logrotate.d/instance
 sudo chmod 0644 /etc/logrotate.d/instance
 sudo systemctl enable --now fail2ban
@@ -752,7 +762,7 @@ deploy: install-config
 
 install-goose:
 >@echo "install-goose: goose.service"
->@sudo test -s /etc/goose/goose.env || { sudo install -d -m 0755 /etc/goose; echo "GOOSE_SERVER__SECRET_KEY=$$(openssl rand -hex 32)" | sudo tee /etc/goose/goose.env >/dev/null; sudo chown root:root /etc/goose/goose.env; sudo chmod 0640 /etc/goose/goose.env; }
+>@sudo install -d -m 0700 $(DATA_DIR)/goose; if sudo test -s $(DATA_DIR)/goose/.env; then scripts/lib/mklog info "goose env already present: $(DATA_DIR)/goose/.env"; elif sudo test -s /etc/goose/goose.env; then scripts/lib/mklog info "goose env: migrating /etc/goose/goose.env -> $(DATA_DIR)/goose/.env"; sudo cp -p /etc/goose/goose.env $(DATA_DIR)/goose/.env; else echo "GOOSE_SERVER__SECRET_KEY=$$(openssl rand -hex 32)" | sudo tee $(DATA_DIR)/goose/.env >/dev/null; fi; sudo chown root:root $(DATA_DIR)/goose/.env; sudo chmod 0600 $(DATA_DIR)/goose/.env
 >@sudo cp $(RENDER_DIR)/config/goose/goose.service /etc/systemd/system/goose.service
 >@sudo systemctl daemon-reload
 >@sudo systemctl restart goose
