@@ -1471,13 +1471,16 @@ prep_dirs() {
                $ROOT/data/pgdata \
                $ROOT/data/talk \
                $ROOT/data/download \
-               $ROOT/data/www
-  # The web root is INSTANCE DATA (the repo ships no pages): seed a minimal
-  # placeholder homepage ONCE so www.$DOMAIN never falls through to the bare
-  # "ok" stub. Existing pages are never touched — the operator owns this dir.
-  if [ ! -f "$ROOT/data/www/index.html" ]; then
-    printf '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1">\n<title>%s</title></head><body>\n<h1>%s</h1>\n<p>This is the placeholder homepage. Drop your pages in <code>%s/www</code> — they are served at the vhost roots (<code>www.%s</code>, <code>tail.%s</code>) and are never overwritten by a render.</p>\n</body></html>\n' \
-      "$DOMAIN" "$DOMAIN" "$DATA" "$DOMAIN" "$DOMAIN" > "$ROOT/data/www/index.html"
+               $ROOT/data/pages/www \
+               $ROOT/data/pages/tail
+  # The web roots are INSTANCE DATA (the repo ships no pages), one directory per
+  # vhost: data/pages/www for www.$DOMAIN, data/pages/tail for tail.$DOMAIN.
+  # Seed a minimal placeholder homepage ONCE so www.$DOMAIN never falls through
+  # to the bare "ok" stub. Existing pages are never touched — the operator owns
+  # these dirs (data/pages/tail/tail.html is rendered by `make render`).
+  if [ ! -f "$ROOT/data/pages/www/index.html" ]; then
+    printf '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1">\n<title>%s</title></head><body>\n<h1>%s</h1>\n<p>This is the placeholder homepage. Drop your pages in <code>%s/pages/www</code> — they are served at the vhost roots (<code>www.%s</code>, <code>tail.%s</code>) and are never overwritten by a render.</p>\n</body></html>\n' \
+      "$DOMAIN" "$DOMAIN" "$DATA" "$DOMAIN" "$DOMAIN" > "$ROOT/data/pages/www/index.html"
   fi
   # Recursive chowns only when the ownership is actually wrong: on an installed
   # instance these trees can hold hundreds of thousands of files, and a re-run
@@ -1643,14 +1646,21 @@ seed_stack() {
     fi
     detail "  mail platform secrets (Mailu) seeded in $menv"
   fi
-  # The goose server secret lives OUTSIDE the repo (root:root 0640) and is read by
-  # the unit through EnvironmentFile= — never written into a tracked file.
-  detail "  goose service secret -> /etc/goose/goose.env"
-  if [ ! -s /etc/goose/goose.env ]; then
-    sudo install -d -m 0755 /etc/goose
-    printf 'GOOSE_SERVER__SECRET_KEY=%s\n' "$(openssl rand -hex 32)" | sudo tee /etc/goose/goose.env >/dev/null
-    sudo chown root:"root" /etc/goose/goose.env
-    sudo chmod 0640 /etc/goose/goose.env
+  # The goose server secret lives in the INSTANCE tree (root:root 0600) and is
+  # read by the unit through EnvironmentFile= — never a tracked file, and never
+  # a repo directory: $DATA is untracked instance state, so the secret cannot be
+  # confused with (or committed as) config.
+  detail "  goose service secret -> $DATA/goose/.env"
+  if [ ! -s "$DATA/goose/.env" ]; then
+    sudo install -d -m 0700 "$DATA/goose"
+    if sudo test -s /etc/goose/goose.env; then
+      # pre-2026-10-27 location: adopt the existing secret, never rotate it
+      sudo cp -p /etc/goose/goose.env "$DATA/goose/.env"
+    else
+      printf 'GOOSE_SERVER__SECRET_KEY=%s\n' "$(openssl rand -hex 32)" | sudo tee "$DATA/goose/.env" >/dev/null
+    fi
+    sudo chown root:"root" "$DATA/goose/.env"
+    sudo chmod 0600 "$DATA/goose/.env"
   fi
   if mod_on vault; then
     # Vaultwarden SMTP sender (vaultwarden@$DOMAIN) — SMTP vars for the
@@ -2614,6 +2624,14 @@ nextcloud_setup() {
     if ! echo "$trn" | grep -q "talk.$DOMAIN:5349"; then
       docker exec -u www-data nextcloud php occ talk:turn:add turns "talk.$DOMAIN:5349" "tcp" --secret "$TURN_SECRET" >/dev/null 2>&1 || true
     fi
+    # Every call goes through the HPB + our own coturn, not just media calls:
+    # signaling_mode pins the external signalling server (no internal fallback
+    # when the server list looks empty), stun_servers replaces the third-party
+    # default (stun.nextcloud.com:443) with this host's coturn.
+    docker exec -u www-data nextcloud php occ config:app:set spreed signaling_mode \
+      --value external >/dev/null 2>&1 || true
+    docker exec -u www-data nextcloud php occ config:app:set spreed stun_servers \
+      --value "[\"stun:talk.$DOMAIN:3478\"]" >/dev/null 2>&1 || true
   else
     # wizard.state is the source of truth: VIDEO_CALLING toggled OFF in a repair
     # removes the live pieces (app, signaling + TURN entries) — not just skips.
@@ -2872,6 +2890,11 @@ nextcloud_occ_remediate() {
     || docker exec -u www-data nextcloud php occ talk:turn:add turn "talk.$DOMAIN:3478" "udp,tcp" --secret "$TURN_SECRET" >/dev/null 2>&1 || true
   echo "$trn" | grep -q "talk.$DOMAIN:5349" \
     || docker exec -u www-data nextcloud php occ talk:turn:add turns "talk.$DOMAIN:5349" "tcp" --secret "$TURN_SECRET" >/dev/null 2>&1 || true
+  # Same as nextcloud_setup: force every call through the HPB and our coturn.
+  docker exec -u www-data nextcloud php occ config:app:set spreed signaling_mode \
+    --value external >/dev/null 2>&1 || true
+  docker exec -u www-data nextcloud php occ config:app:set spreed stun_servers \
+    --value "[\"stun:talk.$DOMAIN:3478\"]" >/dev/null 2>&1 || true
   docker exec -u www-data nextcloud php occ background:cron >/dev/null 2>&1 || true
   # Same reason as the FINAL block of nextcloud_setup: app config is cached per
   # PHP-FPM worker in APCu, so values written here (occ = its own process) stay

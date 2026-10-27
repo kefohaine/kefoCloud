@@ -80,12 +80,16 @@ OP_USER=root
 REPO="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
 PROJECT_DIR="$REPO/data"
 INSTALL_STATE="${INSTALL_STATE:-$PROJECT_DIR/wizard.state}"
-# The log lives OUTSIDE data/ — data/ is wiped whole by this script, and the
-# log must survive its own teardown to be readable afterwards. Forced here
-# (NOT inherited): wizard.sh exports LOG_DIR=$DATA/logs, and the wizard hand-off
-# would otherwise put this log inside data/ — wiped by our own rm -rf mid-run.
-LOG_DIR="$REPO/scripts/install"
+# The log lives with EVERY other log this project writes — $DATA_DIR/logs, the
+# one namespace covered by config/logrotate/instance — instead of next to this
+# script, so no repo directory and no instance directory are ever confused.
+# A full teardown deletes data/ while this script is running, so wipe_data()
+# copies the log to /var/tmp and CONTINUES there: the record survives the
+# teardown it describes (LOG_DIR is inherited from the wizard hand-off, which
+# already exports $DATA/logs).
+LOG_DIR="${LOG_DIR:-$PROJECT_DIR/logs}"
 LOG="$LOG_DIR/uninstall.log"
+mkdir -p "$LOG_DIR" 2>/dev/null || true
 ERR_TAGS=()
 declare -A ERR_DETAIL=()
 
@@ -180,7 +184,7 @@ unset _a
 STACK_MODULES="cloud vault mail monitor"
 
 # data/ goes as ONE directory — no granular folder picks. The stack owns every
-# path under it (module dirs, caddy_data, rendered/, www/, logs, wizard.state),
+# path under it (module dirs, caddy_data, rendered/, pages/, logs, wizard.state),
 # so "stack gone" means data/ itself is gone. The installer recreates the
 # directory and its fresh log right after this exits. Guard: anything still
 # mounted under data/ (the Nextcloud NFS datadirectory) is unmounted first —
@@ -222,6 +226,15 @@ wipe_data() {
     umount "$m" >>"$LOG" 2>&1 || fail data "mountpoint $m still mounted — not deleting data/"
   done < <(findmnt -rn -o TARGET "$PROJECT_DIR" 2>/dev/null | grep -v '^/$')
   [ ${#ERR_TAGS[@]} -gt 0 ] && return 1
+  # data/ (and the log inside it) is about to be deleted: keep this run
+  # readable by moving the live log to /var/tmp and continuing there.
+  if [ -f "$LOG" ]; then
+    _keep="/var/tmp/uninstall-$(date +%Y%m%d-%H%M%S).log"
+    if cp -f "$LOG" "$_keep" 2>/dev/null; then
+      LOG="$_keep"
+      log "log continues here — data/logs was deleted with data/"
+    fi
+  fi
   rm -rf "$PROJECT_DIR" >>"$LOG" 2>&1 \
     || fail data "$PROJECT_DIR not deleted"
 }
@@ -241,7 +254,7 @@ verify_stack_gone() {
   done
   docker network inspect net >/dev/null 2>&1 && t+="network "
   # data/ itself counts, whole: the stack owns everything inside it, so any
-  # leftover (a module dir, rendered/, www/, a stray file) is a live stack.
+  # leftover (a module dir, rendered/, pages/, a stray file) is a live stack.
   [ -e "$PROJECT_DIR" ] && t+="data "
   [ -f "$INSTALL_STATE" ] && t+="state "
   # module compose files are repo-TRACKED and deliberately kept — they are the
@@ -487,7 +500,8 @@ remove_host() {
     systemctl disable --now "$u" >>"$LOG" 2>&1 || true
     rm -f "/etc/systemd/system/$u.service"
   done
-  rm -f /etc/goose/goose.env /etc/kefo-banner.sh
+  # goose env: instance tree first, then the pre-2026-10-27 /etc location
+  rm -f "$PROJECT_DIR/goose/.env" /etc/goose/goose.env /etc/kefo-banner.sh
   rm -f /etc/dnsmasq.d/10-tailnet.conf
   rm -f /etc/systemd/system/dnsmasq.service.d/override.conf
   rmdir /etc/systemd/system/dnsmasq.service.d 2>/dev/null || true
