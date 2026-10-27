@@ -14,14 +14,15 @@ WorkingDirectory={{REPO_DIR}}
 # profile (Settings > Profiles > Pro). Font: Menlo 13pt (macOS
 # Terminal default for Pro). Falls back to Monaco / Courier New on
 # non-mac browsers.
-# -a lets the URL carry one argument (/ttyd?arg=<name>), which
-# scripts/access/ttyd-session.sh turns into a tmux session name. That is how one
-# listener serves a shell per tailnet device without opening another port.
-ExecStart=/usr/local/bin/ttyd -a -W -i 127.0.0.1 -p 7681 -b /ttyd \
+# ONE shell, no arguments: ttyd attaches the single `main` tmux session (created
+# here on first use, kept by tmux-main.service across boots). There is
+# deliberately no -a flag and no per-device session registry — a URL argument
+# cannot name a session, so every visitor lands in the same `main` shell.
+ExecStart=/usr/local/bin/ttyd -W -i 127.0.0.1 -p 7681 -b /ttyd \
   -t fontSize=13 \
   -t 'fontFamily=Menlo,Monaco,"Courier New",monospace' \
   -t 'theme={"background":"#1e1c1c","foreground":"#d4d4d4","cursor":"#d4d4d4","cursorAccent":"#1e1c1c","selectionBackground":"#1bc9c9","black":"#1e1c1c","red":"#c91b1b","green":"#1bc91b","yellow":"#c91b1b","blue":"#1b1bc9","magenta":"#c91bc9","cyan":"#1bc9c9","white":"#d4d4d4","brightBlack":"#6f6f6f","brightRed":"#ff6f6f","brightGreen":"#6fff6f","brightYellow":"#ffff6f","brightBlue":"#6f6fff","brightMagenta":"#ff6fff","brightCyan":"#6fffff","brightWhite":"#ffffff"}' \
-  bash {{REPO_DIR}}/scripts/access/ttyd-session.sh
+  /usr/bin/tmux new-session -A -s main
 
 Restart=always
 RestartSec=3
