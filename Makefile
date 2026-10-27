@@ -716,7 +716,7 @@ sudo install -d -m 0755 $(REPO)/data/logs
 sudo cp $(RENDER_DIR)/config/logrotate/instance /etc/logrotate.d/instance
 sudo chmod 0644 /etc/logrotate.d/instance
 sudo systemctl enable --now fail2ban
-sudo ufw allow from 172.22.0.0/16 to any port 7681 proto tcp
+sudo ufw --force delete allow from 172.22.0.0/16 to any port 7681 proto tcp 2>/dev/null || true
 sudo cp $(RENDER_DIR)/config/systemd/kefo-stack.service /etc/systemd/system/kefo-stack.service
 sudo cp $(RENDER_DIR)/config/systemd/tmux-main.service /etc/systemd/system/tmux-main.service
 sudo systemctl daemon-reload
