@@ -4,9 +4,8 @@
 # Access model — Tailscale MEMBERSHIP is the only gate, by operator choice:
 #   * every path — non-tailnet sources get 403 (@not_tailnet)
 #   * /            — the tailnet door list: every TAILNET-only route of this
-#                    domain (the shell, one card per registered device
-#                    session) fetched live from /targets.json on every visit.
-#                    No login, no session, no commands.
+#                    domain (the shell) fetched live from /targets.json on
+#                    every visit. No login, no session, no commands.
 #   * /targets.json — GENERATED catalogue (scripts/access/tail-targets.sh)
 #   * /ttyd*      — the shell. Deliberately UNAUTHENTICATED: a tailnet device
 #                    that can reach the vhost gets a root shell, no second
@@ -61,7 +60,7 @@ https://tail.{{DOMAIN}} {
 
         # Generated navigation catalogue for the terminal.
         handle /targets.json {
-            root * /srv/www
+            root * /srv/pages/tail
             file_server
         }
 
@@ -76,10 +75,10 @@ https://tail.{{DOMAIN}} {
             }
         }
 
-        # The door list (static; modules/$DOMAIN/www is mounted read-only
-        # at /srv/www in the caddy container).
+        # The door list (static; $DATA_DIR/pages/tail is mounted read-only
+        # at /srv/pages/tail in the caddy container).
         handle / {
-            root * /srv/www
+            root * /srv/pages/tail
             rewrite /tail.html
             file_server
         }

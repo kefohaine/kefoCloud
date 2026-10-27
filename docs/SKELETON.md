@@ -12,7 +12,7 @@ Three mechanisms, one table:
 
 | Kind of file | Mechanism | Where the value comes from |
 |---|---|---|
-| Templates: `config/**` (incl. `config/www/*.html`), `modules/caddy/**`, docs, `recipes/**` | `{{TOKEN}}` + `scripts/render/render.sh` | `data/instance.conf` |
+| Templates: `config/**` (incl. `config/pages/*/*.html`), `modules/caddy/**`, docs, `recipes/**` | `{{TOKEN}}` + `scripts/render/render.sh` | `data/instance.conf` |
 | Compose files (`modules/*/docker-compose*.yml`) | `${VAR}` (docker compose substitution) | the instance block `make render` writes into `modules/*/.env` |
 | Scripts (`scripts/**`) | plain shell variables, never tokens | `scripts/lib/instance.sh`, sourced from `data/instance.conf` |
 | Filenames | domain-free by construction (`vhosts/cloud.caddy`, `kefo-stack.service`, `config/logrotate/instance`) | — |
@@ -64,9 +64,10 @@ make render          # rebuild data/rendered/ + refresh the .env instance blocks
   (`curl` → `000` on every vhost). That happened once, 2026-09-22.
 - `data/rendered/config/` — every file under `config/`, rendered. `make
   install-config` installs from here.
-- `$DATA_DIR/www/` — the instance web root, rendered from the tracked
-  `config/www/` templates and mounted read-only by the edge at `/srv/www`.
-  Operator pages live there and are never overwritten.
+- `$DATA_DIR/pages/` — the instance web roots, one directory per vhost:
+  `pages/www/` (operator pages, never overwritten) and `pages/tail/` (rendered
+  from the tracked `config/pages/tail/` template). The edge mounts `pages` at
+  `/srv/pages` read-only.
 
 `scripts/stack/stack-up.sh` renders first, in every mode, so a fresh clone, a
 `git pull` or an edited `instance.conf` can never deploy stale config.
