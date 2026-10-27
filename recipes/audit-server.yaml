@@ -5,7 +5,7 @@ instructions: |
   Work only within this repository and the host it describes.
   Follow docs/AGENTS.md safety rules: read-only first; never modify files;
   never run destructive or irreversible commands; never read or print secrets
-  (modules/*/.env, /etc/goose/goose.env, mailserver config, private keys,
+  (modules/*/.env, data/goose/.env, mailserver config, private keys,
   certs, password hashes). Report findings with severity, file path and line
   reference where possible, explanation, and a recommended remediation. Do not
   fix anything yourself — the operator applies changes after review.
