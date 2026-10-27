@@ -9,9 +9,11 @@ User=root
 Group=root
 WorkingDirectory={{REPO_DIR}}
 ExecStart=/usr/local/bin/goose serve
-# Server secret lives OUTSIDE the repo (root:root 0640) — never in a tracked file.
-# Created by the installer; live path /etc/goose/goose.env.
-EnvironmentFile=-/etc/goose/goose.env
+# Server secret + the token-policy environment live in the INSTANCE tree
+# (root:root 0600) — never in a tracked file, and never in a repo directory that
+# could be mistaken for config. Created by the installer; older installs kept it
+# at /etc/goose/goose.env and `make install-config` migrates it here.
+EnvironmentFile=-{{DATA_DIR}}/goose/.env
 Restart=always
 RestartSec=3
 
