@@ -6,10 +6,12 @@ prompt-once-unattended script. For the full prompt order and the run's behaviour
 
 ## Run it
 
+The installer runs from a checkout — it sources `scripts/install/wizard.d/` and derives
+`$REPO` from its own path, so a lone copied file does not work:
+
 ```bash
-scp scripts/install/wizard.sh root@<new-machine>:
-ssh root@<new-machine>
-bash wizard.sh
+git clone https://github.com/$GITHUB_USER/kefoCloud.git
+cd kefoCloud && bash scripts/install/wizard.sh
 ```
 
 Every input is collected before any work and persisted to `data/wizard.state` as it is

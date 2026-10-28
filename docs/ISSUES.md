@@ -20,6 +20,11 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### Robustness
 
+#### The optimize offer is marked broken in the installer
+- **File**: `scripts/install/wizard.d/flow/optimize.sh`
+- **Problem**: `ask_optimize` carries a `## BROKEN — neither prompt answer fires optimize.sh` marker from an earlier run; the wiring looks correct (`resolve_errors` → `finalize_install` → `ask_optimize` → `bash scripts/ops/optimize.sh --yes`, and `ask_boolean` assigns by name), so the marker has never been reproduced or traced. Untested ≠ fixed: the marker stays until a real green run proves it.
+- **Fix**: on the next green operator run, answer `yes` and confirm optimize.sh actually starts (its output is in `$LOG`); if it does, delete the marker; if not, trace `ask_boolean`'s `printf -v` target from that call site.
+
 #### Most ops and module scripts have no dry-run or plan mode
 - **File**: `scripts/ops/*.sh`, `scripts/modules/*.sh`, `scripts/stack/stack-up.sh`
 - **Problem**: AGENTS rule 29 lets an agent exercise a script only through a dry/plan mode or a fixture target; apart from `optimize.sh --dry-run` and `restore-data.sh`'s preview, these have neither, so a change to one of them cannot be verified by an agent without a real run.

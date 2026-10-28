@@ -16,7 +16,7 @@
   it, lint it (`bash -n`), or use its dry-run/fixture mode only; the operator
   runs the real thing (docs/AGENTS.md rule 29).
 
-## Installer invariants (see scripts/install/wizard.sh)
+## Installer invariants (see scripts/install/wizard.sh and its `wizard.d/` steps)
 - Never commit or push unless the user explicitly asks for it in the current task.
 - data/logs/wizard.log is cleared at the start of each run; fix root causes, not symptoms.
 - wizard.state is the source of truth for repair mode; apply non-live changes, skip unchanged. Repair mode is fully idempotent and add-only: it never hands off to uninstall.sh, and certs already served by Caddy are never re-issued (no trigger request, no ACME order).
