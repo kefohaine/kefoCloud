@@ -37,9 +37,15 @@ prep_dirs() {
   # that walks them all just to find nothing to change is pure cost. The check is
   # per top-level dir and falls back to "fix it" whenever stat cannot tell.
   need_chown() { [ "$(stat -c '%u' "$1" 2>/dev/null || echo x)" != "$2" ]; }
-  need_chown $ROOT/data/cloud/html 33        && sudo chown -R 33:33 $ROOT/data/cloud/html
-  need_chown $ROOT/data/cloud/users 33       && sudo chown -R 33:33 $ROOT/data/cloud/users
-  need_chown $ROOT/data/vault/data 1000      && sudo chown -R 1000:1000 $ROOT/data/vault/data
+  # A chown that prints would print UNDER the live checklist, uncounted, and one
+  # stray line shifts the animator's relative moves by a row — the failed row is
+  # then painted over by an [EXEC] frame (2026-10-28). Log it instead; a real
+  # ownership problem is surfaced by the verification at the end of this
+  # function, which fails the task.
+  chown_tree() { sudo chown -R "$2" "$1" >>"$LOG" 2>&1; }
+  need_chown $ROOT/data/cloud/html 33        && chown_tree $ROOT/data/cloud/html 33:33
+  need_chown $ROOT/data/cloud/users 33       && chown_tree $ROOT/data/cloud/users 33:33
+  need_chown $ROOT/data/vault/data 1000      && chown_tree $ROOT/data/vault/data 1000:1000
   # Mailu containers run as root (front/postfix/dovecot/admin drop privileges
   # per-process); their bind mounts stay root-owned. Roundcube remains uid 33.
   # mailserver/redis is the EXCEPTION and must NOT be root-owned: redis:alpine
@@ -50,16 +56,20 @@ prep_dirs() {
   # the `redis` DNS name with the Nextcloud cache — Nextcloud's session writes
   # retried forever and php-fpm hung (2026-10-19: smoke FAIL cloud HTTP 000).
   for d in data mail filter dkim certs overrides; do
-    need_chown "$ROOT/data/mailserver/$d" 0 && sudo chown -R root:root "$ROOT/data/mailserver/$d"
+    need_chown "$ROOT/data/mailserver/$d" 0 && chown_tree "$ROOT/data/mailserver/$d" root:root
   done
-  need_chown "$ROOT/data/mailserver/redis" 999 && sudo chown -R 999:1000 "$ROOT/data/mailserver/redis"
-  need_chown $ROOT/data/mailserver/roundcube 33 && sudo chown -R 33:33 $ROOT/data/mailserver/roundcube
+  need_chown "$ROOT/data/mailserver/redis" 999 && chown_tree "$ROOT/data/mailserver/redis" 999:1000
+  need_chown $ROOT/data/mailserver/roundcube 33 && chown_tree $ROOT/data/mailserver/roundcube 33:33
   # root-owned: talk configs (talk-gen), the public drop folder and the
-  # instance web root (read-only from the edge container).
+  # instance web roots (read-only from the edge container).
   # pgdata stays root-owned — the postgres entrypoint chowns it on first boot.
-  for d in talk download www; do
-    need_chown "$ROOT/data/$d" 0 && sudo chown -R root:root "$ROOT/data/$d"
+  for d in talk download; do
+    need_chown "$ROOT/data/$d" 0 && chown_tree "$ROOT/data/$d" root:root
   done
+  # The web root is data/pages/www (one tree per vhost, created above), NOT
+  # data/www: the old path never existed, so this chown printed "cannot access
+  # .../data/www" to the console and the failure was ignored.
+  need_chown "$ROOT/data/pages/www" 0 && chown_tree "$ROOT/data/pages/www" root:root
   # The container-side id above is what the IMAGE runs as, not a guess. One
   # exception, measured rather than assumed: DMS's image creates /var/log/mail
   # owned by its `syslog` user (uid 113), and the daemons it runs write there as
@@ -69,14 +79,23 @@ prep_dirs() {
   # which surfaces much later as an opaque app error (Vaultwarden "unable to
   # open database file", Nextcloud "Data directory is invalid") on a stack whose
   # containers all report healthy.
+  prep_dirs_verify || fail prep_dirs "$PREP_DIR_ERR"
+}
+
+# The ownership verdict for the dirs prep_dirs above just chowned — the only
+# proof the chowns worked. Split out of prep_dirs so the tag's re-check can ask
+# the question without re-walking the trees.
+prep_dirs_verify() {
   local d want got
   for spec in "cloud/html 33" "cloud/users 33" "vault/data 1000" \
               "mailserver/data 0" "mailserver/mail 0" "mailserver/dkim 0" \
-              "mailserver/redis 999" "mailserver/roundcube 33"; do
+              "mailserver/redis 999" "mailserver/roundcube 33" \
+              "pages/www 0"; do
     set -- $spec; d="$DATA/$1"; want="$2"
     got=$(stat -c '%u' "$d" 2>/dev/null || echo "")
-    [ "$got" = "$want" ] || fail prep_dirs "$d is owned by uid ${got:-?} — its container runs as uid $want (see prep_dirs in this script)"
+    [ "$got" = "$want" ] || { PREP_DIR_ERR="$d is owned by uid ${got:-?} — its container runs as uid $want (see prep_dirs in this script)"; return 1; }
   done
+  return 0
 }
 
 write_instance_conf() {

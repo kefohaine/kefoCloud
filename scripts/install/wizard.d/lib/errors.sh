@@ -156,6 +156,7 @@ recheck() {
     github_auth) github_auth_ok ;;
     render) bash "$REPO/scripts/render/render-all.sh" >/dev/null 2>&1 ;;
     tailscale) command -v tailscale >/dev/null 2>&1 ;;
+    prep_dirs) prep_dirs >>"$LOG" 2>&1; prep_dirs_verify ;;
     tailscale_up) tailscale ip -4 >/dev/null 2>&1 ;;
     ts_ip) [ -n "$(tailscale ip -4 2>/dev/null | head -1)" ] ;;
     install_config) systemctl is-active --quiet ttyd dnsmasq goose ;;
