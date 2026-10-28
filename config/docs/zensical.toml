@@ -1,0 +1,27 @@
+# Zensical site config for www.{{DOMAIN}}/docs.
+#
+# Built by scripts/modules/docs-build.sh into $DATA_DIR/pages/www/docs (served
+# by modules/caddy/vhosts/www.caddy at /docs/). The docs_dir is the repo's own
+# docs/ tree — the same files an agent reads, so the published site can never
+# drift from the repository.
+
+[project]
+site_name = "kefoCloud docs"
+site_description = "Operator guide, agent rules and runbooks for this self-hosted stack."
+site_url = "https://www.{{DOMAIN}}/docs/"
+docs_dir = "docs"
+site_dir = "site"
+nav = [
+  {"Home" = "index.md"},
+  {"Guide" = "GUIDE.md"},
+  {"Agent rules" = "AGENTS.md"},
+  {"Issues" = "ISSUES.md"},
+  {"Debug runbook" = "DEBUG.md"},
+  {"Migration" = "MIGRATE.md"},
+  {"Skeleton" = "SKELETON.md"},
+  {"Sandbox modules" = "MODULES.md"},
+]
+
+[project.theme]
+variant = "modern"
+language = "en"
