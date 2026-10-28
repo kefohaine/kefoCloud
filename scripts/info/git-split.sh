@@ -3,30 +3,31 @@
 # scripts/info/git-split.sh — satisfy the two commit-hygiene rules (AGENTS
 # rule 26 "one change per commit", rule 10 "a revert recipe on every
 # significant commit") by REWRITING history: split a bundle commit into one
-# commit per AREA and fill in the `Revert:` line of every significant commit
-# with its real parent SHA (auto rebase + auto SHA).
+# commit per unit and fill in the `Revert:` line of every significant commit
+# with its real parent SHA (auto rebase + auto SHA). A unit is one top-level
+# folder plus at most one subfolder inside it; docs ride with a change.
 #
 # It is the automation behind the two hooks:
 #   * prepare-commit-msg calls it with --staged — the staged change is committed
-#     as one commit per AREA, then the outer `git commit` is aborted (the work is
+#     as one commit per unit, then the outer `git commit` is aborted (the work is
 #     already committed). It is prepare-commit-msg, not pre-commit, because
 #     pre-commit runs before git composes the message.
 #   * pre-push calls it over the range a push would publish — bundles are split
 #     and missing revert recipes are inserted (a replay/rebase), then the hook
 #     aborts so the operator re-runs `git push` on the rewrapped history.
 #
-# AREA / SIGNIFICANT come from scripts/lib/commit-areas.sh — the same
+# SCOPE / SIGNIFICANT come from scripts/lib/commit-areas.sh — the same
 # definitions git-audit.sh checks against, so the splitter and the auditor
 # never drift.
 #
 # SAFETY (AGENTS rule 17): rewriting PUBLISHED history is an operator decision,
 # so this refuses to touch any commit already reachable from a remote-tracking
-# branch. It rewrites only the LOCAL commits a push would add. Worktree must be
-# clean.
+# branch unless REWRITE_PUBLISHED=1 says the operator asked for exactly that.
+# Worktree must be clean.
 #
 # Usage:
-#   git-split.sh [<base>..<head>]   replay+split a local range (default @{upstream}..HEAD)
-#   git-split.sh --staged           split the index into per-AREA commits
+#   git-split.sh [<base>..<head>]   replay+split a range (default @{upstream}..HEAD)
+#   git-split.sh --staged           split the index into per-unit commits
 #   git-split.sh --dry-run ...      report what would change, rewrite nothing
 #
 # The message for --staged comes from $GIT_SPLIT_MESSAGE, else the commit
@@ -62,53 +63,53 @@ commit_is_significant() {
 
 # split_from_status <subject> <body> — stdin is `git diff-tree --name-status`
 # lines. HEAD is at the parent; `git reset` has not run yet. Stages one commit
-# per AREA (docs ride with the largest area) and gives each significant one a
-# Revert: line naming its real parent. Returns 3 when there is nothing to split.
+# per unit (rule 26: one folder, at most one subfolder inside it; docs ride with
+# the largest unit) and gives each significant one a Revert: line naming its
+# real parent. Returns 3 when there is nothing to split.
 split_from_status() {
   local subject="$1" body="$2"
   body=$(printf '%s\n' "$body" | strip_revert)          # the recipe is re-added fresh
   local lines; lines=$(cat)
-  local paths; paths=$(printf '%s\n' "$lines" | cut -f2)
-  local areas; areas=$(printf '%s\n' "$paths" | while IFS= read -r p; do commit_area "$p" || true; done \
-                        | grep -v '^$' | sort -u)
-  local n; n=$(printf '%s\n' "$areas" | grep -c .)
+  local map; map=$(printf '%s\n' "$lines" | cut -f2 | commit_unit_map)
+  local units; units=$(printf '%s\n' "$map" | cut -f1 | sort -u)
+  local n; n=$(printf '%s\n' "$units" | grep -c .)
   [ "${n:-0}" -le 1 ] && return 3
 
-  # primary = the area with the most changed files; docs attach to it.
-  local a c primary='' best=0
-  for a in $areas; do
-    c=$(printf '%s\n' "$paths" | while IFS= read -r p; do
-          [ "$(commit_area "$p" 2>/dev/null)" = "$a" ] && echo x
-        done | grep -c .)
-    if [ "${c:-0}" -gt "$best" ]; then best=$c; primary=$a; fi
+  # primary = the unit with the most changed files; docs attach to it.
+  local u c primary='' best=0
+  for u in $units; do
+    c=$(printf '%s\n' "$map" | awk -F'\t' -v u="$u" '$1 == u' | grep -c .)
+    if [ "${c:-0}" -gt "$best" ]; then best=$c; primary=$u; fi
   done
+
+  # path -> unit, so one pass over the status lines serves files AND sig.
+  local -A unitof=()
+  while IFS=$'\t' read -r u p; do [ -n "$p" ] && unitof["$p"]="$u"; done <<< "$map"
 
   G reset -q || return 1
 
-  local st p ap files rev sig subj msg
-  for a in $areas; do
-    files=()
+  local st p pu files rev sig subj msg label
+  for u in $units; do
+    files=() sig=0
     while IFS=$'\t' read -r st p; do
       [ -z "$p" ] && continue
-      ap=$(commit_area "$p" || true)
-      if [ "$ap" = "$a" ] || { [ -z "$ap" ] && [ "$a" = "$primary" ]; }; then files+=("$p"); fi
+      pu=${unitof[$p]:-}
+      if [ -n "$pu" ]; then
+        [ "$pu" = "$u" ] || continue
+      else
+        [ "$u" = "$primary" ] || continue              # a doc: rides the biggest unit
+      fi
+      files+=("$p")
+      case "$st" in D*|R*) sig=1 ;; esac
+      significant_path "$p" && sig=1
     done <<< "$lines"
     [ "${#files[@]}" -eq 0 ] && continue
 
     G add -A -- "${files[@]}" >/dev/null 2>&1 || return 1
 
-    sig=0
-    for p in "${files[@]}"; do significant_path "$p" && sig=1; done
-    while IFS=$'\t' read -r st p; do
-      [ -z "$p" ] && continue
-      ap=$(commit_area "$p" || true)
-      if [ "$ap" = "$a" ] || { [ -z "$ap" ] && [ "$a" = "$primary" ]; }; then
-        case "$st" in D*|R*) sig=1 ;; esac
-      fi
-    done <<< "$lines"
-
     rev=''; [ "$sig" = 1 ] && rev=$(G rev-parse HEAD)
-    subj="$subject"; [ "$n" -gt 1 ] && subj="$subject ($a)"
+    label="$u"; [ "$u" = "." ] && label=root
+    subj="$subject"; [ "$n" -gt 1 ] && subj="$subject ($label)"
     msg="$subj"
     [ -n "$body" ] && msg="${msg}"$'\n\n'"${body}"
     [ -n "$rev" ] && msg="${msg}"$'\n\n'"Revert: git reset --hard ${rev}"
@@ -132,18 +133,16 @@ split_staged() {
   local ns; ns=$(G diff --cached --name-status --no-renames)
   [ -z "$ns" ] && { echo "git-split: nothing staged"; return 0; }
 
-  local n; n=$(printf '%s\n' "$ns" | cut -f2 \
-               | while IFS= read -r p; do commit_area "$p" || true; done \
-               | grep -v '^$' | sort -u | grep -c .)
+  local n; n=$(printf '%s\n' "$ns" | cut -f2 | commit_units | grep -c .)
   if [ "${n:-0}" -le 1 ]; then
-    echo "git-split: staged change is a single area — nothing to split"
+    echo "git-split: staged change is a single unit — nothing to split"
     return 0
   fi
 
   local rc
   printf '%s\n' "$ns" | split_from_status "$subject" "$body"; rc=$?
   [ "$rc" = 0 ] || die "split failed"
-  echo "git-split: staged change split into $n commits (one per area)"
+  echo "git-split: staged change split into $n commits (one per unit)"
 }
 
 # ── range: replay + split local history ──────────────────────────────────────
@@ -158,15 +157,17 @@ replay_range() {
   [ -n "$commits" ] || { echo "git-split: range '$range' is empty"; return 0; }
 
   local c
-  for c in $commits; do
-    if G branch -r --contains "$c" 2>/dev/null | grep -q .; then
-      die "commit ${c:0:9} is already published on a remote — refusing to rewrite published history (rule 17)"
-    fi
-  done
+  if [ "${REWRITE_PUBLISHED:-0}" != "1" ]; then
+    for c in $commits; do
+      if G branch -r --contains "$c" 2>/dev/null | grep -q .; then
+        die "commit ${c:0:9} is already published on a remote — refusing to rewrite published history (rule 17; REWRITE_PUBLISHED=1 to apply an operator-approved rewrite)"
+      fi
+    done
+  fi
 
   local need=0 n
   for c in $commits; do
-    n=$(commit_areas "$c" | grep -c .)
+    n=$(commit_units_for "$c" | grep -c .)
     if [ "$n" -gt 1 ]; then need=1; continue; fi
     if commit_is_significant "$c"; then
       commit_revert_ok "$c" || need=1
@@ -180,9 +181,9 @@ replay_range() {
   if [ "${DRY_RUN:-0}" = 1 ]; then
     echo "git-split: would rewrite $range (dry-run)"
     for c in $commits; do
-      n=$(commit_areas "$c" | grep -c .)
+      n=$(commit_units_for "$c" | grep -c .)
       printf '  %s  %s%s\n' "${c:0:9}" "$(G log -1 --format=%s "$c")" \
-        "$([ "$n" -gt 1 ] && echo "  [bundle: $(commit_areas "$c" | paste -sd, -)]" \
+        "$([ "$n" -gt 1 ] && echo "  [bundle: $(commit_units_for "$c" | paste -sd, -)]" \
            || { commit_is_significant "$c" && ! commit_revert_ok "$c" && echo "  [revert recipe]"; })"
     done
     return 0
@@ -198,13 +199,16 @@ replay_range() {
   }
 
   G checkout -q --detach "$base" || die "cannot detach at $base"
-  local subject body ns rc
+  local subject body ns rc ad cd
   for c in $commits; do
     subject=$(G log -1 --format=%s "$c")
     body=$(G log -1 --format=%b "$c")
     AUTHOR=$(G log -1 --format='%an <%ae>' "$c")
+    # a rewrite must not re-date the history it replays
+    ad=$(G log -1 --format=%aI "$c"); cd=$(G log -1 --format=%cI "$c")
+    export GIT_AUTHOR_DATE="$ad" GIT_COMMITTER_DATE="$cd"
     ns=$(G diff-tree -r --name-status --no-commit-id --no-renames --root "$c")
-    n=$(commit_areas "$c" | grep -c .)
+    n=$(commit_units_for "$c" | grep -c .)
 
     if [ "$n" -gt 1 ]; then
       G cherry-pick --no-commit "$c" >/dev/null 2>&1 || { restore; die "conflict splitting ${c:0:9} — resolve manually"; }
@@ -225,6 +229,7 @@ replay_range() {
     fi
   done
 
+  unset GIT_AUTHOR_DATE GIT_COMMITTER_DATE
   if [ -n "$branch" ]; then G branch -f "$branch" HEAD >/dev/null && G checkout -q "$branch"; fi
   echo "git-split: rewrote $range — re-run your command (git push / git status) on the new history"
 }

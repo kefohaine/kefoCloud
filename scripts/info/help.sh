@@ -66,7 +66,7 @@ make git-pull|pull remote changes
 make git-add|stage every change
 make git-com MSG=<sentence>|commit staged changes — single-sentence MSG only
 make git-audit RANGE=<a..b>|monitor the commit-hygiene rules (26 one change per commit, 10 revert recipe) — default: what a push would publish; the pre-push hook enforces it
-make git-split RANGE=<a..b>|rewrite a local range to satisfy those rules — auto-split bundles per area, auto-SHA the Revert: lines; ARGS=--dry-run to preview; refuses published commits — the hooks run it for you
+make git-split RANGE=<a..b>|rewrite a local range to satisfy those rules — auto-split bundles per unit (one folder + one subfolder), auto-SHA the Revert: lines; ARGS=--dry-run to preview; refuses published commits — the hooks run it for you
 make git-push|push to the remote
 make git-force-push BRANCH=<b>|force-push a rewritten branch (--force-with-lease only; BRANCH required — never clobbers another's commits)
 EOF
@@ -112,7 +112,7 @@ make install-dnsmasq-override|dnsmasq drop-in override → /etc/systemd/system/d
 make install-docker|daemon.json → /etc/docker (docker daemon restart needed to apply)
 make install-sysctl|99-kefo.conf → /etc/sysctl.d
 make install-cron|nextcloud → /etc/cron.d (occ cron every 5 min)
-make install-hooks|git hooks — pre-commit (GitHub-identity + edge guard), prepare-commit-msg (auto-split per area), pre-push (smoke + history-rewrite warning + auto-split/revert)
+make install-hooks|git hooks — pre-commit (GitHub-identity + edge guard), prepare-commit-msg (auto-split per unit: one folder + one subfolder), pre-push (smoke + history-rewrite warning + auto-split/revert)
 EOF
 
 

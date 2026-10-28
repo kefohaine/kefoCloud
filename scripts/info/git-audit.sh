@@ -2,8 +2,9 @@
 #
 # scripts/info/git-audit.sh — monitor the git history for the two commit-hygiene
 # rules a commit cannot check about itself: AGENTS rule 26 (one change per
-# commit) and rule 10 (a revert recipe in the message of every significant
-# commit). READ-ONLY: it reports, it never rewrites history.
+# commit: one folder, at most one subfolder inside it) and rule 10 (a revert
+# recipe in the message of every significant commit). READ-ONLY: it reports, it
+# never rewrites history.
 #
 # Why it exists: the pre-commit hook only sees ONE staged change, and a commit
 # made in the GitHub web editor runs no hook at all. This walks a finished
@@ -15,10 +16,11 @@
 # Audit the whole published history with RANGE=origin/main.
 #
 # Checks (exit 1 when any is found, so a hook can gate on it):
-#   BUNDLE  the diff spans more than one AREA (rule 26) — the unit the
-#           pre-commit hook splits on: `topdir/subdir` for a nested path, the
-#           path itself otherwise, ignoring `*.md` and docs/ (the docs that
-#           describe a change ride with it). Order changes so each stands alone.
+#   BUNDLE  the diff spans more than one unit (rule 26) — the unit the
+#           pre-commit hook splits on: the top-level folder, or `folder/subdir`
+#           when that folder has several subfolders involved, ignoring `*.md`
+#           and docs/ (the docs that describe a change ride with it). Order
+#           changes so each stands alone.
 #   REVERT  the commit is SIGNIFICANT (rule 10) but its message has no
 #           `Revert:` line. Significant = a security / structure / performance
 #           path (below), or any deletion or rename.
@@ -45,8 +47,9 @@ if [ -z "$range" ]; then
   exit 2
 fi
 
-# AREA (rule 26) and SIGNIFICANT (rule 10) come from scripts/lib/commit-areas.sh
-# — the same definitions git-split.sh rewrites against, so the two never drift.
+# SCOPE (rule 26) and SIGNIFICANT (rule 10) come from
+# scripts/lib/commit-areas.sh — the same definitions git-split.sh rewrites
+# against, so the two never drift.
 
 commits=$(G rev-list --reverse "$range" 2>/dev/null || true)
 if [ -z "$commits" ]; then
@@ -71,22 +74,22 @@ for c in $commits; do
   ns=$(G diff-tree -r --name-status --no-commit-id -M --root "$c" 2>/dev/null)
   [ -z "$ns" ] && continue
 
-  areas='' sig=''
+  paths='' sig=''
   while IFS= read -r line; do
     [ -z "$line" ] && continue
     st=${line%%$'\t'*}; p=${line#*$'\t'}
     p=${p##*$'\t'}                                  # R100\told\tnew -> new
     case "$st" in D*|R*) sig=rename_or_delete ;; esac
     significant_path "$p" && sig="$sig $p"
-    a=$(commit_area "$p") || continue
-    case " $areas " in *" $a "*) ;; *) areas="$areas $a" ;; esac
+    paths="$paths$p"$'\n'
   done <<< "$ns"
 
-  nareas=$(printf '%s\n' $areas | grep -c . || true)
-  if [ "${nareas:-0}" -gt 1 ]; then
+  units=$(printf '%s' "$paths" | commit_units | paste -sd, -)
+  nunits=$(printf '%s' "$units" | tr ',' '\n' | grep -c . || true)
+  if [ "${nunits:-0}" -gt 1 ]; then
     bundles=$((bundles + 1))
     printf '  %sBUNDLE%s %s  %s\n' "$Y" "$N" "$short" "$subject"
-    printf '         %sareas:%s%s\n' "$D" "${areas}" "$N"
+    printf '         %sunits:%s %s\n' "$D" "${units}" "$N"
     printf '         %ssplit it: git rebase -i %s^  →  one change per commit (rule 26)%s\n' "$D" "$c" "$N"
   fi
 
