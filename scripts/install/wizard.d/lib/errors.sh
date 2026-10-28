@@ -95,6 +95,7 @@ problem() {
     dns_mail_txt)   echo "one or more mail records (MX, SPF, DMARC) are missing" ;;
     vaultwarden_setup) echo "Vaultwarden SMTP sender mailbox missing (vaultwarden@$DOMAIN)" ;;
     vaultwarden_admin) echo "the default vaultwarden account is missing" ;;
+    beszel_system)  echo "the beszel hub has no working system for this machine (nothing is reported)" ;;
     clone)          echo "repo clone failed" ;;
     hooks)          echo "git hooks are not installed in $REPO/.git/hooks" ;;
     github_key)     echo "the GitHub key could not be created" ;;
@@ -135,6 +136,7 @@ hint() {
     dns_mail_txt)   echo "the installer retries the MX, SPF and DMARC records on re-check; verify the token has Zone > DNS > Edit and inspect Cloudflare DNS for $DOMAIN (MX -> mail.$DOMAIN, TXT v=spf1 a:mail.$DOMAIN mx -all, _dmarc)" ;;
     vaultwarden_setup) echo "the mail step waits for the mailserver's account API (mail_wait_ready) then retries the add — a repeat failure means SMTP_PASSWORD is missing from modules/vaultwarden/.env; verify the mail module is enabled (else this step is skipped) and that the mailserver container is healthy (make smoke), then re-check" ;;
     vaultwarden_admin) echo "run: make vaultwarden-list-users / vaultwarden-add-user EMAIL=… PASS=… (scripts/modules/vaultwarden-user.sh); the account needs the vaultwarden container's DB, then re-check" ;;
+    beszel_system)  echo "run: make beszel-add-system (registers the agent's bridge IP + LISTEN port derived from the module), then check 'docker logs beszel-agent' for 'SSH connected'" ;;
     clone)          echo "the clone is HTTPS (the repo is public) — check network/DNS, then re-check" ;;
     hooks)          echo "run: make install-hooks in $REPO (re-run it after editing a hook)" ;;
     github_key)     echo "check /root/.ssh is writable (mkdir -p /root/.ssh && chmod 700 /root/.ssh), then re-check" ;;

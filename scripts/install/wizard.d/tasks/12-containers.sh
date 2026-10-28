@@ -102,6 +102,12 @@ containers_up() {
     else
       log "  recreate: beszel hub + agent"; make dok-recreate-beszel-hub >>"$LOG" 2>&1 || fail beszel
     fi
+    # The hub ships ZERO systems and its CLI cannot create one, so without this
+    # the dashboard is empty after a fresh install. Idempotent (skipped when the
+    # agent's address is already registered); a not-yet-reachable agent is a
+    # soft failure — the hub is fine, only its own row is pending.
+    log "  register: this machine in the beszel hub"
+    make beszel-add-system >>"$LOG" 2>&1 || warn beszel_system
     svc_note_applied beszel beszel --
   fi
   if mod_on photos; then
