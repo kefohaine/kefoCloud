@@ -26,7 +26,7 @@ DOMAIN     := $(shell sed -n 's/^DOMAIN=//p' $(CONF) 2>/dev/null | head -1)
 DATA_DIR   := $(or $(shell sed -n 's/^DATA_DIR=//p' $(CONF) 2>/dev/null | head -1),$(REPO)/data)
 RENDER_DIR := $(REPO)/data/rendered
 COMPOSE  := docker compose -f
-CONTAINERS := caddy uptimekuma nextcloud vaultwarden mailserver roundcube homer writefreely beszel-hub beszel-agent immich-server immich-db immich-redis
+CONTAINERS := caddy uptimekuma nextcloud vaultwarden mailserver roundcube homarr writefreely beszel-hub beszel-agent immich-server immich-db immich-redis
 HOST     := ttyd dnsmasq goose
 # The tailnet device that receives files/bundles — one spelling for backup,
 # import-backups and the taildrop helpers (TAILDROP_HOST is an alias). No
