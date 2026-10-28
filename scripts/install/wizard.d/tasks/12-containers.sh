@@ -79,6 +79,41 @@ containers_up() {
     fi
     svc_note_applied mailserver mailserver --
   fi
+  if mod_on home; then
+    if svc_skip_repair homer homer -- homer; then
+      detail "  homer already up, inputs unchanged — skipped"
+    else
+      log "  recreate: homer"; make dok-recreate-homer >>"$LOG" 2>&1 || fail homer
+    fi
+    svc_note_applied homer homer --
+  fi
+  if mod_on blog; then
+    if svc_skip_repair writefreely writefreely -- writefreely; then
+      detail "  writefreely already up, inputs unchanged — skipped"
+    else
+      log "  recreate: writefreely"; make dok-recreate-writefreely >>"$LOG" 2>&1 || fail writefreely
+    fi
+    svc_note_applied writefreely writefreely --
+  fi
+  if mod_on beszel; then
+    # One compose file declares hub + agent: recreating either brings both up.
+    if svc_skip_repair beszel beszel -- beszel-hub beszel-agent; then
+      detail "  beszel hub + agent already up, inputs unchanged — skipped"
+    else
+      log "  recreate: beszel hub + agent"; make dok-recreate-beszel-hub >>"$LOG" 2>&1 || fail beszel
+    fi
+    svc_note_applied beszel beszel --
+  fi
+  if mod_on photos; then
+    # immich-server declares the dependency order (db + redis), so it is the
+    # one unit to recreate for the whole photo stack.
+    if svc_skip_repair immich immich -- immich-server immich-db immich-redis; then
+      detail "  immich already up, inputs unchanged — skipped"
+    else
+      log "  recreate: immich stack"; make dok-recreate-immich-server >>"$LOG" 2>&1 || fail immich
+    fi
+    svc_note_applied immich immich --
+  fi
   redis_door_sanity
 }
 

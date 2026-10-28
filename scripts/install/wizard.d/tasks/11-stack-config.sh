@@ -260,6 +260,50 @@ seed_stack() {
     VAULTWARDEN_ADMIN_USER=$(sed -n 's/^VAULTWARDEN_ADMIN_USER=//p' "$vwenv" | tail -1)
     VAULTWARDEN_ADMIN_PASSWORD=$(sed -n 's/^VAULTWARDEN_ADMIN_PASSWORD=//p' "$vwenv" | tail -1)
   fi
+  if mod_on photos; then
+    # Immich brings its OWN PostgreSQL (pgvecto-rs/vectorchord) — it must never
+    # share the Nextcloud one. Credentials are minted once and reused; compose
+    # interpolates them from this file.
+    local penv=modules/immich/.env
+    [ -f "$penv" ] || { umask 077; : >"$penv"; }
+    chmod 600 "$penv"
+    pseed() {
+      local key="$1" val="$2"
+      if grep -q "^$key=" "$penv"; then
+        grep -q "^$key=." "$penv" || sed -i "s|^$key=$|$key=$val|" "$penv"
+      else
+        echo "$key=$val" >> "$penv"
+      fi
+    }
+    pseed DB_USERNAME immich
+    pseed DB_DATABASE_NAME immich
+    if ! grep -q '^DB_PASSWORD=.' "$penv"; then
+      pseed DB_PASSWORD "$(openssl rand -hex 24)"
+    fi
+    detail "  Immich database credentials seeded in $penv"
+  fi
+  if mod_on beszel; then
+    # The agent refuses to start without a public key (KEY). One is minted here
+    # and kept; the hub's add-system dialog shows the key it expects, and
+    # `make beszel-key KEY=...` pins that one instead.
+    local benv=modules/beszel/.env
+    [ -f "$benv" ] || { umask 077; : >"$benv"; }
+    chmod 600 "$benv"
+    if ! grep -q '^BESZEL_KEY=.' "$benv"; then
+      local _kd _kpub
+      _kd=$(mktemp -d)
+      ssh-keygen -q -t ed25519 -N '' -C beszel-agent -f "$_kd/id" >/dev/null 2>&1
+      _kpub=$(cat "$_kd/id.pub" 2>/dev/null)
+      rm -rf "$_kd"
+      [ -n "$_kpub" ] && echo "BESZEL_KEY=$_kpub" >> "$benv"
+    fi
+    detail "  Beszel agent key seeded in $benv"
+  fi
+  # The /docs site is static output (Zensical), built from the repo's docs/
+  # tree; there is no container to start, so it is built here, before smoke
+  # asserts it.
+  detail "  building the /docs site (Zensical)"
+  make docs-build >>"$LOG" 2>&1 || fail docs_build
 }
 
 

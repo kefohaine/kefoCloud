@@ -49,22 +49,25 @@ ask_cloud_options() {
   fi
 }
 ask_modules() {
-  local k name all=1 ans ok
-  for k in cloud vault mail monitor; do
+  local k name all=1 ans ok mods
+  # The offer list IS config/modules.conf (via _state_modules) — a module added
+  # there is askable, recordable and detectable with no edit here.
+  mods="$(_state_modules)"
+  for k in $mods; do
     name="MOD_${k^^}"; [ -n "${!name:-}" ] || all=
   done
   [ -n "$all" ] && return 0
   while :; do
-    printf '%s[INFO]%s Modules to install, separated by spaces (cloud mail vault monitor): ' \
-      "$C_GREY" "$C_RST"
+    printf '%s[INFO]%s Modules to install, separated by spaces (%s): ' \
+      "$C_GREY" "$C_RST" "$(printf '%s' "$mods" | paste -sd' ' -)"
     read -r ans || exit 1
     ans="${ans,,}"; ans="${ans//,/ }"
     ok=1
     for k in $ans; do
-      case "$k" in cloud|vault|mail|monitor) ;; *) echo "   unknown module: $k"; ok= ;; esac
+      case " $mods " in *" $k "*) ;; *) echo "   unknown module: $k"; ok= ;; esac
     done
     [ -n "$ok" ] || continue
-    for k in cloud vault mail monitor; do
+    for k in $mods; do
       name="MOD_${k^^}"
       case " $ans " in *" $k "*) printf -v "$name" '%s' true ;; *) printf -v "$name" '%s' false ;; esac
     done

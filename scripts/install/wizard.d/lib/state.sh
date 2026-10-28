@@ -25,12 +25,17 @@ mod_on() {
   [ "${!name:-true}" = "true" ]
 }
 
+# The module roster, derived from config/modules.conf — the ONE declaration.
+# The wizard never hardcodes the list: adding a module there makes it askable,
+# recordable and detectable in the same edit.
+_state_modules() { awk '$1 !~ /^#/ && NF { print $1 }' "$REPO/config/modules.conf" 2>/dev/null; }
+
 # The enabled set as recorded in state: the modules the operator chose. Built
 # from the MOD_* answers; an unset MOD_* is NEVER assumed true here (unlike the
 # install path, which defaults to true) — the record only names answered ones.
 enabled_modules_list() {
   local k v out=""
-  for k in cloud vault mail monitor; do
+  for k in $(_state_modules); do
     v="MOD_${k^^}"
     [ "${!v:-}" = "true" ] && out+="$k "
   done
@@ -66,10 +71,11 @@ save_state() {
     printf 'SSH_PUBKEYS=%q\n'        "${SSH_PUBKEYS:-}"
     # The raw module ANSWERS, so a resume reuses the choice (empty once a module
     # has not been asked yet — ask_modules re-asks only the empty ones).
-    printf 'MOD_CLOUD=%q\n'          "${MOD_CLOUD:-}"
-    printf 'MOD_VAULT=%q\n'          "${MOD_VAULT:-}"
-    printf 'MOD_MAIL=%q\n'           "${MOD_MAIL:-}"
-    printf 'MOD_MONITOR=%q\n'        "${MOD_MONITOR:-}"
+    local _mk _mv
+    for _mk in $(_state_modules); do
+      _mv="MOD_${_mk^^}"
+      printf 'MOD_%s=%q\n' "${_mk^^}" "${!_mv:-}"
+    done
     # The cloud module's optional services, answered before the apps plan.
     printf 'VIDEO_CALLING=%q\n'       "${VIDEO_CALLING:-}"
     printf 'CLIENT_PUSH=%q\n'         "${CLIENT_PUSH:-}"
@@ -144,22 +150,18 @@ write_state() {
     echo "declared = install-time choice (MOD_*); probes are independent of it."
     echo; } > "$rep"
 
-  for m in cloud vault mail monitor; do
+  local _decl _dir _host _c
+  for m in $(_state_modules); do
     ct=0; dd=0; vh=0
-    case "$m" in
-      cloud)   ct=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -cx nextcloud)
-               [ -e "$DATA/cloud/users" ] && dd=1
-               [ -f "$RENDER_DIR/caddy/vhosts/cloud.caddy" ] && vh=1 ;;
-      vault)   ct=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -cx vaultwarden)
-               [ -e "$DATA/vault/data" ] && dd=1
-               [ -f "$RENDER_DIR/caddy/vhosts/vault.caddy" ] && vh=1 ;;
-      mail)    ct=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -cxE 'mailu-front|roundcube')
-               [ -e "$DATA/mailserver/data" ] && dd=1
-               [ -f "$RENDER_DIR/caddy/vhosts/mail.caddy" ] && vh=1 ;;
-      monitor) ct=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -cx uptimekuma)
-               [ -e "$DATA/kuma/data" ] && dd=1
-               [ -f "$RENDER_DIR/caddy/vhosts/kuma.caddy" ] && vh=1 ;;
-    esac
+    _decl="$(awk -v m="$m" '$1 !~ /^#/ && $1 == m { $1=""; sub(/^ +/,""); print; exit }' "$REPO/config/modules.conf" 2>/dev/null)"
+    _dir="$(printf '%s' "$_decl" | awk '{print $1}')"
+    _host="$(printf '%s' "$_decl" | awk '{print $2}')"
+    # Probe 1: any declared container of this module is running.
+    for _c in $(printf '%s' "$_decl" | awk '{for(i=3;i<=NF;i++) print $i}'); do
+      if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$_c"; then ct=1; break; fi
+    done
+    [ -e "$DATA/$_dir" ] && dd=1
+    if [ "$_host" != "-" ] && [ -f "$RENDER_DIR/caddy/vhosts/$_host.caddy" ]; then vh=1; fi
     # CONFIRMED = the module's container is running. The compose file is a REPO
     # fact (always present, so it proves nothing), and a leftover data dir or
     # rendered vhost is exactly what an uninstall leaves behind — it

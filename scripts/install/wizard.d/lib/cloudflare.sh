@@ -128,16 +128,26 @@ cf_mail_dns() {
       "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$rid" >>"$LOG" 2>&1 || true
     detail "  A record removed: $fqdn (disabled in wizard.state)"
   }
-  # proxied (orange cloud): the apex + vault/kuma/www. talk rides on the cloud door.
-  for h in "" cloud vault kuma www; do
+  # proxied (orange cloud): the apex + kuma/www. talk rides on the cloud door.
+  for h in "" cloud kuma www; do
     case "$h" in
       "")    cf_record "" true;;
       cloud) mod_on cloud && cf_record "$h" false || cf_a_del cloud;;
-      vault) mod_on vault && cf_record "$h" true  || cf_a_del vault;;
       kuma)  mod_on monitor && cf_record "$h" true || cf_a_del kuma;;
       www)   cf_record "$h" true;;
     esac
   done
+  # vault.$DOMAIN is TAILNET-ONLY (operator choice 2026-10-28): the name is
+  # answered by the machine dnsmasq and gated by @not_tailnet in the vhost, so
+  # the public zone must hold NO record for it. A leftover proxied record would
+  # hand every visitor a 403 page.
+  cf_a_del vault
+  # blog.$DOMAIN is WriteFreely on its own hostname (proxied like cloud/kuma).
+  mod_on blog && cf_record blog true || cf_a_del blog
+  # photos.$DOMAIN is Immich, DNS-ONLY (grey cloud): uploads and video streams
+  # must not pass through the CF proxy.
+  mod_on photos && cf_record photos false || cf_a_del photos
+  # home (www/home) and beszel (tail/beszel) have no hostname of their own.
   # talk/mail MUST be DNS-only (grey cloud): TURN relays media over
   # UDP/TCP 3478/5349 + 49160-49200 and SMTP/IMAP also bypass the CF proxy
   # (HTTP(S) only). Caddy still gets their LE certs via DNS-01. talk exists
