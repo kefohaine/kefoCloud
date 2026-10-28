@@ -64,6 +64,17 @@ https://tail.{{DOMAIN}} {
             file_server
         }
 
+        # Beszel hub — the SPA is served under /beszel because the hub's
+        # APP_URL carries that path: the HTML it emits points at
+        # /beszel/assets/... and /beszel/static/..., while the hub itself only
+        # serves /assets and /static. Strip the prefix (the hub's router
+        # tolerates either form) so both the page and its assets resolve.
+        @beszel_root path /beszel
+        redir @beszel_root /beszel/ 308
+        handle_path /beszel/* {
+            reverse_proxy 172.22.0.13:8090
+        }
+
         # ttyd host terminal — no second credential (see the header). Base
         # path is /ttyd (ttyd -b /ttyd), so the full path is proxied as-is —
         # do not strip the prefix.

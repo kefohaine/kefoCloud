@@ -23,6 +23,13 @@ https://vault.{{DOMAIN}} {
     request_body {
         max_size 100m
     }
+    # Tailnet-only since 2026-10-28: the vault has no public DNS record, and any
+    # source outside 100.64.0.0/10 is refused before the proxy runs. Tailnet
+    # clients resolve vault.{{DOMAIN}} through the machine dnsmasq (the public
+    # zone has no A record for it), so the door keeps its own name and its own
+    # ACME certificate — DNS-01 needs only the TXT record.
+    @not_tailnet not remote_ip 100.64.0.0/10
+    respond @not_tailnet 403
     header {
         import security_headers
     }

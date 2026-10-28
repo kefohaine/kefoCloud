@@ -1,0 +1,38 @@
+# photos.{{DOMAIN}} — Immich photo library.
+# Cloudflare mode: DNS-ONLY (grey cloud) — operator choice. Photo uploads and
+# video streaming through the CF proxy hit its upload/body limits and the
+# non-HTML ToS clauses, so the origin is exposed directly.
+# TLS: Let's Encrypt DNS-01 via Cloudflare (grey cloud still gets a cert — DNS-01
+# needs only the TXT record).
+
+https://photos.{{DOMAIN}} {
+    tls {
+        issuer acme https://acme-v02.api.letsencrypt.org/directory {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+        issuer acme https://api.buypass.com/acme/directory {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+        issuer acme https://acme.zerossl.com/v2/DV90 {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+    }
+    import compress
+    # Uploads: Immich streams originals of any size; the edge must not cap the
+    # body at Caddy's default.
+    request_body {
+        max_size 0
+    }
+    header {
+        import security_headers
+    }
+    reverse_proxy 172.22.0.23:2283 {
+        header_down -X-Frame-Options
+        header_down -X-Content-Type-Options
+        header_down -Referrer-Policy
+        header_down -Strict-Transport-Security
+    }
+}

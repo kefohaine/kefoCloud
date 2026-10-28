@@ -112,9 +112,25 @@ https://www.{{DOMAIN}} {
         rewrite /welcome-9.html
         file_server
     }
+    # /docs — the Zensical build (scripts/modules/docs-build.sh renders the
+    # repo's docs/ tree into $DATA_DIR/pages/www/docs). handle_path strips the
+    # prefix so the site's relative asset links resolve under /docs/.
+    @docs path /docs
+    redir @docs /docs/ 308
+    handle_path /docs/* {
+        root * /srv/pages/www/docs
+        file_server
+    }
+    # /home — the Homer dashboard. Homer serves its assets with RELATIVE urls
+    # ("assets/...", "./resources/..."), so strip the prefix and let the app
+    # answer at /: /home/ -> /, /home/assets/x -> /assets/x.
+    handle /home* {
+        uri strip_prefix /home
+        reverse_proxy 172.22.0.7:8080
+    }
     # Homepage: the index.html placeholder (meta-redirects to /welcome).
-    @home path /
-    handle @home {
+    @index path /
+    handle @index {
         root * /srv/pages/www
         file_server
     }

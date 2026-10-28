@@ -1,0 +1,40 @@
+# blog.{{DOMAIN}} — WriteFreely (single blog host, own vhost: WriteFreely builds
+# absolute URLs and signs ActivityPub objects from its hostname, so it cannot
+# live under a subpath of www).
+# TLS: Let's Encrypt DNS-01 via Cloudflare with the same fallback issuer chain
+# as every other public vhost.
+
+https://blog.{{DOMAIN}} {
+    tls {
+        issuer acme https://acme-v02.api.letsencrypt.org/directory {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+        issuer acme https://api.buypass.com/acme/directory {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+        issuer acme https://acme.zerossl.com/v2/DV90 {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+    }
+    import compress
+    request_body {
+        max_size 64m
+    }
+    header {
+        import security_headers
+    }
+    reverse_proxy 172.22.0.8:8080 {
+        # WriteFreely sets its own (stricter) security headers on some routes;
+        # strip them so the site-level set is the only one served.
+        header_down -X-Frame-Options
+        header_down -X-Content-Type-Options
+        header_down -Referrer-Policy
+        header_down -Strict-Transport-Security
+        # TLS terminates here: tell the app the request arrived over https so
+        # generated URLs and cookies stay secure.
+        header_up X-Forwarded-Proto https
+    }
+}

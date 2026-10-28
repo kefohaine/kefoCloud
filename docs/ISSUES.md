@@ -178,6 +178,23 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ---
 
+### Pending (Oct 2026)
+
+#### Delete the public `vault` A record at Cloudflare  **[needs human approval]**
+- **File**: `scripts/install/wizard.d/lib/cloudflare.sh`
+- **Problem**: the vault is tailnet-only (dnsmasq + `@not_tailnet` 403) but the old proxied A record still exists in the zone, so public visitors get a 403 page instead of no name at all. The installer now calls `cf_a_del vault`, but the Cloudflare API token in `data/instance.conf` is rejected (`Invalid format for Authorization header`), so the record could not be removed from this host.
+- **Fix**: replace the token with a valid Zone:DNS:Edit token, then re-run the installer's DNS step (or delete the `vault` A record in the dashboard). Verify with `dig +short vault.$DOMAIN` → empty.
+
+#### Beszel has no system record yet
+- **File**: `modules/beszel/docker-compose.yml`
+- **Problem**: hub and agent run and share the hub's SSH key, but the hub only polls a machine after a system row is created, which the CLI cannot seed.
+- **Fix**: open `https://tail.$DOMAIN/beszel`, add one system (host `172.22.0.22`, port `45876`), confirm it turns up.
+
+#### New modules are outside the backup/restore universe
+- **File**: `scripts/ops/backup-bundles.sh`, `scripts/ops/restore-data.sh`
+- **Problem**: both scripts list `vault mailserver kuma` explicitly, so the `home`, `blog`, `beszel` and `photos` datadirs are neither bundled nor restorable.
+- **Fix**: derive the datadir universe from `config/modules.conf` (one loop over `mod_all`/`mod_dir`) instead of extending the literals.
+
 ## Planned ideas
 
 Future roadmap, operator-reviewed later; when one is picked up it moves to Open, when done it lands in Solved.
@@ -433,3 +450,17 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **One page, one shell** — per-device ttyd/tmux sessions dropped (`ttyd-devices.sh`, `ttyd-session.sh`, `ttyd-devices.conf`, `make ttyd-*`); ttyd runs `tmux new-session -A -s main` with no `-a`, so the URL cannot name a session.
 - **Every Talk call forced through the HPB** — `make talk-config` pins `spreed signaling_mode=external` and points `stun_servers` at this host's coturn instead of `stun.nextcloud.com`.
 - **pre-push guards never ran under a real push** — the smoke's `openssl s_client` drained the hook's stdin (a pipe), so the ref loop exited at once; the hook now captures the refs first and closes the smoke's stdin.
+
+## Solved
+
+### Oct 2026 — pages, apps and exposure
+
+- **Poster welcome page** — `/welcome` is now a tracked template (`config/pages/www/welcome.html`) with a page nav and a `Home →` button.
+- **Homer at /home** — new `home` module, served under `www.$DOMAIN/home` with prefix stripping for its relative assets.
+- **Zensical docs** — `/docs/` is a static build of the repo's `docs/` tree via `make docs-build`; no container.
+- **WriteFreely blog** — new `blog` module and `blog.$DOMAIN` vhost, built from the pinned upstream release tarball.
+- **Beszel hub + agent** — new `beszel` module, tailnet-only at `tail.$DOMAIN/beszel`, agent wired to the hub key.
+- **Immich photos** — new `photos` module, DNS-only `photos.$DOMAIN`, own PostgreSQL + Redis, ML container omitted.
+- **Vault is tailnet-only** — `vault.$DOMAIN` keeps its name but has no public record; `@not_tailnet` 403s every other source.
+- **Module roster derived** — the installer's module list, state and detection now read `config/modules.conf` instead of four hardcoded names.
+- **Smoke covers the new doors** — `/docs`, `/home`, `blog`, `beszel`, `photos` and both halves of the vault gate are asserted.
