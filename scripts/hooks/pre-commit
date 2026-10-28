@@ -55,7 +55,7 @@ if echo "$staged" | grep -q '^modules/caddy/'; then
 fi
 
 # 2. Stub guard on the app vhosts.
-app_vhosts="cloud.caddy kuma.caddy mail.caddy vault.caddy"
+app_vhosts="cloud.caddy kuma.caddy mail.caddy vault.caddy blog.caddy photos.caddy"
 for f in $app_vhosts; do
   if echo "$staged" | grep -q "^modules/caddy/vhosts/$f$"; then
     if git show :"modules/caddy/vhosts/$f" 2>/dev/null | grep -qE '^\s*respond "ok"'; then
