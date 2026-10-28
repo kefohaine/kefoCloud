@@ -1,0 +1,81 @@
+services:
+  beszel-hub:
+    image: henrygd/beszel:0.21.1
+    container_name: beszel-hub
+    restart: unless-stopped
+
+    # Hard RAM cap (no container swap) — survives recreates, unlike `docker update`.
+    mem_limit: 128m
+    memswap_limit: 128m
+
+    environment:
+      # The hub builds every client-side route and asset URL from APP_URL — it
+      # is the ONLY way to serve the SPA under a subpath (BASE_PATH is derived
+      # from this URL's path). Without it the dashboard's links are absolute at
+      # the vhost root and the /beszel mount only works for the first page.
+      APP_URL: https://tail.${DOMAIN}/beszel
+
+    volumes:
+      - ${DATA_DIR}/beszel/hub:/beszel_data
+
+    expose:
+      - "8090"
+
+    healthcheck:
+      test: ["CMD", "/beszel", "health", "--url", "http://127.0.0.1:8090/beszel"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Pinned bridge IP — modules/caddy/vhosts/tail.caddy proxies /beszel here.
+    networks:
+      net:
+        ipv4_address: 172.22.0.13
+
+  beszel-agent:
+    image: henrygd/beszel-agent:0.21.1
+    container_name: beszel-agent
+    restart: unless-stopped
+
+    mem_limit: 64m
+    memswap_limit: 64m
+
+    environment:
+      LISTEN: "45876"
+      # The agent's public key. The hub polls the agent over this SSH identity
+      # after the system is added in the hub UI; the key is generated once by
+      # the installer / `make beszel-keygen` and kept in the module .env.
+      KEY: ${BESZEL_KEY}
+      # Optional: pin the hub URL the agent advertises (same subpath as above).
+      HUB_URL: https://tail.${DOMAIN}/beszel
+
+    volumes:
+      # Read-only docker socket: the agent reports per-container stats the same
+      # way Kuma reads container state. A compromised agent already runs with
+      # the host's metrics; the socket stays read-only regardless.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${DATA_DIR}/beszel/agent:/var/lib/beszel-agent
+
+    expose:
+      - "45876"
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      net:
+        ipv4_address: 172.22.0.22
+
+networks:
+  net:
+    external: true
