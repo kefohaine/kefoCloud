@@ -124,6 +124,7 @@ hint() {
     kuma)           echo "run: make dok-recreate-uptimekuma, then re-check" ;;
     mailserver)     echo "run: make dok-recreate-mailserver, then re-check" ;;
     homarr)         echo "run: make dok-recreate-homarr, then re-check (SECRET_ENCRYPTION_KEY must be set in modules/homarr/.env)" ;;
+    homer)          echo "run: make dok-recreate-homer, then re-check (its config is rendered: make render)" ;;
     datadirectory)  echo "run: docker exec -w /var/www/html nextcloud php occ config:system:set datadirectory --value /data, then re-check" ;;
     kuma_admin)     echo "create the admin account at https://kuma.$DOMAIN in the UI, then re-check" ;;
     kuma_seed)      echo "run: make dok-recreate-uptimekuma (UPTIME_KUMA_DB_TYPE=sqlite makes Kuma create its schema), wait for /app/data/kuma.db to have tables, then: docker exec -i uptimekuma sqlite3 /app/data/kuma.db < modules/uptimekuma/seed-monitors.sql" ;;

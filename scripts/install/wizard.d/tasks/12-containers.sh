@@ -87,6 +87,14 @@ containers_up() {
     fi
     svc_note_applied homarr homarr --
   fi
+  if mod_on homer; then
+    if svc_skip_repair homer homer -- homer; then
+      detail "  homer already up, inputs unchanged — skipped"
+    else
+      log "  recreate: homer"; make dok-recreate-homer >>"$LOG" 2>&1 || fail homer
+    fi
+    svc_note_applied homer homer --
+  fi
   if mod_on blog; then
     if svc_skip_repair writefreely writefreely -- writefreely; then
       detail "  writefreely already up, inputs unchanged — skipped"

@@ -28,7 +28,7 @@ Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Caddy, Vaultwarden, Uptime
 | **Mail** | Mailu + Roundcube | SMTP/IMAPS, DKIM/SPF/DMARC on your own domain |
 | **Vault** | Vaultwarden | any Bitwarden client, server included — tailnet-only door |
 | **Monitor** | Uptime Kuma | watches public *and* tailnet-only doors |
-| **Home** | Homarr | dashboard on its own `home.` vhost; the main site's `/home` redirects there |
+| **Home** | Homarr + Homer | Homarr on its own `home.` vhost, Homer at the main site's `/home` |
 | **Blog** | WriteFreely | its own `blog.` vhost, SQLite, pinned upstream release |
 | **Ops** | Beszel hub + agent | tailnet-only under `tail./beszel` |
 | **Photos** | Immich | DNS-only vhost, its own PostgreSQL + Redis |

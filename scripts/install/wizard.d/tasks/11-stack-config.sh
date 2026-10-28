@@ -8,6 +8,7 @@ prep_dirs() {
                $ROOT/data/vault/data \
                $ROOT/data/kuma/data \
                $ROOT/data/homarr/appdata \
+               $ROOT/data/homer \
                $ROOT/data/mailserver/data \
                $ROOT/data/mailserver/mail \
                $ROOT/data/mailserver/filter \
