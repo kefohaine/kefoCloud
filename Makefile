@@ -26,7 +26,7 @@ DOMAIN     := $(shell sed -n 's/^DOMAIN=//p' $(CONF) 2>/dev/null | head -1)
 DATA_DIR   := $(or $(shell sed -n 's/^DATA_DIR=//p' $(CONF) 2>/dev/null | head -1),$(REPO)/data)
 RENDER_DIR := $(REPO)/data/rendered
 COMPOSE  := docker compose -f
-CONTAINERS := caddy uptimekuma nextcloud vaultwarden mailserver roundcube
+CONTAINERS := caddy uptimekuma nextcloud vaultwarden mailserver roundcube homer writefreely beszel-hub beszel-agent immich-server immich-db immich-redis
 HOST     := ttyd dnsmasq goose
 # The tailnet device that receives files/bundles — one spelling for backup,
 # import-backups and the taildrop helpers (TAILDROP_HOST is an alias). No
@@ -56,6 +56,14 @@ TAILDROP ?= $(TAILDROP_HOST)
 # roundcube lives in the mailserver compose file (no own compose).
 $(foreach s,$(CONTAINERS),$(eval COMPOSE_FILE_$s := modules/$s/docker-compose.yml))
 COMPOSE_FILE_roundcube := modules/mailserver/docker-compose.yml
+# Container names that differ from their module directory: beszel and immich
+# declare several containers in ONE compose file, so every container of a
+# module resolves to the module's file (like roundcube above).
+COMPOSE_FILE_beszel-hub     := modules/beszel/docker-compose.yml
+COMPOSE_FILE_beszel-agent   := modules/beszel/docker-compose.yml
+COMPOSE_FILE_immich-server  := modules/immich/docker-compose.yml
+COMPOSE_FILE_immich-db      := modules/immich/docker-compose.yml
+COMPOSE_FILE_immich-redis   := modules/immich/docker-compose.yml
 
 # Helper: $(compose-file-of $1) returns the absolute compose file path for
 # the named service. Recipes use this directly instead of $(COMPOSE_FILE_$1)
@@ -215,6 +223,9 @@ systemd-action:
 .PHONY: fetch fetch-more render tail-targets smoke talk-config gh-web-health install-hooks update apt-upgrade install-config help talk-gen nc-capture nc-default-user-quota
 .PHONY: kuma-import kuma-list-users kuma-add-user kuma-passwd kuma-del-user
 .PHONY: vaultwarden-list-users vaultwarden-add-user vaultwarden-del-user
+.PHONY: writefreely-users writefreely-add-user writefreely-passwd writefreely-del-user
+.PHONY: beszel-users beszel-add-user beszel-del-user beszel-key
+.PHONY: immich-users immich-admin-pass immich-grant-admin docs-build
 .PHONY: deploy backup nc-datadir-nfs import-backups
 
 # The web terminal is ONE page and ONE shell: tail.$DOMAIN/ttyd attaches the
@@ -626,6 +637,70 @@ vaultwarden-add-user:
 vaultwarden-del-user:
 >@[ -n "$(EMAIL)" ] || { scripts/lib/mklog error "usage: make vaultwarden-del-user EMAIL=<addr>"; exit 1; }
 >@bash scripts/modules/vaultwarden-user.sh del "$(EMAIL)"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Blog accounts (WriteFreely CLI inside the container: `writefreely user …`;
+# the first account is the instance admin — WriteFreely allows exactly one —
+# and passes USER:PASS as one argument, so the password never lands in a file.
+# ─────────────────────────────────────────────────────────────────────────────
+writefreely-users:
+>@sqlite3 $(DATA_DIR)/blog/data/writefreely.db "SELECT id, username, COALESCE(email,''), created FROM users ORDER BY id;"
+
+writefreely-add-user:
+>@[ -n "$(USER)" ] && [ -n "$(PASS)" ] || { scripts/lib/mklog error "usage: make writefreely-add-user USER=<name> PASS=<password> [ADMIN=1]"; exit 1; }
+>@docker exec writefreely ./writefreely user create $(if $(filter 1,$(ADMIN)),--admin) "$(USER):$(PASS)"
+
+writefreely-passwd:
+>@[ -n "$(USER)" ] && [ -n "$(PASS)" ] || { scripts/lib/mklog error "usage: make writefreely-passwd USER=<name> PASS=<newpassword>"; exit 1; }
+>@printf '%s\n' "$(PASS)" | docker exec -i writefreely ./writefreely user reset-pass "$(USER)"
+
+writefreely-del-user:
+>@[ -n "$(USER)" ] || { scripts/lib/mklog error "usage: make writefreely-del-user USER=<name>"; exit 1; }
+>@docker exec writefreely ./writefreely user delete "$(USER)"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Beszel (hub + agent) — superusers are the hub's own accounts (PocketBase);
+# the agent's SSH key is the one the hub shows when a system is added.
+# ─────────────────────────────────────────────────────────────────────────────
+beszel-users:
+>@sqlite3 $(DATA_DIR)/beszel/hub/data.db "SELECT email FROM _superusers ORDER BY email;"
+
+beszel-add-user:
+>@[ -n "$(EMAIL)" ] && [ -n "$(PASS)" ] || { scripts/lib/mklog error "usage: make beszel-add-user EMAIL=<addr> PASS=<password>"; exit 1; }
+>@docker exec beszel-hub /beszel superuser upsert "$(EMAIL)" "$(PASS)"
+
+beszel-del-user:
+>@[ -n "$(EMAIL)" ] || { scripts/lib/mklog error "usage: make beszel-del-user EMAIL=<addr>"; exit 1; }
+>@docker exec beszel-hub /beszel superuser delete "$(EMAIL)"
+
+# Pin the agent's key (the public key the hub generated for this system, or one
+# you created yourself). Rotating it recreates the agent.
+beszel-key:
+>@[ -n "$(KEY)" ] || { scripts/lib/mklog error "usage: make beszel-key KEY='ssh-ed25519 AAAA…'"; exit 1; }
+>@sed -i '/^BESZEL_KEY=/d' modules/beszel/.env; printf 'BESZEL_KEY=%s\n' "$(KEY)" >> modules/beszel/.env
+>@$(MAKE) --no-print-directory dok-recreate-beszel-agent
+>@scripts/lib/mklog info "agent key pinned in modules/beszel/.env and the agent recreated"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Photos accounts (Immich) — first-run admin is created in the web UI; the
+# server image ships the `immich-admin` CLI for the maintenance actions that
+# have no UI equivalent.
+# ─────────────────────────────────────────────────────────────────────────────
+immich-users:
+>@docker exec immich-server immich-admin list-users
+
+immich-admin-pass:
+>@docker exec -it immich-server immich-admin reset-admin-password
+
+immich-grant-admin:
+>@[ -n "$(EMAIL)" ] || { scripts/lib/mklog error "usage: make immich-grant-admin EMAIL=<addr>"; exit 1; }
+>@docker exec immich-server immich-admin grant-admin "$(EMAIL)"
+
+# Build the /docs site (Zensical) into $(DATA_DIR)/pages/www/docs. Source is the
+# repo's docs/ tree; the builder image is cached and rebuilt only when
+# config/docs changes. Served by www.$(DOMAIN)/docs/.
+docs-build:
+>@bash scripts/modules/docs-build.sh
 
 # Generate the Nextcloud-stack secrets + Talk service configs (idempotent).
 # Creates modules/nextcloud/.env entries (DB, Redis, signaling, TURN, SMTP)
