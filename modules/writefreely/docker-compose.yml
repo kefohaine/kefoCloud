@@ -1,0 +1,53 @@
+services:
+  writefreely:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: writefreely:local
+    container_name: writefreely
+    restart: unless-stopped
+
+    # Hard RAM cap (no container swap) — survives recreates, unlike `docker update`.
+    mem_limit: 192m
+    memswap_limit: 192m
+
+    environment:
+      # The public URL WriteFreely builds every link from. It must be the
+      # vhost's own https name: WriteFreely signs ActivityPub objects and
+      # generates absolute URLs from it.
+      WF_HOST: https://blog.${DOMAIN}
+      WF_SITE_NAME: Blog
+      WF_SITE_DESCRIPTION: Writing
+      WF_SINGLE_USER: "false"
+      WF_OPEN_REGISTRATION: "false"
+
+    volumes:
+      # The app tree, config.ini, keys and the SQLite database all live here
+      # (the entrypoint copies the image tree in on first boot). `make backup`
+      # ships this datadir like every other module's.
+      - ${DATA_DIR}/blog/data:/data
+
+    expose:
+      - "8080"
+
+    healthcheck:
+      test: ["CMD", "/data/writefreely", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Pinned bridge IP — modules/caddy/vhosts/blog.caddy proxies here.
+    networks:
+      net:
+        ipv4_address: 172.22.0.8
+
+networks:
+  net:
+    external: true
