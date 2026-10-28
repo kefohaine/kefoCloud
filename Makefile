@@ -224,8 +224,8 @@ systemd-action:
 .PHONY: kuma-import kuma-list-users kuma-add-user kuma-passwd kuma-del-user
 .PHONY: vaultwarden-list-users vaultwarden-add-user vaultwarden-del-user
 .PHONY: writefreely-users writefreely-add-user writefreely-passwd writefreely-del-user
-.PHONY: beszel-users beszel-add-user beszel-del-user beszel-key
-.PHONY: immich-users immich-admin-pass immich-grant-admin docs-build
+.PHONY: beszel-users beszel-add-user beszel-del-user beszel-key beszel-systems beszel-add-system
+.PHONY: immich-users immich-admin-pass immich-grant-admin docs-build dns-sync
 .PHONY: deploy backup nc-datadir-nfs import-backups
 
 # The web terminal is ONE page and ONE shell: tail.$DOMAIN/ttyd attaches the
@@ -673,6 +673,16 @@ beszel-del-user:
 >@[ -n "$(EMAIL)" ] || { scripts/lib/mklog error "usage: make beszel-del-user EMAIL=<addr>"; exit 1; }
 >@docker exec beszel-hub /beszel superuser delete "$(EMAIL)"
 
+# The systems the hub monitors. `beszel-add-system` registers THIS machine
+# (agent bridge IP + LISTEN port read from the module's compose file) — the hub
+# ships none and its CLI has no create-system command, so a fresh install would
+# otherwise watch nothing until a human clicks through the UI.
+beszel-systems:
+>@sqlite3 -header -column $(DATA_DIR)/beszel/hub/data.db "SELECT name, host, port, status FROM systems ORDER BY name;"
+
+beszel-add-system:
+>@bash scripts/modules/beszel-system.sh
+
 # Pin the agent's key (the public key the hub generated for this system, or one
 # you created yourself). Rotating it recreates the agent.
 beszel-key:
@@ -701,6 +711,13 @@ immich-grant-admin:
 # config/docs changes. Served by www.$(DOMAIN)/docs/.
 docs-build:
 >@bash scripts/modules/docs-build.sh
+
+# Converge the Cloudflare zone from data/wizard.state: the ONE rule set the
+# installer uses (wizard.d/lib/cloudflare.sh cf_dns). Run it after enabling a
+# module whose hostname was never created, after an IP change, or when a door
+# answers by IP but not by name.
+dns-sync:
+>@bash scripts/ops/dns-sync.sh
 
 # Generate the Nextcloud-stack secrets + Talk service configs (idempotent).
 # Creates modules/nextcloud/.env entries (DB, Redis, signaling, TURN, SMTP)
@@ -832,7 +849,7 @@ deploy: install-config
 # ─────────────────────────────────────────────────────────────────────────────
 
 .PHONY: install-goose install-ttyd install-ssh \
-        install-dnsmasq-conf install-dnsmasq-override \
+        install-dnsmasq-conf install-dnsmasq-override install-resolv \
         install-docker install-sysctl install-cron
 .PHONY: dok-recreate-nextcloud-db dok-restart-nextcloud-db dok-stop-nextcloud-db dok-logs-nextcloud-db
 
@@ -865,6 +882,16 @@ install-dnsmasq-conf:
     sed "s/100.64.0.1/$$TS_IP/g" $(RENDER_DIR)/config/dnsmasq/10-tailnet.conf | sudo tee /etc/dnsmasq.d/10-tailnet.conf >/dev/null; \
     scripts/lib/mklog info "dnsmasq split-DNS rendered for $$TS_IP"
 >@sudo systemctl restart dnsmasq
+
+# Deliberately NOT part of install-config: this rewrites the machine's resolver,
+# which must point at Tailscale ONLY once tailscaled is up and holding the
+# split-DNS route for $(DOMAIN). Run it after install-config/install-tailscale.
+install-resolv:
+>@echo "install-resolv: resolv.conf -> 100.100.100.100 (Tailscale: MagicDNS + the $(DOMAIN) split-DNS route)"
+>@sudo test -f /etc/resolv.conf.pre-tailscale.bak || sudo cp -p /etc/resolv.conf /etc/resolv.conf.pre-tailscale.bak
+>@sudo cp $(RENDER_DIR)/config/resolv/resolv.conf /etc/resolv.conf
+>@sudo chmod 0644 /etc/resolv.conf
+>@if getent hosts vault.$(DOMAIN) >/dev/null 2>&1; then scripts/lib/mklog info "split-DNS works: vault.$(DOMAIN) resolves to the tailnet"; else scripts/lib/mklog error "vault.$(DOMAIN) does not resolve — check 'tailscale dns status' (Split DNS Routes)"; fi
 
 install-dnsmasq-override:
 >@echo "install-dnsmasq-override: dnsmasq.service.d/override.conf"
