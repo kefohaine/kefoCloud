@@ -281,15 +281,16 @@ gh-web-health:
 >@bash scripts/info/gh-web-health.sh
 
 # Install the repo's git hooks (pre-commit: identity + Caddy validate + app-vhost
-# stub guard; prepare-commit-msg: auto-split a multi-area change into one commit
-# per area; pre-push: live vhost smoke test + history-rewrite warning +
+# stub guard; prepare-commit-msg: auto-split a change that spans more than one
+# unit (one folder + at most one subfolder, rule 26) into one commit per unit;
+# pre-push: live vhost smoke test + history-rewrite warning +
 # auto-split/fill-revert over the pushed range). The installer runs this
 # automatically; re-run manually after cloning or after editing a hook.
 install-hooks:
 >@mkdir -p .git/hooks
 >@cp scripts/hooks/pre-commit scripts/hooks/prepare-commit-msg scripts/hooks/pre-push .git/hooks/
 >@chmod +x .git/hooks/pre-commit .git/hooks/prepare-commit-msg .git/hooks/pre-push
->@scripts/lib/mklog info "installed git hooks: pre-commit (identity + Caddy validate + app-vhost stub guard), prepare-commit-msg (auto-split per area), pre-push (live vhost smoke + history-rewrite warning + auto-split/revert)"
+>@scripts/lib/mklog info "installed git hooks: pre-commit (identity + Caddy validate + app-vhost stub guard), prepare-commit-msg (auto-split per unit: one folder + one subfolder), pre-push (live vhost smoke + history-rewrite warning + auto-split/revert)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Mailboxes (Mailu `flask mailu` CLI — see `make help-more` > mail server).
@@ -1113,7 +1114,8 @@ git-pull:
 
 # Commit-hygiene monitor (scripts/info/git-audit.sh). Walks a revision range and
 # reports the two rules a commit cannot check about itself: rule 26 (one change
-# per commit — judged by AREA, the same unit the pre-commit hook splits on) and
+# per commit — one folder plus at most one subfolder, the same unit the
+# pre-commit hook splits on) and
 # rule 10 (a `Revert:` line in the message of every significant commit). Default
 # range: what a push would publish; RANGE=<a..b> audits anything (RANGE=origin/main
 # = the whole published history). The pre-push hook runs it over every pushed
@@ -1123,7 +1125,7 @@ git-audit:
 >@bash scripts/info/git-audit.sh $(RANGE)
 
 # The rewriter behind the two hooks (scripts/info/git-split.sh). It performs the
-# fix `git-audit` only reports: split a bundle commit into one commit per AREA
+# fix `git-audit` only reports: split a bundle commit into one commit per unit
 # (rule 26) and fill in the `Revert:` line of every significant commit with its
 # real parent SHA (rule 10) — a replay/rebase over the given range. Refuses to
 # rewrite any published commit, and needs a clean worktree. RANGE defaults to what
