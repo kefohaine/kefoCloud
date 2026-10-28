@@ -1,0 +1,132 @@
+services:
+  immich-server:
+    image: ghcr.io/immich-app/immich-server:v2.0.0
+    container_name: immich-server
+    restart: unless-stopped
+
+    # Hard RAM caps (no container swap). The machine-learning container is
+    # deliberately NOT deployed: this host has 2 vCPU and no GPU, so ML would
+    # take the largest share of RAM for a feature that runs at a crawl. Smart
+    # search / facial recognition stay off (IMMICH_MACHINE_LEARNING_ENABLED).
+    mem_limit: 1024m
+    memswap_limit: 1024m
+
+    environment:
+      TZ: ${TIMEZONE:-UTC}
+      # Its OWN PostgreSQL — never the Nextcloud one (different major,
+      # different extensions, different lifecycle).
+      DB_HOSTNAME: immich-db
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_DATABASE_NAME: ${DB_DATABASE_NAME}
+      REDIS_HOSTNAME: immich-redis
+      IMMICH_MACHINE_LEARNING_ENABLED: "false"
+      # The public origin the mobile apps and share links use.
+      IMMICH_SERVER_URL: https://photos.${DOMAIN}
+      IMMICH_WEB_URL: https://photos.${DOMAIN}
+
+    volumes:
+      - ${DATA_DIR}/photos/library:/data
+      # Read-only access to the Caddy data dir is NOT mounted: Immich needs
+      # nothing from the edge, and narrowing a photo app's mounts matters.
+
+    expose:
+      - "2283"
+
+    depends_on:
+      immich-db:
+        condition: service_healthy
+      immich-redis:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:2283/api/server/ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Pinned bridge IP — modules/caddy/vhosts/photos.caddy proxies here.
+    networks:
+      net:
+        ipv4_address: 172.22.0.23
+
+  immich-db:
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0
+    container_name: immich-db
+    restart: unless-stopped
+
+    # 1 GB, not 512 MB: this image preloads the vectorchord + pgvectors shared
+    # libraries, and the vector index maintenance on first boot was OOM-killed
+    # (signal 9, one crashed backend every ~16 s) at half that — which in turn
+    # restarted immich-server in a loop.
+    mem_limit: 1024m
+    memswap_limit: 1024m
+
+    environment:
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_DATABASE_NAME}
+      POSTGRES_INITDB_ARGS: --data-checksums
+      TZ: ${TIMEZONE:-UTC}
+
+    volumes:
+      - ${DATA_DIR}/photos/pgdata:/var/lib/postgresql/data
+
+    expose:
+      - "5432"
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_DATABASE_NAME}"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      net:
+        ipv4_address: 172.22.0.24
+
+  immich-redis:
+    image: redis:7-alpine
+    container_name: immich-redis
+    restart: unless-stopped
+
+    mem_limit: 128m
+    memswap_limit: 128m
+
+    # Pure cache, like the Nextcloud one: no persistence, no fork-on-write.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      net:
+        ipv4_address: 172.22.0.25
+
+networks:
+  net:
+    external: true
