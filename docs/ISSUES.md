@@ -431,3 +431,4 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Repo/instance path overlap removed** — the uninstall log moved to `$LOG_DIR/uninstall.log` (a full teardown continues it in `/var/tmp`) and the goose env to `$DATA_DIR/goose/.env` (migrated from `/etc/goose/goose.env`).
 - **One page, one shell** — per-device ttyd/tmux sessions dropped (`ttyd-devices.sh`, `ttyd-session.sh`, `ttyd-devices.conf`, `make ttyd-*`); ttyd runs `tmux new-session -A -s main` with no `-a`, so the URL cannot name a session.
 - **Every Talk call forced through the HPB** — `make talk-config` pins `spreed signaling_mode=external` and points `stun_servers` at this host's coturn instead of `stun.nextcloud.com`.
+- **pre-push guards never ran under a real push** — the smoke's `openssl s_client` drained the hook's stdin (a pipe), so the ref loop exited at once; the hook now captures the refs first and closes the smoke's stdin.
