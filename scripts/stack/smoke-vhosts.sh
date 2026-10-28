@@ -235,7 +235,8 @@ check_tls "www.$DOMAIN"
 
 # /docs — the Zensical build (scripts/modules/docs-build.sh). Core, not a
 # module: the site is static output, so a missing build must FAIL here rather
-# than be skipped. /home and the module pages are checked in their own section.
+# than be skipped. The dashboard hand-off (/home) and the module pages are
+# checked in their own section.
 check docs "www.$DOMAIN" "/docs/" "200" html "Zensical docs are built and served"
 
 # tail.$DOMAIN is deliberately NOT in smoke: it is tailnet-only and its LE
@@ -332,18 +333,18 @@ check_ctns vault vaultwarden
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Module: home — the Homer dashboard at www.$DOMAIN/home.
+# Module: home — Homarr at home.$DOMAIN, reached from www.$DOMAIN/home.
 # ─────────────────────────────────────────────────────────────────────────────
-hdr home "Home — Homer dashboard (module: home)"
-check home "www.$DOMAIN" "/home/" "200 301 302 307 308" html "Homer dashboard answers"
-# Homer's HTML links its bundle as "./resources/index-*.js" and the icons as
-# "assets/...". Relative URLs resolve against the PARENT of the current path,
-# so a bare /home makes the browser ask the site root for /resources/... (the
-# "ok" stub answers 200 text/plain) and the dashboard renders as a blank white
-# page. The trailing slash is the fix, so the redirect itself is the assertion.
-check home-redirect "www.$DOMAIN" "/home" "308" "" "bare /home redirects to /home/ so relative assets resolve"
-check home-asset "www.$DOMAIN" "/home/assets/manifest.json" "200 301 302 307 308" "" "Homer serves its own assets under the /home prefix"
-check_ctns home homer
+hdr home "Home — Homarr dashboard (module: home)"
+# Homarr is a Next.js app: its assets are ROOT-absolute (/_next/...), so it
+# cannot be served under a path. www/home 308s to the app's own hostname —
+# that hand-off is asserted here, not the old subpath proxy.
+check home "home.$DOMAIN" "/" "200 301 302 307 308" "" "Homarr answers (board or login redirect)"
+check home-login "home.$DOMAIN" "/auth/login" "200" html "Homarr login page renders"
+check home-redirect "www.$DOMAIN" "/home" "301 302 307 308" "" "www/home hands off to the dashboard hostname"
+check_sec_headers home "home.$DOMAIN" "/"
+check_tls "home.$DOMAIN"
+check_ctns home homarr
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
