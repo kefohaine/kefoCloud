@@ -31,7 +31,9 @@ services:
       - "8080"
 
     healthcheck:
-      test: ["CMD", "/data/writefreely", "version"]
+      # The binary reads config.ini from its CWD, so the probe must run in
+      # /data — `writefreely` has no `version` subcommand; the flag is --version.
+      test: ["CMD", "sh", "-c", "cd /data && ./writefreely --version"]
       interval: 30s
       timeout: 5s
       retries: 3
