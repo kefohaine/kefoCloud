@@ -22,7 +22,9 @@ services:
       - "8090"
 
     healthcheck:
-      test: ["CMD", "/beszel", "health", "--url", "http://127.0.0.1:8090/beszel"]
+      # /api/health lives at the hub's ROOT (the /beszel prefix is a proxy-side
+      # path); pointing it at the prefixed URL returns 404 forever.
+      test: ["CMD", "/beszel", "health", "--url", "http://127.0.0.1:8090"]
       interval: 30s
       timeout: 5s
       retries: 3
