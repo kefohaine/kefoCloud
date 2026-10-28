@@ -42,6 +42,7 @@ issue_certs() {
   mod_on cloud && [ "${VIDEO_CALLING:-true}" != "false" ] && hosts="$hosts talk"
   mod_on vault   && hosts="$hosts vault"
   mod_on monitor && hosts="$hosts kuma"
+  mod_on home    && hosts="$hosts home"
   mod_on mail    && hosts="$hosts mail"
   mod_on mail    && hosts="$hosts cube"
   # tail.$DOMAIN joins the attempt like every other vhost. DNS-01 does not

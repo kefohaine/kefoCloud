@@ -80,12 +80,12 @@ containers_up() {
     svc_note_applied mailserver mailserver --
   fi
   if mod_on home; then
-    if svc_skip_repair homer homer -- homer; then
-      detail "  homer already up, inputs unchanged — skipped"
+    if svc_skip_repair homarr homarr -- homarr; then
+      detail "  homarr already up, inputs unchanged — skipped"
     else
-      log "  recreate: homer"; make dok-recreate-homer >>"$LOG" 2>&1 || fail homer
+      log "  recreate: homarr"; make dok-recreate-homarr >>"$LOG" 2>&1 || fail homarr
     fi
-    svc_note_applied homer homer --
+    svc_note_applied homarr homarr --
   fi
   if mod_on blog; then
     if svc_skip_repair writefreely writefreely -- writefreely; then

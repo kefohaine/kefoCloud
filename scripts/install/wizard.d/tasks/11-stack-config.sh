@@ -7,6 +7,7 @@ prep_dirs() {
                $ROOT/data/cloud/users \
                $ROOT/data/vault/data \
                $ROOT/data/kuma/data \
+               $ROOT/data/homarr/appdata \
                $ROOT/data/mailserver/data \
                $ROOT/data/mailserver/mail \
                $ROOT/data/mailserver/filter \
@@ -317,6 +318,19 @@ seed_stack() {
       [ -n "$_kpub" ] && echo "BESZEL_KEY=$_kpub" >> "$benv"
     fi
     detail "  Beszel agent key seeded in $benv"
+  fi
+  if mod_on home; then
+    # Homarr encrypts the secrets it stores in its SQLite DB with
+    # SECRET_ENCRYPTION_KEY (64 hex chars) and exits at boot without one.
+    # Minted once and kept: rotating it makes every stored integration secret
+    # unreadable.
+    local henv=modules/homarr/.env
+    [ -f "$henv" ] || { umask 077; : >"$henv"; }
+    chmod 600 "$henv"
+    if ! grep -q '^SECRET_ENCRYPTION_KEY=.' "$henv"; then
+      echo "SECRET_ENCRYPTION_KEY=$(openssl rand -hex 32)" >> "$henv"
+    fi
+    detail "  Homarr encryption key seeded in $henv"
   fi
   # The /docs site is static output (Zensical), built from the repo's docs/
   # tree; there is no container to start, so it is built here, before smoke

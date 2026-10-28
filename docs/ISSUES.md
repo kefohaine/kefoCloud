@@ -446,12 +446,11 @@ Resolved items grouped by month. One line per item, one sentence per record.
 ### Oct 2026 — pages, apps and exposure
 
 - **Poster welcome page** — `/welcome` is now a tracked template (`config/pages/www/welcome.html`) with a page nav and a `Home →` button.
-- **Homer at /home** — new `home` module, served under `www.$DOMAIN/home` with prefix stripping for its relative assets.
 - **Zensical docs** — `/docs/` is a static build of the repo's `docs/` tree via `make docs-build`; no container.
 - **WriteFreely blog** — new `blog` module and `blog.$DOMAIN` vhost, built from the pinned upstream release tarball.
 - **Beszel hub + agent** — new `beszel` module, tailnet-only at `tail.$DOMAIN/beszel`, agent wired to the hub key.
 - **Immich photos** — new `photos` module, DNS-only `photos.$DOMAIN`, own PostgreSQL + Redis, ML container omitted.
-- **`/home` rendered blank** — Homer's relative asset URLs resolved against the site root, so `/home` now 308s to `/home/` and the vhost uses `handle_path`; smoke asserts the redirect.
+- **Homer → Homarr** — `/home` now 308s to `home.$DOMAIN`, Homarr's own hostname (Next.js assets are root-absolute, so no subpath mount); smoke asserts the hand-off and the app.
 - **`blog.`/`photos.` had no A record** — the records were never created by the install run; `make dns-sync` re-runs the installer's convergence from `wizard.state`.
 - **`vault.$DOMAIN` did not resolve on the tailnet** — the provider-supplied `/etc/resolv.conf` bypassed Tailscale, so the split-DNS route never applied on this host; `make install-resolv` pins it to `100.100.100.100`.
 - **Hub monitored nothing** — `make beszel-add-system` registers this machine (address/port derived from the module) and the installer calls it after the agent is up.

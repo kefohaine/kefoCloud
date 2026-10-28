@@ -144,10 +144,13 @@ cf_mail_dns() {
   cf_a_del vault
   # blog.$DOMAIN is WriteFreely on its own hostname (proxied like cloud/kuma).
   mod_on blog && cf_record blog true || cf_a_del blog
+  mod_on home && cf_record home true || cf_a_del home
   # photos.$DOMAIN is Immich, DNS-ONLY (grey cloud): uploads and video streams
   # must not pass through the CF proxy.
   mod_on photos && cf_record photos false || cf_a_del photos
-  # home (www/home) and beszel (tail/beszel) have no hostname of their own.
+  # home.$DOMAIN is Homarr (Next.js root-absolute assets, so it cannot live
+  # under www/home); proxied like cloud/kuma. beszel (tail/beszel) is the one
+  # module with no hostname of its own.
   # talk/mail MUST be DNS-only (grey cloud): TURN relays media over
   # UDP/TCP 3478/5349 + 49160-49200 and SMTP/IMAP also bypass the CF proxy
   # (HTTP(S) only). Caddy still gets their LE certs via DNS-01. talk exists

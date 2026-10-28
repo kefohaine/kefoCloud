@@ -20,7 +20,7 @@ Prompts once then runs unattended — errors are listed with a hint each and re-
 
 ![Repository Banner](.github/images/modules.png)
 
-Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Caddy, Vaultwarden, Uptime Kuma, the Mailu + Roundcube platform, a Homer dashboard, WriteFreely, Beszel monitoring and Immich photos — behind Cloudflare, with tailscale, ttyd, dnsmasq and goose as host services. A poster welcome page, a static docs site built from this repo's `docs/` tree, and per-app `make` commands for accounts and maintenance ship with it.
+Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Caddy, Vaultwarden, Uptime Kuma, the Mailu + Roundcube platform, a Homarr dashboard, WriteFreely, Beszel monitoring and Immich photos — behind Cloudflare, with tailscale, ttyd, dnsmasq and goose as host services. A poster welcome page, a static docs site built from this repo's `docs/` tree, and per-app `make` commands for accounts and maintenance ship with it.
 
 | name | app | note |
 |---|---|---|
@@ -28,7 +28,7 @@ Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Caddy, Vaultwarden, Uptime
 | **Mail** | Mailu + Roundcube | SMTP/IMAPS, DKIM/SPF/DMARC on your own domain |
 | **Vault** | Vaultwarden | any Bitwarden client, server included — tailnet-only door |
 | **Monitor** | Uptime Kuma | watches public *and* tailnet-only doors |
-| **Home** | Homer | the `/home` dashboard on the main site |
+| **Home** | Homarr | dashboard on its own `home.` vhost; the main site's `/home` redirects there |
 | **Blog** | WriteFreely | its own `blog.` vhost, SQLite, pinned upstream release |
 | **Ops** | Beszel hub + agent | tailnet-only under `tail./beszel` |
 | **Photos** | Immich | DNS-only vhost, its own PostgreSQL + Redis |
