@@ -5,7 +5,7 @@
 # checkpoint, every available module (installed green, not-installed red), every
 # repo container (running green, stopped red), host perf (uptime, load, cpu,
 # memory, swap, disk, top memory processes), git, host units, failed units
-# (+ each failed unit's target in () marks), tmux, backups, mailboxes and the
+# (+ each failed unit's target in () marks), tmux, backups, and the
 # tailnet — one row per fact, no duplicate listings.
 #
 # Module-aware: the record comes from data/wizard.state via
@@ -215,20 +215,6 @@ if [ -d "$PROJECT_DIR/backups" ]; then
   fi
 else
   row backups "${D}none yet — make backup${N}"
-fi
-
-# mail (module-gated)
-if mod_in mail; then
-  if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx mailu-front; then
-    out=$(docker exec mailu-admin flask mailu config-export -j 2>/dev/null || true)
-    mb=$(printf '%s' "$out" | jq -r '.. | objects | select(.localpart? and .domain?) | .localpart' 2>/dev/null | sort -u | wc -l)
-    al=$(printf '%s' "$out" | jq -r '.. | objects | select(.destination?) | .localpart' 2>/dev/null | sort -u | wc -l)
-    row mail "${mb:-0} mailboxes · ${al:-0} aliases"
-  else
-    row mail "${R}mailu down${N}"
-  fi
-else
-  row mail "${D}module not installed${N}"
 fi
 
 # tailnet — read the JSON, not the columnar `tailscale status`: its human
