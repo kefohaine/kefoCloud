@@ -97,6 +97,9 @@ end_sec() {
 }
 
 RUNNING="$(docker ps --format '{{.Names}}' 2>/dev/null)"
+# The host's own Tailscale address — the SOURCE for tailnet-only probes (vault)
+# and the destination for the beszel path on tail.$DOMAIN.
+TS_IP="$(tailscale ip -4 2>/dev/null | head -n1)"
 
 # check <name> <host> <path> <want-codes...> [html] [desc]
 # want-codes: space-separated acceptable HTTP codes; trailing "html" asserts
@@ -120,6 +123,27 @@ check() {
     # The ok-stub signature is a 200 with a text/plain body. A 3xx redirect
     # legitimately carries a text/plain (empty) body — only flag 200s.
     say "FAIL $name: 200 text/plain response (stubbed?) — https://$host$path"; bad
+  else
+    say "ok   $name: $code $ct${desc:+ — }$desc"
+  fi
+}
+
+# check_tn <name> <host> <path> <want-codes> [html] [desc] — same probe, but
+# sourced from the host's Tailscale address, so it arrives on tailnet-only
+# routes (the @not_tailnet guard sees 100.64.0.0/10). Used for vault.$DOMAIN,
+# whose door only exists inside the tailnet.
+check_tn() {
+  local name="$1" host="$2" path="$3" codes="$4" want_html="${5:-}" desc="${6:-}"
+  local code ct
+  local args=(--interface "$TS_IP" --resolve "$host:443:$TS_IP")
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 "${args[@]}" "https://$host$path")
+  ct=$(curl -s -o /dev/null -w '%{content_type}' --max-time 12 "${args[@]}" "https://$host$path")
+  local ok=0 c
+  for c in $codes; do [ "$code" = "$c" ] && ok=1; done
+  if [ "$ok" != 1 ]; then
+    say "FAIL $name: got HTTP $code (want: $codes) — tailnet https://$host$path"; bad
+  elif [ "$want_html" = html ] && [ "$code" = "200" ] && [[ "$ct" == text/plain* ]]; then
+    say "FAIL $name: 200 text/plain response (stubbed?) — tailnet https://$host$path"; bad
   else
     say "ok   $name: $code $ct${desc:+ — }$desc"
   fi
@@ -209,6 +233,11 @@ for f in "$ROOT/data/pages/www"/*.html; do
 done
 check_tls "www.$DOMAIN"
 
+# /docs — the Zensical build (scripts/modules/docs-build.sh). Core, not a
+# module: the site is static output, so a missing build must FAIL here rather
+# than be skipped. /home and the module pages are checked in their own section.
+check docs "www.$DOMAIN" "/docs/" "200" html "Zensical docs are built and served"
+
 # tail.$DOMAIN is deliberately NOT in smoke: it is tailnet-only and its LE
 # order may legitimately be pending or rate-limited (the remedy is the
 # scripts/ops/tailscale-https.sh follow-up), so it must never gate a push.
@@ -287,10 +316,63 @@ end_sec
 # Module: vault — Vaultwarden.
 # ─────────────────────────────────────────────────────────────────────────────
 hdr vault "Vault — Vaultwarden (module: vault)"
-check vault "vault.$DOMAIN" "/" "200 301 302 307 308" html "Vaultwarden answers"
+# Tailnet-only since 2026-10-28 — and both halves are asserted, so a
+# half-applied change (gate added, route gone, or the reverse) fails here
+# instead of passing on one side: a public source gets 403, a tailnet source
+# gets Vaultwarden itself.
+if [ -z "$TS_IP" ]; then
+  say "FAIL vault: no Tailscale IPv4 — cannot probe a tailnet-only door"; bad
+else
+  check_tn vault "vault.$DOMAIN" "/" "200 301 302 307 308" html "Vaultwarden answers on the tailnet"
+  check vault-public "vault.$DOMAIN" "/" "403" "" "public sources are refused"
+fi
 check_sec_headers vault "vault.$DOMAIN" "/" "one of each"
 check_tls "vault.$DOMAIN"
 check_ctns vault vaultwarden
+end_sec
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Module: home — the Homer dashboard at www.$DOMAIN/home.
+# ─────────────────────────────────────────────────────────────────────────────
+hdr home "Home — Homer dashboard (module: home)"
+check home "www.$DOMAIN" "/home/" "200 301 302 307 308" html "Homer dashboard answers"
+check home-asset "www.$DOMAIN" "/home/assets/manifest.json" "200 301 302 307 308" "" "Homer serves its own assets under the /home prefix"
+check_ctns home homer
+end_sec
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Module: blog — WriteFreely on its own vhost.
+# ─────────────────────────────────────────────────────────────────────────────
+hdr blog "Blog — WriteFreely (module: blog)"
+check blog "blog.$DOMAIN" "/" "200" html "WriteFreely answers"
+check blog-login "blog.$DOMAIN" "/login" "200" html "WriteFreely login page"
+check_sec_headers blog "blog.$DOMAIN" "/" "one of each"
+check_tls "blog.$DOMAIN"
+check_ctns blog writefreely
+end_sec
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Module: beszel — hub + agent, tailnet-only under tail.$DOMAIN/beszel.
+# ─────────────────────────────────────────────────────────────────────────────
+hdr beszel "Ops — Beszel hub + agent (module: beszel)"
+if [ -z "$TS_IP" ]; then
+  say "FAIL beszel: no Tailscale IPv4 — cannot probe tail.$DOMAIN"; bad
+else
+  check_tn beszel "tail.$DOMAIN" "/beszel" "200 301 302 307 308" html "hub answers under /beszel"
+  check_tn beszel-asset "tail.$DOMAIN" "/beszel/static/manifest.json" "200" "" "hub assets resolve with the APP_URL base path"
+fi
+check_ctns beszel beszel-hub beszel-agent
+end_sec
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Module: photos — Immich (DNS-only vhost, its own PostgreSQL + Redis).
+# ─────────────────────────────────────────────────────────────────────────────
+hdr photos "Photos — Immich (module: photos)"
+check photos "photos.$DOMAIN" "/" "200 301 302 307 308" html "Immich web answers"
+check photos-api "photos.$DOMAIN" "/api/server/ping" "200" "" "Immich API answers"
+check_sec_headers photos "photos.$DOMAIN" "/" "one of each"
+check_tls "photos.$DOMAIN"
+check_ctns photos immich-server immich-db immich-redis
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
