@@ -24,7 +24,7 @@ Run `bash scripts/sandbox/editor.sh` for the list. `create` collects every answe
 
 `make sandbox-sync` is the `sync` command as a recipe — run it after any `make render`, which rsyncs the rendered Caddy tree with `--delete` and so drops the injected vhosts.
 
-The helper bootstraps its own tree on first use: `data/sandbox/{lib,tasks,flow,templates,modules,state,caddy,backups}`. Once written, those files are yours — later runs never overwrite them (`bootstrap --force` restores the shipped version).
+The helper bootstraps its own tree on first use: `data/sandbox/{lib,tasks,flow,templates,modules,state,caddy,backups}`, and stamps it with the sha256 of the `editor.sh` that wrote it (`data/sandbox/.stamp`). A tree written by a different `editor.sh` is refreshed in full before anything is sourced, so an older copy can never shadow a fix — that stale copy is what used to fall back to the usage message. Between script changes the files are yours: later runs leave them alone, and `bootstrap --force` restores the shipped version.
 
 ## The compose contract
 

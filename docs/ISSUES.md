@@ -368,6 +368,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Kernel hardening applied** — `kernel.yama.ptrace_scope=1` + `kernel.kptr_restrict=2` in `config/sysctl/99-kefo.conf` (`rp_filter` left at 0 for exit-node routing).
 - **Backup reads module state through the accessor** — `backup-bundles.sh` uses `scripts/lib/modules.sh` (`mod_all`/`mod_installed`) instead of sourcing `wizard.state` itself.
 - **Dead-record comments removed** — `optimize.sh` no longer names a retired `make cleanup`, `replace-string.sh` no longer recites its one-time use, and the Caddyfile no longer describes the wildcard cert it stopped using.
+- **Sandbox tree went stale and fell back to usage** — `editor.sh` stamps the tree with its own sha256 (`data/sandbox/.stamp`) and refreshes every file when the script changes, so an older `flow/cli.sh` can no longer answer a real command with the usage message.
 - **Stale installer SSH rules lingered** — prior installs left `22/tcp` allow rules for old IPs (old machine IP + retired tailnet device); phase-1 and `finalize_hardening` now sweep any non-tailnet 22 rule.
 
 - **Hostname + login account + tailnet node renamed kefoCloud → kefomachine** — `data/instance.conf` HOSTNAME, all module `.env` instance blocks, the installer's `NODE_NAME`, `/etc/hostname`/`kefo-banner.sh`, the boot unit, and the Tailscale node (`tailscale up --hostname=kefomachine`) updated; `make render` re-derives every service `.env` and `data/rendered` so no hardcoded value remains, `git diff -- data/` stays empty, smoke still green.

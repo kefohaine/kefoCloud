@@ -31,6 +31,10 @@ REPO="$(cd "$(dirname "$SELF")/../.." && pwd)"
 SBX="$DATA_DIR/sandbox"
 export REPO DATA_DIR SBX
 VERSION=2
+# The tree is refreshed when this file's own sha256 differs from the stamp it
+# left in $SBX/.stamp — not from a hand-maintained VERSION.
+SIG="$(sha256sum <"$SELF" 2>/dev/null | cut -d' ' -f1)"
+STAMP="$SBX/.stamp"
 
 # ── the log: data/logs/editor.log ───────────────────────────────────────────
 # One append-only file per host, written before anything else can fail: the
@@ -114,9 +118,12 @@ tasks, exit codes, and the line behind every failure.
 EOF
 }
 
-# ── the tree: written once, then owned by the operator ──────────────────────
-# _put <relpath> <mode>; body on stdin. An existing file is never touched
-# unless --force, so local edits survive every run.
+# ── the tree: refreshed whenever this script changes ────────────────────────
+# $SBX/.stamp holds the sha256 of the editor.sh that wrote the tree. A tree
+# stamped with another script is refreshed in full before it is sourced, so a
+# fix can never be shadowed by an older copy — that stale copy is what used to
+# fall back to the usage message. Between script changes an existing file is
+# left alone, so local edits survive; --force rewrites the shipped body.
 _put() {
   local rel="$1" mode="${2:-0644}" dst="$SBX/$1" body want have
   body="$(cat)"
@@ -132,8 +139,7 @@ _put() {
     if [ "$want" = "$have" ]; then
       _log DEBUG "_put: kept $dst (matches editor.sh v$VERSION)"
     else
-      _log WARN "_put: kept $dst — it differs from editor.sh v$VERSION (refresh: bootstrap --force)"
-      STALE=$(( ${STALE:-0} + 1 ))
+      _log INFO "_put: kept $dst — locally edited; bootstrap --force restores the shipped body"
     fi
     return 0
   fi
@@ -147,8 +153,25 @@ _put() {
   fi
 }
 
+_stamp() { # record which editor.sh wrote the tree, so the next change refreshes it
+  printf '%s\n' "$SIG" >"$STAMP" 2>/dev/null && chmod 600 "$STAMP" 2>/dev/null || {
+    _log ERROR "bootstrap: cannot write $STAMP"
+    BOOTSTRAP_ERR=1
+    return 1
+  }
+  _log INFO "bootstrap: stamped $STAMP with editor.sh $SIG"
+}
+
 _bootstrap() {
   BOOTSTRAP_ERR=0
+  local stamp=""
+  [ -f "$STAMP" ] && stamp="$(cat "$STAMP" 2>/dev/null)"
+  if [ "$stamp" != "$SIG" ]; then
+    REFRESHED=1
+    _log INFO "bootstrap: tree stamp ${stamp:-<none>} != editor.sh $SIG — refreshing every file"
+    [ "$FORCE" = 1 ] || FORCE=1
+  fi
+  [ "$FORCE" = 1 ] && REFRESHED=1
   _log INFO "bootstrap: writing tree at $SBX (force=$FORCE)"
   mkdir -p "$SBX"/{lib,tasks,flow,templates,modules,state,caddy,backups} 2>/dev/null || {
     _log ERROR "bootstrap: cannot create $SBX"
@@ -1277,9 +1300,8 @@ case "$CMD" in
     _bootstrap || die_early "cannot write $SBX"
     _bootstrap_flows || die_early "cannot write $SBX"
     [ "${BOOTSTRAP_ERR:-0}" = 0 ] || die_early "some files under $SBX could not be written — see $EDITOR_LOG"
-    printf 'editor: tree ready — %s (v%s, %s file(s) differ from this script)\n' \
-      "$SBX" "$VERSION" "${STALE:-0}"
-    _log INFO "bootstrap: done, $SBX, v$VERSION, stale=${STALE:-0}"
+    _stamp
+    printf 'editor: tree ready — %s (v%s%s)\n' "$SBX" "$VERSION" "${REFRESHED:+, refreshed}"
     exit 0
     ;;
 esac
@@ -1287,6 +1309,7 @@ esac
 _bootstrap
 _bootstrap_flows
 [ "${BOOTSTRAP_ERR:-0}" = 0 ] || die_early "some files under $SBX could not be written — see $EDITOR_LOG"
+_stamp
 
 for _f in \
   "$SBX"/lib/env.sh "$SBX"/lib/ui.sh "$SBX"/lib/prompt.sh "$SBX"/lib/derive.sh \
@@ -1300,17 +1323,6 @@ for _f in \
     die_early "cannot source $_f — see $EDITOR_LOG"
   fi
 done
-
-# A command this script supports but the loaded tree does not is exactly the
-# "prints usage, then exits" failure: the tree in data/sandbox is written once
-# and kept, so it can lag behind this file. Say so before dispatching.
-case "$CMD" in create | remove | list | validate | sync | backup) _known=1 ;; *) _known=0 ;; esac
-if [ "$_known" = 1 ] && [ "${STALE:-0}" -gt 0 ]; then
-  _log ERROR "'$CMD': stale tree — ${STALE} file(s) under $SBX differ from editor.sh v$VERSION"
-  printf '  ! %s file(s) under data/sandbox predate editor.sh v%s — if %s falls back to usage,\n' \
-    "$STALE" "$VERSION" "$CMD" >&2
-  printf '    refresh: bash %s bootstrap --force  (log: %s)\n' "$SELF" "$EDITOR_LOG" >&2
-fi
 
 cli "$CMD"
 _rc=$?
