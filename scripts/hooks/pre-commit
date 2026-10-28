@@ -69,21 +69,22 @@ for f in $app_vhosts; do
   fi
 done
 
-# 3. One change per commit (AGENTS rule 26) — AUTOMATED. The unit is the AREA
-#    (scripts/lib/commit-areas.sh: `topdir/subdir`; docs ride with a change).
-#    A multi-area staged change is committed as one commit per area by the
-#    prepare-commit-msg hook, which runs right AFTER this one — pre-commit
+# 3. One change per commit (AGENTS rule 26) — AUTOMATED. The unit is the SCOPE
+#    (scripts/lib/commit-areas.sh: one top-level folder plus at most one
+#    subfolder inside it; docs ride with a change). A change spanning two
+#    folders, or two subfolders of one, is committed as one commit per unit by
+#    the prepare-commit-msg hook, which runs right AFTER this one — pre-commit
 #    cannot do it: it runs BEFORE the commit message exists, so the split would
 #    carry a stale message. Here the hook only gates the case where splitting is
 #    disabled: with GIT_SPLIT_DISABLE=1 (and no ONE_CHANGE_OVERRIDE) a bundle is
 #    refused outright. With splitting enabled, this hook lets the bundle pass to
 #    prepare-commit-msg, which splits it.
 if [ "${ONE_CHANGE_OVERRIDE:-}" != "1" ] && [ "${GIT_SPLIT_DISABLE:-}" = "1" ]; then
-  units=$(printf '%s\n' "$staged" | while IFS= read -r p; do commit_area "$p" || true; done \
-            | grep -v '^$' | sort -u)
+  units=$(printf '%s\n' "$staged" | commit_units)
   nunits=$(printf '%s\n' "$units" | grep -c . || true)
   if [ "${nunits:-0}" -gt 1 ]; then
-    echo "pre-commit: refusing to commit — this commit spans $nunits unrelated areas:"
+    echo "pre-commit: refusing to commit — this commit spans $nunits units"
+    echo "  (rule 26: one folder, at most one subfolder inside it):"
     printf '  %s\n' $units
     echo "  One change per commit (AGENTS rule 26): split it with 'git add -p',"
     echo "  or unset GIT_SPLIT_DISABLE and let prepare-commit-msg split it."

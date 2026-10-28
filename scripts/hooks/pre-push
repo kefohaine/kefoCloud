@@ -54,7 +54,7 @@ while read -r lref lsha rref rsha; do
   # This is the only place a bad commit can be caught when it did NOT come from
   # this checkout: a GitHub-web-editor commit runs no local hook at all. When the
   # range breaks the rules the hook runs scripts/info/git-split.sh (replay/rebase
-  # — auto-split bundles by AREA, auto-SHA the Revert: lines), then aborts so the
+  # — auto-split bundles per unit, auto-SHA the Revert: lines), then aborts so the
   # operator re-runs `git push` on the rewrapped history. git-split itself refuses
   # to touch published commits, so only local commits are ever rewritten.
   # Set GIT_SPLIT_DISABLE=1 to only refuse. Operator override: HISTORY_AUDIT_OVERRIDE=1.
