@@ -1,0 +1,41 @@
+services:
+  homer:
+    image: b4bz/homer:v26.08.3
+    container_name: homer
+    restart: unless-stopped
+
+    # Hard RAM cap (no container swap) — survives recreates, unlike `docker update`.
+    mem_limit: 64m
+    memswap_limit: 64m
+
+    # The dashboard config is INSTANCE data: config/homer/config.yml is a
+    # tracked TEMPLATE, rendered to $DATA_DIR/homer/config.yml by `make render`
+    # and mounted read-only here. Homer reads it on every request — no restart
+    # needed to pick up a re-render.
+    volumes:
+      - ${DATA_DIR}/homer/config.yml:/www/assets/config.yml:ro
+
+    expose:
+      - "8080"
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Pinned bridge IP — modules/caddy/vhosts/www.caddy proxies /home here.
+    networks:
+      net:
+        ipv4_address: 172.22.0.7
+
+networks:
+  net:
+    external: true
