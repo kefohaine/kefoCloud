@@ -37,20 +37,19 @@ SIG="$(sha256sum <"$SELF" 2>/dev/null | cut -d' ' -f1)"
 STAMP="$SBX/.stamp"
 
 # ── the log: data/logs/editor.log ───────────────────────────────────────────
-# One append-only file per host, written before anything else can fail: the
-# invocation and the environment, every file written/skipped/refused by the
-# tree, every lib sourced, every task, every external command with its exit
-# code, and every die/warn with the line that raised it. A run that stops early
-# is a log entry from now on, not a mystery. Secrets are never written: only
-# argv of the commands, never the token or the .env contents.
+# Truncated at the start of every run, so the file always describes the run
+# that just happened — never a mix of runs where an old error looks current.
+# Written before anything else can fail: the invocation and the environment,
+# every file written/skipped/refused by the tree, every lib sourced, every
+# task, every external command with its exit code, and every die/warn with the
+# line that raised it. A run that stops early is a log entry from now on, not a
+# mystery. Secrets are never written: only argv of the commands, never the token
+# or the .env contents.
 LOG_DIR="$DATA_DIR/logs"
 EDITOR_LOG="${EDITOR_LOG:-$LOG_DIR/editor.log}"
 export EDITOR_LOG
 mkdir -p "$LOG_DIR" 2>/dev/null || true
-if [ -f "$EDITOR_LOG" ] && [ "$(wc -c <"$EDITOR_LOG" 2>/dev/null || printf 0)" -gt 1048576 ]; then
-  mv -f "$EDITOR_LOG" "$EDITOR_LOG.1" 2>/dev/null || true
-fi
-: >>"$EDITOR_LOG" 2>/dev/null && chmod 640 "$EDITOR_LOG" 2>/dev/null || true
+: >"$EDITOR_LOG" 2>/dev/null && chmod 640 "$EDITOR_LOG" 2>/dev/null || true
 
 _log() { # _log LEVEL message...
   local lvl="$1"
@@ -78,6 +77,7 @@ run_logged() {
 die_early() { _log ERROR "die_early(${BASH_LINENO[0]:-?}): $*"; printf 'editor: %s\n' "$*" >&2; exit 1; }
 
 CMD="${1:-}"
+ARGV="$*"
 [ $# -gt 0 ] && shift
 FORCE=0
 while [ $# -gt 0 ]; do
@@ -113,8 +113,9 @@ Exposure, asked for every module:
   2 dns-only       public A record, grey cloud — reachable anywhere
   3 cloudflare     public A record behind the proxy, orange cloud
 
-Every run appends to data/logs/editor.log — invocation, files written or kept,
-tasks, exit codes, and the line behind every failure.
+Every run truncates data/logs/editor.log first, then records the invocation and
+the environment, files written or kept, tasks, exit codes, and the line behind
+every failure.
 EOF
 }
 
@@ -1291,17 +1292,18 @@ cli() {
 SBXEOF
 }
 
-_log INFO "start: cmd=${CMD:-<none>} args=$* cwd=$PWD repo=$REPO data=$DATA_DIR sbx=$SBX user=$(id -un 2>/dev/null || echo '?') bash=$BASH_VERSION force=$FORCE"
+_log INFO "start: cmd=${CMD:-<none>} args=${ARGV:-<none>} cwd=$PWD repo=$REPO data=$DATA_DIR sbx=$SBX user=$(id -un 2>/dev/null || echo '?') bash=$BASH_VERSION force=$FORCE"
 _log INFO "log: $EDITOR_LOG"
 
 case "$CMD" in
-  "" | help | -h | --help) _usage; exit 0 ;;
+  "" | help | -h | --help) _usage; _log INFO "exit rc=0"; exit 0 ;;
   bootstrap)
     _bootstrap || die_early "cannot write $SBX"
     _bootstrap_flows || die_early "cannot write $SBX"
     [ "${BOOTSTRAP_ERR:-0}" = 0 ] || die_early "some files under $SBX could not be written — see $EDITOR_LOG"
-    _stamp
+    _stamp || die_early "cannot stamp $SBX"
     printf 'editor: tree ready — %s (v%s%s)\n' "$SBX" "$VERSION" "${REFRESHED:+, refreshed}"
+    _log INFO "exit rc=0"
     exit 0
     ;;
 esac
@@ -1309,7 +1311,7 @@ esac
 _bootstrap
 _bootstrap_flows
 [ "${BOOTSTRAP_ERR:-0}" = 0 ] || die_early "some files under $SBX could not be written — see $EDITOR_LOG"
-_stamp
+_stamp || die_early "cannot stamp $SBX"
 
 for _f in \
   "$SBX"/lib/env.sh "$SBX"/lib/ui.sh "$SBX"/lib/prompt.sh "$SBX"/lib/derive.sh \
