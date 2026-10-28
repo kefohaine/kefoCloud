@@ -30,9 +30,48 @@ REPO="$(cd "$(dirname "$SELF")/../.." && pwd)"
 : "${DATA_DIR:=$REPO/data}"
 SBX="$DATA_DIR/sandbox"
 export REPO DATA_DIR SBX
-VERSION=1
+VERSION=2
 
-die_early() { printf 'editor: %s\n' "$*" >&2; exit 1; }
+# ── the log: data/logs/editor.log ───────────────────────────────────────────
+# One append-only file per host, written before anything else can fail: the
+# invocation and the environment, every file written/skipped/refused by the
+# tree, every lib sourced, every task, every external command with its exit
+# code, and every die/warn with the line that raised it. A run that stops early
+# is a log entry from now on, not a mystery. Secrets are never written: only
+# argv of the commands, never the token or the .env contents.
+LOG_DIR="$DATA_DIR/logs"
+EDITOR_LOG="${EDITOR_LOG:-$LOG_DIR/editor.log}"
+export EDITOR_LOG
+mkdir -p "$LOG_DIR" 2>/dev/null || true
+if [ -f "$EDITOR_LOG" ] && [ "$(wc -c <"$EDITOR_LOG" 2>/dev/null || printf 0)" -gt 1048576 ]; then
+  mv -f "$EDITOR_LOG" "$EDITOR_LOG.1" 2>/dev/null || true
+fi
+: >>"$EDITOR_LOG" 2>/dev/null && chmod 640 "$EDITOR_LOG" 2>/dev/null || true
+
+_log() { # _log LEVEL message...
+  local lvl="$1"
+  shift
+  printf '%s %-5s [%s] %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$lvl" "${CMD:-none}" "$*" \
+    >>"$EDITOR_LOG" 2>/dev/null || true
+}
+
+# run_logged LABEL CMD... — run it, log argv, rc and every output line, then
+# hand the output back untouched so the command's own contract is unchanged.
+run_logged() {
+  local label="$1" out rc
+  shift
+  _log DEBUG "run[$label]: $*"
+  out="$("$@" 2>&1)"
+  rc=$?
+  if [ -n "$out" ]; then
+    printf '%s\n' "$out" | while IFS= read -r l; do _log DEBUG "  $label| $l"; done
+  fi
+  _log DEBUG "run[$label]: rc=$rc"
+  [ -n "$out" ] && printf '%s\n' "$out"
+  return "$rc"
+}
+
+die_early() { _log ERROR "die_early(${BASH_LINENO[0]:-?}): $*"; printf 'editor: %s\n' "$*" >&2; exit 1; }
 
 CMD="${1:-}"
 [ $# -gt 0 ] && shift
@@ -40,13 +79,14 @@ FORCE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --force|-f) FORCE=1 ;;
-    *) die_early "unknown option: $1 (see --help)" ;;
+    *) _log WARN "unknown option: $1"; die_early "unknown option: $1 (see --help)" ;;
   esac
   shift
 done
 : "${FORCE:=0}"
 
 _usage() {
+  _log INFO "usage printed"
   cat <<'EOF'
 editor.sh — sandbox modules for this stack, everything under data/sandbox/
 
@@ -68,6 +108,9 @@ Exposure, asked for every module:
                    no DNS record; the helper prints the /etc/hosts line
   2 dns-only       public A record, grey cloud — reachable anywhere
   3 cloudflare     public A record behind the proxy, orange cloud
+
+Every run appends to data/logs/editor.log — invocation, files written or kept,
+tasks, exit codes, and the line behind every failure.
 EOF
 }
 
@@ -75,15 +118,43 @@ EOF
 # _put <relpath> <mode>; body on stdin. An existing file is never touched
 # unless --force, so local edits survive every run.
 _put() {
-  local rel="$1" mode="${2:-0644}" dst="$SBX/$1"
-  mkdir -p "$(dirname "$dst")"
-  if [ -e "$dst" ] && [ "$FORCE" != 1 ]; then cat >/dev/null; return 0; fi
-  cat >"$dst" || return 1
-  chmod "$mode" "$dst"
+  local rel="$1" mode="${2:-0644}" dst="$SBX/$1" body want have
+  body="$(cat)"
+  mkdir -p "$(dirname "$dst")" 2>/dev/null || {
+    _log ERROR "_put: cannot create $(dirname "$dst")"
+    BOOTSTRAP_ERR=1
+    return 1
+  }
+  want="$(printf '%s\n' "$body" | sha256sum | cut -d' ' -f1)"
+  have=""
+  [ -f "$dst" ] && have="$(sha256sum <"$dst" | cut -d' ' -f1)"
+  if [ -e "$dst" ] && [ "$FORCE" != 1 ]; then
+    if [ "$want" = "$have" ]; then
+      _log DEBUG "_put: kept $dst (matches editor.sh v$VERSION)"
+    else
+      _log WARN "_put: kept $dst — it differs from editor.sh v$VERSION (refresh: bootstrap --force)"
+      STALE=$(( ${STALE:-0} + 1 ))
+    fi
+    return 0
+  fi
+  if printf '%s\n' "$body" >"$dst"; then
+    chmod "$mode" "$dst" 2>/dev/null || true
+    _log INFO "_put: wrote $dst ($mode)"
+  else
+    _log ERROR "_put: FAILED to write $dst"
+    BOOTSTRAP_ERR=1
+    return 1
+  fi
 }
 
 _bootstrap() {
-  mkdir -p "$SBX"/{lib,tasks,flow,templates,modules,state,caddy,backups}
+  BOOTSTRAP_ERR=0
+  _log INFO "bootstrap: writing tree at $SBX (force=$FORCE)"
+  mkdir -p "$SBX"/{lib,tasks,flow,templates,modules,state,caddy,backups} 2>/dev/null || {
+    _log ERROR "bootstrap: cannot create $SBX"
+    BOOTSTRAP_ERR=1
+    return 1
+  }
   chmod 700 "$SBX" 2>/dev/null || true
 
   _put lib/env.sh <<'SBXEOF'
@@ -108,11 +179,14 @@ else
   B='' D='' C='' G='' Y='' R='' N=''
 fi
 
-say()  { printf '  %s\n' "$*"; }
-sec()  { printf '\n%s%s%s\n' "$B" "$*" "$N"; }
-ok()   { printf '  %s✓%s %s\n' "$G" "$N" "$*"; }
-warn() { printf '  %s!%s %s\n' "$Y" "$N" "$*" >&2; }
-die()  { printf '  %s×%s %s\n' "$R" "$N" "$*" >&2; exit 1; }
+# _log comes from editor.sh; a standalone source (list.sh alone) still works.
+command -v _log >/dev/null 2>&1 || _log() { :; }
+
+say()  { _log INFO "say: $*"; printf '  %s\n' "$*"; }
+sec()  { _log INFO "section: $*"; printf '\n%s%s%s\n' "$B" "$*" "$N"; }
+ok()   { _log INFO "ok: $*"; printf '  %s✓%s %s\n' "$G" "$N" "$*"; }
+warn() { _log WARN "warn(${BASH_SOURCE[1]##*/}:${BASH_LINENO[0]}): $*"; printf '  %s!%s %s\n' "$Y" "$N" "$*" >&2; }
+die()  { _log ERROR "die(${BASH_SOURCE[1]##*/}:${BASH_LINENO[0]}): $*"; printf '  %s×%s %s\n' "$R" "$N" "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required"; }
 
 # Read one key out of data/wizard.state without ever writing it: the installer
@@ -148,12 +222,20 @@ TASK_NAMES=()
 TASKS=()
 
 run_tasks() {
-  local i=0 t
+  local i=0 t rc
   sec "${TASK_TITLE:-sandbox}"
   for t in "${TASKS[@]}"; do
     printf '  %s▸%s %-24s ' "$C" "$N" "${TASK_NAMES[$i]}"
-    "$t" || { printf '%s×%s\n' "$R" "$N"; return 1; }
-    printf '%s✓%s\n' "$G" "$N"
+    _log INFO "task: ${TASK_NAMES[$i]} ($t) starting"
+    if "$t"; then
+      printf '%s✓%s\n' "$G" "$N"
+      _log INFO "task: ${TASK_NAMES[$i]} ok"
+    else
+      rc=$?
+      printf '%s×%s\n' "$R" "$N"
+      _log ERROR "task: ${TASK_NAMES[$i]} failed rc=$rc — aborting the flow"
+      return 1
+    fi
     i=$((i + 1))
   done
   return 0
@@ -245,7 +327,11 @@ SBXEOF
 ask_var() {
   local __v="$1" __p="$2" __d="${3:-}" __a
   printf '  %s%s%s%s ' "$B" "$__p" "$N" "${__d:+ [$__d]}"
-  IFS= read -r __a || true
+  if ! IFS= read -r __a; then
+    printf '\n'
+    _log ERROR "ask_var: stdin closed while waiting for '$__p'"
+    die "no answer for '$__p' — stdin is closed (run it from a terminal)"
+  fi
   [ -z "$__a" ] && __a="$__d"
   printf -v "$__v" '%s' "$__a"
 }
@@ -338,7 +424,17 @@ SBXEOF
 # privileged/host escape hatches, restart: unless-stopped, capped memory, and
 # every bind mount inside the module's own dir.
 
-compose_json() { docker compose -f "$1" -p "$2" config --format json 2>/dev/null; }
+compose_json() {
+  local out rc
+  _log DEBUG "compose config: $1 (project $2)"
+  out="$(docker compose -f "$1" -p "$2" config --format json 2>/dev/null)"
+  rc=$?
+  if [ "$rc" != 0 ]; then
+    _log ERROR "compose config failed rc=$rc: $(docker compose -f "$1" -p "$2" config 2>&1 | tail -3 | tr '\n' ' ')"
+  fi
+  printf '%s' "$out"
+  return "$rc"
+}
 
 validate_compose() {
   local f="$1" p="$2" j bad
@@ -378,6 +474,7 @@ vhost_render() { # <name> <label> <upstream-container> <port> <exposure>
 	respond @not_tailnet 403"
   fi
   mkdir -p "$SBX_CADDY"
+  _log INFO "vhost render: sbx-$n.caddy → $label.$(sbx_domain) upstream $up:$port exposure $exp"
   tmpl_render "$SBX_TPL/vhost.caddy.tmpl" "$SBX_CADDY/sbx-$n.caddy" \
     "NAME=$n" "LABEL=$label" "DOMAIN=$(sbx_domain)" \
     "UPSTREAM=$up" "PORT=$port" "ACCESS_RULE=$rule"
@@ -414,22 +511,30 @@ cert_purge() { # <fqdn>
 }
 
 edge_validate() {
-  local ec
+  local ec out
   ec="$(edge_container)" || die "cannot find the edge container in modules/"
-  docker exec "$ec" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1 ||
-    die "caddy rejected the Caddyfile — nothing restarted; see data/sandbox/caddy/"
+  _log DEBUG "edge validate: docker exec $ec caddy validate"
+  if ! out="$(docker exec "$ec" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1)"; then
+    printf '%s\n' "$out" | while IFS= read -r l; do [ -n "$l" ] && _log ERROR "caddy| $l"; done
+    die "caddy rejected the Caddyfile — nothing restarted; see data/sandbox/caddy/ and $EDITOR_LOG"
+  fi
   ok "edge accepts the Caddyfile"
 }
 
 edge_restart() {
-  local ec
+  local ec out i
   ec="$(edge_container)" || die "cannot find the edge container in modules/"
-  docker restart "$ec" >/dev/null || die "docker restart $ec failed"
-  local i
+  _log INFO "edge restart: docker restart $ec"
+  if ! out="$(docker restart "$ec" 2>&1)"; then
+    _log ERROR "docker restart $ec failed: $out"
+    die "docker restart $ec failed"
+  fi
+  _log DEBUG "docker restart $ec: $out"
   for i in $(seq 1 20); do
     [ "$(docker inspect -f '{{.State.Running}}' "$ec" 2>/dev/null)" = "true" ] && { ok "edge restarted"; return 0; }
     sleep 1
   done
+  _log ERROR "edge did not come back up within 20s: $ec"
   die "edge did not come back up — docker logs $ec"
 }
 
@@ -466,6 +571,7 @@ cf_api() {
   local tok
   tok="$(cf_token)"
   [ -n "$tok" ] || die "no CF_API_TOKEN in data/wizard.state — dns/proxied exposure needs it (pick dns-only at your registrar, or tailnet-only)"
+  _log DEBUG "cf_api: $* (token not logged)"
   curl -s -H "Authorization: Bearer $tok" -H 'Content-Type: application/json' "$@"
 }
 
@@ -484,7 +590,7 @@ cf_host_ip() {
 }
 
 cf_a_set() { # <label> <tailnet|dns|proxied>
-  local label="$1" exp="$2" dom zid fqdn rid prox body ip
+  local label="$1" exp="$2" dom zid fqdn rid prox body ip resp
   dom="$(sbx_domain)"
   fqdn="$label.$dom"
   prox=false
@@ -496,10 +602,15 @@ cf_a_set() { # <label> <tailnet|dns|proxied>
   rid="$(cf_api "https://api.cloudflare.com/client/v4/zones/$zid/dns_records?type=A&name=$fqdn" | jq -r '.result[0].id // empty')"
   body="{\"type\":\"A\",\"name\":\"$fqdn\",\"content\":\"$ip\",\"ttl\":1,\"proxied\":$prox}"
   if [ -n "$rid" ]; then
-    cf_api -X PUT "https://api.cloudflare.com/client/v4/zones/$zid/dns_records/$rid" -d "$body" >/dev/null
+    resp="$(cf_api -X PUT "https://api.cloudflare.com/client/v4/zones/$zid/dns_records/$rid" -d "$body")"
   else
-    cf_api -X POST "https://api.cloudflare.com/client/v4/zones/$zid/dns_records" -d "$body" >/dev/null
+    resp="$(cf_api -X POST "https://api.cloudflare.com/client/v4/zones/$zid/dns_records" -d "$body")"
   fi
+  if [ "$(printf '%s' "$resp" | jq -r '.success // false')" != "true" ]; then
+    printf '%s\n' "$resp" | while IFS= read -r l; do _log ERROR "cf| $l"; done
+    die "cloudflare rejected the A record for $fqdn — see $EDITOR_LOG"
+  fi
+  _log INFO "cf: A record $fqdn → $ip proxied=$prox"
   ok "$fqdn → $ip (proxied=$prox)"
 }
 
@@ -743,21 +854,32 @@ SBXEOF
 # tasks/30-bringup.sh — start it and wait for the container to actually run.
 
 task_bringup() {
-  local dir="$SBX_MOD/$NAME" i
+  local dir="$SBX_MOD/$NAME" i out rc
   if [ "$START" != yes ]; then
     say "not started (answer was no) — start later with: docker compose -p sbx-$NAME -f $dir/docker-compose.yml up -d"
     return 0
   fi
-  docker compose -f "$dir/docker-compose.yml" -p "sbx-$NAME" up -d 2>&1 | tail -5
+  _log INFO "bring-up: docker compose -p sbx-$NAME up -d ($dir/docker-compose.yml)"
+  out="$(docker compose -f "$dir/docker-compose.yml" -p "sbx-$NAME" up -d 2>&1)"
+  rc=$?
+  if [ -n "$out" ]; then
+    printf '%s\n' "$out" | while IFS= read -r l; do _log DEBUG "compose up| $l"; done
+    printf '%s\n' "$out" | tail -5
+  fi
+  _log INFO "bring-up: compose up rc=$rc"
   for i in $(seq 1 40); do
     if [ "$(docker inspect -f '{{.State.Running}}' "sbx-$NAME-$SERVICE" 2>/dev/null)" = "true" ]; then
       ok "sbx-$NAME-$SERVICE is running"
+      _log INFO "bring-up: sbx-$NAME-$SERVICE running"
       return 0
     fi
     sleep 2
   done
-  docker logs --tail 20 "sbx-$NAME-$SERVICE" 2>&1 | sed 's/^/    /' || true
-  die "sbx-$NAME-$SERVICE did not start — see the log lines above"
+  _log ERROR "bring-up: sbx-$NAME-$SERVICE did not run after 80s"
+  out="$(docker logs --tail 20 "sbx-$NAME-$SERVICE" 2>&1 || true)"
+  printf '%s\n' "$out" | while IFS= read -r l; do [ -n "$l" ] && _log ERROR "container| $l"; done
+  printf '%s\n' "$out" | sed 's/^/    /'
+  die "sbx-$NAME-$SERVICE did not start — see the log lines above and $EDITOR_LOG"
 }
 SBXEOF
 
@@ -891,7 +1013,7 @@ sbx_leftovers() { # <n> <fqdn>
 
 flow_remove() {
   need docker
-  local names n exp label fqdn dir ans baks i=1
+  local names n exp label fqdn dir ans baks out i=1
   names="$(state_names)"
   [ -n "$names" ] || die "no sandbox modules recorded in $SBX_STATE"
 
@@ -913,7 +1035,10 @@ flow_remove() {
   [ "$ans" = yes ] || die "nothing done"
 
   if [ -f "$dir/docker-compose.yml" ]; then
-    docker compose -f "$dir/docker-compose.yml" -p "sbx-$n" down --remove-orphans --volumes 2>&1 | tail -3
+    _log INFO "remove: docker compose -p sbx-$n down --remove-orphans --volumes"
+    out="$(docker compose -f "$dir/docker-compose.yml" -p "sbx-$n" down --remove-orphans --volumes 2>&1)"
+    [ -n "$out" ] && printf '%s\n' "$out" | while IFS= read -r l; do _log DEBUG "compose down| $l"; done
+    [ -n "$out" ] && printf '%s\n' "$out" | tail -3
   fi
   sbx_kill_containers "$n"
   sbx_kill_attachments "$n"
@@ -1117,38 +1242,77 @@ SBXEOF
 # flow/cli.sh — dispatch. The repo file editor.sh only writes, loads and calls
 # this; every flow is a file the operator can read and edit.
 cli() {
-  case "${1:-}" in
+  local cmd="${1:-}" rc
+  _log INFO "dispatch: '$cmd' (tree $SBX)"
+  case "$cmd" in
     create) flow_create ;;
     remove) flow_remove ;;
     list) flow_list ;;
     validate) flow_validate ;;
     sync) flow_sync ;;
     backup) flow_backup ;;
-    *) _usage; return 1 ;;
+    "" | help | -h | --help) _usage; return 0 ;;
+    *)
+      _log ERROR "unknown command: '$cmd'"
+      printf 'editor: unknown command: %s\n' "$cmd" >&2
+      printf '        valid: create remove list validate sync backup bootstrap\n' >&2
+      printf '        help:  bash %s --help\n' "$SELF" >&2
+      printf '        log:   %s\n' "$EDITOR_LOG" >&2
+      return 2
+      ;;
   esac
+  rc=$?
+  _log INFO "dispatch: '$cmd' finished rc=$rc"
+  return "$rc"
 }
 SBXEOF
 }
 
+_log INFO "start: cmd=${CMD:-<none>} args=$* cwd=$PWD repo=$REPO data=$DATA_DIR sbx=$SBX user=$(id -un 2>/dev/null || echo '?') bash=$BASH_VERSION force=$FORCE"
+_log INFO "log: $EDITOR_LOG"
+
 case "$CMD" in
   "" | help | -h | --help) _usage; exit 0 ;;
   bootstrap)
-    _bootstrap
-    _bootstrap_flows
-    printf 'editor: tree ready — %s\n' "$SBX"
+    _bootstrap || die_early "cannot write $SBX"
+    _bootstrap_flows || die_early "cannot write $SBX"
+    [ "${BOOTSTRAP_ERR:-0}" = 0 ] || die_early "some files under $SBX could not be written — see $EDITOR_LOG"
+    printf 'editor: tree ready — %s (v%s, %s file(s) differ from this script)\n' \
+      "$SBX" "$VERSION" "${STALE:-0}"
+    _log INFO "bootstrap: done, $SBX, v$VERSION, stale=${STALE:-0}"
     exit 0
     ;;
 esac
 
 _bootstrap
 _bootstrap_flows
+[ "${BOOTSTRAP_ERR:-0}" = 0 ] || die_early "some files under $SBX could not be written — see $EDITOR_LOG"
 
 for _f in \
   "$SBX"/lib/env.sh "$SBX"/lib/ui.sh "$SBX"/lib/prompt.sh "$SBX"/lib/derive.sh \
   "$SBX"/lib/state.sh "$SBX"/lib/validate.sh "$SBX"/lib/caddy.sh "$SBX"/lib/dns.sh \
   "$SBX"/tasks/index.sh "$SBX"/tasks/[0-9]*.sh "$SBX"/flow/*.sh; do
   # shellcheck disable=SC1090
-  . "$_f" || die_early "cannot source $_f"
+  if . "$_f"; then
+    _log DEBUG "sourced $_f"
+  else
+    _log ERROR "cannot source $_f"
+    die_early "cannot source $_f — see $EDITOR_LOG"
+  fi
 done
 
+# A command this script supports but the loaded tree does not is exactly the
+# "prints usage, then exits" failure: the tree in data/sandbox is written once
+# and kept, so it can lag behind this file. Say so before dispatching.
+case "$CMD" in create | remove | list | validate | sync | backup) _known=1 ;; *) _known=0 ;; esac
+if [ "$_known" = 1 ] && [ "${STALE:-0}" -gt 0 ]; then
+  _log ERROR "'$CMD': stale tree — ${STALE} file(s) under $SBX differ from editor.sh v$VERSION"
+  printf '  ! %s file(s) under data/sandbox predate editor.sh v%s — if %s falls back to usage,\n' \
+    "$STALE" "$VERSION" "$CMD" >&2
+  printf '    refresh: bash %s bootstrap --force  (log: %s)\n' "$SELF" "$EDITOR_LOG" >&2
+fi
+
 cli "$CMD"
+_rc=$?
+_log INFO "exit rc=$_rc"
+exit "$_rc"
