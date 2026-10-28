@@ -333,18 +333,29 @@ check_ctns vault vaultwarden
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Module: home — Homarr at home.$DOMAIN, reached from www.$DOMAIN/home.
+# Module: home — Homarr at home.$DOMAIN.
 # ─────────────────────────────────────────────────────────────────────────────
 hdr home "Home — Homarr dashboard (module: home)"
 # Homarr is a Next.js app: its assets are ROOT-absolute (/_next/...), so it
-# cannot be served under a path. www/home 308s to the app's own hostname —
-# that hand-off is asserted here, not the old subpath proxy.
+# cannot be served under a path and owns a hostname of its own. The /home
+# subpath keeps serving Homer (its own module section below).
 check home "home.$DOMAIN" "/" "200 301 302 307 308" "" "Homarr answers (board or login redirect)"
 check home-login "home.$DOMAIN" "/auth/login" "200" html "Homarr login page renders"
-check home-redirect "www.$DOMAIN" "/home" "301 302 307 308" "" "www/home hands off to the dashboard hostname"
 check_sec_headers home "home.$DOMAIN" "/"
 check_tls "home.$DOMAIN"
 check_ctns home homarr
+end_sec
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Module: homer — the Homer dashboard, served at www.$DOMAIN/home.
+# ─────────────────────────────────────────────────────────────────────────────
+hdr homer "Homer — dashboard at www.$DOMAIN/home (module: homer)"
+# Homer serves RELATIVE asset urls, so it is prefix-stripped under /home/: the
+# trailing slash is load-bearing (without it "./resources/…" resolves against
+# the site root and the page comes back blank). Both hops are asserted.
+check homer-root "www.$DOMAIN" "/home" "301 302 307 308" "" "www/home redirects to its slash form"
+check homer "www.$DOMAIN" "/home/" "200" html "Homer dashboard renders"
+check_ctns homer homer
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
