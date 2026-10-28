@@ -23,6 +23,11 @@ services:
     # directory. Back it up as a whole; there is no config file to template.
     volumes:
       - ${DATA_DIR}/homarr/appdata:/appdata
+      # The "scan docker" source talks to the host daemon: without this mount
+      # it reports `connect ENOENT /var/run/docker.sock`. Read-only — Homarr
+      # only lists containers to turn them into integration suggestions; it
+      # never drives the daemon.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
 
     expose:
       - "7575"
