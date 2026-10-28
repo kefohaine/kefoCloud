@@ -44,6 +44,7 @@ make fetch|AIO dashboard — host perf, modules, git, units, docker, tmux, backu
 make render|skeleton → live: render data/rendered/ + refresh each service .env
 make fetch-more|deep dive — per-core cpu, mem breakdown, processes, sockets, all units+timers+cron, docker caps/stats/log sizes, disk+inodes, data/ growth, tailnet prefs, DNS probes, TLS expiry
 make smoke|live edge test — every vhost, tailnet edge, tls, mail (pre-push hook runs it; records its verdict only when the installer asks)
+make docs-build|build the /docs site (Zensical) from the repo's docs/ tree into the web root
 EOF
 
   sec "maintain"
@@ -204,6 +205,29 @@ EOF
 make vaultwarden-list-users|list vault accounts
 make vaultwarden-add-user|add an account — EMAIL=<addr> PASS=<password>
 make vaultwarden-del-user|delete an account + its vault data (EMAIL=<addr>)
+EOF
+
+  sec "blog accounts (WriteFreely)"
+  rows <<'EOF'
+make writefreely-users|list blog accounts (id, name, email, created)
+make writefreely-add-user|add an account — USER=<name> PASS=<password> (ADMIN=1 for the instance admin)
+make writefreely-passwd|reset a password — USER=<name> PASS=<new>
+make writefreely-del-user|delete an account (USER=<name>; the admin cannot be deleted)
+EOF
+
+  sec "photos accounts (Immich)"
+  rows <<'EOF'
+make immich-users|list photo-library users
+make immich-admin-pass|reset the admin password (interactive, inside the container)
+make immich-grant-admin|grant admin to an account — EMAIL=<addr>
+EOF
+
+  sec "beszel (hub + agent)"
+  rows <<'EOF'
+make beszel-users|list hub superusers
+make beszel-add-user|create/update a superuser — EMAIL=<addr> PASS=<password>
+make beszel-del-user|delete a superuser — EMAIL=<addr>
+make beszel-key|pin the agent's public key (KEY='ssh-ed25519 …') and recreate the agent
 EOF
 
   sec "nextcloud occ (runs as www-data inside the container)"
