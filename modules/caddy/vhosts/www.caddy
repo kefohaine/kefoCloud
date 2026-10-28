@@ -12,6 +12,8 @@
 #              tellings (neon / journal / field manual / poster).
 #   /download* Caddy file_server browse over homelab/download (mounted at
 #              /download:ro in the caddy container — drop files here).
+#   /home*     the Homer dashboard (172.22.0.26:8080), prefix-stripped — Homer
+#              uses relative asset urls, so /home/ is the app root.
 #   everything else — plain "ok" stub.
 # TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/cloud.{{DOMAIN}}.caddy).
 
@@ -121,14 +123,19 @@ https://www.{{DOMAIN}} {
         root * /srv/pages/www/docs
         file_server
     }
-    # /home — the dashboard lives on its own hostname (home.$DOMAIN, Homarr).
-    # It cannot be proxied under this path: Homarr is a Next.js app and links
-    # its assets ROOT-absolute (/_next/...), which a subpath mount resolves
-    # against the site root — the vhost's "ok" stub answers and the page is
-    # blank. Next's basePath is build-time only (upstream homarr#2617), so the
-    # app gets an origin of its own and the bookmarked URL redirects there.
-    @home path /home /home/*
-    redir @home https://home.{{DOMAIN}}/ 308
+    # /home — the Homer dashboard. Homer serves its assets with RELATIVE urls
+    # ("assets/...", "./resources/..."), so strip the prefix and let the app
+    # answer at /: /home/ -> /, /home/assets/x -> /assets/x.
+    #
+    # The trailing slash on /home is NOT cosmetic: relative "./resources/x"
+    # resolves against the parent directory of the current path, so at /home
+    # the browser asks for /resources/x (site root -> "ok" stub -> blank page).
+    # Only /home/ makes the base directory /home/, so /home/ 308s to /home/.
+    @home_root path /home
+    redir @home_root /home/ 308
+    handle_path /home/* {
+        reverse_proxy 172.22.0.26:8080
+    }
     # Homepage: the index.html placeholder (meta-redirects to /welcome).
     @index path /
     handle @index {
