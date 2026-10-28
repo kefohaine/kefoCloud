@@ -45,6 +45,7 @@ make render|skeleton → live: render data/rendered/ + refresh each service .env
 make fetch-more|deep dive — per-core cpu, mem breakdown, processes, sockets, all units+timers+cron, docker caps/stats/log sizes, disk+inodes, data/ growth, tailnet prefs, DNS probes, TLS expiry
 make smoke|live edge test — every vhost, tailnet edge, tls, mail (pre-push hook runs it; records its verdict only when the installer asks)
 make docs-build|build the /docs site (Zensical) from the repo's docs/ tree into the web root
+make dns-sync|converge the Cloudflare zone from wizard.state (A records for every enabled module + SSL mode)
 EOF
 
   sec "maintain"
@@ -115,6 +116,7 @@ make goose-tokens|goose token policy → live settings store + data/goose/.env +
 make install-ttyd|ttyd.service → /etc/systemd/system (refuses to run from inside ttyd)
 make install-ssh|50-cloud-init.conf → sshd_config.d (validates with sshd -t, then restarts)
 make install-dnsmasq-conf|10-tailnet.conf → /etc/dnsmasq.d
+make install-resolv|resolv.conf → /etc/resolv.conf via Tailscale (split-DNS works for tailnet-only names; run AFTER tailscale)
 make install-dnsmasq-override|dnsmasq drop-in override → /etc/systemd/system/dnsmasq.service.d
 make install-docker|daemon.json → /etc/docker (docker daemon restart needed to apply)
 make install-sysctl|99-kefo.conf → /etc/sysctl.d
@@ -227,6 +229,8 @@ EOF
 make beszel-users|list hub superusers
 make beszel-add-user|create/update a superuser — EMAIL=<addr> PASS=<password>
 make beszel-del-user|delete a superuser — EMAIL=<addr>
+make beszel-systems|list the systems the hub monitors (name, host, port, status)
+make beszel-add-system|register this machine in the hub (agent IP + LISTEN port derived from the module)
 make beszel-key|pin the agent's public key (KEY='ssh-ed25519 …') and recreate the agent
 EOF
 
