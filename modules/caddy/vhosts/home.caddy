@@ -1,0 +1,44 @@
+# home.{{DOMAIN}} — Homarr dashboard.
+#
+# Its own hostname, not a subpath of www: Homarr is a Next.js app and emits
+# ROOT-absolute asset URLs (/_next/...), so a path mount renders a blank page.
+# Next's basePath is a build-time setting — upstream refuses subpath hosting
+# for the published image (homarr-labs/homarr#2617) — so the app owns an origin.
+# https://www.{{DOMAIN}}/home 308s here, so the old URL keeps working.
+# TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/cloud.{{DOMAIN}}.caddy).
+
+https://home.{{DOMAIN}} {
+    tls {
+        # Fallback issuer chain: Let's Encrypt first, then Buypass Go SSL and
+        # ZeroSSL — free providers tried in order, so a per-issuer rate limit
+        # (5 orders/name/week on LE) never leaves a vhost without a cert.
+        issuer acme https://acme-v02.api.letsencrypt.org/directory {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+        issuer acme https://api.buypass.com/acme/directory {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+        issuer acme https://acme.zerossl.com/v2/DV90 {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+    }
+    import compress
+    request_body {
+        # Homarr's own nginx accepts 256M (icon/image uploads); keep the edge
+        # from being the smaller of the two.
+        max_size 256m
+    }
+    header {
+        import security_headers
+    }
+    reverse_proxy 172.22.0.7:7575 {
+        # Strip Homarr's own copies so the site-level set yields exactly one of
+        # each (smoke check_sec_headers fails on doubled headers).
+        header_down -X-Frame-Options
+        header_down -X-Content-Type-Options
+        header_down -Referrer-Policy
+    }
+}
