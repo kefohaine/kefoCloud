@@ -1,0 +1,50 @@
+services:
+  homarr:
+    image: ghcr.io/homarr-labs/homarr:v2.9.1
+    container_name: homarr
+    restart: unless-stopped
+
+    # Hard RAM cap (no container swap) — survives recreates, unlike `docker update`.
+    # Next.js + its bundled redis + nginx: 1g is the floor, not headroom.
+    mem_limit: 1g
+    memswap_limit: 1g
+
+    environment:
+      # Canonical public ORIGIN (never a path — Homarr validates this): origin
+      # checks and secure cookies are built from it.
+      BASE_URL: https://home.${DOMAIN}
+      # Encrypts the secrets Homarr stores in its SQLite DB (64 hex chars).
+      # Required at boot; seeded ONCE by the installer into the gitignored
+      # modules/homarr/.env. Never rotate it — every stored integration secret
+      # becomes unreadable.
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY}
+
+    # The whole instance state — SQLite DB, redis dump, trusted certs — is one
+    # directory. Back it up as a whole; there is no config file to template.
+    volumes:
+      - ${DATA_DIR}/homarr/appdata:/appdata
+
+    expose:
+      - "7575"
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:7575/auth/login"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Pinned bridge IP — modules/caddy/vhosts/home.caddy proxies it.
+    networks:
+      net:
+        ipv4_address: 172.22.0.7
+
+networks:
+  net:
+    external: true
