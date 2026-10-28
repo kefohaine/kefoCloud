@@ -336,6 +336,12 @@ end_sec
 # ─────────────────────────────────────────────────────────────────────────────
 hdr home "Home — Homer dashboard (module: home)"
 check home "www.$DOMAIN" "/home/" "200 301 302 307 308" html "Homer dashboard answers"
+# Homer's HTML links its bundle as "./resources/index-*.js" and the icons as
+# "assets/...". Relative URLs resolve against the PARENT of the current path,
+# so a bare /home makes the browser ask the site root for /resources/... (the
+# "ok" stub answers 200 text/plain) and the dashboard renders as a blank white
+# page. The trailing slash is the fix, so the redirect itself is the assertion.
+check home-redirect "www.$DOMAIN" "/home" "308" "" "bare /home redirects to /home/ so relative assets resolve"
 check home-asset "www.$DOMAIN" "/home/assets/manifest.json" "200 301 302 307 308" "" "Homer serves its own assets under the /home prefix"
 check_ctns home homer
 end_sec
@@ -362,6 +368,17 @@ else
   check_tn beszel-asset "tail.$DOMAIN" "/beszel/static/manifest.json" "200" "" "hub assets resolve with the APP_URL base path"
 fi
 check_ctns beszel beszel-hub beszel-agent
+# The hub ships no systems and its CLI cannot create one, so a dashboard that
+# monitors nothing is a real failure, not a cosmetic one: assert the hub's own
+# row is registered AND reachable (the agent's SSH handshake flipped it to up).
+_bzdb="${DATA_DIR:-$ROOT/data}/beszel/hub/data.db"
+_bzs="$(sqlite3 "$_bzdb" "SELECT count(*) FROM systems WHERE status='up';" 2>/dev/null)"
+if [ "${_bzs:-0}" -ge 1 ] 2>/dev/null; then
+  say "OK   beszel-system: hub reports $_bzs system(s) up"
+else
+  say "FAIL beszel-system: no system is up in the hub — run 'make beszel-add-system'"; bad
+fi
+unset _bzs _bzdb
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
