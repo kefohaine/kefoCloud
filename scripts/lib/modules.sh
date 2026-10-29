@@ -29,7 +29,7 @@
 #   mod_roster              every repo container (edge + every declared module)
 #   mod_finished            `true` | `false` | `absent`  (wizard.state checkpoint)
 #   state_get <key>         one raw wizard.state field ('' when absent)
-#   exposure <host>         `tailnet-only` for tail.$DOMAIN, else `public`
+#   exposure <host>         `tailnet-only` for ttyd/vault/mail.$DOMAIN, else `public`
 
 MODULES_CONF="${MODULES_CONF:-${REPO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}/config/modules.conf}"
 INSTALL_STATE="${INSTALL_STATE:-${DATA_DIR:-${REPO_DIR:-.}/data}/wizard.state}"
@@ -68,7 +68,7 @@ mod_finished() {
   local f; f="$(_mod_read finished)"
   printf '%s' "${f:-absent}"
 }
-exposure()     { case "$1" in tail|tail.*) printf 'tailnet-only' ;; *) printf 'public' ;; esac; }
+exposure()     { case "$1" in ttyd|ttyd.*|vault|vault.*|mail|mail.*) printf 'tailnet-only' ;; *) printf 'public' ;; esac; }
 
 # mod_roster — every container the REPO declares, in declaration order: the
 # Caddy edge (always present) then each declared module's containers. It is a

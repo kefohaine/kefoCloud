@@ -95,7 +95,7 @@ significant_path() {
     modules/caddy/*) return 0 ;;
     modules/*/docker-compose.yml) return 0 ;;
     config/ssh/*|config/sysctl/*|config/systemd/*|config/docker/*|config/dnsmasq/*|config/cron/*|config/goose/*) return 0 ;;
-    scripts/hooks/*|scripts/lib/*|scripts/install/*|scripts/render/*|scripts/stack/*|scripts/ops/*|scripts/access/*|scripts/modules/*) return 0 ;;
+    scripts/hooks/*|scripts/lib/*|scripts/install/*|scripts/render/*|scripts/stack/*|scripts/ops/*|scripts/modules/*) return 0 ;;
   esac
   return 1
 }
