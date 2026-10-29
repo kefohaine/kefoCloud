@@ -15,10 +15,10 @@ SELECT 1, 'local', 'socket', '/var/run/docker.sock'
 WHERE NOT EXISTS (SELECT 1 FROM docker_host WHERE name = 'local');
 
 -- ── HTTP monitors (public hostnames via Cloudflare → machine → Caddy) ────────
--- NOTE: no monitor uses https://mail.{{DOMAIN}} — docker's embedded DNS resolves
--- that name to the mailserver container (hostname: mail.{{DOMAIN}} → 172.22.0.9),
--- which has no :443 (Caddy owns HTTPS on the host). Monitor roundcube on the
--- bridge instead.
+-- NOTE: no monitor uses https://mail.{{DOMAIN}} or https://mailu.{{DOMAIN}} —
+-- docker's embedded DNS resolves those names to the mailserver container
+-- (hostname: mail.{{DOMAIN}} → 172.22.0.9), which has no :443 (Caddy owns HTTPS
+-- on the host). Monitor roundcube on the bridge instead.
 
 INSERT INTO monitor (name, type, url, interval, retry_interval, maxretries, active, user_id, description)
 SELECT 'http: vault', 'http', 'https://vault.{{DOMAIN}}', 60, 60, 0, 1, 1, 'Vaultwarden'
