@@ -9,6 +9,10 @@ Try an app on the live stack without touching the repo. `scripts/sandbox/editor.
 - The compose contract is enforced before a single container starts (see below), so a sandbox module cannot publish ports, escape its namespace, or hog memory.
 - `restart: unless-stopped` is mandatory, but only the repo's `modules/*/` are globbed at boot — so sandbox modules survive a reboot and rejoin `net` on their own, without ever being registered in the stack.
 
+## A sandbox module can own a public name
+
+`cloud.$DOMAIN` is served by an ownCloud Infinite Scale (oCIS) sandbox module: its stack (compose + data) lives under `data/sandbox/modules/ocis` and is not in `config/modules.conf`, while the vhost that publishes it is tracked (`modules/caddy/vhosts/cloud.caddy`) so `make render` can never take the name offline. A sandbox module that reaches that state has its vhost moved into the repo and its copies removed from `data/sandbox/caddy` — one vhost per name.
+
 ## Commands
 
 Run `bash scripts/sandbox/editor.sh` for the list. `create` collects every answer before it acts; `remove` confirms before each destructive step. `list`, `validate` and `sync` are non-interactive; `backup` asks which module.

@@ -166,6 +166,11 @@ cf_mail_dns() {
   # by @not_tailnet in the vhost, so the public zone must hold NO record for it
   # (DNS-01 only needs the TXT record for the certificate).
   cf_a_del mailu
+  # nextcloud.$DOMAIN is the Nextcloud-stack door and is TAILNET-ONLY (same
+  # model as vault/mailu): dnsmasq answers it for tailnet clients and the vhost
+  # 403s every other source, so the public zone must hold NO record for it —
+  # cloud.$DOMAIN is ownCloud's name (public).
+  cf_a_del nextcloud
   mod_on mail && cf_mail_dns
   curl -s -X PATCH -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
     "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/settings/ssl" -d '{"value":"full"}' >>"$LOG" 2>&1 || true

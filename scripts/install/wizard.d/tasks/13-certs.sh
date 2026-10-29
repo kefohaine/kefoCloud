@@ -39,6 +39,7 @@ issue_certs() {
   TAIL_TLS_FALLBACK=false
   hosts="www"
   mod_on cloud   && hosts="$hosts cloud"
+  mod_on cloud   && hosts="$hosts nextcloud"
   mod_on cloud && [ "${VIDEO_CALLING:-true}" != "false" ] && hosts="$hosts talk"
   mod_on vault   && hosts="$hosts vault"
   mod_on monitor && hosts="$hosts kuma"

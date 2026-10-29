@@ -5,7 +5,7 @@
 # published under the name `redis`, the cloud container resolves that name to
 # BOTH caches, phpredis round-robins onto Mailu's instance and every Nextcloud
 # session SET waits on its MISCONF error — all php-fpm children end up blocked
-# and cloud.$DOMAIN stops answering, while `occ status` (a separate CLI process)
+# and nextcloud.$DOMAIN stops answering, while `occ status` (a separate CLI process)
 # still looks healthy. That is exactly the 2026-10-19 smoke failure (cloud HTTP
 # 000 + xfo/xcto/hsts=0) and the reason notify_push:setup never succeeded.
 # Detect the duplicate name (and a cache that refuses writes), drop the alias by

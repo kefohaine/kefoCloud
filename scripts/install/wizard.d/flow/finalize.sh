@@ -67,7 +67,7 @@ success_block() {
   # Only the enabled modules' sites are listed — a site the operator chose not
   # to install (and so will not answer) must not appear. Shell (the tailnet
   # door) and the machine's own addresses are always part of the stack.
-  mod_on cloud && printf '  %sNextcloud%s    https://cloud.%s    %sadmin / %s%s\n' \
+  mod_on cloud && printf '  %sNextcloud%s    https://nextcloud.%s    %sadmin / %s%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${NEXTCLOUD_ADMIN_PASSWORD:-<see modules/nextcloud/.env>}" "$C_RST"
   mod_on vault && printf '  %sVaultwarden%s  https://vault.%s    %s%s / %s%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${VAULTWARDEN_ADMIN_USER:-admin@$DOMAIN}" "${VAULTWARDEN_ADMIN_PASSWORD:-<see modules/vaultwarden/.env>}" "$C_RST"
@@ -116,7 +116,7 @@ success_block() {
     n=$((n+1)); printf '   %d. Run scripts/ops/tailscale-https.sh — the ttyd.%s LE order failed (often the LE rate limit), so the door is served over Tailscale HTTPS instead\n' "$n" "$DOMAIN"
   fi
   if mod_on cloud; then
-    n=$((n+1)); printf '   %d. %s(optional)%s Cloudflare WAF rule skip for cloud.%s (desktop sync)\n' "$n" "$C_GREY" "$C_RST" "$DOMAIN"
+    n=$((n+1)); printf '   %d. %s(optional)%s Cloudflare WAF rule skip for nextcloud.%s (desktop sync)\n' "$n" "$C_GREY" "$C_RST" "$DOMAIN"
   fi
   n=$((n+1)); if [ "${GH_REMOTE:-false}" = "true" ]; then
     printf '   %d. GitHub remote access: origin is git@github.com:%s/%s.git, key /root/.ssh/github_key\n' "$n" "$GITHUB_USER" "$REPO_NAME"

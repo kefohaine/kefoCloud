@@ -11,7 +11,7 @@ nextcloud_occ_remediate() {
   . modules/nextcloud/.env 2>/dev/null || true
   local sig trn
   docker exec -u www-data nextcloud php occ config:system:set trusted_domains 1 \
-    --value "cloud.$DOMAIN" >/dev/null 2>&1 || true
+    --value "nextcloud.$DOMAIN" >/dev/null 2>&1 || true
   docker exec -u www-data nextcloud php occ config:system:delete trusted_proxies >/dev/null 2>&1 || true
   local p i=0
   for p in 172.22.0.0/16 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32; do
@@ -35,7 +35,7 @@ nextcloud_occ_remediate() {
     # Login Name" editable and is the only choice that works with an empty NC
     # profile email.
     docker exec -u www-data nextcloud php occ config:app:set mail_roundcube externalLocation \
-      --value "https://cloud.$DOMAIN/roundcube" >/dev/null 2>&1 || true
+      --value "https://nextcloud.$DOMAIN/roundcube" >/dev/null 2>&1 || true
     docker exec -u www-data nextcloud php occ config:app:set mail_roundcube emailAddressChoice \
       --value userChosenEmail >/dev/null 2>&1 || true
   fi

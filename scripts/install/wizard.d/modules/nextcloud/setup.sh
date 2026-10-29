@@ -29,9 +29,9 @@ nextcloud_setup() {
          --database-host "$POSTGRES_HOST" >>"$LOG" 2>&1; then
       log "  nextcloud installed"
       # occ does not apply NEXTCLOUD_TRUSTED_DOMAINS (the entrypoint does) —
-      # without this entry https://cloud.$DOMAIN answers 400 untrusted domain.
+      # without this entry https://nextcloud.$DOMAIN answers 400 untrusted domain.
       docker exec -u www-data nextcloud php occ config:system:set trusted_domains 1 \
-        --value "cloud.$DOMAIN" >/dev/null 2>&1 || true
+        --value "nextcloud.$DOMAIN" >/dev/null 2>&1 || true
     else
       fail nextcloud_setup "occ maintenance:install failed — see $LOG"
     fi
@@ -39,14 +39,14 @@ nextcloud_setup() {
   # Then wait for a usable instance: a cold cache (fresh image pull + the
   # ~3 min Caddy build hogging the box) blew the old 3-minute budget, so every
   # occ step below — Talk signaling/TURN, SMTP, cron — silently never ran
-  # (2026-09-25). 30 minutes now, with a secondary HTTP probe to cloud.$DOMAIN
+  # (2026-09-25). 30 minutes now, with a secondary HTTP probe to nextcloud.$DOMAIN
   # and a per-call occ timeout so a hanging occ never stalls the loop.
   local i=0
   while [ $i -lt 1800 ]; do
     if timeout 20 docker exec -u www-data nextcloud php occ status 2>/dev/null | grep -q "installed: true"; then
       break
     fi
-    if timeout 10 curl -sk "https://cloud.$DOMAIN/" >/dev/null 2>&1; then
+    if timeout 10 curl -sk "https://nextcloud.$DOMAIN/" >/dev/null 2>&1; then
       break     # NC answers HTTPS → ready, even if occ is still warming the cache
     fi
     [ $((i % 30)) -eq 0 ] && log "  waiting for nextcloud to finish installing (${i}s)"
@@ -105,12 +105,12 @@ nextcloud_setup() {
 
   # mail_roundcube (installed+enabled automatically when mail is on) wraps the
   # Roundcube instance in an iframe and reads that iframe's DOM, so its URL
-  # must be same-origin with Nextcloud: cloud.$DOMAIN/roundcube/ is the proxy
-  # path on cloud.caddy (mail.$DOMAIN itself is cross-origin and throws).
+  # must be same-origin with Nextcloud: nextcloud.$DOMAIN/roundcube/ is the
+  # proxy path on nextcloud.caddy (mail.$DOMAIN itself is cross-origin and throws).
   # Without externalLocation the app's own page is just the "you did not tell
   # me where to find your configured Roundcube instance" error.
   docker exec -u www-data nextcloud php occ config:app:set mail_roundcube externalLocation \
-    --value "https://cloud.$DOMAIN/roundcube" >/dev/null 2>&1 || true
+    --value "https://nextcloud.$DOMAIN/roundcube" >/dev/null 2>&1 || true
   # userChosenEmail is the app's own default and the only choice that leaves the
   # personal "Email Login Name" editable: with userPreferencesEmail/userIdEmail
   # the field is greyed out and the app silently feeds NC's UID or profile
@@ -142,7 +142,7 @@ nextcloud_setup() {
     # was the cloud cache resolving to Mailu's read-only redis, fixed in
     # redis_door_sanity (compose service renamed to mailu-redis).
     local _np_try=0
-    until docker exec -u www-data nextcloud php occ notify_push:setup "https://cloud.$DOMAIN/push" >/dev/null 2>&1; do
+    until docker exec -u www-data nextcloud php occ notify_push:setup "https://nextcloud.$DOMAIN/push" >/dev/null 2>&1; do
       _np_try=$((_np_try+1))
       [ "$_np_try" -ge 3 ] && { log "  notify_push:setup failed after 3 attempts — check the notify-push container and the /push route"; break; }
       sleep 5
@@ -184,10 +184,10 @@ nextcloud_setup() {
   fi
 
   # The vhost Host must be trusted or NC 400s every request on it. The compose
-  # env NEXTCLOUD_TRUSTED_DOMAINS seeds cloud.$DOMAIN on a fresh DB — writing
+  # env NEXTCLOUD_TRUSTED_DOMAINS seeds nextcloud.$DOMAIN on a fresh DB — writing
   # the bare $DOMAIN into index 1 clobbers it.
-  if ! docker exec -u www-data nextcloud php occ config:system:get trusted_domains 2>/dev/null | grep -qx "cloud.$DOMAIN"; then
-    docker exec -u www-data nextcloud php occ config:system:set trusted_domains 1 --value "cloud.$DOMAIN" >/dev/null 2>&1 || true
+  if ! docker exec -u www-data nextcloud php occ config:system:get trusted_domains 2>/dev/null | grep -qx "nextcloud.$DOMAIN"; then
+    docker exec -u www-data nextcloud php occ config:system:set trusted_domains 1 --value "nextcloud.$DOMAIN" >/dev/null 2>&1 || true
   fi
 
   # Recovery manifest: apps enabled beyond the image defaults
@@ -255,7 +255,7 @@ nextcloud_setup() {
       # The wrapper is only usable if it knows where its Roundcube is and
       # leaves the personal login name editable (see the app-config block
       # above); verified here so repair mode re-applies both.
-      occ_check "https://cloud.$DOMAIN/roundcube" docker exec -u www-data nextcloud php occ config:app:get mail_roundcube externalLocation 2>/dev/null \
+      occ_check "https://nextcloud.$DOMAIN/roundcube" docker exec -u www-data nextcloud php occ config:app:get mail_roundcube externalLocation 2>/dev/null \
         || return 1
       occ_check "userChosenEmail" docker exec -u www-data nextcloud php occ config:app:get mail_roundcube emailAddressChoice 2>/dev/null \
         || return 1
@@ -289,7 +289,7 @@ nextcloud_setup() {
   # `webUpdaterEnabled` = !upgrade.disable-web, so the key must be false, and
   # the independent updater app must exist at /var/www/html/updater (the FPM
   # image ships no such tree; Caddy must not block the path either — see
-  # modules/caddy/vhosts/cloud.caddy). /var/www/html here is the HOST bind
+  # modules/caddy/vhosts/nextcloud.caddy). /var/www/html here is the HOST bind
   # mount data/cloud/html, not the image filesystem, so an update the updater
   # performs survives container recreation; only the compose image tag then
   # lags the installed code (that is why nc-core-update.sh refuses a downgrade).
