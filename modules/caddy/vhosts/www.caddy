@@ -12,8 +12,8 @@
 #              tellings (neon / journal / field manual / poster).
 #   /download* Caddy file_server browse over homelab/download (mounted at
 #              /download:ro in the caddy container — drop files here).
-#   /home*     the Homer dashboard (172.22.0.26:8080), prefix-stripped — Homer
-#              uses relative asset urls, so /home/ is the app root.
+#   /home*     permanent redirect to home.{{DOMAIN}} (the dashboard's own
+#              hostname — a Next.js app cannot be mounted under a path).
 #   everything else — plain "ok" stub.
 # TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/cloud.{{DOMAIN}}.caddy).
 
@@ -114,28 +114,11 @@ https://www.{{DOMAIN}} {
         rewrite /welcome-9.html
         file_server
     }
-    # /docs — the Zensical build (scripts/modules/docs-build.sh renders the
-    # repo's docs/ tree into $DATA_DIR/pages/www/docs). handle_path strips the
-    # prefix so the site's relative asset links resolve under /docs/.
-    @docs path /docs
-    redir @docs /docs/ 308
-    handle_path /docs/* {
-        root * /srv/pages/www/docs
-        file_server
-    }
-    # /home — the Homer dashboard. Homer serves its assets with RELATIVE urls
-    # ("assets/...", "./resources/..."), so strip the prefix and let the app
-    # answer at /: /home/ -> /, /home/assets/x -> /assets/x.
-    #
-    # The trailing slash on /home is NOT cosmetic: relative "./resources/x"
-    # resolves against the parent directory of the current path, so at /home
-    # the browser asks for /resources/x (site root -> "ok" stub -> blank page).
-    # Only /home/ makes the base directory /home/, so /home/ 308s to /home/.
-    @home_root path /home
-    redir @home_root /home/ 308
-    handle_path /home/* {
-        reverse_proxy 172.22.0.26:8080
-    }
+    # /home — the dashboard lives on its own hostname (home.{{DOMAIN}},
+    # Homarr). This subpath is a permanent redirect, not a 404: it is printed
+    # in the welcome page's nav and in bookmarks.
+    @home_root path /home /home/*
+    redir @home_root https://home.{{DOMAIN}}/ permanent
     # Homepage: the index.html placeholder (meta-redirects to /welcome).
     @index path /
     handle @index {
