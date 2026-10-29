@@ -18,6 +18,11 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Problem**: SSH to `$GITHUB_USER` denies every key tried from the app host (`root`/`root`/`debian`, incl. `github_key`), Tailscale SSH is not enabled there, and its Taildrop inbox is empty — the old `kuma.db` cannot be fetched. The operator's Mac is also blocked: $GITHUB_USER's ED25519 host key changed (`REMOTE HOST IDENTIFICATION HAS CHANGED`, new fingerprint `SHA256:o0MmsggDn/Hi2LiThbkSLlLGUadoQfEKi0NBvmFb61k`) — likely the machine was reinstalled. kuma.$DOMAIN currently has the seeded admin (reset Aug 2026 — rotate with `make kuma-passwd`) but not the old account/status pages.
 - **Fix**: on the Mac run `ssh-keygen -R <the old box's tailnet IP>` (clears the stale host key), then `ssh debian@<the old box's tailnet IP>` — if the box was reinstalled the old key may no longer be authorized; re-add it. Deliver the db either by taildrop from $GITHUB_USER (`tailscale file cp kuma.db the app host:`, then on the app host `tailscale file get {{DATA_DIR}}/kuma/import`) or by adding the the app host `root` SSH key to $GITHUB_USER's `authorized_keys`. Then `make kuma-import` swaps it in, adapts it ($DOMAIN→$DOMAIN URLs, old container names, deactivates retired-service monitors) and re-seeds the current monitor set.
 
+#### A vanished module is never recreated at boot
+- **File**: `scripts/stack/stack-up.sh` (`deployed()`)
+- **Problem**: `deployed()` gates on *container existence*, so when a module's containers are gone (an image prune, a `compose down`, a docker storage wipe) boot recovery logs `skip (not deployed)` and moves on — the stack reports "up" while the module is silently absent. This is how the Nextcloud DB stayed missing after the prune.
+- **Fix**: treat `wizard.state`'s `enabled_modules` as the source of truth for a module the installer deployed, and recreate any module whose compose file exists but whose containers are missing (keeping the container-existence check only for sandbox/undeclared units).
+
 ### Robustness
 
 #### ownCloud owns `cloud.$DOMAIN` but lives only in the sandbox tree
@@ -27,8 +32,8 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 
 #### Snikket lives only in the sandbox tree
-- **File**: `data/sandbox/modules/snikket/` (compose, `snikket.conf`, `coturn-run`, data), `data/sandbox/caddy/sbx-snikket.caddy`
-- **Problem**: `chat.$DOMAIN` (plus `groups.chat` / `share.chat`) is served by a hand-written sandbox module: host networking, so `editor.sh create` cannot reproduce it and it has no state record, no `config/modules.conf` row, no installer step and no backup coverage — its Prosody data (accounts, groups, archives) is covered by nothing. Only the coturn wrapper is tracked (`scripts/sandbox/snikket/coturn-run`, installed by `make sbx-snikket-turn`).
+- **File**: `data/sandbox/modules/snikket/` (compose, `snikket.conf`, data), `data/sandbox/caddy/sbx-snikket.caddy`
+- **Problem**: `xmpp.$DOMAIN` (plus `groups.xmpp` / `share.xmpp`) is served by a hand-written sandbox module: host networking, so `editor.sh create` cannot reproduce it and it has no state record, no `config/modules.conf` row, no installer step and no backup coverage — its Prosody data (accounts, groups, archives) is covered by nothing.
 - **Fix**: either promote it into `modules/snikket/` (compose + modules.conf row + installer setup + a backup path that includes `data/sandbox/modules/snikket/data`) or extend the sandbox helper to host-networked modules so `create`/`backup`/`sync` cover it; then remove the hand-written copy.
 
 #### The optimize offer is marked broken in the installer
@@ -453,11 +458,14 @@ Resolved items grouped by month. One line per item, one sentence per record.
 
 - **Nextcloud moved off the public edge** — its stack was brought down and its door is the tailnet-only `nextcloud.$DOMAIN`; `cloud.$DOMAIN` now serves ownCloud (oCIS), which makes the per-hostname Cloudflare WAF skip moot.
 - **Poster welcome page** — `/welcome` is now a tracked template (`config/pages/www/welcome.html`) with a page nav and a `Home →` button.
-- **Zensical docs** — `/docs/` is a static build of the repo's `docs/` tree via `make docs-build`; no container.
 - **WriteFreely blog** — new `blog` module and `blog.$DOMAIN` vhost, built from the pinned upstream release tarball.
+- **Rocket.Chat at `chat.$DOMAIN`** — new `chat` module (`modules/rocketchat/`, Rocket.Chat 7.10 + MongoDB 8 replica set + one-shot init service) replaces Snikket on that name.
+- **Snikket moved to `xmpp.$DOMAIN`, calls disabled** — `SNIKKET_TWEAK_TURNSERVER=0` (no coturn, so no TURN/STUN port conflicting with Talk's relay) and OMEMO text chat only; the coturn wrapper and `make sbx-snikket-turn` are gone.
+- **Homer and Zensical removed** — `modules/homer`, `config/homer`, `config/docs`, `scripts/modules/docs-build.sh` and the `/docs` + `/home` routes are gone; the welcome page's Home link goes straight to Homarr and `www/home` permanent-redirects there.
+- **`make dok-recreate-nextcloud-stack`** — the DB and the app in ONE compose invocation, so neither file's `--remove-orphans` deletes the other half.
 - **Beszel hub + agent** — added as a `beszel` module (hub + agent, agent wired to the hub key); the module was removed on 2026-10-29.
 - **Immich photos** — new `photos` module, DNS-only `photos.$DOMAIN`, own PostgreSQL + Redis, ML container omitted.
-- **Homarr added beside Homer** — Homarr owns `home.$DOMAIN` (Next.js assets are root-absolute, so no subpath mount) while `www/home` keeps serving Homer; smoke asserts both and the homer module is declared in `config/modules.conf`.
+- **Homarr added** — Homarr owns `home.$DOMAIN` (Next.js assets are root-absolute, so no subpath mount); smoke asserts it and the `home` module is declared in `config/modules.conf`.
 - **`blog.`/`photos.` had no A record** — the records were never created by the install run; `make dns-sync` re-runs the installer's convergence from `wizard.state`.
 - **`vault.$DOMAIN` did not resolve on the tailnet** — the provider-supplied `/etc/resolv.conf` bypassed Tailscale, so the split-DNS route never applied on this host; `make install-resolv` pins it to `100.100.100.100`.
 - **Vault is tailnet-only** — `vault.$DOMAIN` keeps its name but has no public record; `@not_tailnet` 403s every other source.

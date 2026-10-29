@@ -8,7 +8,8 @@ prep_dirs() {
                $ROOT/data/vault/data \
                $ROOT/data/kuma/data \
                $ROOT/data/homarr/appdata \
-               $ROOT/data/homer \
+               $ROOT/data/rocketchat/db \
+               $ROOT/data/rocketchat/uploads \
                $ROOT/data/mailserver/data \
                $ROOT/data/mailserver/mail \
                $ROOT/data/mailserver/filter \
@@ -321,11 +322,6 @@ seed_stack() {
     fi
     detail "  Homarr encryption key seeded in $henv"
   fi
-  # The /docs site is static output (Zensical), built from the repo's docs/
-  # tree; there is no container to start, so it is built here, before smoke
-  # asserts it.
-  detail "  building the /docs site (Zensical)"
-  make docs-build >>"$LOG" 2>&1 || fail docs_build
 }
 
 
