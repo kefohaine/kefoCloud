@@ -935,6 +935,35 @@ endif
 sandbox-sync:
 >@bash scripts/sandbox/editor.sh sync
 
+.PHONY: sbx-snikket-turn
+
+# Snikket is a sandbox module (host networking: XMPP, TURN and proxy65 cannot go
+# through the edge) and its coturn wrapper is the one piece that must not live
+# only in data/. This installs the tracked wrapper — which stages the prosody
+# cert pair where snikket-certs' hourly `prosodyctl cert import` cannot chmod it
+# away — then restarts the server and proves TURNS answers on 5349. Without it a
+# restart can come back with no TLS listener at all (silent, calls fail on
+# restrictive networks).
+sbx-snikket-turn:
+>@mod="$(DATA_DIR)/sandbox/modules/snikket"; \
+  if [ ! -d "$$mod" ]; then \
+    scripts/lib/mklog info "snikket is not installed on this host ($$mod) — nothing to do"; \
+    exit 0; \
+  fi
+>@sudo install -m 0755 scripts/sandbox/snikket/coturn-run $(DATA_DIR)/sandbox/modules/snikket/coturn-run
+>@scripts/lib/mklog info "coturn wrapper installed — restarting snikket"
+>@docker restart snikket >/dev/null
+>@for i in $$(seq 1 60); do ss -lnt | grep -q ':5349' && break; sleep 2; done
+>@if ! ss -lnt | grep -q ':5349'; then \
+    docker logs --tail 20 snikket 2>&1 | grep -i -E 'coturn|certificate' || true; \
+    scripts/lib/mklog error "TURNS never came up on 5349 — see: docker logs snikket"; \
+    exit 1; \
+  fi
+>@scripts/lib/mklog info "TURNS listening on 5349 — verifying the TLS handshake"
+>@echo | openssl s_client -connect 127.0.0.1:5349 -brief 2>&1 | grep -qE 'CONNECTION ESTABLISHED|subject=' || { \
+    scripts/lib/mklog error "TLS handshake on 5349 failed"; exit 1; }
+>@scripts/lib/mklog info "STUN on 3478: $$(docker exec snikket turnutils_stunclient 127.0.0.1 2>&1 | tail -1)"
+
 # Tmux sessions
 # Persistent terminal sessions on the host — detach (Ctrl-b d) and the
 # shell + whatever's running inside it stays alive; reattach from any
