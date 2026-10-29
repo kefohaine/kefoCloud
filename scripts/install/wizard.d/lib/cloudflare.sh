@@ -155,15 +155,17 @@ cf_mail_dns() {
   # its LE cert via DNS-01. talk exists only when video calling was enabled.
   mod_on cloud && [ "${VIDEO_CALLING:-true}" != "false" ] && cf_record talk false
   mod_on cloud && [ "${VIDEO_CALLING:-true}" = "false" ] && cf_a_del talk
-  # mail.$DOMAIN is Mailu's own hostname (platform door + admin UI + the
-  # SMTP/IMAP cert) and is TAILNET-ONLY (operator choice 2026-10-29): the name
-  # is answered by the machine dnsmasq and gated by @not_tailnet in the vhost,
-  # so the public zone must hold NO record for it (DNS-01 only needs the TXT
-  # record for the certificate). The webmail door cube.$DOMAIN stays public and
-  # is proxied like vault/kuma.
-  cf_a_del mail
-  mod_on mail  && cf_record cube true
-  mod_on mail || cf_a_del cube
+  # mail.$DOMAIN is the public mail door: Roundcube's web UI AND the name
+  # mailu-front publishes 25/465/587/993 on and serves the SMTP/IMAP cert for
+  # (the MX and SPF point at it). DNS-ONLY (grey cloud) — the CF proxy carries
+  # no SMTP/IMAP, so a proxied record would leave every mail client talking to
+  # Cloudflare instead of the origin. Caddy still gets its LE cert via DNS-01.
+  mod_on mail && cf_record mail false || cf_a_del mail
+  # mailu.$DOMAIN is Mailu's platform door (admin UI + SSO) and is TAILNET-ONLY
+  # (same model as vault): the name is answered by the machine dnsmasq and gated
+  # by @not_tailnet in the vhost, so the public zone must hold NO record for it
+  # (DNS-01 only needs the TXT record for the certificate).
+  cf_a_del mailu
   mod_on mail && cf_mail_dns
   curl -s -X PATCH -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
     "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/settings/ssl" -d '{"value":"full"}' >>"$LOG" 2>&1 || true

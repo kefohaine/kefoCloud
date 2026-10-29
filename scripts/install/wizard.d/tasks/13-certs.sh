@@ -44,7 +44,7 @@ issue_certs() {
   mod_on monitor && hosts="$hosts kuma"
   mod_on home    && hosts="$hosts home"
   mod_on mail    && hosts="$hosts mail"
-  mod_on mail    && hosts="$hosts cube"
+  mod_on mail    && hosts="$hosts mailu"
   # ttyd.$DOMAIN joins the attempt like every other vhost. DNS-01 does not
   # need a public A record (Caddy answers the TXT challenge directly), and NO
   # DNS record is created for ttyd.$DOMAIN by design — it stays tailnet-only.
@@ -131,9 +131,9 @@ issue_certs() {
 # picks the renewed file up. Idempotent.
 mail_tls_certs() {
   mod_on mail || return 0
-  # One door, one cert: mail.$DOMAIN is mailu-front's own hostname — Caddy's
-  # HTTPS vhost for the platform door, and the cert the front loads for
-  # SMTP/IMAP (TLS_FLAVOR=mail), so SNI and CN agree. The cert may sit under ANY
+  # One name, one cert: mail.$DOMAIN is mailu-front's own hostname — Roundcube's
+  # public web door, the name the MX/SPF point at, and the cert the front loads
+  # for SMTP/IMAP (TLS_FLAVOR=mail), so SNI and CN agree. The cert may sit under ANY
   # issuer directory (LE acme-v02, Buypass or ZeroSSL fallback), so search them
   # all instead of hard-coding the LE path.
   local d="" base f
@@ -153,7 +153,7 @@ mail_tls_certs() {
   # (byte-identical cert/key on a re-run must not bounce the mail edge).
   if cmp -s "$d/mail.$DOMAIN.crt" "$DATA/mailserver/certs/cert.pem" \
      && cmp -s "$d/mail.$DOMAIN.key" "$DATA/mailserver/certs/key.pem"; then
-    detail "  TLS cert unchanged (mail.$DOMAIN — platform door) — no restart"
+    detail "  TLS cert unchanged (mail.$DOMAIN — SMTP/IMAP cert) — no restart"
     return 0
   fi
   cp -f "$d/mail.$DOMAIN.crt" "$DATA/mailserver/certs/cert.pem"
@@ -161,7 +161,7 @@ mail_tls_certs() {
   chmod 0644 "$DATA/mailserver/certs/cert.pem"
   chmod 0600 "$DATA/mailserver/certs/key.pem"
   docker restart mailu-front >>"$LOG" 2>&1 || true
-  detail "  TLS cert installed (mail.$DOMAIN — platform door: vhost + SMTP/IMAP)"
+  detail "  TLS cert installed (mail.$DOMAIN — SMTP/IMAP cert on the public mail door)"
 }
 
 task_certs() {

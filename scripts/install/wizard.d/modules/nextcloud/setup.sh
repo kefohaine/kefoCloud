@@ -106,7 +106,7 @@ nextcloud_setup() {
   # mail_roundcube (installed+enabled automatically when mail is on) wraps the
   # Roundcube instance in an iframe and reads that iframe's DOM, so its URL
   # must be same-origin with Nextcloud: cloud.$DOMAIN/roundcube/ is the proxy
-  # path on cloud.caddy (cube.$DOMAIN itself is cross-origin and throws).
+  # path on cloud.caddy (mail.$DOMAIN itself is cross-origin and throws).
   # Without externalLocation the app's own page is just the "you did not tell
   # me where to find your configured Roundcube instance" error.
   docker exec -u www-data nextcloud php occ config:app:set mail_roundcube externalLocation \

@@ -73,11 +73,11 @@ success_block() {
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${VAULTWARDEN_ADMIN_USER:-admin@$DOMAIN}" "${VAULTWARDEN_ADMIN_PASSWORD:-<see modules/vaultwarden/.env>}" "$C_RST"
   mod_on monitor && printf '  %sUptime Kuma%s  https://kuma.%s    %sadmin / %s%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${KUMA_PASS:-(already set — rotate with: make kuma-passwd USER=admin PASS=…)}" "$C_RST"
-  # Mailu owns mail.$DOMAIN (platform door, admin UI at /admin, SMTP/IMAP cert);
-  # Roundcube has its own door on cube.$DOMAIN.
-  mod_on mail && printf '  %sMailu admin%s  https://mail.%s/admin   %s(mailboxes via make mail-gen)%s\n' \
+  # mail.$DOMAIN is the public mail door (Roundcube + the SMTP/IMAP cert);
+  # Mailu's platform door is the tailnet-only mailu.$DOMAIN.
+  mod_on mail && printf '  %sMailu admin%s  https://mailu.%s/admin   %s(tailnet-only — mailboxes via make mail-gen)%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
-  mod_on mail && printf '  %sWebmail%s      https://cube.%s   %s(roundcube)%s\n' \
+  mod_on mail && printf '  %sWebmail%s      https://mail.%s   %s(roundcube)%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
   if [ "${TAIL_TLS_FALLBACK:-false}" = true ]; then
     printf '  %sShell%s        %s(tailnet-only — run scripts/ops/tailscale-https.sh to serve it via tailscale)%s\n' \
