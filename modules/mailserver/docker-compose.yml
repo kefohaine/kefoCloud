@@ -1,10 +1,10 @@
 x-mailu-env: &mailu-env
   env_file: .env
   environment:
-    # Mailu's hostname is mail.${DOMAIN}: the same name Caddy serves the
-    # platform door on and the one whose cert signs SMTP/IMAP
-    # (TLS_FLAVOR=mail below). The webmail lives on its own door,
-    # cube.${DOMAIN} (container `roundcube`).
+    # Mailu's hostname is mail.${DOMAIN}: the name Caddy serves the public
+    # mail door on (Roundcube, container `roundcube`) and the one whose cert
+    # signs SMTP/IMAP (TLS_FLAVOR=mail below). The platform/admin UI is the
+    # tailnet-only mailu.${DOMAIN} door.
     HOSTNAMES: "mail.${DOMAIN}"
     # The mail cache is `mailu-redis`, NOT `redis`: both compose files join the
     # same external `net` bridge, so a service named `redis` published a second
@@ -30,11 +30,12 @@ services:
   # `front` owns the public ports and TLS, `smtp`/`imap` speak the protocols on
   # the bridge, `antispam` is Rspamd, `admin` holds the SQLite config + CLI.
   # `webmail` is deliberately NOT started: Roundcube stays the webmail and is
-  # served by Caddy at cube.${DOMAIN} (container `roundcube` below). Mailu owns
-  # mail.${DOMAIN} — web door, admin UI at /admin, and the SMTP/IMAP cert. That
-  # door is TAILNET-ONLY (no public A record, @not_tailnet 403 in
-  # modules/caddy/vhosts/mail.caddy); the listeners below are still published on
-  # the host, so tailnet members reach them by name and nobody else by DNS.
+  # served by Caddy at mail.${DOMAIN} (container `roundcube` below), the same
+  # name this front's cert is issued for. The platform UI (admin at /admin,
+  # SSO) is proxied at mailu.${DOMAIN} — TAILNET-ONLY (no public A record,
+  # @not_tailnet 403 in modules/caddy/vhosts/mailu.caddy). The listeners below
+  # are published on the host under mail.${DOMAIN}, which stays in public DNS
+  # (DNS-only) so SMTP/IMAP keep answering.
   #
   # TLS_FLAVOR=mail: no HTTP listener in front (Caddy owns 80/443 on the host);
   # SMTP/IMAP use the per-vhost LE cert for mail.${DOMAIN} from caddy_data,
@@ -155,7 +156,7 @@ services:
         ipv4_address: 172.22.0.21
 
   roundcube:
-    # Webmail for the mail platform: Caddy serves it at cube.${DOMAIN}.
+    # Webmail for the mail platform: Caddy serves it at mail.${DOMAIN}.
     # IMAP/SMTP point at Mailu's imap/smtp containers.
     image: roundcube/roundcubemail:1.7.4-apache
     container_name: roundcube
