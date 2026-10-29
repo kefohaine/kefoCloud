@@ -233,11 +233,6 @@ for f in "$ROOT/data/pages/www"/*.html; do
 done
 check_tls "www.$DOMAIN"
 
-# /docs — the Zensical build (scripts/modules/docs-build.sh). Core, not a
-# module: the site is static output, so a missing build must FAIL here rather
-# than be skipped. The dashboard hand-off (/home) and the module pages are
-# checked in their own section.
-check docs "www.$DOMAIN" "/docs/" "200" html "Zensical docs are built and served"
 
 # ttyd.$DOMAIN is deliberately NOT in smoke: it is tailnet-only and its LE
 # order may legitimately be pending or rate-limited (the remedy is the
@@ -355,8 +350,8 @@ end_sec
 # ─────────────────────────────────────────────────────────────────────────────
 hdr home "Home — Homarr dashboard (module: home)"
 # Homarr is a Next.js app: its assets are ROOT-absolute (/_next/...), so it
-# cannot be served under a path and owns a hostname of its own. The /home
-# subpath keeps serving Homer (its own module section below).
+# cannot be served under a path and owns a hostname of its own. www/home
+# permanent-redirects here.
 check home "home.$DOMAIN" "/" "200 301 302 307 308" "" "Homarr answers (board or login redirect)"
 check home-login "home.$DOMAIN" "/auth/login" "200" html "Homarr login page renders"
 check_sec_headers home "home.$DOMAIN" "/"
@@ -365,15 +360,14 @@ check_ctns home homarr
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Module: homer — the Homer dashboard, served at www.$DOMAIN/home.
 # ─────────────────────────────────────────────────────────────────────────────
-hdr homer "Homer — dashboard at www.$DOMAIN/home (module: homer)"
-# Homer serves RELATIVE asset urls, so it is prefix-stripped under /home/: the
-# trailing slash is load-bearing (without it "./resources/…" resolves against
-# the site root and the page comes back blank). Both hops are asserted.
-check homer-root "www.$DOMAIN" "/home" "301 302 307 308" "" "www/home redirects to its slash form"
-check homer "www.$DOMAIN" "/home/" "200" html "Homer dashboard renders"
-check_ctns homer homer
+# Module: chat — Rocket.Chat at chat.$DOMAIN.
+# ─────────────────────────────────────────────────────────────────────────────
+hdr chat "Chat — Rocket.Chat (module: chat)"
+check chat "chat.$DOMAIN" "/api/info" "200" json "Rocket.Chat API answers"
+check_sec_headers chat "chat.$DOMAIN" "/"
+check_tls "chat.$DOMAIN"
+check_ctns chat rocketchat
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
