@@ -152,7 +152,7 @@ EOF
   rows <<'EOF'
 make goose-recipes|list the reusable agent recipes
 make goose-audit [FOCUS=<area>]|read-only audit — security, backups, mail, docker, networking, docs
-make goose-review MODULE=<m>|read-only module review (cloud|vault|mail|monitor|edge)
+make goose-review MODULE=<m>|read-only module review (any module in config/modules.conf, or edge)
 make goose-troubleshoot SERVICE=<s>|triage a failure via docs/DEBUG.md
 make goose-check-backups [FOCUS=<area>]|audit the backup/restore posture
 make goose-check-network [FOCUS=<area>]|review DNS/TLS/mail/reverse-proxy
