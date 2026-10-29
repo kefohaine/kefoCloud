@@ -155,7 +155,7 @@ check_tn() {
 # snippet. A regression (missing or duplicated XFO/XCTO/HSTS — the
 # scan.nextcloud.com flags) must fail the smoke and block the push.
 # A fifth argument of `framed` marks a vhost that one sibling origin must be
-# allowed to frame (cube, embedded by the Nextcloud mail_roundcube app): there
+# allowed to frame (mail, embedded by the Nextcloud mail_roundcube app): there
 # X-Frame-Options must be ABSENT and the anti-framing property must instead be
 # carried by a CSP frame-ancestors naming cloud.$DOMAIN. Requiring XFO=0 keeps
 # the check honest — a stale SAMEORIGIN there breaks the iframe, and dropping
@@ -395,22 +395,24 @@ end_sec
 # Module: mail — Mailu (front/smtp/imap/antispam/admin/redis) + Roundcube webmail.
 # ─────────────────────────────────────────────────────────────────────────────
 hdr mail "Mail — Mailu platform + Roundcube webmail (module: mail)"
-# mail.$DOMAIN is TAILNET-ONLY since 2026-10-29 (same model as vault): no public
-# A record, and the vhost 403s every source outside 100.64.0.0/10. Both halves
-# are asserted, so a half-applied change fails here instead of passing.
-if [ -z "$TS_IP" ]; then
-  say "FAIL mail: no Tailscale IPv4 — cannot probe a tailnet-only door"; bad
-else
-  check_tn mail "mail.$DOMAIN" "/" "200 301 302 307 308" html "Mailu platform door answers on the tailnet"
-fi
-check mail-public "mail.$DOMAIN" "/" "403" "" "public sources are refused"
-check_sec_headers mail "mail.$DOMAIN" "/" "one of each"
+# mail.$DOMAIN is the PUBLIC mail door (Roundcube's web UI, and the name
+# mailu-front publishes 25/465/587/993 on); mailu.$DOMAIN is the platform door
+# and TAILNET-ONLY (same model as vault): no public A record, and the vhost 403s
+# every source outside 100.64.0.0/10. Both halves are asserted, so a
+# half-applied change fails here instead of passing.
+check mail "mail.$DOMAIN" "/" "200 301 302 307 308" html "Roundcube webmail"
+check_sec_headers mail "mail.$DOMAIN" "/" "no XFO, CSP frame-ancestors for cloud" framed
 check_tls "mail.$DOMAIN"
-check cube "cube.$DOMAIN" "/" "200 301 302 307 308" html "Roundcube webmail"
-check_sec_headers cube "cube.$DOMAIN" "/" "no XFO, CSP frame-ancestors for cloud" framed
-check_tls "cube.$DOMAIN"
+if [ -z "$TS_IP" ]; then
+  say "FAIL mailu: no Tailscale IPv4 — cannot probe a tailnet-only door"; bad
+else
+  check_tn mailu "mailu.$DOMAIN" "/" "200 301 302 307 308" html "Mailu platform door answers on the tailnet"
+fi
+check mailu-public "mailu.$DOMAIN" "/" "403" "" "public sources are refused"
+check_sec_headers mailu "mailu.$DOMAIN" "/" "one of each"
+check_tls "mailu.$DOMAIN"
 # Same-origin webmail path the mail_roundcube app embeds (cloud.caddy); the app
-# reads the iframe DOM, so a cross-origin cube.$DOMAIN fails regardless.
+# reads the iframe DOM, so a cross-origin mail.$DOMAIN fails regardless.
 if mod_in cloud; then
   check rc-cloud "cloud.$DOMAIN" "/roundcube/" "200" html "Roundcube on the cloud door (same-origin iframe)"
   # Roundcube must generate its URLs under the prefix (request_path comes from
