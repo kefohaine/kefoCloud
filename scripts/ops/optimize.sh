@@ -17,11 +17,10 @@
 # re-checks them, clears the solved ones, and only prints SUCCESS when no
 # issues remain.
 #
-# Sources merged: OPTIMIZE.md (Debian 13 setup), the repo's tuned values
-# (config/sysctl, docker daemon, dnsmasq cache, storage-box swap), apt
-# autoremove/clean + docker prune, and
-# standard high-performance-machine tuning (journald caps, inotify, noatime,
-# fstrim, THP=madvise, IRQ balance, earlyoom).
+# Sources merged: the repo's own host tuning (config/sysctl/99-kefo.conf,
+# config/docker/daemon.json, the dnsmasq cache-size), apt autoremove/clean +
+# docker prune, and generic high-performance-machine tuning (journald caps,
+# inotify, noatime, fstrim, THP=madvise, IRQ balance, earlyoom).
 #
 # Usage (as root):
 #   bash scripts/ops/optimize.sh                # fully automatic (no prompts)
@@ -60,7 +59,7 @@ BACKUP_DIR=""
 for a in "$@"; do
   case "$a" in
     --dry-run) DRY=1 ;; --verify) VERIFY=1 ;; --yes) YES=1 ;;
-    --help|-h) sed -n '2,34p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --help|-h) awk 'NR>1 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
     *) echo "unknown flag: $a (see --help)" >&2; exit 1 ;;
   esac
 done
@@ -95,9 +94,9 @@ cat <<'EOF'
  swapfile, journald caps, docker daemon + prune, dnsmasq cache, noatime,
  fstrim, THP=madvise, apt cleanup (update / autoremove / clean) — all
  idempotent, auto-detected, and backed up to /root/optimize-backup-*.
- Prompts once (all with defaults), then runs unattended; failures and
- manual steps are re-checked on every Enter until all are green, and
- SUCCESS prints only then.
+ Prompt: none — every choice is auto-detected or env-overridable, then it
+ runs unattended; failures and manual steps are re-checked on every Enter
+ until all are green, and SUCCESS prints only then.
 
 WARNING: edits kernel parameters, swap, service limits and apt state.
 Rebooting is recommended (but not required) after the first run.
@@ -153,7 +152,7 @@ detect() {
   log "detected: ${NPROC} cpu, ~${MEM_GB} GB RAM, docker=${HAS_DOCKER}, dnsmasq=${HAS_DNSMASQ}, swap=${ACTIVE_SWAP:+active}, disk=${ROOT_DEV} (${KIND})"
 }
 
-# ------------------------------------------------------------------ prompts (beginning only)
+# ------------------------------------------------------------------ plan (no prompts)
 ask_inputs() { # no prompts — every choice is auto-detected or env-overridable
   SWAP_GB="${SWAP_GB:-$SWAP_DEF}"
   case "$SWAP_GB" in ''|*[!0-9]*) echo "invalid SWAP_GB: $SWAP_GB" >&2; exit 1;; esac
