@@ -91,6 +91,11 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Problem**: Setup A keeps PostgreSQL on the app host and puts only Nextcloud's user files on the 1 TB machine (which has already joined the tailnet — the nightly `pg_dump` lands on it), but GUIDE still gives step-by-step instructions to move the whole DB there and the db compose comments are tuned for "the 2 GB future DB host". One of the two is the plan.
 - **Fix**: operator decision — delete the DB-migration steps from GUIDE (Setup A won) or re-document them as an option if the DB ever outgrows the app host.
 
+#### A fresh install has no `www.$DOMAIN` homepage
+- **File**: `modules/caddy/vhosts/www.caddy`, `scripts/install/wizard.d/tasks/11-stack-config.sh`
+- **Problem**: pages are instance data only (`$DATA_DIR/pages/www`, repo ships none), so on a fresh install `/` matches the `@index` handle and `file_server` answers 404 until the operator drops an `index.html` there — the smoke's www check then fails on an otherwise-finished install.
+- **Fix**: operator adds `index.html` (and `welcome.html` if wanted) to `$DATA_DIR/pages/www`; alternatively have the installer seed a minimal placeholder only when the tree is empty.
+
 ### Security
 #### Caddy edge lacks rate + connection limiting (all public vhosts)
 - **File**: `modules/caddy/Caddyfile` + per-vhost vhosts (`cloud.caddy`, `talk.caddy`, `vault.caddy`, `kuma.caddy`, `mail.caddy`, `ttyd.caddy`)
@@ -460,13 +465,13 @@ Resolved items grouped by month. One line per item, one sentence per record.
 ### Oct 2026 — pages, apps and exposure
 
 - **Nextcloud moved off the public edge** — its stack was brought down and its door is the tailnet-only `nextcloud.$DOMAIN`; `cloud.$DOMAIN` now serves ownCloud (oCIS), which makes the per-hostname Cloudflare WAF skip moot.
-- **Poster welcome page** — `/welcome` is now a tracked template (`config/pages/www/welcome.html`) with a page nav and a `Home →` button.
+- **Poster welcome page** — `/welcome` is `$DATA_DIR/pages/www/welcome.html`, with a page nav and a `Home →` button.
 - **WriteFreely blog** — new `blog` module and `blog.$DOMAIN` vhost, built from the pinned upstream release tarball.
 - **`xmpp.$DOMAIN` vhost moved into the tracked tree** — `modules/caddy/vhosts/xmpp.caddy` replaces the sandbox-only copy, which `make render`'s `rsync --delete` wiped so the site died on the next Caddy restart.
 - **Makefile git recipes restored** — `git-pull/add/com/ch/com-audit/split/push/force-push` and the tmux/Nextcloud/goose blocks were missing again; restored from history (`e1a371f^`).
 - **Container roster derived from `config/modules.conf`** — `CONTAINERS`/`MODULES` and the per-container compose map are generated with `awk`, so every declared container and module gets its `dok-*` target; the nextcloud family runs both compose files in one invocation.
 - **Rocket.Chat removed, `chat.$DOMAIN` reserved empty** — the `chat` module, its installer step, smoke section and docs are gone; the vhost answers an empty 200 from its own certificate and proxies nowhere.
-- **Homepage is a tracked template** — `config/pages/www/index.html` renders to `$DATA_DIR/pages/www/index.html` (0644) on every `make render`, so `/` no longer depends on an untracked 0600 operator file.
+- **Pages are instance data only** — `config/pages/` deleted; `www.$DOMAIN` serves `$DATA_DIR/pages/www` and `make render` never reads, writes or deletes a page.
 - **Snikket calls enabled and web-compatible** — coturn on 3478/3479 + 5349/5350 with relay 49201-65535 (clear of talk-relay's 49160-49200), XEP-0215 advertised, BOSH/WebSocket cross-origin + secure-proxy flags in a tracked extra config, CORS+preflight for XEP-0363 uploads at the edge.
 - **Homer and Zensical removed** — `modules/homer`, `config/homer`, `config/docs`, `scripts/modules/docs-build.sh` and the `/docs` + `/home` routes are gone; the welcome page's Home link goes straight to Homarr and `www/home` permanent-redirects there.
 - **`make dok-recreate-nextcloud-stack`** — the DB and the app in ONE compose invocation, so neither file's `--remove-orphans` deletes the other half.
