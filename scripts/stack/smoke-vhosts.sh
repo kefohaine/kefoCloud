@@ -232,6 +232,10 @@ for f in "$ROOT/data/pages/www"/*.html; do
   check "www-$pg" "www.$DOMAIN" "/$pg" "200 301 302 307 308" html "$pg page"
 done
 check_tls "www.$DOMAIN"
+# chat.$DOMAIN is a RESERVED name: no module owns it, its vhost answers an empty
+# 200 and proxies nowhere. It must still answer with its own certificate — and a
+# body here would mean some other app was wired onto the name.
+check chat "chat.$DOMAIN" "/" "200" "" "reserved name answers, no upstream"
 
 
 # ttyd.$DOMAIN is deliberately NOT in smoke: it is tailnet-only and its LE
@@ -357,17 +361,6 @@ check home-login "home.$DOMAIN" "/auth/login" "200" html "Homarr login page rend
 check_sec_headers home "home.$DOMAIN" "/"
 check_tls "home.$DOMAIN"
 check_ctns home homarr
-end_sec
-
-# ─────────────────────────────────────────────────────────────────────────────
-# ─────────────────────────────────────────────────────────────────────────────
-# Module: chat — Rocket.Chat at chat.$DOMAIN.
-# ─────────────────────────────────────────────────────────────────────────────
-hdr chat "Chat — Rocket.Chat (module: chat)"
-check chat "chat.$DOMAIN" "/api/info" "200" json "Rocket.Chat API answers"
-check_sec_headers chat "chat.$DOMAIN" "/"
-check_tls "chat.$DOMAIN"
-check_ctns chat rocketchat
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
