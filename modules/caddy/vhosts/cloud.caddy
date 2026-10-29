@@ -1,18 +1,14 @@
-# cloud.{{DOMAIN}} — Nextcloud. PHP-FPM at 172.22.0.5:9000 serves all
-# .php requests; everything else is file_server from the static html
-# root at /nextcloud. The @blocked matcher denies direct access to
-# internal NC paths (data, config, lib, 3rdparty, templates, occ,
-# db) so a misconfigured upload can't expose them. /updater is deliberately
-# NOT blocked: it is the web updater app, reachable only with the admin
-# password (updater.secret). The two
-# /.well-known redirects let CardDAV/CalDAV auto-discovery work
-# without exposing the long /remote.php/dav URL.
+# cloud.{{DOMAIN}} — ownCloud Infinite Scale (oCIS). The instance owns this
+# hostname; the Nextcloud-stack door moved to nextcloud.{{DOMAIN}}
+# (./nextcloud.caddy, tailnet-only).
 #
-# TLS: Let's Encrypt DNS-01 via Cloudflare. Switched from the CF
-# Origin CA wildcard cert because the wildcard served as a SNI
-# fallback for other vhosts, blocking their per-vhost ACME
-# automation policy from firing. Per-vhost ACME keeps each cert
-# scoped to its own SNI.
+# ownCloud runs as the operator's sandbox module (`data/sandbox/modules/ocis`,
+# gitignored — see docs/MODULES.md), pinned at bridge 172.22.0.27 and serving
+# port 9200. Caddy runs with network_mode: host, so it dials that bridge IP, not
+# a container name. All paths are proxied unchanged: oCIS serves its own web UI
+# at / and generates root-absolute URLs from its OCIS_URL.
+#
+# TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
 
 https://cloud.{{DOMAIN}} {
     tls {
@@ -32,56 +28,15 @@ https://cloud.{{DOMAIN}} {
             dns cloudflare {env.CF_API_TOKEN}
         }
     }
-    root * /nextcloud
+    import compress
+    # Uploads are the app: no request-body ceiling at the edge.
     request_body {
-        max_size 100m
+        max_size 0
     }
-    @blocked path /data/* /config/* /lib/* /3rdparty/* /templates/* /occ /console.php /db/*
-    respond @blocked "not found" 404
-    redir /.well-known/carddav /remote.php/dav 308
-    redir /.well-known/caldav /remote.php/dav 308
-    # Roundcube webmail under THIS origin, for the mail_roundcube app: the app
-    # reads the iframe's contentDocument and contentWindow.location to detect
-    # the login page, and a cross-origin iframe (mail.{{DOMAIN}}) throws, so it
-    # only works same-origin. The prefix is stripped for roundcube's Apache
-    # (its DocumentRoot has no /roundcube) and forwarded so Roundcube rebuilds
-    # its absolute URLs with it (modules/mailserver/roundcube-tls.inc.php).
-    redir /roundcube /roundcube/ 308
-    handle_path /roundcube/* {
-        reverse_proxy 172.22.0.10:80 {
-            header_up X-Forwarded-Prefix /roundcube
-            # roundcube sends its own X-Frame-Options; strip it so the
-            # site-level set below yields one value
-            header_down -X-Frame-Options
-        }
-    }
-{{IF CLIENT_PUSH}}
-    # notify_push websocket/HTTP endpoint (container on 172.22.0.16). The app's
-    # base_endpoint is https://cloud.{{DOMAIN}}/push, so the prefix is kept.
-    handle /push/* {
-        reverse_proxy 172.22.0.16:7867
-    }
-{{END}}
-    php_fastcgi 172.22.0.5:9000 {
-        root /var/www/html
-        # notify_push (172.22.0.16) proxies its client requests through this
-        # edge. Trusting its X-Forwarded-For keeps the real client address all
-        # the way to Nextcloud — without it Caddy replaces the header with the
-        # container IP and `occ notify_push:setup`'s trusted-proxy self-test
-        # fails. Internal bridge peers only; public peers stay untrusted.
-        trusted_proxies 172.22.0.16/32
-        # strip NC's own security headers so the site-level header set below
-        # yields exactly one value per field (Caddy appends, not replaces)
-		header_down -X-Frame-Options
-		header_down -X-Content-Type-Options
-		header_down -Referrer-Policy
-        dial_timeout 10s
-        read_timeout 300s
-        write_timeout 300s
-    }
-    encode zstd gzip
     header {
         import security_headers
     }
-    file_server
+    reverse_proxy 172.22.0.27:9200 {
+        header_up Host {host}
+    }
 }

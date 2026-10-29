@@ -35,11 +35,11 @@ https://mail.{{DOMAIN}} {
     header {
         # Same set as the security_headers snippet EXCEPT X-Frame-Options:
         # framing is governed by the CSP frame-ancestors below, naming the one
-        # trusted sibling origin (cloud) instead.
+        # trusted sibling origin (nextcloud) instead.
         Strict-Transport-Security "max-age=31536000"
         X-Content-Type-Options "nosniff"
         Referrer-Policy "strict-origin-when-cross-origin"
-        Content-Security-Policy "frame-ancestors 'self' https://cloud.{{DOMAIN}}"
+        Content-Security-Policy "frame-ancestors 'self' https://nextcloud.{{DOMAIN}}"
     }
     reverse_proxy 172.22.0.10:80 {
         # strip roundcube's own security headers so the site-level set yields one value
