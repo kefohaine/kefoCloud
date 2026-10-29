@@ -29,7 +29,7 @@
 #   mod_roster              every repo container (edge + every declared module)
 #   mod_finished            `true` | `false` | `absent`  (wizard.state checkpoint)
 #   state_get <key>         one raw wizard.state field ('' when absent)
-#   exposure <host>         `tailnet-only` for ttyd/vault/mail.$DOMAIN, else `public`
+#   exposure <host>         `tailnet-only` for ttyd/vault/mailu.$DOMAIN, else `public`
 
 MODULES_CONF="${MODULES_CONF:-${REPO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}/config/modules.conf}"
 INSTALL_STATE="${INSTALL_STATE:-${DATA_DIR:-${REPO_DIR:-.}/data}/wizard.state}"
