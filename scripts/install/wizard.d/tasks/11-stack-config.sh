@@ -46,8 +46,14 @@ prep_dirs() {
   need_chown $ROOT/data/cloud/html 33        && chown_tree $ROOT/data/cloud/html 33:33
   need_chown $ROOT/data/cloud/users 33       && chown_tree $ROOT/data/cloud/users 33:33
   need_chown $ROOT/data/vault/data 1000      && chown_tree $ROOT/data/vault/data 1000:1000
-  # Mailu containers run as root (front/postfix/dovecot/admin drop privileges
-  # per-process); their bind mounts stay root-owned. Roundcube remains uid 33.
+  # Mailu's front/postfix/dovecot/rspamd run as root, so mail/filter/dkim/
+  # certs/overrides stay root-owned. mailserver/data is NOT one of them: that
+  # mount is the SQLite config store mailu-admin opens AS uid 100:1000
+  # (gunicorn runs as `mailu` after /start.py drops privileges). A root:root
+  # 0700 there makes every DB route 500 ("unable to open database file") while
+  # the container still reports healthy — 2026-10-19 and again 2026-10-29,
+  # because this loop used to chown it back to root. `make mail-doctor`
+  # reproduces it, `make mail-fix-perms` repairs it. Roundcube remains uid 33.
   # mailserver/redis is the EXCEPTION and must NOT be root-owned: redis:alpine
   # re-execs redis-server as its `redis` user (uid 999/gid 1000) via su-exec, so
   # a root:root 0700 mount makes every BGSAVE fail ("Failed opening the temp RDB
@@ -55,9 +61,10 @@ prep_dirs() {
   # bgsave-error rejects every write and — because the mail cache used to share
   # the `redis` DNS name with the Nextcloud cache — Nextcloud's session writes
   # retried forever and php-fpm hung (2026-10-19: smoke FAIL cloud HTTP 000).
-  for d in data mail filter dkim certs overrides; do
+  for d in mail filter dkim certs overrides; do
     need_chown "$ROOT/data/mailserver/$d" 0 && chown_tree "$ROOT/data/mailserver/$d" root:root
   done
+  need_chown "$ROOT/data/mailserver/data" 100 && chown_tree "$ROOT/data/mailserver/data" 100:1000
   need_chown "$ROOT/data/mailserver/redis" 999 && chown_tree "$ROOT/data/mailserver/redis" 999:1000
   need_chown $ROOT/data/mailserver/roundcube 33 && chown_tree $ROOT/data/mailserver/roundcube 33:33
   # root-owned: talk configs (talk-gen), the public drop folder and the
@@ -88,7 +95,7 @@ prep_dirs() {
 prep_dirs_verify() {
   local d want got
   for spec in "cloud/html 33" "cloud/users 33" "vault/data 1000" \
-              "mailserver/data 0" "mailserver/mail 0" "mailserver/dkim 0" \
+              "mailserver/data 100" "mailserver/mail 0" "mailserver/dkim 0" \
               "mailserver/redis 999" "mailserver/roundcube 33" \
               "pages/www 0"; do
     set -- $spec; d="$DATA/$1"; want="$2"
