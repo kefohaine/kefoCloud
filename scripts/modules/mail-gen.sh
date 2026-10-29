@@ -44,4 +44,4 @@ if [ -n "$hash" ]; then
     | docker exec -i mailu-admin flask mailu config-update >/dev/null 2>&1 || true
 fi
 
-echo "info:  mailbox $MAIL created — password: $PWD, quota: $QUOTA, webmail https://cube.$DOMAIN (login with the local part)"
+echo "info:  mailbox $MAIL created — password: $PWD, quota: $QUOTA, webmail https://mail.$DOMAIN (login with the local part)"
