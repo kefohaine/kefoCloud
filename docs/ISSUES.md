@@ -189,6 +189,11 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ---
 
+### Talk relay and Snikket coturn both want 3478/5349
+- **File**: `modules/nextcloud/docker-compose.yml` (talk-relay), `data/sandbox/modules/snikket/snikket.conf` (Snikket)
+- **Problem**: Snikket's coturn is now on 3478/5349 (standard ports, advertised via XEP-0215) and talk-relay publishes the same two. Only one can bind them, so re-enabling the Talk stack stops Snikket's TURN from starting (it was off before for exactly this reason). The relay ranges do not overlap (Talk 49160-49200, Snikket 49201-65535).
+- **Fix**: give talk-relay its own listener pair (e.g. 3481 plain + 5351 TLS) in the compose published ports, `modules/nextcloud/talk/turnserver.conf.example`, the installer's `occ talk:turn:add`/`stun_servers` values and `03-firewall.sh`, then regenerate the live `$DATA_DIR/talk/turnserver.conf` with `make talk-gen` and re-register TURN — or keep Talk off.
+
 ### Pending (Oct 2026)
 
 #### New modules are outside the backup/restore universe
@@ -452,8 +457,6 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Every Talk call forced through the HPB** — `make talk-config` pins `spreed signaling_mode=external` and points `stun_servers` at this host's coturn instead of `stun.nextcloud.com`.
 - **pre-push guards never ran under a real push** — the smoke's `openssl s_client` drained the hook's stdin (a pipe), so the ref loop exited at once; the hook now captures the refs first and closes the smoke's stdin.
 
-## Solved
-
 ### Oct 2026 — pages, apps and exposure
 
 - **Nextcloud moved off the public edge** — its stack was brought down and its door is the tailnet-only `nextcloud.$DOMAIN`; `cloud.$DOMAIN` now serves ownCloud (oCIS), which makes the per-hostname Cloudflare WAF skip moot.
@@ -462,8 +465,9 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **`xmpp.$DOMAIN` vhost moved into the tracked tree** — `modules/caddy/vhosts/xmpp.caddy` replaces the sandbox-only copy, which `make render`'s `rsync --delete` wiped so the site died on the next Caddy restart.
 - **Makefile git recipes restored** — `git-pull/add/com/ch/com-audit/split/push/force-push` and the tmux/Nextcloud/goose blocks were missing again; restored from history (`e1a371f^`).
 - **Container roster derived from `config/modules.conf`** — `CONTAINERS`/`MODULES` and the per-container compose map are generated with `awk`, so every declared container and module gets its `dok-*` target; the nextcloud family runs both compose files in one invocation.
-- **Rocket.Chat at `chat.$DOMAIN`** — new `chat` module (`modules/rocketchat/`, Rocket.Chat 7.10 + MongoDB 8 replica set + one-shot init service) replaces Snikket on that name.
-- **Snikket moved to `xmpp.$DOMAIN`, calls disabled** — `SNIKKET_TWEAK_TURNSERVER=0` (no coturn, so no TURN/STUN port conflicting with Talk's relay) and OMEMO text chat only; the coturn wrapper and `make sbx-snikket-turn` are gone.
+- **Rocket.Chat removed, `chat.$DOMAIN` reserved empty** — the `chat` module, its installer step, smoke section and docs are gone; the vhost answers an empty 200 from its own certificate and proxies nowhere.
+- **Homepage is a tracked template** — `config/pages/www/index.html` renders to `$DATA_DIR/pages/www/index.html` (0644) on every `make render`, so `/` no longer depends on an untracked 0600 operator file.
+- **Snikket calls enabled and web-compatible** — coturn on 3478/3479 + 5349/5350 with relay 49201-65535 (clear of talk-relay's 49160-49200), XEP-0215 advertised, BOSH/WebSocket cross-origin + secure-proxy flags in a tracked extra config, CORS+preflight for XEP-0363 uploads at the edge.
 - **Homer and Zensical removed** — `modules/homer`, `config/homer`, `config/docs`, `scripts/modules/docs-build.sh` and the `/docs` + `/home` routes are gone; the welcome page's Home link goes straight to Homarr and `www/home` permanent-redirects there.
 - **`make dok-recreate-nextcloud-stack`** — the DB and the app in ONE compose invocation, so neither file's `--remove-orphans` deletes the other half.
 - **Beszel hub + agent** — added as a `beszel` module (hub + agent, agent wired to the hub key); the module was removed on 2026-10-29.
