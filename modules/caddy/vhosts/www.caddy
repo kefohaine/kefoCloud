@@ -1,10 +1,9 @@
 # www.{{DOMAIN}} — static pages: the welcome pages and the public download drop
 # folder.
 #   /          serves index.html from $DATA_DIR/pages/www — a zero-second
-#              redirect to /welcome. index.html is a TRACKED template
-#              (config/pages/www/index.html) rendered on every `make render`, so
-#              the homepage exists on any host and is never an untracked file
-#              that only one machine has.
+#              redirect to /welcome. Every page is INSTANCE DATA: the repo ships
+#              none, `make render` never writes one, and the operator edits them
+#              in $DATA_DIR/pages/www.
 #   (root)     every route below reads `root * /srv/pages/www` — the caddy
 #              container mounts $DATA_DIR/pages at /srv/pages read-only.
 #   /welcome   the welcome page (welcome.html) — everything {{DOMAIN}} runs,
@@ -120,7 +119,7 @@ https://www.{{DOMAIN}} {
     # in the welcome page's nav and in bookmarks.
     @home_root path /home /home/*
     redir @home_root https://home.{{DOMAIN}}/ permanent
-    # Homepage: the rendered index.html template (meta-redirects to /welcome).
+    # Homepage: index.html from the instance web root (meta-redirects to /welcome).
     @index path /
     handle @index {
         root * /srv/pages/www
