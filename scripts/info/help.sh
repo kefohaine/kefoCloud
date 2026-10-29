@@ -59,6 +59,7 @@ EOF
   sec "sandbox modules (data/sandbox, untracked)"
   rows <<'EOF'
 make sandbox-sync|re-apply sandbox vhosts into data/rendered/caddy + revive stopped projects (after make render)
+make sbx-snikket-turn|install the tracked coturn wrapper for the snikket sandbox module and prove TURNS answers on 5349
 bash scripts/sandbox/editor.sh|create · remove · list — try a module without touching the repo
 EOF
 
