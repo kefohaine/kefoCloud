@@ -459,6 +459,9 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Nextcloud moved off the public edge** — its stack was brought down and its door is the tailnet-only `nextcloud.$DOMAIN`; `cloud.$DOMAIN` now serves ownCloud (oCIS), which makes the per-hostname Cloudflare WAF skip moot.
 - **Poster welcome page** — `/welcome` is now a tracked template (`config/pages/www/welcome.html`) with a page nav and a `Home →` button.
 - **WriteFreely blog** — new `blog` module and `blog.$DOMAIN` vhost, built from the pinned upstream release tarball.
+- **`xmpp.$DOMAIN` vhost moved into the tracked tree** — `modules/caddy/vhosts/xmpp.caddy` replaces the sandbox-only copy, which `make render`'s `rsync --delete` wiped so the site died on the next Caddy restart.
+- **Makefile git recipes restored** — `git-pull/add/com/ch/com-audit/split/push/force-push` and the tmux/Nextcloud/goose blocks were missing again; restored from history (`e1a371f^`).
+- **Container roster derived from `config/modules.conf`** — `CONTAINERS`/`MODULES` and the per-container compose map are generated with `awk`, so every declared container and module gets its `dok-*` target; the nextcloud family runs both compose files in one invocation.
 - **Rocket.Chat at `chat.$DOMAIN`** — new `chat` module (`modules/rocketchat/`, Rocket.Chat 7.10 + MongoDB 8 replica set + one-shot init service) replaces Snikket on that name.
 - **Snikket moved to `xmpp.$DOMAIN`, calls disabled** — `SNIKKET_TWEAK_TURNSERVER=0` (no coturn, so no TURN/STUN port conflicting with Talk's relay) and OMEMO text chat only; the coturn wrapper and `make sbx-snikket-turn` are gone.
 - **Homer and Zensical removed** — `modules/homer`, `config/homer`, `config/docs`, `scripts/modules/docs-build.sh` and the `/docs` + `/home` routes are gone; the welcome page's Home link goes straight to Homarr and `www/home` permanent-redirects there.

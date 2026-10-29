@@ -26,7 +26,15 @@ DOMAIN     := $(shell sed -n 's/^DOMAIN=//p' $(CONF) 2>/dev/null | head -1)
 DATA_DIR   := $(or $(shell sed -n 's/^DATA_DIR=//p' $(CONF) 2>/dev/null | head -1),$(REPO)/data)
 RENDER_DIR := $(REPO)/data/rendered
 COMPOSE  := docker compose -f
-CONTAINERS := caddy uptimekuma nextcloud vaultwarden mailserver roundcube homarr rocketchat writefreely immich-server immich-db immich-redis rocketchat-db
+# The container roster is DERIVED from the catalog (config/modules.conf), never
+# a hand-kept list: every container a module declares gets the dok-<action>-<ctn>
+# targets, and the edge (caddy, the one container that is not a module) is added
+# explicitly. Add a container to its module's row and its targets appear.
+MODULE_CONTAINERS := $(shell awk '!/^#/ && NF>=4 {for(i=4;i<=NF;i++) printf "%s ", $$i}' $(REPO)/config/modules.conf 2>/dev/null)
+# The module names the catalog declares (+ the edge, which is not a module) —
+# every MODULE=<m> recipe accepts these and nothing hardcodes the roster.
+MODULES := $(shell awk '!/^#/ && NF>=4 {printf "%s ", $$1}' $(REPO)/config/modules.conf 2>/dev/null)edge
+CONTAINERS := caddy $(sort $(MODULE_CONTAINERS))
 HOST     := ttyd dnsmasq goose
 # The tailnet device that receives files/bundles — one spelling for backup,
 # import-backups and the taildrop helpers (TAILDROP_HOST is an alias). No
@@ -52,22 +60,20 @@ TAILDROP ?= $(TAILDROP_HOST)
 # $(DOMAIN) = custom Dockerfile adds caddy-dns/cloudflare for ACME DNS-01
 #   on every vhost; DNS-01 keeps cert issuance independent of the proxy.
 
-# Per-container compose file paths: modules/<ctn>/docker-compose.yml.
-# roundcube lives in the mailserver compose file (no own compose).
-$(foreach s,$(CONTAINERS),$(eval COMPOSE_FILE_$s := modules/$s/docker-compose.yml))
-COMPOSE_FILE_roundcube := modules/mailserver/docker-compose.yml
-# Container names that differ from their module directory: immich declares
-# several containers in ONE compose file, so every container of the module
-# resolves to the module's file (like roundcube above).
-COMPOSE_FILE_immich-server  := modules/immich/docker-compose.yml
-COMPOSE_FILE_immich-db      := modules/immich/docker-compose.yml
-COMPOSE_FILE_immich-redis   := modules/immich/docker-compose.yml
-COMPOSE_FILE_rocketchat-db  := modules/rocketchat/docker-compose.yml
+# Per-container compose file, also derived from the catalog: every container of
+# a module resolves to that module dir's compose file (mailu-* + roundcube ->
+# modules/mailserver, immich-* -> modules/immich, rocketchat-db -> rocketchat).
+$(eval $(shell awk '!/^#/ && NF>=4 { dir=$$2; for(i=4;i<=NF;i++) printf "COMPOSE_FILE_%s := modules/%s/docker-compose.yml\n", $$i, dir }' $(REPO)/config/modules.conf 2>/dev/null))
+COMPOSE_FILE_caddy := modules/caddy/docker-compose.yml
+# Nextcloud ships TWO compose files in one project dir (app + PostgreSQL). One
+# container's action must run BOTH — a single file treats the other file's
+# containers as orphans and deletes them (docs/ISSUES.md: SQLSTATE[08006]).
+NEXTCLOUD_STACK := $(shell awk '$$1=="cloud" {for(i=4;i<=NF;i++) printf "%s ", $$i}' $(REPO)/config/modules.conf 2>/dev/null)
 
 # Helper: $(compose-file-of $1) returns the absolute compose file path for
 # the named service. Recipes use this directly instead of $(COMPOSE_FILE_$1)
 # so the expansion happens at recipe-expansion time, not recipe-execution time.
-compose-file-of = $(REPO)/$(COMPOSE_FILE_$1)
+compose-file-of = $(if $(filter $(NEXTCLOUD_STACK),$1),$(REPO)/modules/nextcloud/docker-compose.db.yml -f $(REPO)/modules/nextcloud/docker-compose.yml,$(REPO)/$(COMPOSE_FILE_$1))
 
 # One compose unit's force-recreate, shared by dok-recreate-<ctn> and
 # dok-recreate-all so the two can never drift. caddy rebuilds its image
@@ -82,15 +88,17 @@ compose-file-of = $(REPO)/$(COMPOSE_FILE_$1)
 # failure on a stack that is actually healthy. Recreate is the one place the
 # operator has asked for "this file, exactly as written", so the orphans go.
 # $1 = absolute compose file path.
+# $1 is the compose ARGUMENT LIST (one file, or "a.yml -f b.yml" for a project
+# with several files) — never quoted, so `-f a -f b` stays two arguments.
 define compose_recreate_cmds
 if [ "$1" = "$(REPO)/modules/caddy/docker-compose.yml" ]; then \
-    if ! $(COMPOSE) "$1" up -d --force-recreate --remove-orphans --build; then \
+    if ! $(COMPOSE) $1 up -d --force-recreate --remove-orphans --build; then \
       scripts/lib/mklog warn "compose build unavailable (buildx < 0.17 on trixie) — falling back to docker build + compose up"; \
       docker build -t caddy:local $(REPO)/modules/caddy \
-        && $(COMPOSE) "$1" up -d --force-recreate --remove-orphans; \
+        && $(COMPOSE) $1 up -d --force-recreate --remove-orphans; \
     fi; \
   else \
-    $(COMPOSE) "$1" up -d --force-recreate --remove-orphans; \
+    $(COMPOSE) $1 up -d --force-recreate --remove-orphans; \
   fi
 endef
 
@@ -128,19 +136,31 @@ $(foreach s,$(CONTAINERS),$(eval $(call dok_logs_rule,$s)))
 
 # Shared loop: force-recreate every compose unit under modules/ (the same
 # per-file body the -<ctn> rules use).
+# Every compose FILE of a module dir, passed as one invocation (docker compose
+# -f a -f b): a project that ships several files (nextcloud app + db) is never
+# split, and no module dir is missed because its file is not docker-compose.yml.
 dok-recreate-all:
->@for f in $(REPO)/modules/*/docker-compose.yml; do \
-    $(call compose_recreate_cmds,$$f); \
+>@for d in $(REPO)/modules/*/; do \
+    set -- $$(ls $$d/docker-compose*.yml 2>/dev/null) || continue; \
+    [ $$# -gt 0 ] || continue; \
+    args="$$1"; shift; for f in "$$@"; do args="$$args -f $$f"; done; \
+    $(call compose_recreate_cmds,"$$args"); \
   done
 
 dok-restart-all:
->@for f in $(REPO)/modules/*/docker-compose.yml; do \
-    $(COMPOSE) "$$f" restart; \
+>@for d in $(REPO)/modules/*/; do \
+    set -- $$(ls $$d/docker-compose*.yml 2>/dev/null) || continue; \
+    [ $$# -gt 0 ] || continue; \
+    args="$$1"; shift; for f in "$$@"; do args="$$args -f $$f"; done; \
+    $(COMPOSE) $$args restart; \
   done
 
 dok-stop-all:
->@for f in $(REPO)/modules/*/docker-compose.yml; do \
-    $(COMPOSE) "$$f" stop; \
+>@for d in $(REPO)/modules/*/; do \
+    set -- $$(ls $$d/docker-compose*.yml 2>/dev/null) || continue; \
+    [ $$# -gt 0 ] || continue; \
+    args="$$1"; shift; for f in "$$@"; do args="$$args -f $$f"; done; \
+    $(COMPOSE) $$args stop; \
   done
 
 # container:label pairs, so the mailserver map is applied without a shell case.
@@ -803,7 +823,6 @@ deploy: install-config
 .PHONY: install-goose install-ttyd install-ssh \
         install-dnsmasq-conf install-dnsmasq-override install-resolv \
         install-docker install-sysctl install-cron
-.PHONY: dok-recreate-nextcloud-db dok-restart-nextcloud-db dok-stop-nextcloud-db dok-logs-nextcloud-db dok-recreate-nextcloud-stack
 
 install-goose:
 >@echo "install-goose: goose.service"
@@ -869,32 +888,17 @@ install-cron:
 >@sudo chmod 0644 /etc/cron.d/nextcloud
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Nextcloud database (modules/nextcloud/docker-compose.db.yml)
-# Runs on this host for now; migrates to the operator's 1 TB machine later
-# (see docs/GUIDE.md "Nextcloud DB"). Deliberately NOT in $(CONTAINERS) —
-# the -all loops glob modules/*/docker-compose.yml only, and this file is
-# named docker-compose.db.yml so they never see it.
+# Nextcloud stack — the DB (modules/nextcloud/docker-compose.db.yml) and the app
+# (modules/nextcloud/docker-compose.yml) are ONE compose project, so every
+# dok-<action>-<nextcloud|postgresql|talk-hpb|talk-relay|notify-push> already
+# runs BOTH files (see compose-file-of). This alias is the name the docs use.
 # ─────────────────────────────────────────────────────────────────────────────
 
-dok-recreate-nextcloud-db:
->$(COMPOSE) $(REPO)/modules/nextcloud/docker-compose.db.yml up -d --force-recreate --remove-orphans
+dok-recreate-nextcloud-stack: dok-recreate-nextcloud
 
-dok-restart-nextcloud-db:
->$(COMPOSE) $(REPO)/modules/nextcloud/docker-compose.db.yml restart
+.PHONY: dok-recreate-nextcloud-stack dok-logs-nextcloud-stack
 
-dok-stop-nextcloud-db:
->$(COMPOSE) $(REPO)/modules/nextcloud/docker-compose.db.yml stop
-
-# Nextcloud stack: the DB and the app in ONE compose invocation. The two files
-# live in the same project dir, so running either file alone treats the other
-# file's containers as orphans and deletes them (docs/ISSUES.md: `occ` then
-# fails SQLSTATE[08006] "No route to host"). Never use the two targets above /
-# `dok-recreate-nextcloud` for a cold start — use this one.
-dok-recreate-nextcloud-stack:
->$(COMPOSE) $(REPO)/modules/nextcloud/docker-compose.db.yml -f $(REPO)/modules/nextcloud/docker-compose.yml up -d --force-recreate --remove-orphans
-
-
-dok-logs-nextcloud-db:
+dok-logs-nextcloud-stack:
 >docker logs postgresql --tail 50 -f
 
 
@@ -938,6 +942,384 @@ endif
 # the edge. It reads the repo and never writes it.
 sandbox-sync:
 >@bash scripts/sandbox/editor.sh sync
+
+# Tmux sessions
+# Persistent terminal sessions on the host — detach (Ctrl-b d) and the
+# shell + whatever's running inside it stays alive; reattach from any
+# terminal with `make tmux-open TAG=<n>` (or `tmux attach -t <n>`).
+# ─────────────────────────────────────────────────────────────────────────────
+
+.PHONY: tmux-new tmux-open tmux-kill tmux-list
+
+tmux-new:
+>@if [ -z "$(TAG)" ]; then \
+    scripts/lib/mklog error "usage: make tmux-new TAG=<session>   (TAG is required)"; \
+    exit 1; \
+  fi
+>@if tmux has-session -t "$(TAG)" 2>/dev/null; then \
+    echo "Session '$(TAG)' already exists. Attach with: make tmux-open TAG=$(TAG)"; \
+    exit 1; \
+  fi
+>@tmux new -s "$(TAG)" -d
+>@echo "Created detached session '$(TAG)'. Attach with: make tmux-open TAG=$(TAG)"
+>@echo "  (or: tmux attach -t $(TAG))"
+
+tmux-open:
+>@if [ -z "$(TAG)" ]; then \
+    scripts/lib/mklog error "usage: make tmux-open TAG=<session>"; \
+    exit 1; \
+  fi
+>@if ! tmux has-session -t "$(TAG)" 2>/dev/null; then \
+    echo "Session '$(TAG)' does not exist. Create it with: make tmux-new TAG=$(TAG)"; \
+    exit 1; \
+  fi
+>@tmux attach -t "$(TAG)"
+
+tmux-kill:
+>@if [ -z "$(TAG)" ]; then \
+    scripts/lib/mklog error "usage: make tmux-kill TAG=<session>"; \
+    exit 1; \
+  fi
+>@if ! tmux has-session -t "$(TAG)" 2>/dev/null; then \
+    echo "Session '$(TAG)' does not exist."; \
+    exit 1; \
+  fi
+>@tmux kill-session -t "$(TAG)"
+>@echo "Killed session '$(TAG)'"
+
+tmux-list:
+>@tmux ls 2>/dev/null || echo "No tmux sessions."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Nextcloud (occ) — every recipe wraps `docker exec -u www-data nextcloud
+# php occ` (the container is named nextcloud; the FPM user owns occ).
+# Generic escape hatch: make nc-occ CMD='<any occ command + args>'.
+# Secrets never go into argv: passwords use OC_PASS (occ prompts otherwise)
+# and occ config:system:set output is left as-is (never echoed to logs).
+# ─────────────────────────────────────────────────────────────────────────────
+
+NC_OCC := docker exec -u www-data nextcloud php occ
+
+.PHONY: nc-occ nc-status nc-check nc-update-check nc-upgrade nc-cron nc-cron-run \
+	nc-maintenance-on nc-maintenance-off nc-repair nc-db-indices nc-db-columns \
+	nc-db-primary-keys nc-db-bigint nc-apps nc-app-enable nc-app-disable \
+	nc-config-get nc-config-set nc-users nc-user-add nc-user-del nc-user-password \
+	nc-user-setting nc-scan nc-groups nc-jobs nc-talk-signaling nc-core-update nc-app-update \
+	nc-talk-signaling-del nc-talk-turn nc-talk-turn-add nc-talk-turn-del \
+	nc-2fa-enforce nc-logs
+
+nc-occ:
+>@if [ -z "$(CMD)" ]; then \
+    scripts/lib/mklog error "usage: make nc-occ CMD='<occ command + args>'  (e.g. CMD='status' or CMD='app:list')"; \
+    exit 1; \
+  fi
+>$(NC_OCC) $(CMD)
+
+nc-status:
+>$(NC_OCC) status
+
+nc-check:
+>$(NC_OCC) check
+
+nc-update-check:
+>$(NC_OCC) update:check
+
+nc-upgrade:
+>$(NC_OCC) upgrade
+
+# Core update by compose image tag (the web updater also works — data/cloud/html
+# is a host bind mount, so its result survives recreates — this keeps the tag in
+# step with the installed code). Without VERSION it resolves the latest patch of
+# the running major from Docker Hub, and refuses a downgrade.
+nc-core-update:
+>@VERSION=$(VERSION) $(REPO)/scripts/modules/nc-core-update.sh
+
+nc-app-update:
+>$(NC_OCC) app:update --all
+
+nc-cron:
+>$(NC_OCC) background:cron
+
+nc-cron-run:
+>docker exec -u www-data nextcloud php -f /var/www/html/cron.php
+
+nc-maintenance-on:
+>$(NC_OCC) maintenance:mode --on
+
+nc-maintenance-off:
+>$(NC_OCC) maintenance:mode --off
+
+nc-repair:
+>$(NC_OCC) maintenance:repair --include-expensive
+
+nc-db-indices:
+>$(NC_OCC) db:add-missing-indices
+
+nc-db-columns:
+>$(NC_OCC) db:add-missing-columns
+
+nc-db-primary-keys:
+>$(NC_OCC) db:add-missing-primary-keys
+
+nc-db-bigint:
+>$(NC_OCC) db:convert-filecache-bigint
+
+nc-apps:
+>$(NC_OCC) app:list
+
+nc-app-enable:
+>@if [ -z "$(APP)" ]; then scripts/lib/mklog error "usage: make nc-app-enable APP=<app-id>"; exit 1; fi
+>$(NC_OCC) app:enable "$(APP)"
+
+nc-app-disable:
+>@if [ -z "$(APP)" ]; then scripts/lib/mklog error "usage: make nc-app-disable APP=<app-id>"; exit 1; fi
+>$(NC_OCC) app:disable "$(APP)"
+
+nc-config-get:
+>@if [ -z "$(KEY)" ]; then scripts/lib/mklog error "usage: make nc-config-get KEY=<config-key>"; exit 1; fi
+>$(NC_OCC) config:system:get "$(KEY)"
+
+nc-config-set:
+>@if [ -z "$(KEY)" ] || [ -z "$(VALUE)" ]; then \
+    scripts/lib/mklog error "usage: make nc-config-set KEY=<key> VALUE=<value> [TYPE=string|integer|boolean|array]"; \
+    exit 1; \
+  fi
+>$(NC_OCC) config:system:set "$(KEY)" --value "$(VALUE)" $(TYPE:%=--type %)
+
+# Set the default storage quota for NEW users (files app 'default_quota' —
+# an APP config, so nc-config-set (system config) is the wrong tool) and sync
+# the recovery manifest so a fresh install reproduces it.
+nc-default-user-quota:
+>@if [ -z "$(VALUE)" ]; then \
+    scripts/lib/mklog error "usage: make nc-default-user-quota VALUE='100 GB'  (or 'none' for unlimited)"; \
+    exit 1; \
+  fi
+>$(NC_OCC) config:app:set files default_quota --value "$(VALUE)"
+>@printf '# GENERATED by make nc-default-user-quota (%s) — do not edit; re-run to refresh.\n# Default storage quota for NEW users (files app '\''default_quota'\'').\n%s\n' "$$(date -Is)" "$(VALUE)" > $(REPO)/data/cloud/recovery/default-quota
+
+nc-users:
+>$(NC_OCC) user:list
+
+nc-user-add:
+>@if [ -z "$(USER)" ]; then scripts/lib/mklog error "usage: make nc-user-add USER=<uid> [PASS=<password>]"; exit 1; fi
+>@if [ -n "$(PASS)" ]; then \
+    docker exec -u www-data -e OC_PASS="$(PASS)" nextcloud php occ user:add --password-from-env "$(USER)"; \
+  else \
+    $(NC_OCC) user:add "$(USER)"; \
+  fi
+
+nc-user-del:
+>@if [ -z "$(USER)" ]; then scripts/lib/mklog error "usage: make nc-user-del USER=<uid>"; exit 1; fi
+>$(NC_OCC) user:delete "$(USER)"
+
+nc-user-password:
+>@if [ -z "$(USER)" ]; then scripts/lib/mklog error "usage: make nc-user-password USER=<uid> [PASS=<password>]"; exit 1; fi
+>@if [ -n "$(PASS)" ]; then \
+    docker exec -u www-data -e OC_PASS="$(PASS)" nextcloud php occ user:resetpassword --password-from-env "$(USER)"; \
+  else \
+    $(NC_OCC) user:resetpassword "$(USER)"; \
+  fi
+
+nc-user-setting:
+>@if [ -z "$(USER)" ] || [ -z "$(KEY)" ] || [ -z "$(VALUE)" ]; then \
+    scripts/lib/mklog error "usage: make nc-user-setting USER=<uid> KEY=<setting-key> VALUE=<value>  (e.g. KEY=email)"; \
+    exit 1; \
+  fi
+>$(NC_OCC) user:setting "$(USER)" settings "$(KEY)" "$(VALUE)"
+
+nc-scan:
+>@if [ -n "$(USER)" ]; then \
+    $(NC_OCC) files:scan "$(USER)"; \
+  else \
+    $(NC_OCC) files:scan --all; \
+  fi
+
+nc-groups:
+>$(NC_OCC) group:list
+
+nc-jobs:
+>$(NC_OCC) background-job:list
+
+nc-talk-signaling:
+>$(NC_OCC) talk:signaling:list
+
+nc-talk-signaling-add:
+>@if [ -z "$(URL)" ] || [ -z "$(SECRET)" ]; then \
+    scripts/lib/mklog error "usage: make nc-talk-signaling-add URL=<server-url> SECRET=<shared-secret>"; \
+    exit 1; \
+  fi
+>$(NC_OCC) talk:signaling:add "$(URL)" "$(SECRET)"
+
+nc-talk-signaling-del:
+>@if [ -z "$(URL)" ]; then scripts/lib/mklog error "usage: make nc-talk-signaling-del URL=<server-url>"; exit 1; fi
+>$(NC_OCC) talk:signaling:delete "$(URL)"
+
+nc-talk-turn:
+>$(NC_OCC) talk:turn:list
+
+nc-talk-turn-add:
+>@if [ -z "$(SERVER)" ] || [ -z "$(SECRET)" ]; then \
+    scripts/lib/mklog error "usage: make nc-talk-turn-add SERVER='<schemes> <host:port> <protocols>' SECRET=<shared-secret>  (schemes: turn|turns|turn,turns; protocols: udp|tcp|udp,tcp — positional, spreed has no --udp/--tcp)"; \
+    exit 1; \
+  fi
+>$(NC_OCC) talk:turn:add $(SERVER) --secret "$(SECRET)"
+
+nc-talk-turn-del:
+>@if [ -z "$(SERVER)" ]; then scripts/lib/mklog error "usage: make nc-talk-turn-del SERVER='scheme host:port'"; exit 1; fi
+>$(NC_OCC) talk:turn:delete $(SERVER)
+
+nc-2fa-enforce:
+>@if [ -z "$(USER)" ]; then scripts/lib/mklog error "usage: make nc-2fa-enforce USER=<uid>"; exit 1; fi
+>$(NC_OCC) twofactorauth:enforce "$(USER)"
+
+nc-logs:
+>$(NC_OCC) log:tail $(or $(N),100)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Migration
+# ─────────────────────────────────────────────────────────────────────────────
+
+.PHONY: migrate
+
+migrate:
+>@cat $(REPO)/docs/MIGRATE.md
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Git
+# ─────────────────────────────────────────────────────────────────────────────
+
+.PHONY: git-pull git-add git-com git-push git-force-push git-audit git-split
+
+git-pull:
+>cd $(REPO) && git pull --ff-only
+
+# Commit-hygiene monitor (scripts/info/git-audit.sh). Walks a revision range and
+# reports the two rules a commit cannot check about itself: rule 26 (one change
+# per commit — one folder plus at most one subfolder, the same unit the
+# pre-commit hook splits on) and
+# rule 10 (a `Revert:` line in the message of every significant commit). Default
+# range: what a push would publish; RANGE=<a..b> audits anything (RANGE=origin/main
+# = the whole published history). The pre-push hook runs it over every pushed
+# range and refuses on a violation — that is the only way to catch a commit made
+# in the GitHub web editor, which runs no local hook.
+git-audit:
+>@bash scripts/info/git-audit.sh $(RANGE)
+
+# The rewriter behind the two hooks (scripts/info/git-split.sh). It performs the
+# fix `git-audit` only reports: split a bundle commit into one commit per unit
+# (rule 26) and fill in the `Revert:` line of every significant commit with its
+# real parent SHA (rule 10) — a replay/rebase over the given range. Refuses to
+# rewrite any published commit, and needs a clean worktree. RANGE defaults to what
+# a push would publish (`make git-split RANGE=<a..b>`); `ARGS=--dry-run` reports
+# only. The prepare-commit-msg hook calls it with --staged; the pre-push hook
+# calls it over the pushed range.
+git-split:
+>@bash scripts/info/git-split.sh $(ARGS) $(RANGE)
+
+git-add:
+>cd $(REPO) && git add -A
+
+git-com:
+>@if [ -z "$(MSG)" ]; then \
+    scripts/lib/mklog error "usage: make git-com MSG=\"...\"  (MSG is required)"; \
+    exit 1; \
+  fi
+>cd $(REPO) && git commit -m "$(MSG)"
+
+git-push:
+>cd $(REPO) && git push
+
+# Force-push a branch whose history was rewritten (identity swap, linearization,
+# path scrub). --force-with-lease ONLY: it refuses when the remote tip is not the
+# one we last fetched, so it can never clobber a commit pushed from elsewhere.
+# BRANCH is required and may list several branches. Before any rewrite keep the
+# old tip in a refs/backup/* ref (that ref is the revert path).
+# Revert of a rewrite pushed this way: git reset --hard <refs/backup/* tip>, then
+# make git-force-push BRANCH=<branch>.
+git-force-push:
+>@[ -n "$(BRANCH)" ] || { scripts/lib/mklog error "usage: make git-force-push BRANCH=<branch> [BRANCH2 …]"; exit 1; }
+>cd $(REPO) && git push --force-with-lease origin $(BRANCH)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Help (default goal) — scripts/info/help.sh renders both lists in the
+# scripts/info/fetch.sh house style (aligned colored rows, colors off when
+# piped). help = the common daily surface; help-more = the granular /
+# technical recipes; each points at the other.
+# ─────────────────────────────────────────────────────────────────────────────
+
+.PHONY: goose-tokens
+
+# Token policy → the live goose settings store (config/goose/token-policy.yaml
+# → ~/.config/goose/config.yaml). Idempotent, no restart needed: goose reads
+# the store when a session starts, so running sessions are untouched.
+goose-tokens:
+>@bash $(REPO)/scripts/info/goose-tokens.sh
+
+.DEFAULT_GOAL := help
+.PHONY: help help-more
+
+help:
+>@bash scripts/info/help.sh core
+
+help-more:
+>@bash scripts/info/help.sh more
+# ─────────────────────────────────────────────────────────────────────────────
+# taildrop helpers
+# ─────────────────────────────────────────────────────────────────────────────
+.PHONY: taildrop-file taildrop-folder
+
+# Same device argument as backup/import-backups (TAILDROP, defined at the top).
+# make taildrop-file FILE=path TAILDROP=<device>    (sudo tailscale file cp)
+# make taildrop-folder DIR=path TAILDROP=<device>
+taildrop-file:
+>@[ -n "$(FILE)" ] || { scripts/lib/mklog error "usage: make taildrop-file FILE=<path> TAILDROP=<device>"; exit 1; }
+>@[ -n "$(TAILDROP)" ] || { scripts/lib/mklog error "usage: make taildrop-file FILE=<path> TAILDROP=<device>"; exit 1; }
+>@sudo tailscale file cp "$(FILE)" "$(TAILDROP):"
+
+taildrop-folder:
+>@[ -n "$(DIR)" ] || { scripts/lib/mklog error "usage: make taildrop-folder DIR=<folder> TAILDROP=<device>"; exit 1; }
+>@[ -n "$(TAILDROP)" ] || { scripts/lib/mklog error "usage: make taildrop-folder DIR=<folder> TAILDROP=<device>"; exit 1; }
+>@sudo tailscale file cp -r "$(DIR)" "$(TAILDROP):"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Goose recipes — reusable read-only agent tasks (recipes/*.yaml).
+# Every recipe inspects and reports; it never mutates the host. The operator
+# applies changes after review. `make goose-recipes` lists them. The recipe
+# path is the repo-local recipes/ dir so the recipes stay versioned with the
+# scripts and docs they operate on.
+# ─────────────────────────────────────────────────────────────────────────────
+
+GOOSE_RECIPE_PATH ?= $(REPO)/recipes
+
+.PHONY: goose-recipes goose-audit goose-review goose-troubleshoot \
+	goose-check-backups goose-check-network goose-validate-installer \
+	goose-audit-docs goose-deploy-plan
+
+goose-recipes:
+>@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose recipe list
+
+goose-audit:
+>@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe audit-server $(if $(FOCUS),--params focus_area=$(FOCUS),)
+
+goose-review:
+>@[ -n "$(MODULE)" ] || { scripts/lib/mklog error "usage: make goose-review MODULE=<$(MODULES)>"; exit 1; }
+>@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe review-module --params module=$(MODULE)
+
+goose-troubleshoot:
+>@[ -n "$(SERVICE)" ] || { scripts/lib/mklog error "usage: make goose-troubleshoot SERVICE=<hostname|container|recipe>"; exit 1; }
+>@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe troubleshoot-service --params service=$(SERVICE)
+
+goose-check-backups:
+>@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe check-backups $(if $(FOCUS),--params focus=$(FOCUS),)
+
+goose-check-network:
+>@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe check-networking $(if $(FOCUS),--params focus=$(FOCUS),)
+
+goose-validate-installer:
+>@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe validate-installer $(if $(TARGET),--params target=$(TARGET),)
+
+goose-audit-docs:
+>@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe audit-docs $(if $(SCOPE),--params scope=$(SCOPE),)
 
 goose-deploy-plan:
 >@[ -n "$(CHANGE)" ] || { scripts/lib/mklog error "usage: make goose-deploy-plan CHANGE='<what to change>'"; exit 1; }
