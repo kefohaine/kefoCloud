@@ -42,7 +42,7 @@ https://cloud.{{DOMAIN}} {
     redir /.well-known/caldav /remote.php/dav 308
     # Roundcube webmail under THIS origin, for the mail_roundcube app: the app
     # reads the iframe's contentDocument and contentWindow.location to detect
-    # the login page, and a cross-origin iframe (cube.{{DOMAIN}}) throws, so it
+    # the login page, and a cross-origin iframe (mail.{{DOMAIN}}) throws, so it
     # only works same-origin. The prefix is stripped for roundcube's Apache
     # (its DocumentRoot has no /roundcube) and forwarded so Roundcube rebuilds
     # its absolute URLs with it (modules/mailserver/roundcube-tls.inc.php).

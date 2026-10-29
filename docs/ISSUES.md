@@ -457,5 +457,6 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Module roster derived** — the installer's module list, state and detection now read `config/modules.conf` instead of four hardcoded names.
 - **Smoke covers the new doors** — `/docs`, `/home`, `blog`, `photos` and both halves of the vault gate are asserted.
 - **`tail.$DOMAIN` renamed `ttyd.$DOMAIN`, and the shell is the homepage** — ttyd proxies at `/` with no base path; the door list, `config/pages/tail/`, `scripts/access/tail-targets.sh` and `make tail-targets` were removed (2026-10-29).
-- **`mail.$DOMAIN` is tailnet-only** — no public A record, dnsmasq answers the name, `@not_tailnet` 403s everything else while `cube.$DOMAIN` stays public; the cert still issues by DNS-01 (2026-10-29).
+- **`mail.$DOMAIN` carries webmail + mail ports; the platform UI moved to `mailu.$DOMAIN`** — mail. is the public DNS-only Roundcube door and the SMTP/IMAP name (MX/SPF point at it), mailu. is the tailnet-only platform door, and cube. and its record are gone (2026-10-29).
+- **`mailu-admin` 500 on every DB route** — `mailserver/data` was root:root 0700 while gunicorn runs as uid 100; `prep_dirs` now chowns it `100:1000`, `make mail-fix-perms` repaired it live (2026-10-29).
 - **Beszel module removed (2026-10-29)** — module, `make beszel-*` recipes, `scripts/modules/beszel-system.sh`, smoke section, installer blocks, the `/beszel` route and the Homer link are gone.

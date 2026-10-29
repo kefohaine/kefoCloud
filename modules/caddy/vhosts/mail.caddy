@@ -1,17 +1,14 @@
-# mail.{{DOMAIN}} — Mailu's platform door (admin UI + the platform as served by
-# mailu-front at 172.22.0.9:80). This is also the name SMTP/IMAP present: the
-# installer copies the issued mail.{{DOMAIN}} pair from caddy_data to
-# mailserver/certs (mounted at /certs on mailu-front, which terminates the
-# 25/465/587/993 listeners), so the web door and the protocol cert are the same
-# name, and mailu-front's SNI/cert check matches its own hostname.
-# The webmail door is cube.{{DOMAIN}} (Roundcube at 172.22.0.10).
-# TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
+# mail.{{DOMAIN}} — Roundcube webmail (container `roundcube` at 172.22.0.10:80)
+# and the name the mail platform is reached by from outside: mailu-front
+# publishes 25/465/587/993 on the host and serves the mail.{{DOMAIN}} cert, so
+# this name MUST stay in public DNS (DNS-only — the CF proxy carries no SMTP/
+# IMAP) for inbound mail, client IMAP/SMTP and the MX/SPF that point at it.
 #
-# TAILNET-ONLY since 2026-10-29 (operator choice, same model as vault.$DOMAIN):
-# the name has NO public A record — tailnet clients resolve it through the
-# machine dnsmasq (config/dnsmasq/10-tailnet.conf) and every other source is
-# refused before the proxy runs (@not_tailnet). DNS-01 still needs only the TXT
-# record, so the mail.$DOMAIN certificate keeps issuing.
+# Roundcube is a web client only: it reaches the platform over STARTTLS at
+# tls://mail.{{DOMAIN}}:143/:587 (modules/mailserver/roundcube-tls.inc.php),
+# i.e. mailu-front, whose cert is this same mail.{{DOMAIN}} pair. The Mailu
+# platform/admin UI lives one label over, tailnet-only (./mailu.caddy).
+# TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
 
 https://mail.{{DOMAIN}} {
     tls {
@@ -32,22 +29,22 @@ https://mail.{{DOMAIN}} {
         }
     }
     import compress
-    # Tailnet-only: everything outside 100.64.0.0/10 is refused here, before
-    # the proxy (the name is not in public DNS either).
-    @not_tailnet not remote_ip 100.64.0.0/10
-    respond @not_tailnet 403
     request_body {
         max_size 25m
     }
     header {
-        import security_headers
+        # Same set as the security_headers snippet EXCEPT X-Frame-Options:
+        # framing is governed by the CSP frame-ancestors below, naming the one
+        # trusted sibling origin (cloud) instead.
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Content-Security-Policy "frame-ancestors 'self' https://cloud.{{DOMAIN}}"
     }
-    reverse_proxy 172.22.0.9:80 {
-        # strip Mailu front's own security headers so the site-level set
-        # yields one value per field
+    reverse_proxy 172.22.0.10:80 {
+        # strip roundcube's own security headers so the site-level set yields one value
 		header_down -X-Frame-Options
 		header_down -X-Content-Type-Options
 		header_down -Referrer-Policy
-		header_down -Strict-Transport-Security
     }
 }

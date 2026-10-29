@@ -25,7 +25,7 @@ Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Caddy, Vaultwarden, Uptime
 | name | app | note |
 |---|---|---|
 | **Cloud** | Nextcloud | app choices in `config/cloud/apps.conf` (untracked, empty by default; `spreed`/`app_api` are enforced in code, never asked) |
-| **Mail** | Mailu + Roundcube | SMTP/IMAPS, DKIM/SPF/DMARC on your own domain — tailnet-only mail door, public webmail |
+| **Mail** | Mailu + Roundcube | SMTP/IMAPS, DKIM/SPF/DMARC on your own domain — public webmail, tailnet-only platform door |
 | **Vault** | Vaultwarden | any Bitwarden client, server included — tailnet-only door |
 | **Monitor** | Uptime Kuma | watches public *and* tailnet-only doors |
 | **Home** | Homarr + Homer | Homarr on its own `home.` vhost, Homer at the main site's `/home` |
