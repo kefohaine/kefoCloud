@@ -52,7 +52,7 @@ services:
   - name: "Services"
     icon: "fas fa-server"
     items:
-      - name: "Nextcloud"
+      - name: "ownCloud"
         icon: "fas fa-cloud"
         subtitle: "cloud"
         url: "https://cloud.{{DOMAIN}}"
