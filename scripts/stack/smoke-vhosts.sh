@@ -33,7 +33,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 . "$ROOT/scripts/lib/modules.sh"
 mod_in() { mod_installed "$1"; }
 
-# tail.$DOMAIN is not probed at all (see the core section below).
+# ttyd.$DOMAIN is not probed at all (see the core section below).
 
 FIN="$(mod_finished)"
 if [ "$FIN" != "true" ]; then
@@ -97,8 +97,8 @@ end_sec() {
 }
 
 RUNNING="$(docker ps --format '{{.Names}}' 2>/dev/null)"
-# The host's own Tailscale address — the SOURCE for tailnet-only probes (vault)
-# and the destination for the beszel path on tail.$DOMAIN.
+# The host's own Tailscale address — the SOURCE for tailnet-only probes
+# (vault.$DOMAIN, mail.$DOMAIN).
 TS_IP="$(tailscale ip -4 2>/dev/null | head -n1)"
 
 # check <name> <host> <path> <want-codes...> [html] [desc]
@@ -228,7 +228,7 @@ check www-download "www.$DOMAIN" "/download/" "200 301 302 307 308" html "public
 for f in "$ROOT/data/pages/www"/*.html; do
   [ -f "$f" ] || continue
   pg="$(basename "$f" .html)"
-  case "$pg" in index|tail) continue ;; esac
+  case "$pg" in index) continue ;; esac
   check "www-$pg" "www.$DOMAIN" "/$pg" "200 301 302 307 308" html "$pg page"
 done
 check_tls "www.$DOMAIN"
@@ -239,9 +239,10 @@ check_tls "www.$DOMAIN"
 # checked in their own section.
 check docs "www.$DOMAIN" "/docs/" "200" html "Zensical docs are built and served"
 
-# tail.$DOMAIN is deliberately NOT in smoke: it is tailnet-only and its LE
+# ttyd.$DOMAIN is deliberately NOT in smoke: it is tailnet-only and its LE
 # order may legitimately be pending or rate-limited (the remedy is the
 # scripts/ops/tailscale-https.sh follow-up), so it must never gate a push.
+# The host unit behind it is asserted in the Host section.
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -370,30 +371,6 @@ check_ctns blog writefreely
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Module: beszel — hub + agent, tailnet-only under tail.$DOMAIN/beszel.
-# ─────────────────────────────────────────────────────────────────────────────
-hdr beszel "Ops — Beszel hub + agent (module: beszel)"
-if [ -z "$TS_IP" ]; then
-  say "FAIL beszel: no Tailscale IPv4 — cannot probe tail.$DOMAIN"; bad
-else
-  check_tn beszel "tail.$DOMAIN" "/beszel" "200 301 302 307 308" html "hub answers under /beszel"
-  check_tn beszel-asset "tail.$DOMAIN" "/beszel/static/manifest.json" "200" "" "hub assets resolve with the APP_URL base path"
-fi
-check_ctns beszel beszel-hub beszel-agent
-# The hub ships no systems and its CLI cannot create one, so a dashboard that
-# monitors nothing is a real failure, not a cosmetic one: assert the hub's own
-# row is registered AND reachable (the agent's SSH handshake flipped it to up).
-_bzdb="${DATA_DIR:-$ROOT/data}/beszel/hub/data.db"
-_bzs="$(sqlite3 "$_bzdb" "SELECT count(*) FROM systems WHERE status='up';" 2>/dev/null)"
-if [ "${_bzs:-0}" -ge 1 ] 2>/dev/null; then
-  say "OK   beszel-system: hub reports $_bzs system(s) up"
-else
-  say "FAIL beszel-system: no system is up in the hub — run 'make beszel-add-system'"; bad
-fi
-unset _bzs _bzdb
-end_sec
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Module: photos — Immich (DNS-only vhost, its own PostgreSQL + Redis).
 # ─────────────────────────────────────────────────────────────────────────────
 hdr photos "Photos — Immich (module: photos)"
@@ -418,7 +395,15 @@ end_sec
 # Module: mail — Mailu (front/smtp/imap/antispam/admin/redis) + Roundcube webmail.
 # ─────────────────────────────────────────────────────────────────────────────
 hdr mail "Mail — Mailu platform + Roundcube webmail (module: mail)"
-check mail "mail.$DOMAIN" "/" "200 301 302 307 308" html "Mailu platform door"
+# mail.$DOMAIN is TAILNET-ONLY since 2026-10-29 (same model as vault): no public
+# A record, and the vhost 403s every source outside 100.64.0.0/10. Both halves
+# are asserted, so a half-applied change fails here instead of passing.
+if [ -z "$TS_IP" ]; then
+  say "FAIL mail: no Tailscale IPv4 — cannot probe a tailnet-only door"; bad
+else
+  check_tn mail "mail.$DOMAIN" "/" "200 301 302 307 308" html "Mailu platform door answers on the tailnet"
+fi
+check mail-public "mail.$DOMAIN" "/" "403" "" "public sources are refused"
 check_sec_headers mail "mail.$DOMAIN" "/" "one of each"
 check_tls "mail.$DOMAIN"
 check cube "cube.$DOMAIN" "/" "200 301 302 307 308" html "Roundcube webmail"
