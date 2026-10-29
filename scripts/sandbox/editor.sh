@@ -74,7 +74,31 @@ run_logged() {
   return "$rc"
 }
 
-die_early() { _log ERROR "die_early(${BASH_LINENO[0]:-?}): $*"; printf 'editor: %s\n' "$*" >&2; exit 1; }
+die_early() { _log ERROR "die_early(${BASH_LINENO[0]:-?}): $*"; _SBX_HANDLED=1; printf 'editor: %s\n' "$*" >&2; exit 1; }
+
+# A run that stops without going through die/die_early (set -u on an unset
+# variable, a signal, a bare exit) used to leave a log that simply ended
+# mid-question: the shell printed to stderr, the log said nothing. From here on
+# the shell's own stderr is copied into the log, and the EXIT trap records the
+# status plus the step that was in flight — so "it asked for the port then
+# aborted" is a log line, with the file:line bash printed, not a mystery.
+_SBX_HANDLED=0
+_SBX_STEP="${_SBX_STEP:-start}"
+exec 3>&2
+exec 2> >(tee -a "$EDITOR_LOG" >&3)
+_sbx_on_exit() {
+  local rc=$?
+  # Subshells ($(...), <(...)) inherit the EXIT trap; only the real shell
+  # speaks for the run. $$ is this shell; BASHPID differs in a subshell.
+  [ "${BASHPID:-$$}" = "$$" ] || return 0
+  if [ "$rc" -ne 0 ] && [ "${_SBX_HANDLED:-0}" != 1 ]; then
+    _log ERROR "abort: shell stopped rc=$rc without die() — last step: ${_SBX_STEP:-<none>}; the stderr line logged above it is the shell's own message"
+  fi
+  exec 2>&- 3>&-
+  sleep 0.05 # let the tee child drain before the log is read
+  return 0
+}
+trap '_sbx_on_exit' EXIT
 
 CMD="${1:-}"
 ARGV="$*"
@@ -210,7 +234,7 @@ say()  { _log INFO "say: $*"; printf '  %s\n' "$*"; }
 sec()  { _log INFO "section: $*"; printf '\n%s%s%s\n' "$B" "$*" "$N"; }
 ok()   { _log INFO "ok: $*"; printf '  %s✓%s %s\n' "$G" "$N" "$*"; }
 warn() { _log WARN "warn(${BASH_SOURCE[1]##*/}:${BASH_LINENO[0]}): $*"; printf '  %s!%s %s\n' "$Y" "$N" "$*" >&2; }
-die()  { _log ERROR "die(${BASH_SOURCE[1]##*/}:${BASH_LINENO[0]}): $*"; printf '  %s×%s %s\n' "$R" "$N" "$*" >&2; exit 1; }
+die()  { _log ERROR "die(${BASH_SOURCE[1]##*/}:${BASH_LINENO[0]}): $*"; _SBX_HANDLED=1; printf '  %s×%s %s\n' "$R" "$N" "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required"; }
 
 # Read one key out of data/wizard.state without ever writing it: the installer
@@ -251,6 +275,7 @@ run_tasks() {
   for t in "${TASKS[@]}"; do
     printf '  %s▸%s %-24s ' "$C" "$N" "${TASK_NAMES[$i]}"
     _log INFO "task: ${TASK_NAMES[$i]} ($t) starting"
+    _SBX_STEP="task ${TASK_NAMES[$i]} ($t)"
     if "$t"; then
       printf '%s✓%s\n' "$G" "$N"
       _log INFO "task: ${TASK_NAMES[$i]} ok"
@@ -349,15 +374,29 @@ SBXEOF
 # before anything is written, and the answers land in state/<name>.conf.
 
 ask_var() {
-  local __v="$1" __p="$2" __d="${3:-}" __a
-  printf '  %s%s%s%s ' "$B" "$__p" "$N" "${__d:+ [$__d]}"
-  if ! IFS= read -r __a; then
+  local __name="$1" __label="$2" __def="${3:-}" __reply
+  _SBX_STEP="question '$__label'"
+  _log DEBUG "ask: [$__label]${__def:+ default=$__def}"
+  printf '  %s%s%s%s ' "$B" "$__label" "$N" "${__def:+ [$__def]}"
+  if ! IFS= read -r __reply; then
     printf '\n'
-    _log ERROR "ask_var: stdin closed while waiting for '$__p'"
-    die "no answer for '$__p' — stdin is closed (run it from a terminal)"
+    _log ERROR "ask_var: stdin closed while waiting for '$__label'"
+    die "no answer for '$__label' — stdin is closed (run it from a terminal)"
   fi
-  [ -z "$__a" ] && __a="$__d"
-  printf -v "$__v" '%s' "$__a"
+  [ -z "$__reply" ] && __reply="$__def"
+  # Answers go in the log so a run is readable afterwards — except the ones that
+  # are secrets (KEY=VALUE pairs are env, and env is where tokens live).
+  case "$__label" in
+    *KEY=VALUE* | *[Tt]oken* | *[Ss]ecret* | *[Pp]ass*) _SBX_SHOWN='<redacted>' ;;
+    *) _SBX_SHOWN="$__reply" ;;
+  esac
+  _log DEBUG "said: [$__label] -> '$_SBX_SHOWN'"
+  unset _SBX_SHOWN
+  # $1 is the NAME of the caller's variable, and printf -v resolves it to the
+  # nearest scope: a local here called __a (as ask_port and ask_exposure name
+  # their target) swallowed 'ask_var __a ...' and left the caller's own __a
+  # unset — the 'line 32: a: unbound variable' abort under set -u.
+  printf -v "$__name" '%s' "$__reply"
 }
 
 ask_yes() {
@@ -1329,4 +1368,5 @@ done
 cli "$CMD"
 _rc=$?
 _log INFO "exit rc=$_rc"
+_SBX_HANDLED=1 # reached the end on purpose: the rc above is the whole story
 exit "$_rc"
