@@ -26,6 +26,11 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Fix**: promote oCIS into `modules/ocis/` (compose + `config/modules.conf` row + installer setup step + backup coverage), then delete the sandbox copy so only one exists.
 
 
+#### Snikket lives only in the sandbox tree
+- **File**: `data/sandbox/modules/snikket/` (compose, `snikket.conf`, `coturn-run`, data), `data/sandbox/caddy/sbx-snikket.caddy`
+- **Problem**: `chat.$DOMAIN` (plus `groups.chat` / `share.chat`) is served by a hand-written sandbox module: host networking, so `editor.sh create` cannot reproduce it and it has no state record, no `config/modules.conf` row, no installer step and no backup coverage — its Prosody data (accounts, groups, archives) is covered by nothing. Only the coturn wrapper is tracked (`scripts/sandbox/snikket/coturn-run`, installed by `make sbx-snikket-turn`).
+- **Fix**: either promote it into `modules/snikket/` (compose + modules.conf row + installer setup + a backup path that includes `data/sandbox/modules/snikket/data`) or extend the sandbox helper to host-networked modules so `create`/`backup`/`sync` cover it; then remove the hand-written copy.
+
 #### The optimize offer is marked broken in the installer
 - **File**: `scripts/install/wizard.d/flow/optimize.sh`
 - **Problem**: `ask_optimize` carries a `## BROKEN — neither prompt answer fires optimize.sh` marker from an earlier run; the wiring looks correct (`resolve_errors` → `finalize_install` → `ask_optimize` → `bash scripts/ops/optimize.sh --yes`, and `ask_boolean` assigns by name), so the marker has never been reproduced or traced. Untested ≠ fixed: the marker stays until a real green run proves it.
@@ -464,3 +469,4 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Beszel module removed (2026-10-29)** — module, `make beszel-*` recipes, `scripts/modules/beszel-system.sh`, smoke section, installer blocks, the `/beszel` route and the Homer link are gone.
 - **`optimize.sh` gained a repo-wide pass (2026-10-29)** — one `sysctl -a` snapshot + parsed table replaces ~30 `sysctl -n` forks per check round, one apt transaction installs all missing helpers, `systemctl list-unit-files` replaces a call per unit, the sysctl file is applied with `sysctl -p` (system fallback), and a checkout gets git's fast paths + pack maintenance (`WITH_GIT=0` opts out).
 - **`editor.sh` logs its own aborts** — stderr is mirrored into the run log and the EXIT trap records the rc with the step in flight, so a run that dies outside `die()` no longer ends mid-question in the log; answers are logged except secrets, and the `ask_var` target shadowing that broke `set -u` is gone.
+- **Snikket TURNS no longer depends on a chown race** — the tracked wrapper `scripts/sandbox/snikket/coturn-run` stages the cert pair in a `turnserver`-owned copy and `make sbx-snikket-turn` installs and verifies it (2026-10-29).

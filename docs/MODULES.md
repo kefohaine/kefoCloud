@@ -41,6 +41,10 @@ A sandbox module is rendered from `data/sandbox/templates/docker-compose.yml.tmp
 - every bind mount inside the module's own directory;
 - a pinned image tag — `:latest` is refused.
 
+## Host-networked modules
+
+An app whose protocol is not HTTP(S) still runs as a sandbox module, but the compose contract above cannot apply: it uses `network_mode: host` and moves its own web ports into the private range so the edge keeps 80/443 — Snikket is the current case (XMPP 5222/5269, TURN, proxy65 5000). Such a module is hand-written, so the one piece that must never be maintained only inside `data/` is tracked: `scripts/sandbox/snikket/coturn-run`, the coturn run script bind-mounted over `/etc/sv/coturn/run`. It stages Snikket's certificate pair in a `turnserver`-owned copy, so the hourly `prosodyctl cert import` (which rewrites the originals as `prosody:prosody 0640/0400`) can no longer decide whether TURNS starts. `make sbx-snikket-turn` installs it, restarts the server and asserts 5349 answers a TLS handshake.
+
 ## Exposure
 
 Asked for every module, because it decides both the vhost and the DNS record:
