@@ -63,7 +63,7 @@ services:
       - name: "Webmail"
         icon: "fas fa-envelope"
         subtitle: "roundcube"
-        url: "https://cube.{{DOMAIN}}"
+        url: "https://mail.{{DOMAIN}}"
       - name: "Uptime Kuma"
         icon: "fas fa-heart-pulse"
         subtitle: "monitor"
