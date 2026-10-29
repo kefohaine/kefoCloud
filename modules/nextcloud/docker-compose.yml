@@ -57,13 +57,13 @@ services:
       NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER}
       NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD}
       NEXTCLOUD_OVERWRITEPROTOCOL: https
-      NEXTCLOUD_TRUSTED_DOMAINS: "cloud.${DOMAIN}"
+      NEXTCLOUD_TRUSTED_DOMAINS: "nextcloud.${DOMAIN}"
       NEXTCLOUD_DATA_DIR: /data
       # trusted_proxies is NOT set here — the image entrypoint writes it as a
       # single comma-joined string, and NC 34's setup check requires a real
       # array. It is set as an array via occ in the installer
       # nextcloud_setup (delete + indexed sets; the CF ranges live there too).
-      OVERWRITECLIURL: "https://cloud.${DOMAIN}"
+      OVERWRITECLIURL: "https://nextcloud.${DOMAIN}"
 
     extra_hosts:
       # Map the cert FQDN to the mail container's bridge IP so the Mail app
@@ -128,12 +128,12 @@ services:
       - ${DATA_DIR}/talk/server.conf:/config/server.conf:ro
     extra_hosts:
       # The signaling server validates client sessions by calling back into
-      # Nextcloud ([backend1] urls = https://cloud.${DOMAIN}). Route that
+      # Nextcloud ([backend1] urls = https://nextcloud.${DOMAIN}). Route that
       # directly to Caddy on the host bridge (172.22.0.1) instead of the
       # public DNS → Cloudflare proxy path: one less hop and immune to CF
       # Bot Fight Mode challenging the server's requests (same pattern as
       # the roundcube container's extra_hosts). SNI/cert still match.
-      - "cloud.${DOMAIN}:172.22.0.1"
+      - "nextcloud.${DOMAIN}:172.22.0.1"
     healthcheck:
       test: ["CMD-SHELL", "timeout 3 bash -c '</dev/tcp/127.0.0.1/8080' || exit 1"]
       interval: 30s
@@ -184,7 +184,7 @@ services:
 
   notify_push:
     # Optional: Nextcloud client push (notify_push). Caddy routes
-    # https://cloud.${DOMAIN}/push/* here; the app's base endpoint is set by
+    # https://nextcloud.${DOMAIN}/push/* here; the app's base endpoint is set by
     # `occ notify_push:setup` in the installer. Only started when the operator
     # enabled client push (COMPOSE_PROFILES=push).
     image: ghcr.io/nextcloud/notify_push:v1.4.1
@@ -205,7 +205,7 @@ services:
       DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:5432/${POSTGRES_DB}"
       DATABASE_PREFIX: "oc_"
       REDIS_URL: "redis://${REDIS_HOST}:6379"
-      NEXTCLOUD_URL: "https://cloud.${DOMAIN}"
+      NEXTCLOUD_URL: "https://nextcloud.${DOMAIN}"
       PORT: "7867"
     # No healthcheck: the image is from scratch (no shell, no curl), so any
     # CMD-SHELL probe can never run and the container reports "unhealthy"

@@ -29,5 +29,5 @@ timeout = 10
 connectionsperhost = 8
 
 [backend1]
-urls = https://cloud.{{DOMAIN}}
+urls = https://nextcloud.{{DOMAIN}}
 secret = __SIGNALING_SECRET__
