@@ -31,7 +31,10 @@ services:
   # the bridge, `antispam` is Rspamd, `admin` holds the SQLite config + CLI.
   # `webmail` is deliberately NOT started: Roundcube stays the webmail and is
   # served by Caddy at cube.${DOMAIN} (container `roundcube` below). Mailu owns
-  # mail.${DOMAIN} — web door, admin UI at /admin, and the SMTP/IMAP cert.
+  # mail.${DOMAIN} — web door, admin UI at /admin, and the SMTP/IMAP cert. That
+  # door is TAILNET-ONLY (no public A record, @not_tailnet 403 in
+  # modules/caddy/vhosts/mail.caddy); the listeners below are still published on
+  # the host, so tailnet members reach them by name and nobody else by DNS.
   #
   # TLS_FLAVOR=mail: no HTTP listener in front (Caddy owns 80/443 on the host);
   # SMTP/IMAP use the per-vhost LE cert for mail.${DOMAIN} from caddy_data,
