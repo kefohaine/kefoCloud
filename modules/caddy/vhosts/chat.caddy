@@ -1,8 +1,9 @@
-# chat.{{DOMAIN}} — Rocket.Chat.
+# chat.{{DOMAIN}} — reserved name, deliberately EMPTY.
 #
-# Public door (Cloudflare proxied): a chat server is useless behind a tailnet
-# gate. Rocket.Chat serves its own websocket on /websocket, which Caddy's
-# reverse_proxy upgrades transparently — no separate route is needed.
+# The chat application that used to own this hostname is gone from the repo, so
+# this vhost proxies to NOTHING: it answers an empty 200 body and exists only so
+# the name stays reachable and keeps its own certificate while it waits for its
+# next app. Never point it at another vhost's service — one name, one app.
 # TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/cloud.{{DOMAIN}}.caddy).
 
 https://chat.{{DOMAIN}} {
@@ -24,23 +25,8 @@ https://chat.{{DOMAIN}} {
         }
     }
     import compress
-    request_body {
-        # File uploads and avatars go through the edge; Rocket.Chat's own
-        # default limit is 100m, keep the edge from being the smaller one.
-        max_size 100m
-    }
     header {
         import security_headers
     }
-    reverse_proxy 172.22.0.28:3000 {
-        # Rocket.Chat sets X-Frame-Options / X-Content-Type-Options itself; both
-        # would then be sent twice and smoke's exactly-one check fails.
-        header_down -X-Frame-Options
-        header_down -X-Content-Type-Options
-        # Long-lived websocket + slow admin pages.
-        transport http {
-            read_timeout 300s
-            write_timeout 300s
-        }
-    }
+    respond "" 200
 }
