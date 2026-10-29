@@ -1,0 +1,45 @@
+# Snikket XMPP (xmpp.{{DOMAIN}} + its groups/share names).
+# Tracked so `make render` keeps it: Snikket itself is a sandbox module
+# (data/sandbox/modules/snikket), but its DOOR must survive a render — a
+# sandbox-only vhost is wiped by the rendered tree's rsync --delete and the
+# site then works only until the next Caddy restart.
+# HTTP is proxied to Snikket's own nginx (127.0.0.1:5080) so its certbot
+# HTTP-01 challenges answer; HTTPS terminates at Caddy and re-encrypts to
+# Snikket's self-managed cert on 127.0.0.1:5443.
+# The XMPP ports (5222/5269) are host-networked and never touch the edge.
+http://xmpp.{{DOMAIN}}, http://groups.xmpp.{{DOMAIN}}, http://share.xmpp.{{DOMAIN}} {
+	reverse_proxy 127.0.0.1:5080 {
+		header_up Host {host}
+	}
+}
+
+https://xmpp.{{DOMAIN}}, https://groups.xmpp.{{DOMAIN}}, https://share.xmpp.{{DOMAIN}} {
+	tls {
+		issuer acme https://acme-v02.api.letsencrypt.org/directory {
+			email admin@{{DOMAIN}}
+			dns cloudflare {env.CF_API_TOKEN}
+		}
+		issuer acme https://api.buypass.com/acme/directory {
+			email admin@{{DOMAIN}}
+			dns cloudflare {env.CF_API_TOKEN}
+		}
+		issuer acme https://acme.zerossl.com/v2/DV90 {
+			email admin@{{DOMAIN}}
+			dns cloudflare {env.CF_API_TOKEN}
+		}
+	}
+	import compress
+	header {
+		import security_headers
+	}
+	request_body {
+		max_size 104857616
+	}
+	reverse_proxy https://127.0.0.1:5443 {
+		header_up Host {host}
+		transport http {
+			tls_server_name {host}
+			tls_insecure_skip_verify
+		}
+	}
+}
