@@ -20,6 +20,12 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### Robustness
 
+#### ownCloud owns `cloud.$DOMAIN` but lives only in the sandbox tree
+- **File**: `modules/caddy/vhosts/cloud.caddy`, `data/sandbox/modules/ocis/`
+- **Problem**: the oCIS stack that serves `cloud.$DOMAIN` is a sandbox module — no row in `config/modules.conf`, no installer step, no smoke check, and `make backup` only walks the repo modules, so its data (`data/sandbox/modules/ocis/data/ocis`, incl. the IDM boltdb) is covered by nothing. The vhost itself is tracked, so the name survives `make render`, but the app behind it can be lost by a `docker compose down`, an image prune or a host rebuild.
+- **Fix**: promote oCIS into `modules/ocis/` (compose + `config/modules.conf` row + installer setup step + backup coverage), then delete the sandbox copy so only one exists.
+
+
 #### The optimize offer is marked broken in the installer
 - **File**: `scripts/install/wizard.d/flow/optimize.sh`
 - **Problem**: `ask_optimize` carries a `## BROKEN — neither prompt answer fires optimize.sh` marker from an earlier run; the wiring looks correct (`resolve_errors` → `finalize_install` → `ask_optimize` → `bash scripts/ops/optimize.sh --yes`, and `ask_boolean` assigns by name), so the marker has never been reproduced or traced. Untested ≠ fixed: the marker stays until a real green run proves it.
@@ -142,11 +148,6 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 - **Problem**: `default_phone_region` is unset — profile phone numbers without a country code can't be validated (setup check warns).
 - **Fix**: `occ config:system:set default_phone_region --value <ISO-3166-1-ALPHA-2>` (e.g. `DE`, `FR`) — the operator picks their country code.
 - **Why approval**: operator-specific value.
-
-#### Re-apply Cloudflare WAF skip on the new domain
-- **File**: Cloudflare dashboard ($DOMAIN zone)
-- **Problem**: after the migration, `cloud.$DOMAIN` Nextcloud desktop sync is bot-challenged until the per-hostname WAF rule skip is re-created (same rationale as the `cloud.$DOMAIN` `Intended` entry).
-- **Fix**: re-add the per-hostname WAF rule skip for `cloud.$DOMAIN` after the installer finishes.
 
 ### Efficiency
 
@@ -445,6 +446,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 
 ### Oct 2026 — pages, apps and exposure
 
+- **Nextcloud moved off the public edge** — its stack was brought down and its door is the tailnet-only `nextcloud.$DOMAIN`; `cloud.$DOMAIN` now serves ownCloud (oCIS), which makes the per-hostname Cloudflare WAF skip moot.
 - **Poster welcome page** — `/welcome` is now a tracked template (`config/pages/www/welcome.html`) with a page nav and a `Home →` button.
 - **Zensical docs** — `/docs/` is a static build of the repo's `docs/` tree via `make docs-build`; no container.
 - **WriteFreely blog** — new `blog` module and `blog.$DOMAIN` vhost, built from the pinned upstream release tarball.
