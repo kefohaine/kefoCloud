@@ -39,7 +39,8 @@ The public hostnames (`cloud` `kuma` `home` `www` `blog`, proxied; `talk` `photo
     ttyd.$DOMAIN is tailnet-only (not in public DNS) — "/" IS the
     host shell: the single `main` tmux session, NO second credential
     (Tailscale membership only); non-tailnet sources get 403 first.
-    vault.$DOMAIN and mail.$DOMAIN are tailnet-only the same way.
+    vault.$DOMAIN, nextcloud.$DOMAIN and mailu.$DOMAIN are tailnet-only
+    the same way; cloud.$DOMAIN is ownCloud (oCIS, 172.22.0.27:9200).
 
                      ┌─────────────────────────────────────────────┐
                      │ Tailscale MagicDNS / split DNS              │
