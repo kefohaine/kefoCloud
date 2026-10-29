@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # scripts/ops/tailscale-https.sh — serve the tail door over Tailscale HTTPS.
 #
-# SOLE PURPOSE: expose tail.$DOMAIN through `tailscale serve` HTTPS when the
+# SOLE PURPOSE: expose ttyd.$DOMAIN through `tailscale serve` HTTPS when the
 # Let's Encrypt order for that name cannot complete (typically the LE
 # per-identifier rate limit, or the name not resolving publicly). The web
 # address then CHANGES by design: the door is no longer reached at
-# https://tail.$DOMAIN but at https://<machine>.<tailnet>.ts.net — Tailscale
+# https://ttyd.$DOMAIN but at https://<machine>.<tailnet>.ts.net — Tailscale
 # issues and renews that cert itself, no rate limit applies.
 #
 # Idempotent: re-running replaces the previous serve config. No prompts.
@@ -39,7 +39,7 @@ if tailscale serve --bg --https 443 "https+insecure://127.0.0.1:443" 2>&1; then
   echo ""
   echo "SUCCESS — tail door served over Tailscale HTTPS."
   echo "  web address: $(tailscale serve status 2>/dev/null | grep -o 'https://[^ ]*' | head -1)"
-  echo "  (the tail.$DOMAIN name itself is NOT used — the address is the machine's ts.net name)"
+  echo "  (the ttyd.$DOMAIN name itself is NOT used — the address is the machine's ts.net name)"
   echo "  re-check later: once the LE order succeeds, undo with: tailscale serve --https 443 off"
   exit 0
 else
