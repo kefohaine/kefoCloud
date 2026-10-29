@@ -44,7 +44,6 @@ make fetch|AIO dashboard — host perf, modules, git, units, docker, tmux, backu
 make render|skeleton → live: render data/rendered/ + refresh each service .env
 make fetch-more|deep dive — per-core cpu, mem breakdown, processes, sockets, all units+timers+cron, docker caps/stats/log sizes, disk+inodes, data/ growth, tailnet prefs, DNS probes, TLS expiry
 make smoke|live edge test — every vhost, tailnet edge, tls, mail (pre-push hook runs it; records its verdict only when the installer asks)
-make docs-build|build the /docs site (Zensical) from the repo's docs/ tree into the web root
 make dns-sync|converge the Cloudflare zone from wizard.state (A records for every enabled module + SSL mode)
 EOF
 
@@ -59,7 +58,6 @@ EOF
   sec "sandbox modules (data/sandbox, untracked)"
   rows <<'EOF'
 make sandbox-sync|re-apply sandbox vhosts into data/rendered/caddy + revive stopped projects (after make render)
-make sbx-snikket-turn|install the tracked coturn wrapper for the snikket sandbox module and prove TURNS answers on 5349
 bash scripts/sandbox/editor.sh|create · remove · list — try a module without touching the repo
 EOF
 
