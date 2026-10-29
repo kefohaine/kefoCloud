@@ -25,14 +25,12 @@ prep_dirs() {
                $ROOT/data/talk \
                $ROOT/data/download \
                $ROOT/data/pages/www
-  # The web root is INSTANCE DATA (the repo ships no pages): data/pages/www for
-  # www.$DOMAIN. Seed a minimal placeholder homepage ONCE so www.$DOMAIN never
-  # falls through to the bare "ok" stub. Existing pages are never touched — the
-  # operator owns that dir.
-  if [ ! -f "$ROOT/data/pages/www/index.html" ]; then
-    printf '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1">\n<title>%s</title></head><body>\n<h1>%s</h1>\n<p>This is the placeholder homepage. Drop your pages in <code>%s/pages/www</code> — they are served at the vhost root (<code>www.%s</code>) and are never overwritten by a render.</p>\n</body></html>\n' \
-      "$DOMAIN" "$DOMAIN" "$DATA" "$DOMAIN" > "$ROOT/data/pages/www/index.html"
-  fi
+  # The web root is INSTANCE DATA (the repo ships no operator pages): the
+  # tracked templates in config/pages/www (index.html, welcome.html) are rendered
+  # into $ROOT/data/pages/www by `make render` below — written 0644 so the edge
+  # can always read them, and re-rendered on every run so the homepage can never
+  # drift into a file only this host has. Operator pages dropped in beside them
+  # are never deleted.
   # Recursive chowns only when the ownership is actually wrong: on an installed
   # instance these trees can hold hundreds of thousands of files, and a re-run
   # that walks them all just to find nothing to change is pure cost. The check is
