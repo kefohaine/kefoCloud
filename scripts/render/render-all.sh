@@ -45,8 +45,7 @@ render_tree() {   # render_tree <src-dir> <dest-dir> [exclude-name...]
   local src="$1" dst="$2"; shift 2
   local -a skips=("$@"); local rel sk
   ( cd "$src" && find . -type f ) | sed 's|^\./||' | while IFS= read -r rel; do
-    # each exclude names a FILE or a whole SUBDIRECTORY (config/pages is not
-    # host config — it renders into the web roots instead)
+    # each exclude names a FILE or a whole SUBDIRECTORY
     for sk in "${skips[@]}"; do
       [ -z "$sk" ] && continue
       [ "$rel" = "$sk" ] && continue 2
@@ -68,9 +67,7 @@ if [ "$(val VIDEO_CALLING)" = "false" ]; then
   rm -f "$TMP/caddy/vhosts/talk.caddy"
 fi
 render_tree "$ROOT/modules/mailserver" "$TMP/mailserver" docker-compose.yml
-render_tree "$ROOT/config" "$TMP/config" instance.defaults pages
-# (skip pages: config/pages/ holds TEMPLATE web pages, not host config — they
-#  belong in the web roots under data/pages/, rendered below, not under /etc)
+render_tree "$ROOT/config" "$TMP/config" instance.defaults
 
 # Swap in place (keeps the mounted inode alive), then drop the scratch tree.
 mkdir -p "$OUT/caddy" "$OUT/config" "$OUT/mailserver"
@@ -95,15 +92,11 @@ else
 fi
 rm -rf "$TMP"
 
-# Web root: under $DATA_DIR/pages/ so no repo path and no instance path share a
-# name. config/pages/<vhost> is rendered into data/pages/<vhost> (today only www/
-# carries templates: the welcome page family). Operator pages in data/pages/www
-# are never touched (nothing is deleted) — only the template files are
-# (re)written, because they are part of the access layer, not content.
-for _v in www; do
-  mkdir -p "$DATA_DIR/pages/$_v"
-  [ -d "$ROOT/config/pages/$_v" ] && render_tree "$ROOT/config/pages/$_v" "$DATA_DIR/pages/$_v"
-done
+# Web root: instance data, never repo content. The pages are edited in place
+# under $DATA_DIR/pages/<vhost> (the edge bind-mounts $DATA_DIR/pages at
+# /srv/pages read-only); render never reads, writes or deletes a page, it only
+# guarantees the tree exists so the mount source is never missing.
+mkdir -p "$DATA_DIR/pages/www"
 
 # ── instance block for compose ──────────────────────────────────────────────
 block() {
