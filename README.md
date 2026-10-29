@@ -20,7 +20,7 @@ Prompts once then runs unattended — errors are listed with a hint each and re-
 
 ![Repository Banner](.github/images/modules.png)
 
-Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Caddy, Vaultwarden, Uptime Kuma, the Mailu + Roundcube platform, a Homarr dashboard, WriteFreely and Immich photos — behind Cloudflare, with tailscale, ttyd, dnsmasq and goose as host services. A poster welcome page, a static docs site built from this repo's `docs/` tree, and per-app `make` commands for accounts and maintenance ship with it.
+Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Caddy, Vaultwarden, Uptime Kuma, the Mailu + Roundcube platform, a Homarr dashboard, WriteFreely and Immich photos — public doors behind Cloudflare, admin doors (Nextcloud, Vaultwarden, the Mailu platform, the shell) tailnet-only, with tailscale, ttyd, dnsmasq and goose as host services. A poster welcome page, a static docs site built from this repo's `docs/` tree, and per-app `make` commands for accounts and maintenance ship with it.
 
 | name | app | note |
 |---|---|---|
@@ -46,6 +46,7 @@ Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Caddy, Vaultwarden, Uptime
 - `docs/AGENTS.md` — agent operating rules
 - `docs/ISSUES.md` — open problems, planned ideas, and resolved history
 - `docs/DEBUG.md` — deep-scan diagnostics runbook
+- `docs/MIGRATE.md` — moving the stack to a new machine
 
 ## Risks & Considerations
 - System Requirements: minimum RAM is 4GB; minimum storage is 15GB; kefohaine recommends double the minimum for both specifications to avoid bottleneck.

@@ -83,7 +83,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### Security
 #### Caddy edge lacks rate + connection limiting (all public vhosts)
-- **File**: `modules/caddy/Caddyfile` + per-vhost vhosts (`cloud.caddy`, `talk.caddy`, `vault.caddy`, `kuma.caddy`, `mail.caddy`, `tail.caddy`)
+- **File**: `modules/caddy/Caddyfile` + per-vhost vhosts (`cloud.caddy`, `talk.caddy`, `vault.caddy`, `kuma.caddy`, `mail.caddy`, `ttyd.caddy`)
 - **Problem**: every public vhost reverse-proxies an upstream at `172.22.0.x:PORT` with no `ratelimit` or `connlimit` guard — a single client (or botnet) can exhaust any upstream's resources (`talk-hpb` 128m RAM, Nextcloud PHP-FPM children, Postgres) via `wss://`, `occ` sync or repeated API calls. Not recorded anywhere.
 - **Fix**: add site-level `connlimit` or global `ratelimit` guards per vhost; consider rate-limiting `/signaling` and Kuma's admin routes.
 
