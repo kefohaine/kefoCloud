@@ -3,10 +3,26 @@
 # (data/sandbox/modules/snikket), but its DOOR must survive a render — a
 # sandbox-only vhost is wiped by the rendered tree's rsync --delete and the
 # site then works only until the next Caddy restart.
+#
+# One name, one app: these three hostnames are Snikket's own (the server's
+# group-chat and file-share components are named groups./share. by the server
+# itself). No other vhost may proxy to Snikket's ports, and this vhost may not
+# proxy to anything else.
+#
 # HTTP is proxied to Snikket's own nginx (127.0.0.1:5080) so its certbot
 # HTTP-01 challenges answer; HTTPS terminates at Caddy and re-encrypts to
 # Snikket's self-managed cert on 127.0.0.1:5443.
-# The XMPP ports (5222/5269) are host-networked and never touch the edge.
+# Web clients (and OMEMO-capable browser clients) need:
+#   * wss:// on /xmpp-websocket (RFC 7395) and BOSH on /http-bind — both are
+#     proxied here and upgraded transparently by reverse_proxy, with a long
+#     read/write timeout because the socket stays open;
+#   * cross-origin answers for those endpoints plus /upload (XEP-0363): the
+#     browser preflights OPTIONS and then PUTs to the slot URL, which lands on
+#     /upload/* — prosody answers BOSH/WS preflights itself, the edge covers
+#     the upload component;
+#   * a body limit above the server's own 100MB + 16 bytes file-share ceiling.
+# The XMPP ports (5222/5269), TURN/STUN (3478/3479, 5349/5350) and the relay
+# range are host-networked and never touch the edge.
 http://xmpp.{{DOMAIN}}, http://groups.xmpp.{{DOMAIN}}, http://share.xmpp.{{DOMAIN}} {
 	reverse_proxy 127.0.0.1:5080 {
 		header_up Host {host}
@@ -35,11 +51,30 @@ https://xmpp.{{DOMAIN}}, https://groups.xmpp.{{DOMAIN}}, https://share.xmpp.{{DO
 	request_body {
 		max_size 104857616
 	}
+	# Upload slots only: the browser PUTs the (OMEMO-encrypted) blob to this
+	# origin from another page, so the answer must carry the allow headers and
+	# a preflight must not reach prosody.
+	@upload path /upload /upload/*
+	header @upload {
+		Access-Control-Allow-Origin "*"
+		Access-Control-Allow-Methods "GET, PUT, POST, OPTIONS"
+		Access-Control-Allow-Headers "*"
+		Access-Control-Max-Age "86400"
+	}
+	@upload_preflight {
+		method OPTIONS
+		path /upload /upload/*
+	}
+	respond @upload_preflight 204
 	reverse_proxy https://127.0.0.1:5443 {
 		header_up Host {host}
+		header_up X-Forwarded-Proto https
+		# Long-lived websocket + slow uploads; Snikket's own nginx uses 900s.
 		transport http {
 			tls_server_name {host}
 			tls_insecure_skip_verify
+			read_timeout 900s
+			write_timeout 900s
 		}
 	}
 }
