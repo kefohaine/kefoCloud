@@ -157,7 +157,7 @@ check_tn() {
 # A fifth argument of `framed` marks a vhost that one sibling origin must be
 # allowed to frame (mail, embedded by the Nextcloud mail_roundcube app): there
 # X-Frame-Options must be ABSENT and the anti-framing property must instead be
-# carried by a CSP frame-ancestors naming cloud.$DOMAIN. Requiring XFO=0 keeps
+# carried by a CSP frame-ancestors naming nextcloud.$DOMAIN. Requiring XFO=0 keeps
 # the check honest — a stale SAMEORIGIN there breaks the iframe, and dropping
 # the header without the CSP would silently un-frame-bust the host.
 check_sec_headers() {
@@ -170,7 +170,7 @@ check_sec_headers() {
   hsts=$(grep -icE '^strict-transport-security: max-age=31536000' <<<"$hdrs")
   if [ "$framed" = framed ]; then
     xfo_want=0
-    csp=$(grep -icE "^content-security-policy: .*frame-ancestors 'self' https://cloud\.$DOMAIN" <<<"$hdrs")
+    csp=$(grep -icE "^content-security-policy: .*frame-ancestors 'self' https://nextcloud\.$DOMAIN" <<<"$hdrs")
   else
     xfo_want=1
     csp=1
@@ -247,13 +247,29 @@ end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Module: cloud — Nextcloud (FPM app + PostgreSQL + Redis) + Talk HPB/TURN.
+# The stack's door is nextcloud.$DOMAIN (tailnet-only); cloud.$DOMAIN serves
+# ownCloud, which is an operator sandbox module, not part of this roster.
 # ─────────────────────────────────────────────────────────────────────────────
-hdr cloud "Cloud — Nextcloud + Talk (module: cloud)"
-check cloud "cloud.$DOMAIN" "/" "200 301 302 307 308" html "Nextcloud answers"
-check_sec_headers cloud "cloud.$DOMAIN" "/" "one of each"
-check_tls "cloud.$DOMAIN"
+hdr cloud "Cloud — Nextcloud + Talk (module: cloud) · nextcloud.$DOMAIN (tailnet-only)"
+# `docker compose down` (operator decision 2026-10-29: ownCloud took over
+# cloud.$DOMAIN) REMOVES the containers; a crash leaves an exited one behind.
+# Only the absent case is a deliberate shutdown — it is reported and skipped so
+# a down-by-choice stack does not block every push, while a crash still fails.
+nc_up=1
+if [ -z "$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -x nextcloud)" ]; then
+  nc_up=0
+  say "ok   cloud: Nextcloud stack is down by operator choice (containers removed, data kept) — door nextcloud.$DOMAIN stays tailnet-only; service checks skipped"
+else
+if [ -z "$TS_IP" ]; then
+  say "FAIL cloud: no Tailscale IPv4 — cannot probe the tailnet-only door"; bad
+else
+  check_tn cloud "nextcloud.$DOMAIN" "/" "200 301 302 307 308" html "Nextcloud answers on the tailnet"
+fi
+check cloud-public "nextcloud.$DOMAIN" "/" "403" "" "public sources are refused"
+check_sec_headers cloud "nextcloud.$DOMAIN" "/" "one of each"
+check_tls "nextcloud.$DOMAIN"
 # Web updater: must be reachable (not Caddy's "not found") and actually present.
-check updater "cloud.$DOMAIN" "/updater/" "200" html "Web updater reachable"
+check updater "nextcloud.$DOMAIN" "/updater/" "200" html "Web updater reachable"
 
 # Talk is optional (wizard.state VIDEO_CALLING); skip its checks when off.
 if [ "$(state_get VIDEO_CALLING)" != "false" ]; then
@@ -311,6 +327,7 @@ if [ "$(state_get VIDEO_CALLING)" != "false" ]; then
   check_ctns cloud nextcloud postgresql redis talk-hpb talk-relay
 else
   check_ctns cloud nextcloud postgresql redis
+fi
 fi
 end_sec
 
@@ -411,15 +428,16 @@ fi
 check mailu-public "mailu.$DOMAIN" "/" "403" "" "public sources are refused"
 check_sec_headers mailu "mailu.$DOMAIN" "/" "one of each"
 check_tls "mailu.$DOMAIN"
-# Same-origin webmail path the mail_roundcube app embeds (cloud.caddy); the app
-# reads the iframe DOM, so a cross-origin mail.$DOMAIN fails regardless.
-if mod_in cloud; then
-  check rc-cloud "cloud.$DOMAIN" "/roundcube/" "200" html "Roundcube on the cloud door (same-origin iframe)"
+# Same-origin webmail path the mail_roundcube app embeds (nextcloud.caddy); the
+# app reads the iframe DOM, so a cross-origin mail.$DOMAIN fails regardless.
+# Skipped while the Nextcloud stack is brought down (no app to embed it).
+if mod_in cloud && [ "${nc_up:-0}" = 1 ]; then
+  check_tn rc-cloud "nextcloud.$DOMAIN" "/roundcube/" "200" html "Roundcube on the Nextcloud door (same-origin iframe)"
   # Roundcube must generate its URLs under the prefix (request_path comes from
   # X-Forwarded-Prefix); a bare `action="/?` means the form would leave the route.
   # Capture the body first: `curl | grep -q` under `set -o pipefail` reports the
   # SIGPIPE curl gets when grep exits at the first match as a failed pipeline.
-  rc_body=$(curl -s --max-time 12 --resolve "cloud.$DOMAIN:443:127.0.0.1" "https://cloud.$DOMAIN/roundcube/")
+  rc_body=$(curl -s --max-time 12 --interface "$TS_IP" --resolve "nextcloud.$DOMAIN:443:$TS_IP" "https://nextcloud.$DOMAIN/roundcube/")
   if grep -q 'action="/roundcube/' <<<"$rc_body"; then
     say "ok   rc-cloud-prefix — Roundcube keeps the /roundcube/ base path"
   else
