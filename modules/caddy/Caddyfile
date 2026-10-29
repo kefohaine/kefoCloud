@@ -50,7 +50,7 @@ http:// {
 
 # ── vhosts ──────────────────────────────────────────────────────────────────
 # Each public vhost declares its own `tls { dns cloudflare { ... } }` block so
-# the ACME cert is scoped to that vhost's SNI (tail.{{DOMAIN}} included), so
+# the ACME cert is scoped to that vhost's SNI (ttyd.{{DOMAIN}} included), so
 # no cert is shared across SNI names (see ./vhosts/cloud.caddy for the rationale).
 
 # A glob, deliberately: a glob that matches nothing is NOT an error in

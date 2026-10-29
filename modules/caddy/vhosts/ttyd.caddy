@@ -1,0 +1,70 @@
+# ttyd.{{DOMAIN}} — tailnet entry point: the host shell IS the homepage.
+#
+# Access model — Tailscale MEMBERSHIP is the only gate, by operator choice:
+#   * every path — non-tailnet sources get 403 (@not_tailnet)
+#   * /        — the ttyd host shell (host systemd unit, 127.0.0.1:7681).
+#                Deliberately UNAUTHENTICATED: a tailnet device that can reach
+#                the vhost gets a root shell, no second credential (HTTP basic
+#                auth was removed 2026-09-22 by operator request — membership
+#                IS the auth). Reaching it non-tailnet is impossible: the 403
+#                above runs first.
+#
+# The former door list (tail.html at / plus the generated /targets.json
+# catalogue) was REMOVED 2026-10-29: the shell is the page, at / itself — there
+# is no /ttyd subpath any more (ttyd runs without a base path).
+#
+# Caching: NOTHING on this vhost may be cached. `no-store` (forbids storing),
+# the ETag / Last-Modified deletes (no validators left to revalidate against)
+# and the legacy Pragma/Expires headers make every request hit the edge fresh.
+#
+# TLS — Let's Encrypt DNS-01 via Cloudflare, same as every public vhost: the
+# operator asked for a trusted cert on the door too (no self-signed warning).
+# The name must resolve publicly for browsers to reach it by that name; if the
+# LE order cannot complete (e.g. the per-identifier rate limit), the installer
+# does NOT fail — it lists scripts/ops/tailscale-https.sh as a follow-up, which
+# exposes the door over Tailscale HTTPS instead (a different web address:
+# https://<machine>.<tailnet>.ts.net).
+https://ttyd.{{DOMAIN}} {
+    tls {
+        # Fallback issuer chain: Let's Encrypt first, then Buypass Go SSL and
+        # ZeroSSL — free providers tried in order, so a per-issuer rate limit
+        # (5 orders/name/week on LE) never leaves a vhost without a cert.
+        issuer acme https://acme-v02.api.letsencrypt.org/directory {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+        issuer acme https://api.buypass.com/acme/directory {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+        issuer acme https://acme.zerossl.com/v2/DV90 {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+    }
+    import compress
+    header {
+        import security_headers
+        # Nothing here may be cached: a stale cached response would keep
+        # serving a state the next request would not confirm.
+        Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
+        Pragma "no-cache"
+        Expires "0"
+        -ETag
+        -Last-Modified
+    }
+    route {
+        @not_tailnet not remote_ip 100.64.0.0/10
+        respond @not_tailnet 403
+
+        # ttyd host terminal IS the homepage — proxied as-is (ttyd runs with no
+        # base path, so the request path is already the app's own).
+        handle {
+            reverse_proxy 127.0.0.1:7681 {
+                transport http {
+                    versions 1.1
+                }
+            }
+        }
+    }
+}

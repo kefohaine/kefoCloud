@@ -6,6 +6,12 @@
 # name, and mailu-front's SNI/cert check matches its own hostname.
 # The webmail door is cube.{{DOMAIN}} (Roundcube at 172.22.0.10).
 # TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
+#
+# TAILNET-ONLY since 2026-10-29 (operator choice, same model as vault.$DOMAIN):
+# the name has NO public A record — tailnet clients resolve it through the
+# machine dnsmasq (config/dnsmasq/10-tailnet.conf) and every other source is
+# refused before the proxy runs (@not_tailnet). DNS-01 still needs only the TXT
+# record, so the mail.$DOMAIN certificate keeps issuing.
 
 https://mail.{{DOMAIN}} {
     tls {
@@ -26,6 +32,10 @@ https://mail.{{DOMAIN}} {
         }
     }
     import compress
+    # Tailnet-only: everything outside 100.64.0.0/10 is refused here, before
+    # the proxy (the name is not in public DNS either).
+    @not_tailnet not remote_ip 100.64.0.0/10
+    respond @not_tailnet 403
     request_body {
         max_size 25m
     }
