@@ -10,6 +10,13 @@
 # containers or service names are assumed. Files are only touched when the
 # state actually differs; every edit is backed up to /root/optimize-backup-*.
 #
+# The git pass is the repo-wide half: when the script sits inside a checkout it
+# turns on that checkout's fast-path settings (commit-graph, untracked cache,
+# index v4) and runs git's own cheap pack maintenance, so `git status`/`diff`/
+# `log` stay quick on a big tree. No path is assumed — the checkout is found
+# with `git rev-parse` from the script's own directory, and "not a checkout" is
+# a skip, not an error.
+#
 # Style mirrors the installer / nc-datadir-nfs.sh: welcome banner + description, no
 # interactive prompts (every choice is auto-detected or env-overridable),
 # fully unattended work. At the end any failures and manual steps are
@@ -37,6 +44,7 @@
 # WITH_TUNED=0/1 (tuned auto profile via 'tuned-adm recommend'; tuned keeps its
 # unique values, our sysctl values override it on conflicting keys — tuned's
 # sysctl plugin re-applies /etc/sysctl.d and defers to it by design)
+# WITH_GIT=0/1 (repo git maintenance when the script sits in a checkout; 0 = skip)
 # YES=1 BACKUP_DIR=...
 #
 # The ONLY packages it installs are the performance helpers (tuned, irqbalance,
@@ -66,12 +74,17 @@ done
 
 TS="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="${BACKUP_DIR:-/root/optimize-backup-$TS}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ------------------------------------------------------------------ state
 ERR_TAGS=()
 declare -A ERR_DETAIL=()
 CHANGED=0   # any config actually written this run -> reboot shows as a manual step
 NPROC=1; MEM_GB=1; MEM_KB=0; MIN_FREE_KB=0; SWAP_DEF=4; HAS_DOCKER=0; HAS_DNSMASQ=0; ROOT_DEV=""; KIND="unknown"; ACTIVE_SWAP=""; SSD=0; SETRA=""
+SYSCTL_KEYS=(); SYSCTL_VALS=(); SYSCTL_CMTS=(); SYSCTL_BAD=""  # parsed once, not per check
+declare -A HAVE=()          # command -> 1/0, so a tool is looked up once
+declare -A SYS_NOW=()       # one `sysctl -a` snapshot shared by every check
+SYS_SNAP_OK=0; BACKUP_MADE=0
 
 log()  { echo "[$(date +%H:%M:%S)] $*"; }
 fail() {
@@ -92,7 +105,8 @@ cat <<'EOF'
  One-shot performance optimizer for a Debian-family machine: kernel/memory/
  network tuning (BBR, buffers, dirty ratios, swappiness), process limits,
  swapfile, journald caps, docker daemon + prune, dnsmasq cache, noatime,
- fstrim, THP=madvise, apt cleanup (update / autoremove / clean) — all
+ fstrim, THP=madvise, apt cleanup (update / autoremove / clean) and — when
+ the script sits in a checkout — git's fast paths + pack maintenance. All
  idempotent, auto-detected, and backed up to /root/optimize-backup-*.
  Prompt: none — every choice is auto-detected or env-overridable, then it
  runs unattended; failures and manual steps are re-checked on every Enter
@@ -105,8 +119,21 @@ EOF
 
 # ------------------------------------------------------------------ helpers
 ok() { "$@" >/dev/null 2>&1; }
-read_file() { local p="$1"; [ -f "$p" ] && cat "$p" || true; }
-backup() { local p="$1"; [ "$DRY" = 1 ] && return 0; mkdir -p "$BACKUP_DIR"; [ -f "$p" ] && cp -a "$p" "$BACKUP_DIR/$(echo "$p" | tr '/' '_')"; }
+has() { # cached `command -v` — each tool is looked up at most once per run
+  local c="$1" v="${HAVE[$1]-}"
+  if [ -z "$v" ]; then
+    if command -v "$c" >/dev/null 2>&1; then HAVE[$c]=1; else HAVE[$c]=0; fi
+    v="${HAVE[$c]}"
+  fi
+  [ "$v" = 1 ]
+}
+read_file() { local p="$1"; [ -f "$p" ] && echo "$(<"$p")" || true; }  # $(<file): no cat fork
+backup() {
+  local p="$1"
+  [ "$DRY" = 1 ] && return 0
+  [ "$BACKUP_MADE" = 1 ] || { mkdir -p "$BACKUP_DIR"; BACKUP_MADE=1; }  # one mkdir per run
+  [ -f "$p" ] && cp -a "$p" "$BACKUP_DIR/$(echo "$p" | tr '/' '_')"
+}
 write_file() { # path, content — exact-bytes compare; returns 0 when written/would-write, 1 when unchanged
   local p="$1" c="$2"
   if [ -f "$p" ] && cmp -s "$p" <(printf '%s' "$c"); then log "  ok: $p (unchanged)"; return 1; fi
@@ -117,12 +144,56 @@ write_file() { # path, content — exact-bytes compare; returns 0 when written/w
 append_lines() { # path, lines... — returns 0 when appended/would-append, 1 when unchanged
   local p="$1"; shift; local cur missing=() l
   cur="$(read_file "$p")"
-  for l in "$@"; do printf '%s\n' "$cur" | grep -qxF -- "$l" || missing+=("$l"); done
+  for l in "$@"; do
+    [[ $'\n'"$cur"$'\n' == *$'\n'"$l"$'\n'* ]] || missing+=("$l")   # bash match, no grep fork
+  done
   [ ${#missing[@]} -eq 0 ] && { log "  ok: $p (unchanged)"; return 1; }
   backup "$p"
   [ "$DRY" = 1 ] && { log "  would append ${#missing[@]} line(s) to $p"; return 0; }
   printf '%s\n' "${missing[@]}" >> "$p"
   CHANGED=1; log "  appended ${#missing[@]} line(s) to $p"; return 0
+}
+
+# enabled systemd units as one newline-wrapped string: one systemctl call for
+# every unit the script cares about, instead of one call per unit
+enabled_units() {
+  local u list=""
+  list="$(systemctl list-unit-files --state=enabled,enabled-runtime --no-legend --no-pager 2>/dev/null | awk '{print $1}')"
+  printf '\n%s\n' "$list"
+}
+
+# one `sysctl -a` snapshot instead of one `sysctl -n` per key per check: the
+# sysctl verify path runs on every Enter of the re-check loop, so this is the
+# difference between 1 fork and ~30 forks each round
+sysctl_snap() {
+  [ "${1:-}" = force ] && SYS_SNAP_OK=0
+  [ "$SYS_SNAP_OK" = 1 ] && return 0
+  SYS_NOW=()
+  local line k v
+  while IFS= read -r line; do
+    case "$line" in *' = '*) ;; *) continue ;; esac
+    k="${line%% = *}"; v="${line#* = }"
+    while [[ "$v" == *'  '* ]]; do v="${v//  / }"; done   # squeeze runs of spaces
+    SYS_NOW["$k"]="$v"
+  done < <(sysctl -a 2>/dev/null)
+  SYS_SNAP_OK=1
+}
+
+get_sysctl() { sysctl_snap; printf '%s' "${SYS_NOW[$1]-}"; }
+
+sysctl_check() { # sets SYSCTL_BAD to the first mismatch; 1 when any key is off
+  sysctl_snap
+  local i got exp; local -a words
+  SYSCTL_BAD=""
+  for i in "${!SYSCTL_KEYS[@]}"; do
+    got="${SYS_NOW[${SYSCTL_KEYS[$i]}]-}"; exp="${SYSCTL_VALS[$i]}"
+    [ "$got" = "$exp" ] && continue
+    read -ra words <<< "$exp"                 # multi-value keys (buffer ranges) only need a value
+    [ ${#words[@]} -gt 1 ] && [ -n "$got" ] && continue
+    SYSCTL_BAD="${SYSCTL_KEYS[$i]}=$got (expected $exp)"
+    return 1
+  done
+  return 0
 }
 
 # ------------------------------------------------------------------ detection
@@ -138,17 +209,23 @@ disk_kind() { # root-disk SSD/HDD: nvme name => ssd; rotational=0 => ssd;
 }
 
 detect() {
-  NPROC="$(nproc)"; MEM_GB="$(awk '/MemTotal/{printf "%d", $2/1024/1024}' /proc/meminfo)"; [ -z "$MEM_GB" ] && MEM_GB=1
-  MEM_KB="$(awk '/MemTotal/{print $2}' /proc/meminfo)"; [ -z "$MEM_KB" ] && MEM_KB=$(( MEM_GB * 1024 * 1024 ))
+  NPROC="$(nproc)"
+  local k v _rest
+  while read -r k v _rest; do            # one read of /proc/meminfo, no awk forks
+    case "$k" in MemTotal:) MEM_KB="$v"; break ;; esac
+  done < /proc/meminfo
+  [ -n "${MEM_KB:-}" ] || MEM_KB=1048576
+  MEM_GB=$(( MEM_KB / 1048576 )); [ "$MEM_GB" -ge 1 ] || MEM_GB=1
   MIN_FREE_KB=$(( MEM_KB / 100 ))   # 1% of total RAM
   SWAP_DEF=$(( (MEM_KB / 3 + 1048575) / 1048576 ))   # RAM/3 rounded up to whole GB
-  ok command -v docker && HAS_DOCKER=1 || HAS_DOCKER=0
-  ok command -v dnsmasq && HAS_DNSMASQ=1 || HAS_DNSMASQ=0
+  has docker && HAS_DOCKER=1 || HAS_DOCKER=0
+  has dnsmasq && HAS_DNSMASQ=1 || HAS_DNSMASQ=0
   ACTIVE_SWAP="$(swapon --show --noheadings 2>/dev/null)"
   local SRC="$(findmnt -no SOURCE /)"
   ROOT_DEV="$(lsblk -no PKNAME "$SRC" 2>/dev/null | head -1)"
   [ -n "$ROOT_DEV" ] || ROOT_DEV="$(echo "$SRC" | sed 's|/dev/||; s/p[0-9]*$//; s/[0-9]*$//')"
   KIND="$(disk_kind "$ROOT_DEV")"
+  sysctl_plan
   log "detected: ${NPROC} cpu, ~${MEM_GB} GB RAM, docker=${HAS_DOCKER}, dnsmasq=${HAS_DNSMASQ}, swap=${ACTIVE_SWAP:+active}, disk=${ROOT_DEV} (${KIND})"
 }
 
@@ -164,8 +241,10 @@ ask_inputs() { # no prompts — every choice is auto-detected or env-overridable
   [ -n "${WITH_IRQBALANCE:-}" ] || WITH_IRQBALANCE=1
   [ -n "${WITH_EARLYOOM:-}" ] || WITH_EARLYOOM=1
   [ -n "${WITH_TUNED:-}" ] || WITH_TUNED=1
+  # git: repo-wide fast paths, only when the script sits in a checkout (opt out with =0)
+  [ -n "${WITH_GIT:-}" ] || WITH_GIT=1
   local YES_NOTE=""; [ "$YES" = 1 ] && YES_NOTE=" (--yes)"
-  log "plan: swap=${SWAP_GB}G (RAM/3 rounded up) noatime=${NOATIME} disk=${ROOT_DEV} (${KIND}) setra=${SETRA} fstrim=${FORCE_FSTRIM} irqbalance=${WITH_IRQBALANCE} earlyoom=${WITH_EARLYOOM} tuned=${WITH_TUNED}${YES_NOTE}"
+  log "plan: swap=${SWAP_GB}G (RAM/3 rounded up) noatime=${NOATIME} disk=${ROOT_DEV} (${KIND}) setra=${SETRA} fstrim=${FORCE_FSTRIM} irqbalance=${WITH_IRQBALANCE} earlyoom=${WITH_EARLYOOM} tuned=${WITH_TUNED} git=${WITH_GIT}${YES_NOTE}"
 }
 
 # ------------------------------------------------------------------ 1. apt cleanup (apt autoremove + clean)
@@ -188,13 +267,9 @@ apt_clean() {
 tuned_tune() {
   [ "${WITH_TUNED:-1}" = 1 ] || { log "tuned: skipped (WITH_TUNED=0)"; return 0; }
   log "tuned: auto profile (tuned-adm recommend)"
-  if ! ok command -v tuned-adm; then
-    if [ "$DRY" = 0 ] && [ "$VERIFY" = 0 ]; then
-      apt-get install -y -qq tuned >/dev/null 2>&1 || { fail tuned "tuned install failed"; return; }
-    else
-      log "  would install tuned"
-      return 0
-    fi
+  if ! has tuned-adm; then
+    if [ "$DRY" = 1 ] || [ "$VERIFY" = 1 ]; then log "  would install tuned + apply its recommended profile"; return 0; fi
+    fail tuned "tuned still missing after the helpers install"; return
   fi
   local prof
   prof="$(tuned-adm recommend 2>/dev/null | head -1)"
@@ -220,6 +295,7 @@ kernel.numa_balancing|0|disable NUMA migrations on a single-socket VM
 kernel.nmi_watchdog|0|no NMI watchdog on VMs (false soft-lockups, perf-counter cost)
 kernel.sched_autogroup_enabled|0|server: disable per-session CPU groups (predictable scheduling)
 kernel.core_pattern|/dev/null|discard core dumps (no giant core files on crash)
+kernel.pid_max|4194304|PID headroom for many containers/threads
 net.core.somaxconn|65535|listen backlog for busy proxies/web servers
 net.core.netdev_max_backlog|16384|packet backlog before the stack drops
 net.core.rmem_max|16777216|allow large TCP receive windows
@@ -238,21 +314,37 @@ net.ipv4.ip_forward|1|IP forwarding (containers/VPNs)
 net.ipv6.conf.all.forwarding|1|IPv6 forwarding (containers/VPNs)
 net.ipv6.conf.default.forwarding|1|IPv6 forwarding default"
 
+sysctl_plan() { # parse the table once into parallel arrays (no here-string per check);
+  # vm.min_free_kbytes is RAM-derived, so it is appended at runtime
+  SYSCTL_KEYS=(); SYSCTL_VALS=(); SYSCTL_CMTS=()
+  local key val cmt
+  while IFS='|' read -r key val cmt; do
+    [ -n "$key" ] || continue
+    SYSCTL_KEYS+=("$key"); SYSCTL_VALS+=("$val"); SYSCTL_CMTS+=("$cmt")
+  done <<< "$SYSCTLS"
+  SYSCTL_KEYS+=("vm.min_free_kbytes"); SYSCTL_VALS+=("$MIN_FREE_KB")
+  SYSCTL_CMTS+=("1% of RAM (emergency allocation headroom, computed)")
+}
+
 kernel_tune() {
   log "kernel: sysctl tuning"
   local CTL="# Generated by optimize.sh — universal machine tuning (re-run to refresh)."
-  local key val cmt
-  while IFS='|' read -r key val cmt; do
+  local i
+  for i in "${!SYSCTL_KEYS[@]}"; do
     CTL="${CTL}
-# $cmt
-$key = $val"
-  done <<< "$SYSCTLS"
+# ${SYSCTL_CMTS[$i]}
+${SYSCTL_KEYS[$i]} = ${SYSCTL_VALS[$i]}"
+  done
   write_file /etc/sysctl.d/99-optimize.conf "${CTL}
 " || true
   if [ "$DRY" = 0 ] && [ "$VERIFY" = 0 ]; then
-    sysctl --system >/dev/null 2>&1 || sysctl -p /etc/sysctl.d/99-optimize.conf >/dev/null 2>&1 \
+    # apply only our own file first (this file is last in the sort order, so it
+    # wins anyway); `sysctl --system` re-reads every file and is the fallback
+    sysctl -p /etc/sysctl.d/99-optimize.conf >/dev/null 2>&1 \
+      || sysctl --system >/dev/null 2>&1 \
       || { fail sysctl "sysctl apply failed"; return; }
   fi
+  sysctl_snap force   # the snapshot the checks read is now stale
   log "  ok: sysctl applied"
 }
 
@@ -303,16 +395,14 @@ swap_tune() {
 SERVICE_PRUNE="cups.service cups-browsed.service ModemManager.service avahi-daemon.service bluetooth.service wpa_supplicant.service speech-dispatcher.service pppd-dns.service openipmi.service systemd-networkd-wait-online.service"
 services_prune() {
   log "services: disabling unneeded units (only if present + enabled)"
-  local u st
+  local u on
+  on="$(enabled_units)"   # one systemctl call, not one per unit
   for u in $SERVICE_PRUNE; do
-    st="$(systemctl is-enabled "$u" 2>/dev/null)"
-    case "$st" in
-      enabled|enabled-runtime)
-        if [ "$DRY" = 0 ] && [ "$VERIFY" = 0 ]; then
-          systemctl disable --now "$u" 2>/dev/null || { fail services "could not disable $u"; continue; }
-        fi
-        log "  disabled: $u";;
-    esac
+    [[ $on == *$'\n'"$u"$'\n'* ]] || continue   # absent or already disabled
+    if [ "$DRY" = 0 ] && [ "$VERIFY" = 0 ]; then
+      systemctl disable --now "$u" 2>/dev/null || { fail services "could not disable $u"; continue; }
+    fi
+    log "  disabled: $u"
   done
   log "  ok: service pruning done"
 }
@@ -338,9 +428,9 @@ docker_tune() {
   local P=/etc/docker/daemon.json
   local TUNE='{"log-driver":"json-file","log-opts":{"max-size":"10m","max-file":"3"},"live-restore":true,"max-concurrent-downloads":10,"max-concurrent-uploads":10,"userland-proxy":false}'
   local NEW
-  if [ -f "$P" ] && ok command -v jq; then
+  if [ -f "$P" ] && has jq; then
     NEW="$(jq -s --argjson t "$TUNE" '.[0] * $t' "$P")"
-  elif [ -f "$P" ] && ok command -v python3; then
+  elif [ -f "$P" ] && has python3; then
     NEW="$(python3 -c 'import json,sys; a=json.load(open(sys.argv[1])); a.update(json.loads(sys.argv[2])); print(json.dumps(a,indent=2))' "$P" "$TUNE")"
   elif [ -f "$P" ]; then
     NEW="$TUNE"; log "  warn: no jq/python3 — unknown existing keys dropped (install jq to merge)"
@@ -452,29 +542,27 @@ w $DF - - - - madvise
   fi
 }
 
-# ------------------------------------------------------------------ 12. packages: irqbalance + earlyoom (performance helpers, auto-install when missing)
-pkg_tune() {
-  # Both are performance helpers and install when missing (opt out: WITH_IRQBALANCE=0 / WITH_EARLYOOM=0).
-  if [ "${WITH_IRQBALANCE:-1}" = 1 ] && ! ok command -v irqbalance; then
-    if [ "$DRY" = 0 ] && [ "$VERIFY" = 0 ]; then
-      apt-get install -y -qq irqbalance >/dev/null 2>&1 && systemctl enable --now irqbalance 2>/dev/null \
-        || { fail pkg "irqbalance install failed"; return; }
-      log "  ok: irqbalance installed+enabled"
-    else
-      log "  would install+enable irqbalance"
-    fi
-  elif [ "${WITH_IRQBALANCE:-1}" = 1 ]; then log "  ok: irqbalance"
+# ------------------------------------------------------------------ 12. performance helpers: tuned + irqbalance + earlyoom
+helpers_install() {
+  # ONE apt transaction for every missing helper: three separate `apt-get install`
+  # runs re-resolve dependencies, re-take the dpkg lock and rewrite the lists each
+  # time. Opt-outs are honoured, so a box that has them all is a no-op.
+  local want=() p
+  [ "${WITH_TUNED:-1}" = 1 ] && ! has tuned-adm && want+=(tuned)
+  [ "${WITH_IRQBALANCE:-1}" = 1 ] && ! has irqbalance && want+=(irqbalance)
+  [ "${WITH_EARLYOOM:-1}" = 1 ] && ! has earlyoom && want+=(earlyoom)
+  if [ ${#want[@]} -eq 0 ]; then
+    log "helpers: tuned/irqbalance/earlyoom present or opted out"
+    return 0
   fi
-  if [ "${WITH_EARLYOOM:-1}" = 1 ] && ! ok command -v earlyoom; then
-    if [ "$DRY" = 0 ] && [ "$VERIFY" = 0 ]; then
-      apt-get install -y -qq earlyoom >/dev/null 2>&1 && systemctl enable --now earlyoom 2>/dev/null \
-        || { fail pkg "earlyoom install failed"; return; }
-      log "  ok: earlyoom installed+enabled"
-    else
-      log "  would install+enable earlyoom"
-    fi
-  elif [ "${WITH_EARLYOOM:-1}" = 1 ]; then log "  ok: earlyoom"
-  fi
+  log "helpers: installing ${want[*]} (one apt transaction)"
+  if [ "$DRY" = 1 ] || [ "$VERIFY" = 1 ]; then log "  would apt-get install -y ${want[*]}"; return 0; fi
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${want[@]}" >/dev/null 2>&1 \
+    || { fail pkg "apt-get install ${want[*]} failed"; return; }
+  for p in "${want[@]}"; do
+    systemctl enable --now "$p" >/dev/null 2>&1 || { fail pkg "could not enable $p"; continue; }
+    HAVE["$p"]=1; log "  ok: $p installed+enabled"
+  done
 }
 
 # ------------------------------------------------------------------ 13. apt speed
@@ -483,6 +571,40 @@ aptconf_tune() {
   write_file /etc/apt/apt.conf.d/99-optimize 'Acquire::Languages "none";
 Dpkg::Use-Pty "false";
 '
+}
+
+# ------------------------------------------------------------------ 14. git repo maintenance (auto-detected checkout)
+# The repo-wide half of the pass: per-checkout local settings that make git use
+# its fast paths, plus git's own cheap pack maintenance. Everything is derived
+# from the script's own location (never a hardcoded path) and every setting is
+# read back before it is written, so a re-run is a no-op.
+GIT_CFG=(
+  "core.preloadIndex|true"
+  "core.untrackedCache|true"
+  "core.commitGraph|true"
+  "gc.writeCommitGraph|true"
+  "index.version|4"
+)
+git_tune() {
+  [ "${WITH_GIT:-1}" = 1 ] || { log "git: skipped (WITH_GIT=0)"; return 0; }
+  local root line key val backed=0
+  root="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)"
+  [ -n "$root" ] || { log "git: $SCRIPT_DIR is not a checkout — skipped"; return 0; }
+  log "git: repo maintenance in $root"
+  for line in "${GIT_CFG[@]}"; do
+    key="${line%%|*}"; val="${line#*|}"
+    [ "$(git -C "$root" config --local --get "$key" 2>/dev/null)" = "$val" ] && continue
+    if [ "$DRY" = 1 ] || [ "$VERIFY" = 1 ]; then log "  would set $key=$val"; continue; fi
+    [ "$backed" = 1 ] || { backup "$root/.git/config"; backed=1; }   # once, before the first edit
+    git -C "$root" config --local "$key" "$val" || { fail git "could not set $key=$val"; return; }
+    CHANGED=1; log "  set $key=$val"
+  done
+  if [ "$DRY" = 0 ] && [ "$VERIFY" = 0 ]; then
+    git -C "$root" pack-refs --all --prune >/dev/null 2>&1 || true
+    git -C "$root" commit-graph write --reachable >/dev/null 2>&1 || true
+    git -C "$root" gc --auto --quiet >/dev/null 2>&1 || true   # no-op unless thresholds are hit
+    log "  ok: refs packed, commit-graph written, gc --auto"
+  fi
 }
 
 # ------------------------------------------------------------------ error framework (the installer style)
@@ -502,6 +624,7 @@ problem() {
     thp)          echo "transparent huge pages still not madvise" ;;
     pkg)          echo "optional package install failed" ;;
     tuned)        echo "tuned auto profile not active" ;;
+    git)          echo "git repo maintenance settings not applied" ;;
     reboot)       echo "reboot pending (recommended after first run)" ;;
     *)            echo "$1" ;;
   esac
@@ -523,6 +646,7 @@ hint() {
     thp)          echo "run: echo madvise > /sys/kernel/mm/transparent_hugepage/enabled, then re-check" ;;
     pkg)          echo "run: apt-get install -y <package>, then re-check" ;;
     tuned)        echo "run: apt-get install -y tuned && systemctl enable --now tuned && tuned-adm profile \"\$(tuned-adm recommend)\", then re-check" ;;
+    git)          echo "run: git -C <checkout> config --local core.commitGraph true (and core.untrackedCache/index.version), then re-check" ;;
     reboot)       echo "run: sudo reboot (optional but recommended; press Enter to acknowledge for now)" ;;
     *)            echo "" ;;
   esac
@@ -531,24 +655,15 @@ hint() {
 recheck() {
   case "$1" in
     apt)          DEBIAN_FRONTEND=noninteractive apt-get update -qq >/dev/null 2>&1 ;;
-    sysctl)
-      local key val got exp all=1
-      while IFS='|' read -r key val cmt; do
-        got="$(sysctl -n "$key" 2>/dev/null | tr -s ' ' | sed 's/^ //;s/ $//')"
-        exp="$(echo "$val" | tr -s ' ')"
-        [ "$got" = "$exp" ] || [ "$(echo "$val" | wc -w)" -gt 1 -a -n "$got" ] || all=0
-      done <<< "$SYSCTLS"
-      [ "$all" = 1 ];;
+    sysctl)       sysctl_snap force; sysctl_check ;;   # one snapshot per re-check round
     # this shell's live ulimit only changes on a new login, so verify the config a
     # new login/service will read (checking the live value gives a false failure)
     limits)       grep -qE 'soft[[:space:]]+nofile[[:space:]]+65535' /etc/security/limits.conf \
                     && grep -qE 'hard[[:space:]]+nofile[[:space:]]+65535' /etc/security/limits.conf \
                     && grep -q '^DefaultLimitNOFILE=65535' /etc/systemd/system.conf.d/99-optimize.conf ;;
     swap)         [ -n "$(swapon --show --noheadings 2>/dev/null)" ] ;;
-    services)     local u st all=1; for u in $SERVICE_PRUNE; do
-                    st="$(systemctl is-enabled "$u" 2>/dev/null)"
-                    case "$st" in ""|disabled|masked|static|indirect|generated|not-found) :;; *) all=0;; esac
-                  done; [ "$all" = 1 ] ;;
+    services)     local on u; on="$(enabled_units)"
+                  for u in $SERVICE_PRUNE; do [[ $on == *$'\n'"$u"$'\n'* ]] && return 1; done; return 0 ;;
     journald)     [ -f /etc/systemd/journald.conf.d/99-optimize.conf ] && systemctl is-active --quiet systemd-journald ;;
     docker)       [ "$HAS_DOCKER" = 0 ] || { ok docker info && [ -f /etc/docker/daemon.json ]; } ;;
     dnsmasq)      [ "$HAS_DNSMASQ" = 0 ] || grep -rsq '^cache-size=' /etc/dnsmasq.conf /etc/dnsmasq.d/ 2>/dev/null ;;
@@ -558,8 +673,18 @@ recheck() {
                   [ -n "$ROOT_DEV" ] && [ "$(cat "/sys/block/$ROOT_DEV/queue/read_ahead_kb" 2>/dev/null)" = "$(( SETRA * 512 / 1024 ))" ] ;;
     thp)          grep -q '\[madvise\]' /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null \
                     && { [ ! -r /sys/kernel/mm/transparent_hugepage/defrag ] || grep -q '\[madvise\]' /sys/kernel/mm/transparent_hugepage/defrag; } ;;
-    pkg)          { [ "${WITH_IRQBALANCE:-1}" = 0 ] || ok command -v irqbalance; } && { [ "${WITH_EARLYOOM:-1}" = 0 ] || ok command -v earlyoom; } ;;
-    tuned)        [ "${WITH_TUNED:-1}" = 0 ] || { ok command -v tuned-adm && systemctl is-active --quiet tuned && [ -n "$(tuned-adm active 2>/dev/null | sed -n 's/^Current active profile: //p' | head -1)" ]; } ;;
+    pkg)          { [ "${WITH_TUNED:-1}" = 0 ] || has tuned-adm; } \
+                    && { [ "${WITH_IRQBALANCE:-1}" = 0 ] || has irqbalance; } \
+                    && { [ "${WITH_EARLYOOM:-1}" = 0 ] || has earlyoom; } ;;
+    tuned)        [ "${WITH_TUNED:-1}" = 0 ] || { has tuned-adm && systemctl is-active --quiet tuned && [ -n "$(tuned-adm active 2>/dev/null | sed -n 's/^Current active profile: //p' | head -1)" ]; } ;;
+    git)          local root line key val
+                  [ "${WITH_GIT:-1}" = 1 ] || return 0
+                  root="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)" || return 0
+                  [ -n "$root" ] || return 0
+                  for line in "${GIT_CFG[@]}"; do
+                    key="${line%%|*}"; val="${line#*|}"
+                    [ "$(git -C "$root" config --local --get "$key" 2>/dev/null)" = "$val" ] || return 1
+                  done; return 0 ;;
     reboot)       return 0 ;;   # informational — acknowledged on Enter
     *)            false ;;
   esac
@@ -568,13 +693,8 @@ recheck() {
 is_expected() { case "$1" in reboot) return 0;; *) return 1;; esac; }
 
 verify_all() { # fail() any tag whose state is not converged, so the loop re-checks it
-  local key val cmt
-  while IFS='|' read -r key val cmt; do
-    local got exp
-    got="$(sysctl -n "$key" 2>/dev/null | tr -s ' ' | sed 's/^ //;s/ $//')"
-    exp="$(echo "$val" | tr -s ' ')"
-    { [ "$got" = "$exp" ] || { [ "$(echo "$val" | wc -w)" -gt 1 ] && [ -n "$got" ]; }; } || fail sysctl "$key=$got != $exp"
-  done <<< "$SYSCTLS"
+  sysctl_snap force
+  sysctl_check || fail sysctl "$SYSCTL_BAD"
   recheck limits || fail limits
   recheck swap || fail swap
   recheck services || fail services
@@ -587,6 +707,7 @@ verify_all() { # fail() any tag whose state is not converged, so the loop re-che
   recheck thp || fail thp
   recheck pkg || fail pkg
   recheck tuned || fail tuned
+  recheck git || fail git
   # reboot is never automatic — it is a manual step in the debug report whenever
   # this run changed anything; pressing Enter acknowledges it (an in-process
   # reboot would kill the script, so it can't be re-checked for real).
@@ -652,12 +773,14 @@ success_block() {
   echo ""
   echo "=============================================================="
   echo " SUCCESS — the machine is tuned:"
-  echo "   kernel      $(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null) congestion control, $(sysctl -n vm.swappiness 2>/dev/null) swappiness, $(sysctl -n net.core.default_qdisc 2>/dev/null) qdisc"
+  sysctl_snap
+  echo "   kernel      $(get_sysctl net.ipv4.tcp_congestion_control) congestion control, $(get_sysctl vm.swappiness) swappiness, $(get_sysctl net.core.default_qdisc) qdisc"
   echo "   limits      nofile 65535 (pam + systemd), tasks unlimited"
   echo "   swap        ${SW_NOW:-$(swapon --show --noheadings 2>/dev/null | head -1)}"
   echo "   storage     $(findmnt -no OPTIONS / | tr ',' ' ' | grep -q noatime && echo noatime || echo atime) on /, $(systemctl is-enabled fstrim.timer 2>/dev/null || echo no-fstrim)"
   echo "   logs        journald capped at 512M/7d"
   echo "   docker      daemon tuned + pruned; dnsmasq cache 10000 (if installed)"
+  echo "   repo        git commit-graph + untracked cache on, refs packed (when this is a checkout)"
   echo ""
   echo " Every edited file is backed up under: $BACKUP_DIR"
   echo ""
@@ -674,14 +797,12 @@ main() {
   [ "$(id -u)" = 0 ] || { echo "run as root: sudo bash scripts/ops/optimize.sh" >&2; exit 1; }
   grep -qE '^ID=(debian|ubuntu)$' /etc/os-release || { echo "optimize.sh targets Debian-family systems only" >&2; exit 1; }
   [ "$VERIFY" = 0 ] && banner
-  detect
-  # vm.min_free_kbytes is RAM-derived (1% of total), so it joins the list at runtime
-  SYSCTLS="${SYSCTLS}
-vm.min_free_kbytes|${MIN_FREE_KB}|1% of RAM (emergency allocation headroom, computed)"
+  detect   # also parses the sysctl table (vm.min_free_kbytes is RAM-derived)
   ask_inputs
 
   if [ "$VERIFY" = 0 ]; then
     apt_clean
+    helpers_install
     tuned_tune
     kernel_tune
     limits_tune
@@ -694,8 +815,8 @@ vm.min_free_kbytes|${MIN_FREE_KB}|1% of RAM (emergency allocation headroom, comp
     fstrim_tune
     setra_tune
     thp_tune
-    pkg_tune
     aptconf_tune
+    git_tune
   fi
   [ "$DRY" = 1 ] && { echo; echo "dry-run complete — nothing was changed. Would back up to $BACKUP_DIR"; exit 0; }
 
