@@ -215,7 +215,7 @@ row modules "$mstr"
 
 # Per module: the state in WORDS, its route exposure, and the containers that
 # are actually running. `not installed` means ABSENT — no container, no route.
-# `tailnet-only` is a property of a route that EXISTS (tail.$DOMAIN), never of
+# `tailnet-only` is a property of a route that EXISTS (ttyd.$DOMAIN), never of
 # a missing module. This row is the answer to "why is vault.$DOMAIN 502?".
 RUNNING_D="$(docker ps --format '{{.Names}}' 2>/dev/null)"
 while read -r m; do
@@ -247,7 +247,7 @@ for f in "${VDIR:-$ROOT/modules/caddy/vhosts}"/*.caddy; do
   h="$(sed -n 's|^https://\([A-Za-z0-9.-]*\)[[:space:]]*{.*|\1|p' "$f" | head -1)"
   [ -n "$h" ] || continue
   label="${h%%.*}"
-  if [ "$label" = tail ]; then tn+="$h  "; continue; fi
+  case "$label" in ttyd|vault|mail) tn+="$h  "; continue ;; esac
   owner=""
   while read -r m; do
     [ -n "$m" ] || continue

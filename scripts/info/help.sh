@@ -133,7 +133,6 @@ make talk-config|force every Talk call through the HPB signalling server + our T
 make nc-capture|snapshot live NC users/groups/quotas → recovery manifests (outside the repo)
 make kuma-import|import an adapted Uptime Kuma db (KUMA_DB=<path>)
 make gh-web-health|check the GitHub web git-data endpoints (after a history rewrite)
-make tail-targets|regenerate the tail terminal's vhost catalogue (after adding a vhost)
 EOF
 
   sec "nextcloud db unit (PostgreSQL — not in the -all loops)"
@@ -222,16 +221,6 @@ EOF
 make immich-users|list photo-library users
 make immich-admin-pass|reset the admin password (interactive, inside the container)
 make immich-grant-admin|grant admin to an account — EMAIL=<addr>
-EOF
-
-  sec "beszel (hub + agent)"
-  rows <<'EOF'
-make beszel-users|list hub superusers
-make beszel-add-user|create/update a superuser — EMAIL=<addr> PASS=<password>
-make beszel-del-user|delete a superuser — EMAIL=<addr>
-make beszel-systems|list the systems the hub monitors (name, host, port, status)
-make beszel-add-system|register this machine in the hub (agent IP + LISTEN port derived from the module)
-make beszel-key|pin the agent's public key (KEY='ssh-ed25519 …') and recreate the agent
 EOF
 
   sec "nextcloud occ (runs as www-data inside the container)"
