@@ -23,16 +23,14 @@ prep_dirs() {
                $ROOT/data/pgdata \
                $ROOT/data/talk \
                $ROOT/data/download \
-               $ROOT/data/pages/www \
-               $ROOT/data/pages/tail
-  # The web roots are INSTANCE DATA (the repo ships no pages), one directory per
-  # vhost: data/pages/www for www.$DOMAIN, data/pages/tail for tail.$DOMAIN.
-  # Seed a minimal placeholder homepage ONCE so www.$DOMAIN never falls through
-  # to the bare "ok" stub. Existing pages are never touched — the operator owns
-  # these dirs (data/pages/tail/tail.html is rendered by `make render`).
+               $ROOT/data/pages/www
+  # The web root is INSTANCE DATA (the repo ships no pages): data/pages/www for
+  # www.$DOMAIN. Seed a minimal placeholder homepage ONCE so www.$DOMAIN never
+  # falls through to the bare "ok" stub. Existing pages are never touched — the
+  # operator owns that dir.
   if [ ! -f "$ROOT/data/pages/www/index.html" ]; then
-    printf '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1">\n<title>%s</title></head><body>\n<h1>%s</h1>\n<p>This is the placeholder homepage. Drop your pages in <code>%s/pages/www</code> — they are served at the vhost roots (<code>www.%s</code>, <code>tail.%s</code>) and are never overwritten by a render.</p>\n</body></html>\n' \
-      "$DOMAIN" "$DOMAIN" "$DATA" "$DOMAIN" "$DOMAIN" > "$ROOT/data/pages/www/index.html"
+    printf '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1">\n<title>%s</title></head><body>\n<h1>%s</h1>\n<p>This is the placeholder homepage. Drop your pages in <code>%s/pages/www</code> — they are served at the vhost root (<code>www.%s</code>) and are never overwritten by a render.</p>\n</body></html>\n' \
+      "$DOMAIN" "$DOMAIN" "$DATA" "$DOMAIN" > "$ROOT/data/pages/www/index.html"
   fi
   # Recursive chowns only when the ownership is actually wrong: on an installed
   # instance these trees can hold hundreds of thousands of files, and a re-run
@@ -302,23 +300,6 @@ seed_stack() {
       pseed DB_PASSWORD "$(openssl rand -hex 24)"
     fi
     detail "  Immich database credentials seeded in $penv"
-  fi
-  if mod_on beszel; then
-    # The agent refuses to start without a public key (KEY). One is minted here
-    # and kept; the hub's add-system dialog shows the key it expects, and
-    # `make beszel-key KEY=...` pins that one instead.
-    local benv=modules/beszel/.env
-    [ -f "$benv" ] || { umask 077; : >"$benv"; }
-    chmod 600 "$benv"
-    if ! grep -q '^BESZEL_KEY=.' "$benv"; then
-      local _kd _kpub
-      _kd=$(mktemp -d)
-      ssh-keygen -q -t ed25519 -N '' -C beszel-agent -f "$_kd/id" >/dev/null 2>&1
-      _kpub=$(cat "$_kd/id.pub" 2>/dev/null)
-      rm -rf "$_kd"
-      [ -n "$_kpub" ] && echo "BESZEL_KEY=$_kpub" >> "$benv"
-    fi
-    detail "  Beszel agent key seeded in $benv"
   fi
   if mod_on home; then
     # Homarr encrypts the secrets it stores in its SQLite DB with

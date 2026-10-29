@@ -83,7 +83,7 @@ success_block() {
     printf '  %sShell%s        %s(tailnet-only — run scripts/ops/tailscale-https.sh to serve it via tailscale)%s\n' \
       "$C_PURPLE" "$C_RST" "$C_GREY" "$C_RST"
   else
-    printf '  %sShell%s        https://tail.%s   %s(tailnet-only)%s\n' \
+    printf '  %sShell%s        https://ttyd.%s   %s(tailnet-only)%s\n' \
       "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
   fi
   printf '  %smachine IP%s %s    %sTailscale IP%s %s\n' \
@@ -111,9 +111,9 @@ success_block() {
     printf '      %s(only your provider can create it; SPF/DKIM/DMARC alone won'"'"'t stop rejects)%s\n' "$C_GREY" "$C_RST"
   fi
   n=$((n+1)); printf '   %d. Tailscale split-DNS: admin console -> DNS -> add %s -> %s\n' "$n" "$DOMAIN" "${TS_IP:-<tailscale IP>}"
-  printf '      %sso tail.%s resolves for tailnet devices (dnsmasq on the machine already answers it)%s\n' "$C_GREY" "$DOMAIN" "$C_RST"
+  printf '      %sso ttyd.%s resolves for tailnet devices (dnsmasq on the machine already answers it)%s\n' "$C_GREY" "$DOMAIN" "$C_RST"
   if [ "${TAIL_TLS_FALLBACK:-false}" = true ]; then
-    n=$((n+1)); printf '   %d. Run scripts/ops/tailscale-https.sh — the tail.%s LE order failed (often the LE rate limit), so the door is served over Tailscale HTTPS instead\n' "$n" "$DOMAIN"
+    n=$((n+1)); printf '   %d. Run scripts/ops/tailscale-https.sh — the ttyd.%s LE order failed (often the LE rate limit), so the door is served over Tailscale HTTPS instead\n' "$n" "$DOMAIN"
   fi
   if mod_on cloud; then
     n=$((n+1)); printf '   %d. %s(optional)%s Cloudflare WAF rule skip for cloud.%s (desktop sync)\n' "$n" "$C_GREY" "$C_RST" "$DOMAIN"

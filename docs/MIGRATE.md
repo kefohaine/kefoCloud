@@ -31,7 +31,8 @@ first, then the installer again.
 ## What the script does not do
 
 - **Tailscale split DNS** — add `$DOMAIN` → this node's `100.x` in the admin console (the
-  host's dnsmasq already answers `tail.$DOMAIN`). Printed as a follow-up.
+  host's dnsmasq already answers `ttyd.$DOMAIN`, `vault.$DOMAIN` and `mail.$DOMAIN`).
+  Printed as a follow-up.
 - **Mailboxes** — create them with `make mail-gen [MAIL=…]` / `make mail-gen-alias TO=…`.
   The installer creates only the app sender addresses (`nextcloud@`, `vaultwarden@`).
 - **Provider-side PTR** — only the machine provider can set reverse DNS. Printed as

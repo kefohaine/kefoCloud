@@ -149,19 +149,19 @@ cf_mail_dns() {
   # must not pass through the CF proxy.
   mod_on photos && cf_record photos false || cf_a_del photos
   # home.$DOMAIN is Homarr (Next.js root-absolute assets, so it cannot live
-  # under www/home); proxied like cloud/kuma. beszel (tail/beszel) is the one
-  # module with no hostname of its own.
-  # talk/mail MUST be DNS-only (grey cloud): TURN relays media over
-  # UDP/TCP 3478/5349 + 49160-49200 and SMTP/IMAP also bypass the CF proxy
-  # (HTTP(S) only). Caddy still gets their LE certs via DNS-01. talk exists
-  # only when video calling was enabled.
+  # under www/home); proxied like cloud/kuma.
+  # talk MUST be DNS-only (grey cloud): TURN relays media over UDP/TCP
+  # 3478/5349 + 49160-49200, which the CF proxy cannot carry. Caddy still gets
+  # its LE cert via DNS-01. talk exists only when video calling was enabled.
   mod_on cloud && [ "${VIDEO_CALLING:-true}" != "false" ] && cf_record talk false
   mod_on cloud && [ "${VIDEO_CALLING:-true}" = "false" ] && cf_a_del talk
   # mail.$DOMAIN is Mailu's own hostname (platform door + admin UI + the
-  # SMTP/IMAP cert) — DNS-only, it must never sit behind the CF proxy. The
-  # webmail door cube.$DOMAIN is plain HTTP and is proxied like vault/kuma.
-  mod_on mail  && cf_record mail false
-  mod_on mail || cf_a_del mail
+  # SMTP/IMAP cert) and is TAILNET-ONLY (operator choice 2026-10-29): the name
+  # is answered by the machine dnsmasq and gated by @not_tailnet in the vhost,
+  # so the public zone must hold NO record for it (DNS-01 only needs the TXT
+  # record for the certificate). The webmail door cube.$DOMAIN stays public and
+  # is proxied like vault/kuma.
+  cf_a_del mail
   mod_on mail  && cf_record cube true
   mod_on mail || cf_a_del cube
   mod_on mail && cf_mail_dns

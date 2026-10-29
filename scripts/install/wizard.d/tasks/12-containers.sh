@@ -103,21 +103,6 @@ containers_up() {
     fi
     svc_note_applied writefreely writefreely --
   fi
-  if mod_on beszel; then
-    # One compose file declares hub + agent: recreating either brings both up.
-    if svc_skip_repair beszel beszel -- beszel-hub beszel-agent; then
-      detail "  beszel hub + agent already up, inputs unchanged — skipped"
-    else
-      log "  recreate: beszel hub + agent"; make dok-recreate-beszel-hub >>"$LOG" 2>&1 || fail beszel
-    fi
-    # The hub ships ZERO systems and its CLI cannot create one, so without this
-    # the dashboard is empty after a fresh install. Idempotent (skipped when the
-    # agent's address is already registered); a not-yet-reachable agent is a
-    # soft failure — the hub is fine, only its own row is pending.
-    log "  register: this machine in the beszel hub"
-    make beszel-add-system >>"$LOG" 2>&1 || warn beszel_system
-    svc_note_applied beszel beszel --
-  fi
   if mod_on photos; then
     # immich-server declares the dependency order (db + redis), so it is the
     # one unit to recreate for the whole photo stack.

@@ -182,7 +182,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 #### New modules are outside the backup/restore universe
 - **File**: `scripts/ops/backup-bundles.sh`, `scripts/ops/restore-data.sh`
-- **Problem**: both scripts list `vault mailserver kuma` explicitly, so the `home`, `blog`, `beszel` and `photos` datadirs are neither bundled nor restorable.
+- **Problem**: both scripts list `vault mailserver kuma` explicitly, so the `home`, `blog` and `photos` datadirs are neither bundled nor restorable.
 - **Fix**: derive the datadir universe from `config/modules.conf` (one loop over `mod_all`/`mod_dir`) instead of extending the literals.
 
 ## Planned ideas
@@ -280,14 +280,14 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Terminal `host-exec` shim** — chroot-to-host wrapper for glibc binaries in the Alpine ttyd container.
 
 ### Sep 2026 — edge renames + docs overhaul
-- **HTTP basic auth removed everywhere** — `/ttyd` and the whole `tail.$DOMAIN` vhost are gated by Tailscale membership only; `make tail-auth`, its script and every basic-auth check/doc are gone.
-- **Web root moved to instance data** — the repo ships no pages; the edge mounts the instance web roots read-only, only the tail door-list template is tracked, and the tail catalogue lists tailnet-only routes.
+- **HTTP basic auth removed everywhere** — the whole tailnet-edge vhost (`ttyd.$DOMAIN`) is gated by Tailscale membership only; `make tail-auth`, its script and every basic-auth check/doc are gone.
+- **Web root moved to instance data** — the repo ships no pages; the edge mounts the instance web roots read-only.
 - **Module vocabulary fixed** — `not installed` (absent, no route) is now distinct from `tailnet-only` (a route that exists); `config/modules.conf` is the module roster and `make fetch-more` prints the classification.
 ### Sep 2026 — modules rename + scripts categories
 - **`services/` renamed to `modules/`** — every path, compose, hook, doc and recipe follows; the module roster itself is now declared once in `config/modules.conf`.
 - **`scripts/` organised per category** — `lib/ install/ render/ stack/ modules/ access/ info/ ops/ hooks/`; each script resolves the checkout through `scripts/lib/instance.sh`, so depth no longer matters.
 - **Setup-specific values removed before the installer can rename them** — the tracked dnsmasq placeholder is a literal (was the instance's own Tailscale IP), `TAILNET_SUBNET` is gone, and the `kefoCloud-stack` retirement step was deleted.
-- **Web root is instance data** — operator pages + generated `targets.json` live under `$DATA_DIR`; the repo keeps only the tail template.
+- **Web root is instance data** — operator pages live under `$DATA_DIR`; the repo keeps no pages.
 - **`make backup` path bug fixed + reverse-rendered** — it pointed at `$(REPO)/backups` and `$(REPO)/vault`, both of which moved under `data/` in the layout migration (the vault tar was failing with "Error is not recoverable"); it now reverse-renders every file it pulls back, so live config lands in the skeleton as `{{TOKENS}}` — verified with a zero-diff round trip against all seven tracked config files.
 - **`make nc-datadir-nfs`** — interactive datadirectory mover (replaces `make storage`): nextcloud → `export` (live datadir to an external machine) or `import` (brings back this host's own previously-exported datadir); the database stays on this machine.
 - **`make render` + `docs/SKELETON.md`** — the skeleton is documented end to end: tokens, compose substitution, script variables, domain-free filenames and the rename procedure.
@@ -314,7 +314,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **installer: per-module install selection** — `ask_inputs` now prompts for cloud/vault/mail/monitor (default all ON, env/state-overridable); `phase2_op`, `containers_up`, `cf_dns` and `issue_certs` gate on the choice; defaults come from `scripts/install/defaults/install.conf`; verified with `bash -n` + parser unit test (fresh-machine run still pending).
 - **`make status`** — rebuilt as the AIO dashboard (`scripts/status.sh`): one aligned colored read of perf/modules/git/units/docker/tmux/backups/mail/tailnet with no duplicate rows (the 2026-09-11 list+perf merge listed containers/units twice).
 - **Module-aware smoke + status** — the installer records the installed-module set; `make smoke` structures its sections per module, still checks everything factually, but keeps a not-installed module's failures out of the exit code (later moved into `wizard.state`, see Oct 2026).
-- **`make smoke` expanded** — beyond the vhost checks: tailnet-edge (`/` serves tailnet sources, `/ttyd` challenges without credentials), containers/units/ufw/NFS/disk/nc-status/coturn assertions; `ok` lines carry short plain-words descriptions.
+- **`make smoke` expanded** — beyond the vhost checks: tailnet-edge (`/` serves tailnet sources), containers/units/ufw/NFS/disk/nc-status/coturn assertions; `ok` lines carry short plain-words descriptions.
 - **`make taildrop-file` / `make taildrop-folder`** — `sudo tailscale file cp` wrappers (`FILE=`/`DIR=`, `TAILDROP=<device>` required, same variable as `make backup`).
 - **Makefile `TARGET=` dispatchers** — `dok-recreate/restart/stop/logs TARGET=<ctn>` as the primary style; the `-<ctn>` suffixes remain as aliases.
 - **`docs/SKELETON.md`** — the token/terms reference (domain, IPs, names, proxy modes) so docs stay portable; secrets excluded; scripts still auto-detect live values.
@@ -325,7 +325,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Debian machine → Debian system wording** — README and the www welcome lede no longer imply only a rented machine.
 - **`optimize.sh` universal machine optimizer** — OPTIMIZE.md + repo tuning + `make cleanup`'s apt/docker part merged into one idempotent, zero-prompt bash script with an Enter-refresh error loop; applied here (swap RAM/3, noatime, THP, sysctls, tuned/irqbalance/earlyoom auto, SSD/HDD auto-detect → fstrim or SETRA).
 - **`turn.$DOMAIN` renamed `talk.$DOMAIN`** — vhost, DNS (grey-cloud A record), occ signaling entry, coturn cert path, smoke and docs updated; stale cert dir removed.
-- **`shell.$DOMAIN` renamed `tail.$DOMAIN`** — vhost now serves a clickable vhost-links home at `/`, ttyd at `/ttyd`; dnsmasq + smoke + docs updated.
+- **`shell.$DOMAIN` renamed `tail.$DOMAIN`** — vhost, dnsmasq, smoke and docs followed (later `ttyd.$DOMAIN`).
 - **All 301 redirects upgraded to 308** — CardDAV/CalDAV well-known redirects included.
 - **Docs restructured** — AGENTS.md portable-only (project specifics + lessons + intended moved to GUIDE.md), ISSUES.md Solved one sentence per record, volatile operator-editable state removed everywhere.
 - **`$GITHUB_USER/{{REPO_NAME}}` GitHub web page restored after history rewrite** — web code views 404'd and git-data API 500'd while git/raw/codeload stayed healthy; fixed by pushing an empty nudge commit, which rebuilt GitHub's index (intermittent 500s for ~10 min while settling).
@@ -410,7 +410,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Installer render/execution overhaul** — ASCII banner + WELCOME/WARN lines + grey `[INFO]` prompts, a `Do you wish to continue?` consent gate, and ONE space-separated module prompt; the status bar is replaced by a fixed task checklist (`[WAIT]` → animated `[TASK]` → `[DONE]`/`[ERROR]`) whose tasks run in checklist order, a failure continuing to the end; success adds `new ssh command is ssh root@$NODE_NAME`.
 - **the installer firewall default-deny pinned** — the base image ships `DEFAULT_INPUT_POLICY="ACCEPT"`, so `ufw enable` + the allow rules left port 22 world-open; `task_firewall` now sets `ufw default deny incoming` (tailnet ingress via `ts-input` is unaffected).
 - **the installer rejoins a stale-IP tailnet node** — the `if ! tailscale ip -4` guard skipped the join when the node had been removed from the tailnet ("404: node not found") but a cached IP remained; it now gates on `tailscale status --json` `.Self.Online`.
-- **the installer refreshes dnsmasq after a tailnet IP change** — the tailnet step re-renders the split-DNS conf (`make install-dnsmasq-conf`) whenever the `listen-address` bind or the `address=/tail.$DOMAIN/` answer no longer matches the live IP, so a rejoin that changes the `100.x` address no longer leaves tailnet `*.$DOMAIN` refusing or resolving to a departed node.
+- **the installer refreshes dnsmasq after a tailnet IP change** — the tailnet step re-renders the split-DNS conf (`make install-dnsmasq-conf`) whenever the `listen-address` bind or the `address=/ttyd.$DOMAIN/` answer no longer matches the live IP, so a rejoin that changes the `100.x` address no longer leaves tailnet `*.$DOMAIN` refusing or resolving to a departed node.
 - **Checklist rows print their status first** — `_task_row` emits `[DONE]/[SKIP]/[TASK]/[WAIT]` before the time column, e.g. `[DONE] [04:11:42] Repository Setup`, under a grey `[INFO]` + purple `[HH:MM:SS]` + white `Starting installation..` opening line.
 - **Task list split into finer, accurate tasks** — the broad `Dependent Packages`/`Docker Framework`/`Docker Containers`/`Repository Management`/`Module Contents` rows became System Packages, SSH Hardening, Firewall Rules, Tailscale Connectivity, Docker Engine, Goose CLI, Stack Config, Containers Up, Repository Setup, Host Services, DNS Records, SSL Certificates, Mail Setup, Nextcloud Setup, Vaultwarden Setup, Monitoring Setup, Repo Hygiene, Smoke Pass.
 - **PTR follow-up is a numbered step** — the provider-side PTR was an unnumbered "Additional step" floating above the follow-up list; it is now numbered follow-up 1 (still shown only when the mail module is on).
@@ -429,13 +429,13 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Commits restricted to the GitHub identity** — `pre-commit`/`pre-push` now refuse any identity that is not `*@users.noreply.github.com`/`noreply@github.com` (not just root), `github_set_identity` sets `user.useConfigOnly true` so git never invents `root@<host>`, and AGENTS rule 27 prohibits empty commits.
 - **Nextcloud occ wiring never raises an error** — the wiring verification was failing then self-healing (a cold-cache race that wasted a minute per run); it now re-applies the idempotent wiring a bounded number of times and logs, never tagging `nextcloud_setup`, with the occ checks shortened (12x1 s, was 30x2 s).
 - **Transient error/prompt blocks clear themselves** — the resolve-error block (inline on a failed task) and the Nextcloud apps plan/confirm are counted as tail lines and wiped when done, so the checklist returns to view instead of the block lingering.
-- **`tail.$DOMAIN` serves from Caddy with `tls internal`** — the tailscale-serve endpoint was dropped for a normal Caddy vhost with Caddy's local CA (no LE order, no rate limit); tailnet clients accept the one-time self-signed warning.
+- **`tail.$DOMAIN` served from Caddy instead of tailscale-serve** — a normal Caddy vhost replaced the endpoint; its local-CA cert was later replaced by the shared LE DNS-01 chain (Oct 2026).
 - **Pre-2026-10-17 history backlog claim retracted** — `make git-audit RANGE=origin/main` reports every published commit compliant, so there is no bundle/revert backlog to rewrite.
 - **Talk websocket route matched the wrong path** — the vhost proxied bare `/signaling` while the Talk client upgrades on `/signaling/spreed`, so every handshake hit the `ok` stub and no call used the HPB; route + smoke probe moved to `/signaling/spreed`.
 - **Talk call log noise explained** — the recurring level-3 `Expected filesize … wrote 99950592` lines are a client's chunked PUT (`/remote.php/dav/uploads/…`) cut mid-stream from the sender's side, not a server limit (PHP 512M, local ext4 datadir); nothing to fix server-side.
 - **Web updater enabled for real** — the button led to `not found` because the image ships no `/updater` tree and `cloud.caddy` blocked the path; the installer now sets `upgrade.disable-web` => false and installs the updater, and the block is gone.
 - **`stack-up.sh` refuses an unattended Nextcloud core upgrade** — a pinned tag that disagrees with `data/cloud/html/version.php` now blocks only the `nextcloud` service (the unit's other services still start) instead of letting the entrypoint run `occ upgrade` on a plain `up -d`.
-- **Web roots split per vhost** — `data/www` became `data/pages/www` (`www.$DOMAIN`) and `data/pages/tail` (`tail.$DOMAIN`); Caddy mounts `pages` at `/srv/pages` and the template moved to `config/pages/tail/tail.html`.
+- **Web roots split per vhost** — `data/www` became `data/pages/www` (`www.$DOMAIN`); Caddy mounts `pages` at `/srv/pages`.
 - **Repo/instance path overlap removed** — the uninstall log moved to `$LOG_DIR/uninstall.log` (a full teardown continues it in `/var/tmp`) and the goose env to `$DATA_DIR/goose/.env` (migrated from `/etc/goose/goose.env`).
 - **One page, one shell** — per-device ttyd/tmux sessions dropped (`ttyd-devices.sh`, `ttyd-session.sh`, `ttyd-devices.conf`, `make ttyd-*`); ttyd runs `tmux new-session -A -s main` with no `-a`, so the URL cannot name a session.
 - **Every Talk call forced through the HPB** — `make talk-config` pins `spreed signaling_mode=external` and points `stun_servers` at this host's coturn instead of `stun.nextcloud.com`.
@@ -448,12 +448,14 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Poster welcome page** — `/welcome` is now a tracked template (`config/pages/www/welcome.html`) with a page nav and a `Home →` button.
 - **Zensical docs** — `/docs/` is a static build of the repo's `docs/` tree via `make docs-build`; no container.
 - **WriteFreely blog** — new `blog` module and `blog.$DOMAIN` vhost, built from the pinned upstream release tarball.
-- **Beszel hub + agent** — new `beszel` module, tailnet-only at `tail.$DOMAIN/beszel`, agent wired to the hub key.
+- **Beszel hub + agent** — added as a `beszel` module (hub + agent, agent wired to the hub key); the module was removed on 2026-10-29.
 - **Immich photos** — new `photos` module, DNS-only `photos.$DOMAIN`, own PostgreSQL + Redis, ML container omitted.
 - **Homarr added beside Homer** — Homarr owns `home.$DOMAIN` (Next.js assets are root-absolute, so no subpath mount) while `www/home` keeps serving Homer; smoke asserts both and the homer module is declared in `config/modules.conf`.
 - **`blog.`/`photos.` had no A record** — the records were never created by the install run; `make dns-sync` re-runs the installer's convergence from `wizard.state`.
 - **`vault.$DOMAIN` did not resolve on the tailnet** — the provider-supplied `/etc/resolv.conf` bypassed Tailscale, so the split-DNS route never applied on this host; `make install-resolv` pins it to `100.100.100.100`.
-- **Hub monitored nothing** — `make beszel-add-system` registers this machine (address/port derived from the module) and the installer calls it after the agent is up.
 - **Vault is tailnet-only** — `vault.$DOMAIN` keeps its name but has no public record; `@not_tailnet` 403s every other source.
 - **Module roster derived** — the installer's module list, state and detection now read `config/modules.conf` instead of four hardcoded names.
-- **Smoke covers the new doors** — `/docs`, `/home`, `blog`, `beszel`, `photos` and both halves of the vault gate are asserted.
+- **Smoke covers the new doors** — `/docs`, `/home`, `blog`, `photos` and both halves of the vault gate are asserted.
+- **`tail.$DOMAIN` renamed `ttyd.$DOMAIN`, and the shell is the homepage** — ttyd proxies at `/` with no base path; the door list, `config/pages/tail/`, `scripts/access/tail-targets.sh` and `make tail-targets` were removed (2026-10-29).
+- **`mail.$DOMAIN` is tailnet-only** — no public A record, dnsmasq answers the name, `@not_tailnet` 403s everything else while `cube.$DOMAIN` stays public; the cert still issues by DNS-01 (2026-10-29).
+- **Beszel module removed (2026-10-29)** — module, `make beszel-*` recipes, `scripts/modules/beszel-system.sh`, smoke section, installer blocks, the `/beszel` route and the Homer link are gone.

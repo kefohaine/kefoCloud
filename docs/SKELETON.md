@@ -64,10 +64,10 @@ make render          # rebuild data/rendered/ + refresh the .env instance blocks
   (`curl` → `000` on every vhost). That happened once, 2026-09-22.
 - `data/rendered/config/` — every file under `config/`, rendered. `make
   install-config` installs from here.
-- `$DATA_DIR/pages/` — the instance web roots, one directory per vhost:
-  `pages/www/` (operator pages, never overwritten) and `pages/tail/` (rendered
-  from the tracked `config/pages/tail/` template). The edge mounts `pages` at
-  `/srv/pages` read-only.
+- `$DATA_DIR/pages/` — the instance web roots: `pages/www/` (operator pages,
+  never overwritten, plus `welcome.html` rendered from the tracked
+  `config/pages/www/` template). The edge mounts `pages` at `/srv/pages`
+  read-only; no other vhost serves files.
 
 `scripts/stack/stack-up.sh` renders first, in every mode, so a fresh clone, a
 `git pull` or an edited `instance.conf` can never deploy stale config.

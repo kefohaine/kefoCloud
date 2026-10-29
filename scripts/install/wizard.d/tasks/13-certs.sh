@@ -1,7 +1,7 @@
 # wizard.d/tasks/13-certs.sh — `SSL Certificates`: LE issuance per public vhost + Mailu cert copy.
 
-# ── tail door TLS ──────────────────────────────────────────────────────────
-# tail.$DOMAIN is attempted through Let's Encrypt like every other vhost (the
+# ── ttyd door TLS ──────────────────────────────────────────────────────────
+# ttyd.$DOMAIN is attempted through Let's Encrypt like every other vhost (the
 # operator asked for a trusted cert there too — no `tls internal` any more).
 # Unlike the public vhosts, its failure is NEVER fatal and never blocks smoke:
 #   * the name is first auto-checked for public resolution — with no public
@@ -45,12 +45,12 @@ issue_certs() {
   mod_on home    && hosts="$hosts home"
   mod_on mail    && hosts="$hosts mail"
   mod_on mail    && hosts="$hosts cube"
-  # tail.$DOMAIN joins the attempt like every other vhost. DNS-01 does not
+  # ttyd.$DOMAIN joins the attempt like every other vhost. DNS-01 does not
   # need a public A record (Caddy answers the TXT challenge directly), and NO
-  # DNS record is created for tail.$DOMAIN by design — it stays tailnet-only.
+  # DNS record is created for ttyd.$DOMAIN by design — it stays tailnet-only.
   # Every provider in the fallback chain gets its one attempt before the
   # tailscale-https follow-up is even considered (2026-10-19).
-  hosts="$hosts tail"
+  hosts="$hosts ttyd"
   # Never re-issue an already-successful cert: a host that already serves one
   # is skipped entirely — no trigger request, no order, no poll (each ACME
   # order counts against provider rate limits even when answered from cache,
@@ -100,26 +100,26 @@ issue_certs() {
   # final loop polls again); if every provider exhausted its one attempt, the
   # run fails with the follow-up, not another order.
   for h in $hosts; do
-    [ "$h" = tail ] && continue   # non-fatal: handled below
+    [ "$h" = ttyd ] && continue   # non-fatal: handled below
     iss=$(cert_issuer "$h")
     case "$iss" in
       "" ) fail "cert_$h" "no cert issued for $h.$DOMAIN (one attempt per issuer made — wait out the provider rate limit and re-run)";;
       *)   detail "  $h.$DOMAIN cert issuer: $iss";;
     esac
   done
-  # tail.$DOMAIN: a failed order must not abort the install. tailscale-https
+  # ttyd.$DOMAIN: a failed order must not abort the install. tailscale-https
   # is ONLY a last resort — advised as a WARN after every provider in the
   # fallback chain had its single attempt (2026-10-19).
-  case " $hosts " in *" tail "*)
-    if [ -z "$(cert_issuer tail)" ]; then
+  case " $hosts " in *" ttyd "*)
+    if [ -z "$(cert_issuer ttyd)" ]; then
       TAIL_TLS_FALLBACK=true
       if docker logs caddy 2>&1 | grep -qi "rate limit"; then
-        warn cert_tail "tail.$DOMAIN no issuer in the fallback chain issued a cert (rate-limited) — last resort: scripts/ops/tailscale-https.sh"
+        warn cert_ttyd "ttyd.$DOMAIN no issuer in the fallback chain issued a cert (rate-limited) — last resort: scripts/ops/tailscale-https.sh"
       else
-        warn cert_tail "tail.$DOMAIN cert did not issue from any fallback issuer — last resort: scripts/ops/tailscale-https.sh"
+        warn cert_ttyd "ttyd.$DOMAIN cert did not issue from any fallback issuer — last resort: scripts/ops/tailscale-https.sh"
       fi
     else
-      detail "  tail.$DOMAIN cert issued by: $(cert_issuer tail)"
+      detail "  ttyd.$DOMAIN cert issued by: $(cert_issuer ttyd)"
     fi
   ;; esac
 }
