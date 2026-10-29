@@ -26,7 +26,7 @@ DOMAIN     := $(shell sed -n 's/^DOMAIN=//p' $(CONF) 2>/dev/null | head -1)
 DATA_DIR   := $(or $(shell sed -n 's/^DATA_DIR=//p' $(CONF) 2>/dev/null | head -1),$(REPO)/data)
 RENDER_DIR := $(REPO)/data/rendered
 COMPOSE  := docker compose -f
-CONTAINERS := caddy uptimekuma nextcloud vaultwarden mailserver roundcube homarr homer writefreely beszel-hub beszel-agent immich-server immich-db immich-redis
+CONTAINERS := caddy uptimekuma nextcloud vaultwarden mailserver roundcube homarr homer writefreely immich-server immich-db immich-redis
 HOST     := ttyd dnsmasq goose
 # The tailnet device that receives files/bundles — one spelling for backup,
 # import-backups and the taildrop helpers (TAILDROP_HOST is an alias). No
@@ -56,11 +56,9 @@ TAILDROP ?= $(TAILDROP_HOST)
 # roundcube lives in the mailserver compose file (no own compose).
 $(foreach s,$(CONTAINERS),$(eval COMPOSE_FILE_$s := modules/$s/docker-compose.yml))
 COMPOSE_FILE_roundcube := modules/mailserver/docker-compose.yml
-# Container names that differ from their module directory: beszel and immich
-# declare several containers in ONE compose file, so every container of a
-# module resolves to the module's file (like roundcube above).
-COMPOSE_FILE_beszel-hub     := modules/beszel/docker-compose.yml
-COMPOSE_FILE_beszel-agent   := modules/beszel/docker-compose.yml
+# Container names that differ from their module directory: immich declares
+# several containers in ONE compose file, so every container of the module
+# resolves to the module's file (like roundcube above).
 COMPOSE_FILE_immich-server  := modules/immich/docker-compose.yml
 COMPOSE_FILE_immich-db      := modules/immich/docker-compose.yml
 COMPOSE_FILE_immich-redis   := modules/immich/docker-compose.yml
@@ -220,16 +218,15 @@ systemd-action:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: fetch fetch-more render tail-targets smoke talk-config gh-web-health install-hooks update apt-upgrade install-config help talk-gen nc-capture nc-default-user-quota
+.PHONY: fetch fetch-more render smoke talk-config gh-web-health install-hooks update apt-upgrade install-config help talk-gen nc-capture nc-default-user-quota
 .PHONY: kuma-import kuma-list-users kuma-add-user kuma-passwd kuma-del-user
 .PHONY: vaultwarden-list-users vaultwarden-add-user vaultwarden-del-user
 .PHONY: writefreely-users writefreely-add-user writefreely-passwd writefreely-del-user
-.PHONY: beszel-users beszel-add-user beszel-del-user beszel-key beszel-systems beszel-add-system
 .PHONY: immich-users immich-admin-pass immich-grant-admin docs-build dns-sync
 .PHONY: deploy backup nc-datadir-nfs import-backups
 
-# The web terminal is ONE page and ONE shell: tail.$DOMAIN/ttyd attaches the
-# single `main` tmux session (created by tmux-main.service at boot, or on first
+# The web terminal is ONE page and ONE shell: ttyd.$DOMAIN (the shell IS the
+# homepage) attaches the single `main` tmux session (created by tmux-main.service at boot, or on first
 # attach). There is no per-device registry and no way to name a session from the
 # URL — a second shell is a tmux window INSIDE main (make tmux-new / tmux-open).
 
@@ -592,12 +589,6 @@ mail-config-import:
 >@docker exec -i mailu-admin flask mailu config-import - < "$(FILE)" >/dev/null \
     && scripts/lib/mklog info "registry imported from $(FILE) — verify with make mail-domains and make mail-list"
 
-# Regenerate the tail terminal's navigation catalogue from the Caddy vhost
-# files ($DATA_DIR/pages/tail/targets.json — GENERATED, do not hand-edit). Run
-# after adding a vhost or a public path; `make install-config` runs it too.
-tail-targets:
->@bash scripts/access/tail-targets.sh
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Uptime Kuma accounts (no CLI — scripts/modules/kuma-user.sh: bcryptjs hash in the
 # container + host sqlite3 on kuma/data/kuma.db; plaintext never crosses)
@@ -657,39 +648,6 @@ writefreely-passwd:
 writefreely-del-user:
 >@[ -n "$(USER)" ] || { scripts/lib/mklog error "usage: make writefreely-del-user USER=<name>"; exit 1; }
 >@docker exec writefreely ./writefreely user delete "$(USER)"
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Beszel (hub + agent) — superusers are the hub's own accounts (PocketBase);
-# the agent's SSH key is the one the hub shows when a system is added.
-# ─────────────────────────────────────────────────────────────────────────────
-beszel-users:
->@sqlite3 $(DATA_DIR)/beszel/hub/data.db "SELECT email FROM _superusers ORDER BY email;"
-
-beszel-add-user:
->@[ -n "$(EMAIL)" ] && [ -n "$(PASS)" ] || { scripts/lib/mklog error "usage: make beszel-add-user EMAIL=<addr> PASS=<password>"; exit 1; }
->@docker exec beszel-hub /beszel superuser upsert "$(EMAIL)" "$(PASS)"
-
-beszel-del-user:
->@[ -n "$(EMAIL)" ] || { scripts/lib/mklog error "usage: make beszel-del-user EMAIL=<addr>"; exit 1; }
->@docker exec beszel-hub /beszel superuser delete "$(EMAIL)"
-
-# The systems the hub monitors. `beszel-add-system` registers THIS machine
-# (agent bridge IP + LISTEN port read from the module's compose file) — the hub
-# ships none and its CLI has no create-system command, so a fresh install would
-# otherwise watch nothing until a human clicks through the UI.
-beszel-systems:
->@sqlite3 -header -column $(DATA_DIR)/beszel/hub/data.db "SELECT name, host, port, status FROM systems ORDER BY name;"
-
-beszel-add-system:
->@bash scripts/modules/beszel-system.sh
-
-# Pin the agent's key (the public key the hub generated for this system, or one
-# you created yourself). Rotating it recreates the agent.
-beszel-key:
->@[ -n "$(KEY)" ] || { scripts/lib/mklog error "usage: make beszel-key KEY='ssh-ed25519 AAAA…'"; exit 1; }
->@sed -i '/^BESZEL_KEY=/d' modules/beszel/.env; printf 'BESZEL_KEY=%s\n' "$(KEY)" >> modules/beszel/.env
->@$(MAKE) --no-print-directory dok-recreate-beszel-agent
->@scripts/lib/mklog info "agent key pinned in modules/beszel/.env and the agent recreated"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Photos accounts (Immich) — first-run admin is created in the web UI; the
@@ -806,7 +764,6 @@ sudo cp $(RENDER_DIR)/config/ttyd/ttyd.service /etc/systemd/system/ttyd.service
 sudo cp $(RENDER_DIR)/config/bash/banner.sh /etc/kefo-banner.sh
 sudo chmod 0644 /etc/kefo-banner.sh
 @grep -qxF '. /etc/kefo-banner.sh' "$$HOME/.bashrc" || printf '%s\n' '. /etc/kefo-banner.sh' >> "$$HOME/.bashrc"
-bash $(REPO)/scripts/access/tail-targets.sh
 sudo cp $(RENDER_DIR)/config/fail2ban/jail.d/sshd.conf /etc/fail2ban/jail.d/sshd.conf
 sudo cp $(RENDER_DIR)/config/cron/nextcloud /etc/cron.d/nextcloud
 sudo chmod 0644 /etc/cron.d/nextcloud
