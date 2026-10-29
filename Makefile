@@ -62,7 +62,7 @@ TAILDROP ?= $(TAILDROP_HOST)
 
 # Per-container compose file, also derived from the catalog: every container of
 # a module resolves to that module dir's compose file (mailu-* + roundcube ->
-# modules/mailserver, immich-* -> modules/immich, rocketchat-db -> rocketchat).
+# modules/mailserver, immich-server -> modules/immich, talk-hpb -> nextcloud).
 $(eval $(shell awk '!/^#/ && NF>=4 { dir=$$2; for(i=4;i<=NF;i++) printf "COMPOSE_FILE_%s := modules/%s/docker-compose.yml\n", $$i, dir }' $(REPO)/config/modules.conf 2>/dev/null))
 COMPOSE_FILE_caddy := modules/caddy/docker-compose.yml
 # Nextcloud ships TWO compose files in one project dir (app + PostgreSQL). One
