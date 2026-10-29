@@ -95,13 +95,12 @@ else
 fi
 rm -rf "$TMP"
 
-# Web roots: ONE directory per vhost, both under $DATA_DIR/pages/ so no repo
-# path and no instance path share a name. config/pages/<vhost> is rendered into
-# data/pages/<vhost>: today only tail/ carries a template (the tailnet door
-# list). Operator pages in data/pages/www are never touched (nothing is
-# deleted) — only the template files are (re)written, because they are part of
-# the access layer, not content.
-for _v in www tail; do
+# Web root: under $DATA_DIR/pages/ so no repo path and no instance path share a
+# name. config/pages/<vhost> is rendered into data/pages/<vhost> (today only www/
+# carries templates: the welcome page family). Operator pages in data/pages/www
+# are never touched (nothing is deleted) — only the template files are
+# (re)written, because they are part of the access layer, not content.
+for _v in www; do
   mkdir -p "$DATA_DIR/pages/$_v"
   [ -d "$ROOT/config/pages/$_v" ] && render_tree "$ROOT/config/pages/$_v" "$DATA_DIR/pages/$_v"
 done
