@@ -145,9 +145,9 @@ cf_mail_dns() {
   # blog.$DOMAIN is WriteFreely on its own hostname (proxied like cloud/kuma).
   mod_on blog && cf_record blog true || cf_a_del blog
   mod_on home && cf_record home true || cf_a_del home
-  # chat.$DOMAIN is Rocket.Chat — a core public door like www, so the record is
-  # always converged (websockets pass the CF proxy). Snikket moved away from
-  # this name to xmpp.$DOMAIN.
+  # chat.$DOMAIN is a reserved name with no app behind it (the vhost answers an
+  # empty 200) — the record is still always converged, so the name keeps its
+  # certificate and needs no DNS work when it gets its next app.
   cf_record chat true
   # xmpp.$DOMAIN is the Snikket sandbox module. DNS-ONLY (grey cloud): XMPP
   # c2s/s2s (5222/5269) are not HTTP and the CF proxy cannot carry them.

@@ -20,7 +20,7 @@ Prompts once then runs unattended — errors are listed with a hint each and re-
 
 ![Repository Banner](.github/images/modules.png)
 
-Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Rocket.Chat, Caddy, Vaultwarden, Uptime Kuma, the Mailu + Roundcube platform, a Homarr dashboard, WriteFreely and Immich photos — public doors behind Cloudflare, admin doors (Nextcloud, Vaultwarden, the Mailu platform, the shell) tailnet-only, with tailscale, ttyd, dnsmasq and goose as host services. A poster welcome page and per-app `make` commands for accounts and maintenance ship with it.
+Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Caddy, Vaultwarden, Uptime Kuma, the Mailu + Roundcube platform, a Homarr dashboard, WriteFreely and Immich photos — public doors behind Cloudflare, admin doors (Nextcloud, Vaultwarden, the Mailu platform, the shell) tailnet-only, with tailscale, ttyd, dnsmasq and goose as host services. A poster welcome page and per-app `make` commands for accounts and maintenance ship with it.
 
 | name | app | note |
 |---|---|---|
@@ -29,7 +29,6 @@ Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Rocket.Chat, Caddy, Vaultw
 | **Vault** | Vaultwarden | any Bitwarden client, server included — tailnet-only door |
 | **Monitor** | Uptime Kuma | watches public *and* tailnet-only doors |
 | **Home** | Homarr | the dashboard on its own `home.` vhost (the welcome page's Home link) |
-| **Chat** | Rocket.Chat | its own `chat.` vhost, bundled MongoDB replica set |
 | **Blog** | WriteFreely | its own `blog.` vhost, SQLite, pinned upstream release |
 | **Photos** | Immich | DNS-only vhost, its own PostgreSQL + Redis |
 

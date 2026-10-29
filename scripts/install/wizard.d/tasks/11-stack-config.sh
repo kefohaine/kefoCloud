@@ -8,8 +8,6 @@ prep_dirs() {
                $ROOT/data/vault/data \
                $ROOT/data/kuma/data \
                $ROOT/data/homarr/appdata \
-               $ROOT/data/rocketchat/db \
-               $ROOT/data/rocketchat/uploads \
                $ROOT/data/mailserver/data \
                $ROOT/data/mailserver/mail \
                $ROOT/data/mailserver/filter \

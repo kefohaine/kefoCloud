@@ -87,14 +87,6 @@ containers_up() {
     fi
     svc_note_applied homarr homarr --
   fi
-  if mod_on chat; then
-    if svc_skip_repair rocketchat chat -- rocketchat rocketchat-db; then
-      detail "  rocketchat already up, inputs unchanged — skipped"
-    else
-      log "  recreate: rocketchat"; make dok-recreate-rocketchat >>"$LOG" 2>&1 || fail rocketchat
-    fi
-    svc_note_applied chat rocketchat --
-  fi
   if mod_on blog; then
     if svc_skip_repair writefreely writefreely -- writefreely; then
       detail "  writefreely already up, inputs unchanged — skipped"
