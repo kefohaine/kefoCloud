@@ -33,6 +33,10 @@ https://chat.{{DOMAIN}} {
         import security_headers
     }
     reverse_proxy 172.22.0.28:3000 {
+        # Rocket.Chat sets X-Frame-Options / X-Content-Type-Options itself; both
+        # would then be sent twice and smoke's exactly-one check fails.
+        header_down -X-Frame-Options
+        header_down -X-Content-Type-Options
         # Long-lived websocket + slow admin pages.
         transport http {
             read_timeout 300s
