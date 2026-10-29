@@ -271,7 +271,7 @@ if [ "$ACTION" = "export" ]; then
     marker          $MARKER (import will only ever use this host's own export)
 
     Manual steps (none block the service):
-      1. Open https://cloud.$DOMAIN and confirm files + Talk still load.
+      1. Open https://nextcloud.$DOMAIN and confirm files + Talk still load.
       2. Check the data is on $TARGET: ssh $TARGET "ls -la $NC_MOUNT".
       3. To point back to the local datadir: stop $NC_CONTAINER, run
          'make nc-datadir-nfs' import, and the datadir is moved back.
@@ -286,7 +286,7 @@ else
     remote          export removed from $TARGET - the datadir lives here only
 
     Manual steps (none block the service):
-      1. Open https://cloud.$DOMAIN and confirm files + Talk still load.
+      1. Open https://nextcloud.$DOMAIN and confirm files + Talk still load.
 EOF
 fi
 hr
