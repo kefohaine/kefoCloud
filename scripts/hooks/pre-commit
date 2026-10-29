@@ -8,9 +8,9 @@
 #  2. A bare `respond "ok"` in an APP vhost (cloud/kuma/mail/vault) is
 #     blocked — that is the stub that took every public subdomain offline on
 #     2026-08-28. Operator-approved maintenance can pass with EDGE_OVERRIDE=1.
-#     Exempt by design: www (health stub + /download) and tail (legit `ok`
-#     paths). Any vhost another repo installs into the edge is guarded by
-#     the pre-push smoke instead.
+#     Exempt by design: www (health stub + /download) and ttyd (the shell).
+#     Any vhost another repo installs into the edge is guarded by the pre-push
+#     smoke instead.
 
 [ "${GIT_SPLIT_INTERNAL:-}" = 1 ] && exit 0   # a git-split replay: our own commits, stand down
 repo=$(git rev-parse --show-toplevel)
