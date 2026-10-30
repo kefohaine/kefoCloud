@@ -31,6 +31,17 @@ services:
     expose:
       - "9200"
 
+    healthcheck:
+      # /healthz is answered by the static web front and stays 200 even when the
+      # backend services are down; the OCS capabilities endpoint is served by the
+      # ocs service, so that is the real probe.
+      test: ["CMD", "curl", "-fsS", "-m", "5", "-o", "/dev/null",
+             "http://127.0.0.1:9200/ocs/v1.php/cloud/capabilities"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
     networks:
       net:
         # Caddy runs with network_mode: host, so it dials the bridge IP, not a
