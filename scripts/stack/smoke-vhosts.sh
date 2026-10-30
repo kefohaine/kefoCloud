@@ -388,8 +388,7 @@ end_sec
 # ─────────────────────────────────────────────────────────────────────────────
 hdr home "Home — Homarr dashboard (module: home)"
 # Homarr is a Next.js app: its assets are ROOT-absolute (/_next/...), so it
-# cannot be served under a path and owns a hostname of its own. www/home
-# permanent-redirects here.
+# cannot be served under a path and owns a hostname of its own.
 check home "home.$DOMAIN" "/" "200 301 302 307 308" "" "Homarr answers (board or login redirect)"
 check home-login "home.$DOMAIN" "/auth/login" "200" html "Homarr login page renders"
 check_sec_headers home "home.$DOMAIN" "/"
