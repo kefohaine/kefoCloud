@@ -232,10 +232,8 @@ for f in "$ROOT/data/pages/www"/*.html; do
   check "www-$pg" "www.$DOMAIN" "/$pg" "200 301 302 307 308" html "$pg page"
 done
 check_tls "www.$DOMAIN"
-# chat.$DOMAIN is a RESERVED name: no module owns it, its vhost answers an empty
-# 200 and proxies nowhere. It must still answer with its own certificate — and a
-# body here would mean some other app was wired onto the name.
-check chat "chat.$DOMAIN" "/" "200" "" "reserved name answers, no upstream"
+# chat.$DOMAIN belongs to Snikket (module: xmpp) and is asserted in the XMPP
+# section below, with its own certificate and its groups/share names.
 
 
 # ttyd.$DOMAIN is deliberately NOT in smoke: it is tailnet-only and its LE
@@ -245,9 +243,45 @@ check chat "chat.$DOMAIN" "/" "200" "" "reserved name answers, no upstream"
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Module: ocis — ownCloud Infinite Scale (single container, own store).
+# cloud.$DOMAIN is its door: oCIS serves its own web UI at / and generates
+# root-absolute URLs from OCIS_URL, so any other path prefix would break it.
+# ─────────────────────────────────────────────────────────────────────────────
+hdr ocis "Cloud — ownCloud Infinite Scale (module: ocis) · cloud.$DOMAIN"
+check ocis "cloud.$DOMAIN" "/" "200 301 302 307 308" html "oCIS web UI answers"
+check_sec_headers ocis "cloud.$DOMAIN" "/" "one of each"
+check_tls "cloud.$DOMAIN"
+check_ctns ocis ocis
+end_sec
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Module: xmpp — Snikket. chat.$DOMAIN is its web door (plus groups.chat/
+# share.chat, the server's own component names); XMPP 5222/5269, TURN
+# 3478/3479 + 5349/5350, proxy65 5000 and the relay range are HOST-NETWORKED and
+# never touch the edge, so the listeners are asserted directly.
+# ─────────────────────────────────────────────────────────────────────────────
+hdr xmpp "XMPP — Snikket (module: xmpp) · chat.$DOMAIN"
+check xmpp "chat.$DOMAIN" "/" "200 301 302 307 308" html "Snikket portal answers"
+check_tls "chat.$DOMAIN"
+check_ctns xmpp snikket snikket-proxy snikket-portal snikket-certs
+for _sp in 5222 5269; do
+  if ss -ltn 2>/dev/null | grep -q ":$_sp "; then
+    say "ok   xmpp-port — listening on $_sp/tcp"
+  else
+    say "FAIL xmpp-port: nothing listening on $_sp/tcp (prosody is down?)"; bad
+  fi
+done
+if ss -lun 2>/dev/null | grep -q ':3478 '; then
+  say "ok   xmpp-turn — coturn listening on 3478/udp"
+else
+  say "FAIL xmpp-turn: coturn not listening on 3478/udp (is TURN enabled in the module .env?)"; bad
+fi
+end_sec
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Module: cloud — Nextcloud (FPM app + PostgreSQL + Redis) + Talk HPB/TURN.
-# The stack's door is nextcloud.$DOMAIN (tailnet-only); cloud.$DOMAIN serves
-# ownCloud, which is an operator sandbox module, not part of this roster.
+# The stack's door is nextcloud.$DOMAIN (tailnet-only); cloud.$DOMAIN belongs to
+# the ocis module above.
 # ─────────────────────────────────────────────────────────────────────────────
 hdr cloud "Cloud — Nextcloud + Talk (module: cloud) · nextcloud.$DOMAIN (tailnet-only)"
 # `docker compose down` (operator decision 2026-10-29: ownCloud took over
