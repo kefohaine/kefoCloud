@@ -66,7 +66,7 @@ containers_up() {
   if mod_on xmpp; then
     # Snikket is host-networked and its four services start in order (server,
     # then portal/proxy/certs), so one compose invocation is the whole unit.
-    if svc_skip_repair snikket snikket -- snikket snikket-proxy snikket-portal snikket-certs; then
+    if svc_skip_repair snikket snikket -- snikket-server snikket-proxy snikket-portal snikket-certs; then
       detail "  snikket already up, inputs unchanged — skipped"
     else
       log "  recreate: snikket"; make dok-recreate-snikket >>"$LOG" 2>&1 || fail snikket
