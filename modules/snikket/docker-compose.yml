@@ -1,0 +1,84 @@
+# Snikket is officially host-networked: XMPP (5222/5269), TURN (3478/3479,
+# 5349/5350) and proxy65 (5000) cannot be carried by an L7 reverse proxy.
+# Web ports are moved to 5080/5443 in .env (SNIKKET_TWEAK_HTTP(S)_PORT) so
+# Caddy keeps 80/443 and proxies the hostname here (vhosts/chat.caddy).
+#
+# Only the SERVER container gets the extra config: it is the one that runs
+# prosody (BOSH/websocket cross-origin + secure-proxy flags, tcp backlog) and
+# coturn (which needs the tracked run script, see the mount below).
+services:
+  proxy:
+    image: snikket/snikket-web-proxy@sha256:aee04c2df7f07f0f9e0f1e939999ea39db3083d4f46021d83b9674dfa273f7fb
+    container_name: snikket-proxy
+    env_file: ./.env
+    network_mode: host
+    mem_limit: 128m
+    volumes:
+      - ${DATA_DIR}/snikket:/snikket
+      - ${DATA_DIR}/snikket/acme:/var/www/html/.well-known/acme-challenge
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  certs:
+    image: snikket/snikket-cert-manager@sha256:143a104463d70f211f3f296fda16b77a21fe12e22055be3013e79a4b69a1b579
+    container_name: snikket-certs
+    env_file: ./.env
+    network_mode: host
+    mem_limit: 128m
+    volumes:
+      - ${DATA_DIR}/snikket:/snikket
+      - ${DATA_DIR}/snikket/acme:/var/www/.well-known/acme-challenge
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  portal:
+    image: snikket/snikket-web-portal@sha256:a177c2832d8515b45ea8efa3dcd9e38caea69744be1913c207ed400fc10b27d8
+    container_name: snikket-portal
+    env_file: ./.env
+    network_mode: host
+    mem_limit: 256m
+    depends_on:
+      - server
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  server:
+    image: snikket/snikket-server@sha256:6de2e972b4e809de342b9927b4a7da595edf78c1de8e389fa1e3b91b605a258d
+    container_name: snikket
+    env_file: ./.env
+    network_mode: host
+    mem_limit: 512m
+    volumes:
+      - ${DATA_DIR}/snikket:/snikket
+      # prosody extra config — SNIKKET_TWEAK_EXTRA_CONFIG points here; the
+      # generated prosody.cfg.lua includes it last (secure-user flags, BOSH/WS
+      # cross-origin, tcp backlog).
+      - ./prosody-extra.cfg.lua:/etc/snikket/prosody-extra.cfg.lua:ro
+      # coturn's service script, tracked next to this file: the image's own one
+      # hands turnserver prosody's 0640/0400 cert pair, so TURNS never starts
+      # after `prosodyctl cert import` rewrites them. See the script's header.
+      - ./coturn-run:/etc/sv/coturn/run:ro
+    # One connection per socket: the default 1024 fd limit caps concurrent
+    # clients long before RAM or CPU does.
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

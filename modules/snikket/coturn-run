@@ -1,0 +1,67 @@
+#!/bin/sh -e
+# modules/snikket/coturn-run — coturn's service script for the Snikket module
+# (module `xmpp`), bind-mounted over the image's /etc/sv/coturn/run.
+#
+# Why it is tracked: the image's own run script hands turnserver the prosody
+# certificate pair directly (/etc/prosody/certs/<domain>.crt, owned
+# prosody:prosody 0640/0400). Snikket's hourly `prosodyctl cert import` rewrites
+# those files, and turnserver — which runs as its own user — then cannot read
+# them, so TURNS silently never comes up. This script stages a turnserver-owned
+# copy and points coturn at it, so certificate ownership inside prosody can no
+# longer decide whether TURN starts.
+#
+# Ports come from the environment (modules/snikket/.env): the plain listener from
+# SNIKKET_TWEAK_TURNSERVER_PORT and the relay range from *_MIN_PORT/*_MAX_PORT,
+# chosen so they never collide with another coturn on this host (talk-relay
+# publishes its own 3478/5349 + 49160-49200). The TLS listener (5349) is fixed
+# in the image's /etc/turnserver.conf.
+set -eu
+
+if [ "${SNIKKET_TWEAK_TURNSERVER:-1}" = "0" ]; then
+	echo "TURN server disabled by environment, not launching."
+	exit 0
+fi
+
+DOMAIN="${SNIKKET_DOMAIN_ASCII:-$SNIKKET_DOMAIN}"
+CERTS="/etc/prosody/certs"
+STAGE="/snikket/turn"
+DB="$STAGE/turndb"
+CERTFILE="$STAGE/$DOMAIN.crt"
+KEYFILE="$STAGE/$DOMAIN.key"
+
+echo "Waiting for certificates to become available..."
+while ! { [ -f "$CERTS/$DOMAIN.crt" ] && [ -f "$CERTS/$DOMAIN.key" ]; }; do
+	sleep 1
+	echo "."
+done
+
+# Copy (never move) so prosody keeps its own pair, and hand the copies to the
+# turnserver user with owner-only permissions.
+mkdir -p "$STAGE"
+cp "$CERTS/$DOMAIN.crt" "$CERTFILE"
+cp "$CERTS/$DOMAIN.key" "$KEYFILE"
+chown turnserver:turnserver "$STAGE" "$CERTFILE" "$KEYFILE"
+chmod 0700 "$STAGE"
+chmod 0600 "$CERTFILE" "$KEYFILE"
+
+# coturn's own SQLite store (turnserver.conf: userdb=/snikket/prosody/turndb) is
+# 0600 prosody:prosody inside a directory only prosody may write, so coturn —
+# running as its own user — logs "Cannot open SQLite DB connection" at every
+# start. Authentication uses --static-auth-secret, so the store is only coturn's
+# private bookkeeping: give it one it can write instead of loosening prosody's.
+: > "$DB"
+chown turnserver:turnserver "$DB"
+chmod 0600 "$DB"
+
+TURN_EXTERNAL_IP="$(snikket-turn-addresses "$DOMAIN")"
+
+min_port="${SNIKKET_TWEAK_TURNSERVER_MIN_PORT:-49152}"
+max_port="${SNIKKET_TWEAK_TURNSERVER_MAX_PORT:-65535}"
+
+exec s6-setuidgid turnserver /usr/bin/turnserver -c /etc/turnserver.conf --prod \
+	--static-auth-secret="$(cat /snikket/prosody/turn-auth-secret-v2)" \
+	--cert="$CERTFILE" --pkey "$KEYFILE" -r "$DOMAIN" \
+	--min-port "$min_port" --max-port "$max_port" \
+	--listening-port "${SNIKKET_TWEAK_TURNSERVER_PORT:-3478}" \
+	--userdb "$DB" \
+	-X "$TURN_EXTERNAL_IP"
