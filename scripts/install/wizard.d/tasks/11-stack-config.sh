@@ -20,6 +20,9 @@ prep_dirs() {
                $ROOT/data/mailserver/overrides/rspamd \
                $ROOT/data/mailserver/roundcube \
                $ROOT/data/pgdata \
+               $ROOT/data/ocis/data \
+               $ROOT/data/ocis/config \
+               $ROOT/data/snikket/acme \
                $ROOT/data/talk \
                $ROOT/data/download \
                $ROOT/data/pages/www
@@ -41,6 +44,15 @@ prep_dirs() {
   need_chown $ROOT/data/cloud/html 33        && chown_tree $ROOT/data/cloud/html 33:33
   need_chown $ROOT/data/cloud/users 33       && chown_tree $ROOT/data/cloud/users 33:33
   need_chown $ROOT/data/vault/data 1000      && chown_tree $ROOT/data/vault/data 1000:1000
+  # oCIS runs as uid 1000 (the compose file's `user:`), and its tree is the
+  # largest thing on the box after the cloud datadir: the guard is per
+  # top-level dir, so a converged install never walks it.
+  need_chown $ROOT/data/ocis/data 1000       && chown_tree $ROOT/data/ocis/data 1000:1000
+  need_chown $ROOT/data/ocis/config 1000     && chown_tree $ROOT/data/ocis/config 1000:1000
+  # Snikket manages its own ownership inside /snikket (prosody, coturn and the
+  # cert manager all write there as their own uids); only the ACME webroot the
+  # proxy container serves is pre-owned, exactly as the image expects.
+  need_chown $ROOT/data/snikket/acme 1000    && chown_tree $ROOT/data/snikket/acme 1000:1000
   # Mailu's front/postfix/dovecot/rspamd run as root, so mail/filter/dkim/
   # certs/overrides stay root-owned. mailserver/data is NOT one of them: that
   # mount is the SQLite config store mailu-admin opens AS uid 100:1000
@@ -90,6 +102,7 @@ prep_dirs() {
 prep_dirs_verify() {
   local d want got
   for spec in "cloud/html 33" "cloud/users 33" "vault/data 1000" \
+              "ocis/data 1000" "ocis/config 1000" "snikket/acme 1000" \
               "mailserver/data 100" "mailserver/mail 0" "mailserver/dkim 0" \
               "mailserver/redis 999" "mailserver/roundcube 33" \
               "pages/www 0"; do
@@ -216,6 +229,65 @@ seed_stack() {
       mseed INITIAL_ADMIN_PW "$(openssl rand -base64 18 | tr -d '/+=' | head -c 20)"
     fi
     detail "  mail platform secrets (Mailu) seeded in $menv"
+  fi
+  if mod_on ocis; then
+    # ownCloud's compose reads its settings from modules/ocis/.env. Seeded PER
+    # KEY: `make render` creates the file first (instance block), so an
+    # existence guard would skip the URL and oCIS would boot with its default
+    # https://localhost:9200 origin — every generated link then points at the
+    # wrong host. The IDM admin password is minted once and kept: it is the
+    # ONLY copy (the oCIS config stores a hash once the IDM is initialised).
+    local oenv=modules/ocis/.env
+    [ -f "$oenv" ] || { umask 077; : >"$oenv"; }
+    chmod 600 "$oenv"
+    oseed() {
+      local key="$1" val="$2"
+      if grep -q "^$key=" "$oenv"; then
+        grep -q "^$key=." "$oenv" || sed -i "s|^$key=$|$key=$val|" "$oenv"
+      else
+        echo "$key=$val" >>"$oenv"
+      fi
+    }
+    oseed OCIS_URL "https://cloud.$DOMAIN"
+    oseed PROXY_TLS false
+    oseed PROXY_HTTP_ADDR 0.0.0.0:9200
+    oseed OCIS_INSECURE false
+    oseed IDM_CREATE_DEMO_USERS false
+    oseed OCIS_LOG_LEVEL info
+    if ! grep -q '^IDM_ADMIN_PASSWORD=.' "$oenv"; then
+      oseed IDM_ADMIN_PASSWORD "$(openssl rand -base64 18 | tr -d '/+=' | head -c 20)"
+    fi
+    detail "  ownCloud (oCIS) settings seeded in $oenv"
+  fi
+  if mod_on xmpp; then
+    # Snikket's whole configuration IS this env file: the domain it serves, the
+    # web ports it moves off 80/443 (Caddy keeps those) and its TURN range.
+    # SNIKKET_DOMAIN is the name the web door and every XMPP address use —
+    # chat.$DOMAIN, the same host vhosts/chat.caddy serves.
+    local senv=modules/snikket/.env
+    [ -f "$senv" ] || { umask 077; : >"$senv"; }
+    chmod 600 "$senv"
+    sseed() {
+      local key="$1" val="$2"
+      if grep -q "^$key=" "$senv"; then
+        grep -q "^$key=." "$senv" || sed -i "s|^$key=$|$key=$val|" "$senv"
+      else
+        echo "$key=$val" >>"$senv"
+      fi
+    }
+    sseed SNIKKET_DOMAIN "chat.$DOMAIN"
+    sseed SNIKKET_ADMIN_EMAIL "${EMAIL:-admin@$DOMAIN}"
+    sseed SNIKKET_SITE_NAME "$DOMAIN xmpp"
+    sseed SNIKKET_TWEAK_HTTP_PORT 5080
+    sseed SNIKKET_TWEAK_HTTPS_PORT 5443
+    # TURN on, on a range no other coturn on this host claims: talk-relay
+    # publishes 3478/5349 + 49160-49200, Snikket relays 49201-65535.
+    sseed SNIKKET_TWEAK_TURNSERVER 1
+    sseed SNIKKET_TWEAK_TURNSERVER_PORT 3478
+    sseed SNIKKET_TWEAK_TURNSERVER_MIN_PORT 49201
+    sseed SNIKKET_TWEAK_TURNSERVER_MAX_PORT 65535
+    sseed SNIKKET_TWEAK_EXTRA_CONFIG /etc/snikket/prosody-extra.cfg.lua
+    detail "  Snikket settings seeded in $senv (domain chat.$DOMAIN)"
   fi
   # The goose server secret lives in the INSTANCE tree (root:root 0600) and is
   # read by the unit through EnvironmentFile= — never a tracked file, and never

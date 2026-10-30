@@ -35,6 +35,26 @@ task_firewall() {
     ufw allow 49160:49200/udp >/dev/null 2>&1
     ufw allow 49160:49200/tcp >/dev/null 2>&1
   fi
+  # Snikket (module: xmpp) is HOST-NETWORKED: its XMPP, TURN and proxy65
+  # listeners never touch the Caddy edge, so ufw is the only gate on them.
+  # TURN relays on 49201-65535 (talk-relay owns 49160-49200 above), which is a
+  # wide but deliberate range — a narrow one leaves calls failing for the
+  # clients that land outside it.
+  if [ "${MOD_XMPP:-false}" = "true" ]; then
+    ufw allow 5222/tcp >/dev/null 2>&1   # XMPP c2s
+    ufw allow 5269/tcp >/dev/null 2>&1   # XMPP s2s
+    ufw allow 3478/udp >/dev/null 2>&1   # TURN/STUN (no-op when talk has it)
+    ufw allow 3478/tcp >/dev/null 2>&1
+    ufw allow 5349/tcp >/dev/null 2>&1   # TURN over TLS
+    ufw allow 5349/udp >/dev/null 2>&1
+    ufw allow 5000/tcp >/dev/null 2>&1   # proxy65 (file transfer)
+    ufw allow 3479/udp >/dev/null 2>&1   # STUN alternate
+    ufw allow 3479/tcp >/dev/null 2>&1
+    ufw allow 5350/udp >/dev/null 2>&1   # TURN over TLS alternate
+    ufw allow 5350/tcp >/dev/null 2>&1
+    ufw allow 49201:65535/udp >/dev/null 2>&1
+    ufw allow 49201:65535/tcp >/dev/null 2>&1
+  fi
   # Default-deny incoming, set explicitly: some base images ship ufw's
   # DEFAULT_INPUT_POLICY as "ACCEPT" (this one did), and with that `ufw enable`
   # plus the allow rules above restrict nothing — every port, 22 included, stays

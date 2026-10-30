@@ -55,6 +55,24 @@ containers_up() {
     fi
     svc_note_applied nextcloud nextcloud --
   fi
+  if mod_on ocis; then
+    if svc_skip_repair ocis ocis -- ocis; then
+      detail "  ocis already up, inputs unchanged — skipped"
+    else
+      log "  recreate: ocis"; make dok-recreate-ocis >>"$LOG" 2>&1 || fail ocis
+    fi
+    svc_note_applied ocis ocis --
+  fi
+  if mod_on xmpp; then
+    # Snikket is host-networked and its four services start in order (server,
+    # then portal/proxy/certs), so one compose invocation is the whole unit.
+    if svc_skip_repair snikket snikket -- snikket snikket-proxy snikket-portal snikket-certs; then
+      detail "  snikket already up, inputs unchanged — skipped"
+    else
+      log "  recreate: snikket"; make dok-recreate-snikket >>"$LOG" 2>&1 || fail snikket
+    fi
+    svc_note_applied snikket snikket --
+  fi
   if mod_on vault; then
     if svc_skip_repair vaultwarden vaultwarden -- vaultwarden; then
       detail "  vaultwarden already up, inputs unchanged — skipped"
