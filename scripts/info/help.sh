@@ -59,6 +59,7 @@ EOF
   rows <<'EOF'
 make sandbox-sync|re-apply sandbox vhosts into data/rendered/caddy + revive stopped projects (after make render)
 bash scripts/sandbox/editor.sh|create · remove · list — try a module without touching the repo
+make snikket-status|Snikket XMPP (module xmpp) — accounts + instance utilities: see make help-more
 EOF
 
   sec "migrate / restore"
@@ -220,6 +221,30 @@ EOF
 make immich-users|list photo-library users
 make immich-admin-pass|reset the admin password (interactive, inside the container)
 make immich-grant-admin|grant admin to an account — EMAIL=<addr>
+EOF
+
+  sec "snikket accounts (XMPP — module: xmpp)"
+  rows <<'EOF'
+make snikket-users|list accounts on the Snikket server
+make snikket-invite ADMIN=<true|false> [USER=<name>] [QR=1]|create an account invite link (ADMIN is required and grants the admin role; no USER = any username)
+make snikket-invites|pending invites — token, expiry, description
+make snikket-revoke TOKEN=<token>|revoke a pending invite
+make snikket-reset USER=<jid>|password-reset invite link for an existing account
+make snikket-passwd USER=<jid> [PASS=<new>]|set the password directly (empty PASS = generated and printed once)
+make snikket-disable USER=<jid>|block login without deleting the account (undo: snikket-enable)
+make snikket-del-user USER=<jid>|delete an account and all its server data (typed yes; FORCE=1 skips)
+EOF
+
+  sec "snikket utilities"
+  rows <<'EOF'
+make snikket-status|the four services (server, portal, proxy, certs) with state and image
+make snikket-doctor|one-shot triage — containers, prosody, BOSH, TLS expiry, turnserver
+make snikket-tls|served certificates and expiry
+make snikket-turn|turnserver process, advertised address, relay range
+make snikket-logs SERVICE=<name>|tail one container's logs — server · portal · proxy · certs (N=<lines>, default 50; follows)
+make snikket-restart [SERVICE=<name>]|restart one service or all four (coturn re-reads its cert on start)
+make snikket-exec CMD='<shell command>'|run a command inside the server container
+make snikket-shell|interactive bash inside the server container
 EOF
 
   sec "nextcloud occ (runs as www-data inside the container)"
