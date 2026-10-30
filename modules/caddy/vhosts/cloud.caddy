@@ -2,11 +2,11 @@
 # hostname; the Nextcloud-stack door moved to nextcloud.{{DOMAIN}}
 # (./nextcloud.caddy, tailnet-only).
 #
-# ownCloud runs as the operator's sandbox module (`data/sandbox/modules/ocis`,
-# gitignored — see docs/MODULES.md), pinned at bridge 172.22.0.27 and serving
-# port 9200. Caddy runs with network_mode: host, so it dials that bridge IP, not
-# a container name. All paths are proxied unchanged: oCIS serves its own web UI
-# at / and generates root-absolute URLs from its OCIS_URL.
+# ownCloud is module `ocis` (modules/ocis/, container `ocis`), pinned at bridge
+# 172.22.0.27 and serving port 9200. Caddy runs with network_mode: host, so it
+# dials that bridge IP, not a container name. All paths are proxied unchanged:
+# oCIS serves its own web UI at / and generates root-absolute URLs from its
+# OCIS_URL.
 #
 # TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
 
@@ -34,7 +34,14 @@ https://cloud.{{DOMAIN}} {
         max_size 0
     }
     header {
-        import security_headers
+        # NOT the shared security_headers snippet: oCIS already sends
+        # X-Frame-Options, X-Content-Type-Options and its own CSP on every
+        # response, and setting them again at the edge makes the browser see
+        # each one TWICE (duplicate XFO is ignored by every current browser, so
+        # the app's real frame policy still applies). Only the two headers oCIS
+        # never sets are added here.
+        Strict-Transport-Security "max-age=31536000"
+        Referrer-Policy "strict-origin-when-cross-origin"
     }
     reverse_proxy 172.22.0.27:9200 {
         header_up Host {host}
