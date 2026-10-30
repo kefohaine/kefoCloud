@@ -25,17 +25,6 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 
 ### Robustness
 
-#### ownCloud owns `cloud.$DOMAIN` but lives only in the sandbox tree
-- **File**: `modules/caddy/vhosts/cloud.caddy`, `data/sandbox/modules/ocis/`
-- **Problem**: the oCIS stack that serves `cloud.$DOMAIN` is a sandbox module — no row in `config/modules.conf`, no installer step, no smoke check, and `make backup` only walks the repo modules, so its data (`data/sandbox/modules/ocis/data/ocis`, incl. the IDM boltdb) is covered by nothing. The vhost itself is tracked, so the name survives `make render`, but the app behind it can be lost by a `docker compose down`, an image prune or a host rebuild.
-- **Fix**: promote oCIS into `modules/ocis/` (compose + `config/modules.conf` row + installer setup step + backup coverage), then delete the sandbox copy so only one exists.
-
-
-#### Snikket lives only in the sandbox tree
-- **File**: `data/sandbox/modules/snikket/` (compose, `snikket.conf`, data), `data/sandbox/caddy/sbx-snikket.caddy`
-- **Problem**: `xmpp.$DOMAIN` (plus `groups.xmpp` / `share.xmpp`) is served by a hand-written sandbox module: host networking, so `editor.sh create` cannot reproduce it and it has no state record, no `config/modules.conf` row, no installer step and no backup coverage — its Prosody data (accounts, groups, archives) is covered by nothing.
-- **Fix**: either promote it into `modules/snikket/` (compose + modules.conf row + installer setup + a backup path that includes `data/sandbox/modules/snikket/data`) or extend the sandbox helper to host-networked modules so `create`/`backup`/`sync` cover it; then remove the hand-written copy.
-
 #### The optimize offer is marked broken in the installer
 - **File**: `scripts/install/wizard.d/flow/optimize.sh`
 - **Problem**: `ask_optimize` carries a `## BROKEN — neither prompt answer fires optimize.sh` marker from an earlier run; the wiring looks correct (`resolve_errors` → `finalize_install` → `ask_optimize` → `bash scripts/ops/optimize.sh --yes`, and `ask_boolean` assigns by name), so the marker has never been reproduced or traced. Untested ≠ fixed: the marker stays until a real green run proves it.
@@ -195,7 +184,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 ---
 
 ### Talk relay and Snikket coturn both want 3478/5349
-- **File**: `modules/nextcloud/docker-compose.yml` (talk-relay), `data/sandbox/modules/snikket/snikket.conf` (Snikket)
+- **File**: `modules/nextcloud/docker-compose.yml` (talk-relay), `modules/snikket/.env` (Snikket)
 - **Problem**: Snikket's coturn is now on 3478/5349 (standard ports, advertised via XEP-0215) and talk-relay publishes the same two. Only one can bind them, so re-enabling the Talk stack stops Snikket's TURN from starting (it was off before for exactly this reason). The relay ranges do not overlap (Talk 49160-49200, Snikket 49201-65535).
 - **Fix**: give talk-relay its own listener pair (e.g. 3481 plain + 5351 TLS) in the compose published ports, `modules/nextcloud/talk/turnserver.conf.example`, the installer's `occ talk:turn:add`/`stun_servers` values and `03-firewall.sh`, then regenerate the live `$DATA_DIR/talk/turnserver.conf` with `make talk-gen` and re-register TURN — or keep Talk off.
 
@@ -467,10 +456,10 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Nextcloud moved off the public edge** — its stack was brought down and its door is the tailnet-only `nextcloud.$DOMAIN`; `cloud.$DOMAIN` now serves ownCloud (oCIS), which makes the per-hostname Cloudflare WAF skip moot.
 - **Poster welcome page** — `/welcome` is `$DATA_DIR/pages/www/welcome.html`, with a page nav and a `Home →` button.
 - **WriteFreely blog** — new `blog` module and `blog.$DOMAIN` vhost, built from the pinned upstream release tarball.
-- **`xmpp.$DOMAIN` vhost moved into the tracked tree** — `modules/caddy/vhosts/xmpp.caddy` replaces the sandbox-only copy, which `make render`'s `rsync --delete` wiped so the site died on the next Caddy restart.
+- **Snikket's vhost moved into the tracked tree** — the sandbox-only copy was wiped by `make render`'s `rsync --delete`, so the site died on the next Caddy restart; the door has been tracked since (now `modules/caddy/vhosts/chat.caddy`).
 - **Makefile git recipes restored** — `git-pull/add/com/ch/com-audit/split/push/force-push` and the tmux/Nextcloud/goose blocks were missing again; restored from history (`e1a371f^`).
-- **Container roster derived from `config/modules.conf`** — `CONTAINERS`/`MODULES` and the per-container compose map are generated with `awk`, so every declared container and module gets its `dok-*` target; the nextcloud family runs both compose files in one invocation.
-- **Rocket.Chat removed, `chat.$DOMAIN` reserved empty** — the `chat` module, its installer step, smoke section and docs are gone; the vhost answers an empty 200 from its own certificate and proxies nowhere.
+- **Container roster derived from `config/modules.conf`** — `CONTAINERS`/`MODULES` and the per-container compose map are generated from the catalog (one `$(eval)` per module row), so every declared container and module gets its `dok-*` target; the nextcloud family runs both compose files in one invocation.
+- **Rocket.Chat removed** — the `chat` module, its installer step, smoke section and docs are gone; `chat.$DOMAIN` sat empty until Snikket took the name (2026-10-30).
 - **Pages are instance data only** — `config/pages/` deleted; `www.$DOMAIN` serves `$DATA_DIR/pages/www` and `make render` never reads, writes or deletes a page.
 - **Snikket calls enabled and web-compatible** — coturn on 3478/3479 + 5349/5350 with relay 49201-65535 (clear of talk-relay's 49160-49200), XEP-0215 advertised, BOSH/WebSocket cross-origin + secure-proxy flags in a tracked extra config, CORS+preflight for XEP-0363 uploads at the edge.
 - **Homer and Zensical removed** — `modules/homer`, `config/homer`, `config/docs`, `scripts/modules/docs-build.sh` and the `/docs` + `/home` routes are gone; the welcome page's Home link goes straight to Homarr and `www/home` permanent-redirects there.
@@ -489,4 +478,8 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Beszel module removed (2026-10-29)** — module, `make beszel-*` recipes, `scripts/modules/beszel-system.sh`, smoke section, installer blocks, the `/beszel` route and the Homer link are gone.
 - **`optimize.sh` gained a repo-wide pass (2026-10-29)** — one `sysctl -a` snapshot + parsed table replaces ~30 `sysctl -n` forks per check round, one apt transaction installs all missing helpers, `systemctl list-unit-files` replaces a call per unit, the sysctl file is applied with `sysctl -p` (system fallback), and a checkout gets git's fast paths + pack maintenance (`WITH_GIT=0` opts out).
 - **`editor.sh` logs its own aborts** — stderr is mirrored into the run log and the EXIT trap records the rc with the step in flight, so a run that dies outside `die()` no longer ends mid-question in the log; answers are logged except secrets, and the `ask_var` target shadowing that broke `set -u` is gone.
-- **Snikket TURNS no longer depends on a chown race** — the tracked wrapper `scripts/sandbox/snikket/coturn-run` stages the cert pair in a `turnserver`-owned copy and `make sbx-snikket-turn` installs and verifies it (2026-10-29).
+- **Snikket TURNS no longer depends on a chown race** — the tracked wrapper `modules/snikket/coturn-run` stages the cert pair in a `turnserver`-owned copy and `make snikket-turn` verifies it (2026-10-29).
+- **oCIS promoted to module `ocis`** — `modules/ocis/` (compose, 172.22.0.27:9200), a `config/modules.conf` row, installer seeding + `containers_up` block, backup coverage and a smoke section; data moved to `data/ocis`, sandbox copy deleted (2026-10-30).
+- **Snikket promoted to module `xmpp`** — `modules/snikket/` owns `chat.$DOMAIN` (+ `groups.chat`/`share.chat`), the vhost is `modules/caddy/vhosts/chat.caddy`, the coturn wrapper and account CLI moved into the repo tree; data at `data/snikket`, sandbox copy deleted (2026-10-30).
+- **`dok-recreate-<ctn>` repo-root bug fixed** — the multi-line `awk` in `$(shell)` collapsed to one line, so only the first `COMPOSE_FILE_*` existed and every other recipe ran compose against the repo root; now one `$(eval)` per module row (2026-10-30).
+- **Orphan stacks removed** — the `homer`, `beszel-hub`/`beszel-agent` and `rocketchat`/`rocketchat-db`/`rocketchat-db-init` containers and their `data/` trees (`rocketchat` 212 MB, `beszel` 5 MB) are gone; `modules/homer/` was an untracked leftover and is deleted (2026-10-30).

@@ -11,7 +11,9 @@ Try an app on the live stack without touching the repo. `scripts/sandbox/editor.
 
 ## A sandbox module can own a public name
 
-`cloud.$DOMAIN` is served by an ownCloud Infinite Scale (oCIS) sandbox module: its stack (compose + data) lives under `data/sandbox/modules/ocis` and is not in `config/modules.conf`, while the vhost that publishes it is tracked (`modules/caddy/vhosts/cloud.caddy`) so `make render` can never take the name offline. A sandbox module that reaches that state has its vhost moved into the repo and its copies removed from `data/sandbox/caddy` — one vhost per name.
+A trial app usually ends up behind a real hostname. Its vhost must live in `modules/caddy/vhosts/` (`{{DOMAIN}}`-templated) rather than `data/sandbox/caddy/`, because `make render` rsyncs the rendered tree with `--delete` and a sandbox-only vhost is wiped — the running edge keeps serving it only until its next restart. One vhost per name: when a module is promoted into `modules/`, the sandbox copy is deleted in the same change.
+
+A module that a name depends on does not stay a sandbox module for long. oCIS served `cloud.$DOMAIN` this way and Snikket served `chat.$DOMAIN`; both are now repo modules (`ocis`, `xmpp`) because a sandbox module has no installer step and no backup coverage.
 
 ## Commands
 
@@ -43,7 +45,7 @@ A sandbox module is rendered from `data/sandbox/templates/docker-compose.yml.tmp
 
 ## Host-networked modules
 
-An app whose protocol is not HTTP(S) still runs as a sandbox module, but the compose contract above cannot apply: it uses `network_mode: host` and moves its own web ports into the private range so the edge keeps 80/443 — Snikket is the current case (XMPP 5222/5269, TURN, proxy65 5000). Such a module is hand-written, so the one piece that must never be maintained only inside `data/` is tracked: `scripts/sandbox/snikket/coturn-run`, the coturn run script bind-mounted over `/etc/sv/coturn/run`. It stages Snikket's certificate pair in a `turnserver`-owned copy (so the hourly `prosodyctl cert import`, which rewrites the originals as `prosody:prosody 0640/0400`, can no longer decide whether TURNS starts) and points coturn's `--userdb` at a store it owns. The module's own compose file mounts it, so recreating the container is the whole install.
+An app whose protocol is not HTTP(S) cannot follow the compose contract above: it needs `network_mode: host` and moves its own web ports into the private range so the edge keeps 80/443 (XMPP 5222/5269, TURN, proxy65 5000). The helper can create and remove such a module but does not template its compose file, and its listeners are host ports, so the firewall is the only gate on them. Snikket was this case and has since been promoted into `modules/snikket/` (module `xmpp`) — its coturn wrapper lives at `modules/snikket/coturn-run`, next to the compose file that mounts it.
 
 ## Exposure
 
@@ -61,4 +63,11 @@ Modes 2 and 3 reuse the Cloudflare token the installer already stored, and take 
 
 ## Promoting a sandbox module into the repo
 
-Once it works, the changes are the ones you would have made by hand: move the rendered compose file to `modules/<name>/`, add its vhost under `modules/<name>/vhosts/` (copy the sandbox-rendered file and replace the pinned address with the container name), add its row to `config/modules.conf`, and drive it through the installer. Then remove the sandbox copy so only one of the two exists.
+Once it works, the changes are the ones you would have made by hand:
+
+1. Create `modules/<name>/docker-compose.yml` from the sandbox file: container names must match the row you are about to add, bind mounts must point at `${DATA_DIR}/<name>` instead of the module's own directory, and the pinned `ipv4_address` stays — the edge runs `network_mode: host`, so it dials the bridge IP and cannot resolve a container name.
+2. Move the vhost into `modules/caddy/vhosts/` (`{{DOMAIN}}`-templated) if it lives in `data/sandbox/caddy/` — a sandbox vhost is wiped by `make render`.
+3. Add the row to `config/modules.conf` (`<module> <dir> <host-label> <containers...>`). That row alone gives every container its `dok-*` targets, its compose mapping, the installer's module prompt and its state record.
+4. Seed its settings in the installer (`seed_stack` for the module's `.env`, `prep_dirs` for its data dir and ownership, `containers_up` for the recreate, `03-firewall.sh` for host-networked ports, `cloudflare.sh` for the DNS record) and add a smoke section.
+5. Stop the sandbox project, move its datadir to `$DATA_DIR/<name>` (verify byte and file counts on both sides), bring it up with `make dok-recreate-<container>`, and only then delete the sandbox copy so exactly one exists.
+6. Record `MOD_<NAME>=true` and the module name in `enabled_modules` in `wizard.state` — the installer is that file's only writer, so this one edit is a deliberate exception, and without it smoke, `make fetch` and `make backup` treat the promoted module as not installed.
