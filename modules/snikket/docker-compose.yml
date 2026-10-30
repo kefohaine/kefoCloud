@@ -17,6 +17,14 @@ services:
       - ${DATA_DIR}/snikket:/snikket
       - ${DATA_DIR}/snikket/acme:/var/www/html/.well-known/acme-challenge
     restart: unless-stopped
+    healthcheck:
+      # nginx is this container's only process and the image carries neither
+      # curl nor wget, so the master pid is probed for liveness.
+      test: ["CMD-SHELL", "kill -0 \"$$(cat /run/nginx.pid)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     logging:
       driver: json-file
       options:
@@ -33,6 +41,15 @@ services:
       - ${DATA_DIR}/snikket:/snikket
       - ${DATA_DIR}/snikket/acme:/var/www/.well-known/acme-challenge
     restart: unless-stopped
+    healthcheck:
+      # This is a sleep/renew loop with no listening port, so liveness = the
+      # cert is still being renewed (LE renews ~30 days out; 40 days of age
+      # means renewals have been failing).
+      test: ["CMD-SHELL", "find /snikket/letsencrypt/live -name fullchain.pem -mtime -40 | grep -q ."]
+      interval: 1h
+      timeout: 10s
+      retries: 3
+      start_period: 15m
     logging:
       driver: json-file
       options:
@@ -48,6 +65,15 @@ services:
     depends_on:
       - server
     restart: unless-stopped
+    healthcheck:
+      # 5080 is shared with snikket-proxy on the host network (both nginx), so a
+      # probe there could be answered by the wrong container. 5280 is this
+      # container's own BOSH backend, bound to 127.0.0.1 only.
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 5280"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     logging:
       driver: json-file
       options:
@@ -56,7 +82,7 @@ services:
 
   server:
     image: snikket/snikket-server@sha256:6de2e972b4e809de342b9927b4a7da595edf78c1de8e389fa1e3b91b605a258d
-    container_name: snikket
+    container_name: snikket-server
     env_file: ./.env
     network_mode: host
     mem_limit: 512m
@@ -77,6 +103,16 @@ services:
         soft: 65535
         hard: 65535
     restart: unless-stopped
+    healthcheck:
+      # prosody is the point of this container; coturn's listeners die
+      # independently, so both are probed. The image has no curl/wget/ss —
+      # prosodyctl reads the pidfile, /proc/net/udp carries the coturn check
+      # (hex 0D96 = UDP 3478).
+      test: ["CMD-SHELL", "prosodyctl status >/dev/null && grep -q ':0D96 ' /proc/net/udp"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
     logging:
       driver: json-file
       options:
