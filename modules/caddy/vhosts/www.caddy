@@ -12,8 +12,6 @@
 #              tellings (neon / journal / field manual / poster).
 #   /download* Caddy file_server browse over homelab/download (mounted at
 #              /download:ro in the caddy container — drop files here).
-#   /home*     permanent redirect to home.{{DOMAIN}} (the dashboard's own
-#              hostname — a Next.js app cannot be mounted under a path).
 #   everything else — plain "ok" stub.
 # TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/cloud.{{DOMAIN}}.caddy).
 
@@ -114,11 +112,6 @@ https://www.{{DOMAIN}} {
         rewrite /welcome-9.html
         file_server
     }
-    # /home — the dashboard lives on its own hostname (home.{{DOMAIN}},
-    # Homarr). This subpath is a permanent redirect, not a 404: it is printed
-    # in the welcome page's nav and in bookmarks.
-    @home_root path /home /home/*
-    redir @home_root https://home.{{DOMAIN}}/ permanent
     # Homepage: index.html from the instance web root (meta-redirects to /welcome).
     @index path /
     handle @index {

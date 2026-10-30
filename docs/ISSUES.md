@@ -462,7 +462,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Rocket.Chat removed** — the `chat` module, its installer step, smoke section and docs are gone; `chat.$DOMAIN` sat empty until Snikket took the name (2026-10-30).
 - **Pages are instance data only** — `config/pages/` deleted; `www.$DOMAIN` serves `$DATA_DIR/pages/www` and `make render` never reads, writes or deletes a page.
 - **Snikket calls enabled and web-compatible** — coturn on 3478/3479 + 5349/5350 with relay 49201-65535 (clear of talk-relay's 49160-49200), XEP-0215 advertised, BOSH/WebSocket cross-origin + secure-proxy flags in a tracked extra config, CORS+preflight for XEP-0363 uploads at the edge.
-- **Homer and Zensical removed** — `modules/homer`, `config/homer`, `config/docs`, `scripts/modules/docs-build.sh` and the `/docs` + `/home` routes are gone; the welcome page's Home link goes straight to Homarr and `www/home` permanent-redirects there.
+- **Homer and Zensical removed** — `modules/homer`, `config/homer`, `config/docs`, `scripts/modules/docs-build.sh` and the `/docs` and `/home` routes are gone; the welcome page's Home link goes straight to Homarr.
 - **`make dok-recreate-nextcloud-stack`** — the DB and the app in ONE compose invocation, so neither file's `--remove-orphans` deletes the other half.
 - **Beszel hub + agent** — added as a `beszel` module (hub + agent, agent wired to the hub key); the module was removed on 2026-10-29.
 - **Immich photos** — new `photos` module, DNS-only `photos.$DOMAIN`, own PostgreSQL + Redis, ML container omitted.
@@ -471,7 +471,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **`vault.$DOMAIN` did not resolve on the tailnet** — the provider-supplied `/etc/resolv.conf` bypassed Tailscale, so the split-DNS route never applied on this host; `make install-resolv` pins it to `100.100.100.100`.
 - **Vault is tailnet-only** — `vault.$DOMAIN` keeps its name but has no public record; `@not_tailnet` 403s every other source.
 - **Module roster derived** — the installer's module list, state and detection now read `config/modules.conf` instead of four hardcoded names.
-- **Smoke covers the new doors** — `/docs`, `/home`, `blog`, `photos` and both halves of the vault gate are asserted.
+- **Smoke covers the new doors** — `blog`, `photos` and both halves of the vault gate are asserted.
 - **`tail.$DOMAIN` renamed `ttyd.$DOMAIN`, and the shell is the homepage** — ttyd proxies at `/` with no base path; the door list, `config/pages/tail/`, `scripts/access/tail-targets.sh` and `make tail-targets` were removed (2026-10-29).
 - **`mail.$DOMAIN` carries webmail + mail ports; the platform UI moved to `mailu.$DOMAIN`** — mail. is the public DNS-only Roundcube door and the SMTP/IMAP name (MX/SPF point at it), mailu. is the tailnet-only platform door, and cube. and its record are gone (2026-10-29).
 - **`mailu-admin` 500 on every DB route** — `mailserver/data` was root:root 0700 while gunicorn runs as uid 100; `prep_dirs` now chowns it `100:1000`, `make mail-fix-perms` repaired it live (2026-10-29).

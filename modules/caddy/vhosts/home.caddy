@@ -4,7 +4,6 @@
 # ROOT-absolute asset URLs (/_next/...), so a path mount renders a blank page.
 # Next's basePath is a build-time setting — upstream refuses subpath hosting
 # for the published image (homarr-labs/homarr#2617) — so the app owns an origin.
-# https://www.{{DOMAIN}}/home 308s here, so the old URL keeps working.
 # TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/cloud.{{DOMAIN}}.caddy).
 
 https://home.{{DOMAIN}} {
