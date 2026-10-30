@@ -943,6 +943,76 @@ endif
 sandbox-sync:
 >@bash scripts/sandbox/editor.sh sync
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Snikket (XMPP) — module `xmpp` (modules/snikket/, project `snikket`). Its
+# containers already have dok-* targets (dok-recreate-snikket etc.) from the
+# catalog; the recipes below are the ACCOUNT layer. Accounts are Prosody
+# accounts reached through `prosodyctl shell` inside the server container:
+# create = invite (the Snikket app generates device keys client-side), while
+# passwd/disable/delete act on the server directly. Every recipe delegates to
+# scripts/modules/snikket-admin.sh, which derives the compose project, the
+# domain and the container names from the module itself — never argv.
+# ─────────────────────────────────────────────────────────────────────────────
+
+SNIKKET_ADMIN := $(REPO)/scripts/modules/snikket-admin.sh
+
+.PHONY: snikket-users snikket-invite snikket-invites snikket-revoke snikket-reset snikket-passwd snikket-disable snikket-enable snikket-del-user snikket-status snikket-doctor snikket-tls snikket-turn snikket-logs snikket-restart snikket-exec snikket-shell
+
+snikket-users:
+>@bash $(SNIKKET_ADMIN) users
+
+# ADMIN=true|false is required (true grants the prosody:admin role); no USER =
+# an invite that any username may redeem; QR=1 renders a scannable code.
+snikket-invite:
+>@bash $(SNIKKET_ADMIN) invite "$(USER)" "$(ADMIN)" "$(QR)"
+
+snikket-invites:
+>@bash $(SNIKKET_ADMIN) invites
+
+snikket-revoke:
+>@bash $(SNIKKET_ADMIN) revoke "$(TOKEN)"
+
+snikket-reset:
+>@bash $(SNIKKET_ADMIN) reset "$(USER)"
+
+# PASS is passed on stdin, never in argv; empty = generated and printed once.
+snikket-passwd:
+>@bash $(SNIKKET_ADMIN) passwd "$(USER)" "$(PASS)"
+
+snikket-disable:
+>@bash $(SNIKKET_ADMIN) disable "$(USER)"
+
+snikket-enable:
+>@bash $(SNIKKET_ADMIN) enable "$(USER)"
+
+# Destructive: asks for a typed yes unless FORCE=1.
+snikket-del-user:
+>@bash $(SNIKKET_ADMIN) del-user "$(USER)" "$(FORCE)"
+
+snikket-status:
+>@bash $(SNIKKET_ADMIN) status
+
+snikket-doctor:
+>@bash $(SNIKKET_ADMIN) doctor
+
+snikket-tls:
+>@bash $(SNIKKET_ADMIN) tls
+
+snikket-turn:
+>@bash $(SNIKKET_ADMIN) turn
+
+snikket-logs:
+>@bash $(SNIKKET_ADMIN) logs "$(SERVICE)" "$(N)"
+
+snikket-restart:
+>@bash $(SNIKKET_ADMIN) restart "$(SERVICE)"
+
+snikket-exec:
+>@bash $(SNIKKET_ADMIN) exec "$(CMD)"
+
+snikket-shell:
+>@bash $(SNIKKET_ADMIN) shell
+
 # Tmux sessions
 # Persistent terminal sessions on the host — detach (Ctrl-b d) and the
 # shell + whatever's running inside it stays alive; reattach from any
