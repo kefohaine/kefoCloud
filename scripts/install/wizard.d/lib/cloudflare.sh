@@ -157,7 +157,7 @@ cf_mail_dns() {
   # must not pass through the CF proxy.
   mod_on photos && cf_record photos false || cf_a_del photos
   # home.$DOMAIN is Homarr (Next.js root-absolute assets, so it cannot live
-  # under www/home); proxied like cloud/kuma.
+  # under a path); proxied like cloud/kuma.
   # talk MUST be DNS-only (grey cloud): TURN relays media over UDP/TCP
   # 3478/5349 + 49160-49200, which the CF proxy cannot carry. Caddy still gets
   # its LE cert via DNS-01. talk exists only when video calling was enabled.
