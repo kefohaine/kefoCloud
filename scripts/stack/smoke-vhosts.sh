@@ -263,7 +263,7 @@ end_sec
 hdr xmpp "XMPP — Snikket (module: xmpp) · chat.$DOMAIN"
 check xmpp "chat.$DOMAIN" "/" "200 301 302 307 308" html "Snikket portal answers"
 check_tls "chat.$DOMAIN"
-check_ctns xmpp snikket snikket-proxy snikket-portal snikket-certs
+check_ctns xmpp snikket-server snikket-proxy snikket-portal snikket-certs
 for _sp in 5222 5269; do
   if ss -ltn 2>/dev/null | grep -q ":$_sp "; then
     say "ok   xmpp-port — listening on $_sp/tcp"
