@@ -12,6 +12,10 @@
 #
 # It runs scripts/info/git-split.sh --staged (which commits one commit per unit),
 # then aborts the outer commit — the work is ALREADY committed, split.
+# The abort is forced by git, not by us: `git commit` snapshots the HEAD it
+# expects and errors `cannot lock ref 'HEAD': is at X but expected Y` if a hook
+# moves HEAD under it, so no hook can split-and-succeed. Exiting 0 is not an
+# option either (the index is then empty → "nothing to commit").
 # Args: $1 = the message file, $2 = source (message|template|merge|squash|commit).
 # Skipped for merge/squash (a merge message is not a change message), for a
 # single-unit change, and when GIT_SPLIT_DISABLE=1 / ONE_CHANGE_OVERRIDE=1.
@@ -39,8 +43,9 @@ splitter="$repo/scripts/info/git-split.sh"
 echo "prepare-commit-msg: staged change spans $nunits units (rule 26: one folder, one subfolder) — splitting into one commit per unit:"
 printf '  %s\n' $units
 if GIT_SPLIT_MESSAGE_FILE="$1" bash "$splitter" --staged; then
-  echo "prepare-commit-msg: done — $nunits commits made; the commit you asked for is"
-  echo "  aborted because its work is already committed. (GIT_SPLIT_DISABLE=1 to only refuse.)"
+  echo "prepare-commit-msg: done — the work is committed, in $nunits commits, each with"
+  echo "  your message. Nothing to re-run; git reports this commit as aborted only"
+  echo "  because it has nothing left to commit. (GIT_SPLIT_DISABLE=1 to only refuse.)"
   exit 1
 fi
 echo "prepare-commit-msg: auto-split failed — refusing the bundle."
