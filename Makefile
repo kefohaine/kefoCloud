@@ -63,7 +63,15 @@ TAILDROP ?= $(TAILDROP_HOST)
 # Per-container compose file, also derived from the catalog: every container of
 # a module resolves to that module dir's compose file (mailu-* + roundcube ->
 # modules/mailserver, immich-server -> modules/immich, talk-hpb -> nextcloud).
-$(eval $(shell awk '!/^#/ && NF>=4 { dir=$$2; for(i=4;i<=NF;i++) printf "COMPOSE_FILE_%s := modules/%s/docker-compose.yml\n", $$i, dir }' $(REPO)/config/modules.conf 2>/dev/null))
+#
+# One $(eval) per module row, never one awk that prints every assignment:
+# `$(shell)` collapses newlines, so a multi-line awk lands in make as a SINGLE
+# line and only its first `:=` survives — every other container then resolved to
+# an empty COMPOSE_FILE and `make dok-recreate-<ctn>` ran
+# `docker compose -f /root/kefoCloud` ("is a directory").
+module_dir = $(shell awk -v m=$(1) '$$1==m{print $$2; exit}' $(REPO)/config/modules.conf 2>/dev/null)
+$(foreach m,$(MODULES),$(eval MODULE_CONTAINERS_$(m) := $(shell awk -v m=$(m) '$$1==m{for(i=4;i<=NF;i++) printf "%s ", $$i}' $(REPO)/config/modules.conf 2>/dev/null)))
+$(foreach m,$(MODULES),$(foreach c,$(MODULE_CONTAINERS_$(m)),$(eval COMPOSE_FILE_$(c) := modules/$(call module_dir,$(m))/docker-compose.yml)))
 COMPOSE_FILE_caddy := modules/caddy/docker-compose.yml
 # Nextcloud ships TWO compose files in one project dir (app + PostgreSQL). One
 # container's action must run BOTH — a single file treats the other file's
