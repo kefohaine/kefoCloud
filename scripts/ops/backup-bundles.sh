@@ -11,10 +11,11 @@
 #       nextcloud-backup-YYYYMMDD.tar.gz — pgdata + cloud datadir (db + files)
 #       (the cloud datadir includes data/cloud/recovery/apps.txt — the occ app:list --enabled
 #        app-state manifest — so it is backed up too)
-#       other-backup-YYYYMMDD.tar.gz       — vault, mailserver, kuma datadirs
+#       other-backup-YYYYMMDD.tar.gz       — vault, mailserver, kuma, ocis,
+#                                            snikket datadirs
 #     raw    — taildrop two raw datadirectories instead, no archive built:
 #       nextcloud-YYYYMMDD/ — pgdata + cloud datadir
-#       others-YYYYMMDD/    — vault, mailserver, kuma datadirs
+#       others-YYYYMMDD/    — vault, mailserver, kuma, ocis, snikket datadirs
 # - After the mode is chosen, the plan is printed and a typed `yes` is required
 #   before any work. Everything is staged in a temp dir, taildropped to the
 #   device's BACKUP_LAND_DIR (default ~/backups/), checksum-verified, then every
@@ -139,9 +140,13 @@ if [ "$cloud_ok" -eq 1 ] && [ "$cloud_external" -eq 1 ]; then
   fi
 fi
 
-# ---- other module datadirs (vault, mailserver, kuma) ----
+# ---- other module datadirs (vault, mailserver, kuma, ocis, snikket) ----
+# ocis carries the IDM boltdb + the user store; snikket carries the Prosody
+# accounts and archives plus its own certificate store. Both are modules, so
+# they ship with every other module — a module whose data is not here is a
+# backup gap, not an exception.
 OTHER=""
-for d in vault mailserver kuma; do
+for d in vault mailserver kuma ocis snikket; do
   [ -d "$DATA/$d" ] && OTHER="${OTHER:+$OTHER }$d"
 done
 
@@ -161,7 +166,7 @@ fi
 if [ -n "$OTHER" ]; then
   printf '  others        %s (under %s/)\n' "$OTHER" "$DATA"
 else
-  printf '  others        skipped (no vault/mailserver/kuma datadirs)\n'
+  printf '  others        skipped (no vault/mailserver/kuma/ocis/snikket datadirs)\n'
 fi
 printf "Type 'yes' to proceed (Ctrl-C aborts): "
 read -r conf
@@ -195,7 +200,7 @@ if [ "$SEND_MODE" = "bundle" ]; then
     log "built nextcloud-backup-$TODAY.tar.gz ($(du -sh "$BUNDLES_DIR/nextcloud-backup-$TODAY.tar.gz" | cut -f1))"
   fi
 
-  # ---- other modules bundle (vault, mailserver, kuma datadirs) ----
+  # ---- other modules bundle (vault, mailserver, kuma, ocis, snikket) ----
   if [ -n "$OTHER" ]; then
     log "building the other bundle (datadirs:$OTHER)"
     tar czf "$BUNDLES_DIR/other-backup-$TODAY.tar.gz" -C "$DATA" $OTHER \
