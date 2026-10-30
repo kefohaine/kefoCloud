@@ -1,0 +1,48 @@
+services:
+  ocis:
+    # Pinned by digest, never a tag: an oCIS minor bump migrates the IDM store on
+    # start, so the image may only change deliberately.
+    image: owncloud/ocis@sha256:08639361baa55e21037442daed4d8aa1a4fc4f2f12d06db92455a14782c29f61
+    container_name: ocis
+    restart: unless-stopped
+
+    # Hard RAM cap (no container swap) — survives recreates, unlike `docker update`.
+    mem_limit: 1536m
+    memswap_limit: 1536m
+
+    # oCIS writes everything as its own uid; the data + config trees under
+    # ${DATA_DIR}/ocis are owned by 1000:1000 to match.
+    user: "1000:1000"
+
+    # Instance values + app config (OCIS_URL, PROXY_HTTP_ADDR, IDM admin
+    # password). Seeded by the installer's seed_stack — gitignored, mode 0600.
+    env_file: ./.env
+
+    volumes:
+      # The whole oCIS store: IDM boltdb, the decomposed fs (user files), the
+      # service accounts, the thumbnails and the search index.
+      - ${DATA_DIR}/ocis/data:/var/lib/ocis
+      # The generated config (ocis.yaml, holding the instance's own secrets).
+      # NOT in the repo and never tracked: it is instance data, seeded by oCIS
+      # itself on first start.
+      - ${DATA_DIR}/ocis/config:/etc/ocis
+
+    # No published ports — only Caddy (on the 'net' bridge) reaches this container.
+    expose:
+      - "9200"
+
+    networks:
+      net:
+        # Caddy runs with network_mode: host, so it dials the bridge IP, not a
+        # container name (see modules/caddy/vhosts/cloud.caddy).
+        ipv4_address: 172.22.0.27
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  net:
+    external: true
