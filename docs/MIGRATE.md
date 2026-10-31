@@ -48,7 +48,8 @@ first, then the installer again.
 - The device's public SSH key (ssh hardening is applied in the same run).
 - Nothing GitHub-side to type: the repo is public and cloned over HTTPS; the optional
   collaborator step mints `/root/.ssh/github_key` and switches `origin` to SSH only once
-  GitHub accepts the key.
+  GitHub accepts the key. `gh auth login` afterwards (once, on the new box) is what lets
+  `make git-pr` open the pull request instead of printing the compare URL.
 
 ## Carrying existing data to a new machine
 
