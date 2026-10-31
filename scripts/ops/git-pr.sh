@@ -459,7 +459,7 @@ cmd_submit() {
   # the human the compare URL and a ready body. Either way the merge is theirs.
   local pr_url=""
   if [ "$DRY" = 1 ]; then
-    printf '  would run: gh pr create --base %s --head %s --title %q --body-file - (or POST /repos/%s/pulls with GITHUB_TOKEN)\n' "$BASE" "$b" "$title" "$or"
+    printf '  would run: gh pr create --base %s --head %s --title "%s" --body-file - (or POST /repos/%s/pulls with GITHUB_TOKEN)\n' "$BASE" "$b" "$title" "$or"
   elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     if printf '%s\n' "$body" | gh pr create --base "$BASE" --head "$b" --title "$title" --body-file -; then
       echo ""
