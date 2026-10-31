@@ -98,11 +98,13 @@ github_auth_ok() {
 # that may not write here, and that rejection is reported as an error. Runs
 # only in the installer's tail (after a green smoke), never as a pre-check.
 #
-# It pushes a WORK BRANCH, never `main` (AGENTS rule 30). The checkout is moved
-# onto the next free `work-<N>` (naming lives in scripts/lib/work-branch.sh) and
-# that branch is pushed, so the installer's commits reach the operator as a pull
-# request and `main` stays untouched on the remote. The checkout STAYS on that
-# branch: every later change in this clone is made there, one PR per branch.
+# It pushes a TEMP BRANCH, never `main` (AGENTS rule 30). task_repo has already
+# moved the checkout onto the next free `temp-<N>` (naming lives in
+# scripts/lib/temp-branch.sh); that branch is pushed, so the installer's commits
+# reach the operator as a pull request and `main` stays untouched on the remote.
+# A checkout left on anything else gets a temp branch here instead. The checkout
+# STAYS on the branch: every later change in this clone is made there, one PR
+# per branch.
 #
 # NOTE (AGENTS rule 3): raw git is normally reserved for the make recipes — the
 # one exception is right here, because the installer must push to a TEMPORARY
@@ -130,16 +132,20 @@ github_push() {
          GIT_AUTHOR_NAME="$GITHUB_COMMIT_NAME" GIT_AUTHOR_EMAIL="$GITHUB_COMMIT_EMAIL"
   local url="git@github.com:$GITHUB_USER/$REPO_NAME.git"
 
-  # The installer NEVER pushes main: it creates (or reuses) the working branch
-  # and pushes that, so the operator merges through a pull request. The name is
-  # the next free work-<N>, derived from the branches that exist — local and on
-  # origin — never hardcoded and never stored in a file.
-  . "$REPO/scripts/lib/work-branch.sh"
+  # The installer NEVER pushes main: it pushes the working branch (created by
+  # task_repo, or created here when the checkout sits elsewhere), so the operator
+  # merges through a pull request. The name is the next free temp-<N>, derived
+  # from the branches that exist — local and on origin — never hardcoded and
+  # never stored in a file.
+  . "$REPO/scripts/lib/temp-branch.sh"
   local branch
-  branch="$(work_branch_next "$REPO")"
-  if ! git -C "$REPO" checkout -B "$branch" >>"$LOG" 2>&1; then
-    warn github_push "could not switch the checkout to $branch — push skipped"
-    return 1
+  branch="$(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  if ! temp_branch_is_temp "$branch"; then
+    branch="$(temp_branch_next "$REPO")"
+    if ! git -C "$REPO" checkout -B "$branch" >>"$LOG" 2>&1; then
+      warn github_push "could not switch the checkout to $branch — push skipped"
+      return 1
+    fi
   fi
 
   # Idempotent by construction: the push itself creates no persistent remote.
