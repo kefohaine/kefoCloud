@@ -3,7 +3,7 @@
 Thanks for considering a contribution!
 
 `main` is write-once: it is never pushed to directly, by anyone. Every change
-arrives as a branch named `work-<N>` (work-1, work-2, …), is pushed through the
+arrives as a branch named `temp-<N>` (temp-1, temp-2, …), is pushed through the
 installed hooks, and is merged only through a pull request a human operator
 reviews. Issues live in the repository's Issues tab — they are created, labelled
 and closed there (or through the GitHub API), never in a markdown file.
@@ -17,7 +17,7 @@ Open an issue first — the Feature request template applies `type: feature` and
 `status: triage`, and asks for how it would work, its benefits and its risks.
 
 ## Submitting a pull request
-1. `make git-start` — creates and switches to the next `work-<N>` off a freshly pulled `main`.
+1. `make git-start` (or `make git-branch [NAME=<branch>]`) — creates and switches to the next `temp-<N>` off a freshly pulled `main`.
 2. Make your changes, committing one change per commit (`make git-com MSG="…"`; `make git-audit` checks it).
 3. Test them (`make smoke` on a deployed instance, `bash -n` on the scripts you touched).
 4. `make git-pr` — audits the branch, pushes it through the hooks, and opens the

@@ -2,7 +2,7 @@
 Pick ONE shape and delete the other. A pull request is accepted only if it
 either closes an issue from the Issues tab, or adds a new feature explained
 with how it works, its benefits and its risks. `main` is never pushed to
-directly: every change arrives here as a work-<N> branch, and a human operator
+directly: every change arrives here as a temp-<N> branch, and a human operator
 reviews and merges it.
 -->
 
