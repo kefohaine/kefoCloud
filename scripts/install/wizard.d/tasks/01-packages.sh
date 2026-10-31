@@ -30,7 +30,9 @@ task_packages() {
   # "unexpected error" whose real cause is a missing extractor.
   # dnsutils = dig: the dkim_setup re-check and its hint query the zone's
   # nameserver directly ("dig +short TXT dkim._domainkey.$DOMAIN @<zone NS>").
+  # gh = the GitHub CLI: `make git-pr` / `make git-issue` open the pull request
+  # and file the issue themselves once `gh auth login` has been run once.
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-    git curl make sudo dnsmasq ufw jq apache2-utils fail2ban sqlite3 python3-yaml tmux bzip2 dnsutils >>"$LOG" 2>&1 || fail apt
+    git curl make sudo dnsmasq ufw jq apache2-utils fail2ban sqlite3 python3-yaml tmux bzip2 dnsutils gh >>"$LOG" 2>&1 || fail apt
   task_end
 }
