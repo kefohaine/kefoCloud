@@ -41,11 +41,33 @@ install_hooks() {
 }
 
 
+# AGENTS rule 30: every change is made on a branch, never on main. The installer
+# leaves the checkout on the next free temp-<N> (naming in
+# scripts/lib/temp-branch.sh) as soon as the repo is present, so a commit made
+# in this clone later — by the operator, a recipe or an agent — cannot land on
+# main. Idempotent: a checkout already on a temp branch is left alone.
+ensure_temp_branch() {
+  local cur branch
+  . "$REPO/scripts/lib/temp-branch.sh"
+  cur="$(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  if temp_branch_is_temp "$cur"; then
+    detail "  checkout already on $cur (a temp branch — main is never committed to here)"
+    return 0
+  fi
+  branch="$(temp_branch_next "$REPO")"
+  if git -C "$REPO" checkout -b "$branch" >>"$LOG" 2>&1; then
+    detail "  checkout moved to $branch — every change reaches main through a pull request"
+  else
+    warn branch "could not create $branch — commits here would land on ${cur:-<detached>} (run 'make git-start')"
+  fi
+}
+
 # Repository Setup: clone/present the repo, pin the commit identity, install hooks.
 task_repo() {
   task_start
   ensure_repo
   github_set_identity
   install_hooks
+  ensure_temp_branch
   task_end
 }
