@@ -11,7 +11,7 @@
 # rsyncing ${DATA_DIR}/pgdata to the big disk there,
 # re-deploying this compose on that host with the port published on the
 # tailnet interface only, and pointing modules/nextcloud/.env POSTGRES_HOST
-# at the new tailnet IP (see docs/GUIDE.md "Nextcloud DB" for the full steps).
+# at the new tailnet IP (see docs/MANUAL.md "Nextcloud DB" for the full steps).
 #
 # Tuning targets the 2 GB RAM of the future DB host; on this (larger) host it
 # is deliberately conservative. Postgres default (not tuned here) settings
