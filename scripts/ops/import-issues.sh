@@ -7,9 +7,13 @@
 # GitHub only creates labels and issues through its API or the web UI; committing
 # these files does nothing by itself. This script is that API call.
 #
-# Auth: a token in GITHUB_TOKEN or GH_TOKEN with `Issues: read and write` and
-# `Metadata: read` on this repository. SSH remotes cannot authenticate the REST
-# API, so there is no key-based alternative.
+# Auth, in this order:
+#   1. `gh auth login` (the installer installs gh) — every call goes through
+#      `gh api`, which uses the CLI's own stored credential. Nothing here reads
+#      or prints a token.
+#   2. GITHUB_TOKEN / GH_TOKEN with `Issues: read and write` + `Metadata: read`
+#      on this repository, called through the REST API. SSH remotes cannot
+#      authenticate the API, so there is no key-based alternative.
 #
 # Idempotent: a label that already exists is PATCHed to the manifest's colour and
 # description; an issue is created only when no issue (open or closed) already
@@ -23,8 +27,13 @@ DRY=0
 [ "${1:-}" = "--dry-run" ] && DRY=1
 
 token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
-if [ -z "$token" ]; then
-  echo "import-issues: no token. Export GITHUB_TOKEN (fine-grained PAT, Issues: read/write + Metadata: read)." >&2
+if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+  mode=gh
+elif [ -n "$token" ]; then
+  mode=token
+else
+  echo "import-issues: no credential — run 'gh auth login' (gh is installed by the installer)," >&2
+  echo "  or export GITHUB_TOKEN (fine-grained PAT: Issues read/write + Metadata read)." >&2
   exit 1
 fi
 
@@ -33,12 +42,13 @@ slug="$(git -C "$REPO" remote get-url origin \
   | sed -e 's#\.git$##' -e 's#/$##')"
 [ -n "$slug" ] || { echo "import-issues: cannot derive owner/repo from origin" >&2; exit 1; }
 
-GITHUB_TOKEN="$token" SLUG="$slug" DRY="$DRY" python3 - "$REPO" <<'PY'
-import json, os, sys, urllib.error, urllib.parse, urllib.request
+MODE="$mode" GITHUB_TOKEN="$token" SLUG="$slug" DRY="$DRY" python3 - "$REPO" <<'PY'
+import json, os, subprocess, sys, urllib.error, urllib.parse, urllib.request
 
 repo = sys.argv[1]
 slug = os.environ["SLUG"]
 dry = os.environ["DRY"] == "1"
+mode = os.environ["MODE"]
 api = "https://api.github.com/repos/" + slug
 hdr = {
     "Authorization": "Bearer " + os.environ["GITHUB_TOKEN"],
@@ -47,7 +57,31 @@ hdr = {
     "User-Agent": "kefoCloud-import-issues",
 }
 
+
+def gh_api(method, path, payload=None):
+    """The gh path: `gh api` owns the credential, so no token enters this process."""
+    data = json.dumps(payload).encode() if payload is not None else None
+    r = subprocess.run(["gh", "api", "--include", "-X", method, "repos/" + slug + path],
+                       input=data, capture_output=True)
+    out = r.stdout.decode(errors="replace")
+    sep = "\r\n\r\n" if "\r\n\r\n" in out else "\n\n"
+    head, _, body = out.partition(sep)
+    try:
+        status = int(head.split()[1])
+    except (IndexError, ValueError):
+        status = 0
+    try:
+        parsed = json.loads(body) if body.strip() else None
+    except ValueError:
+        parsed = {"message": body.strip()}
+    if status == 0:
+        parsed = {"message": r.stderr.decode(errors="replace").strip() or "gh api failed"}
+    return status, parsed
+
+
 def call(method, path, payload=None):
+    if mode == "gh":
+        return gh_api(method, path, payload)
     data = json.dumps(payload).encode() if payload is not None else None
     req = urllib.request.Request(api + path, data=data, headers=hdr, method=method)
     try:
