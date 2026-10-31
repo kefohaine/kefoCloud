@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Plumbing path-drop for this repo's multi-root DAG (filter tools drop the
-# $GITHUB_USER-era side here — see docs/GUIDE.md lesson 2026-09-02). Removes the
+# $GITHUB_USER-era side here — see docs/MANUAL.md lesson 2026-09-02). Removes the
 # given paths from EVERY commit's tree, preserving identities, messages,
 # dates, merges, both roots and all other content byte-exact.
 # Usage: drop-path.sh <repo-dir> <path...>

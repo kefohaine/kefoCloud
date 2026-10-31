@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Plumbing string scrub for this repo's multi-root DAG (filter tools drop the
-# $GITHUB_USER-era side here — see docs/GUIDE.md lesson 2026-09-02). Replaces the
+# $GITHUB_USER-era side here — see docs/MANUAL.md lesson 2026-09-02). Replaces the
 # given <old> <new> string pairs in EVERY blob's content across all history,
 # preserving identities, messages, dates, merges, both roots and all paths.
 # Usage: scripts/ops/replace-string.sh <repo-dir> <old> <new> [...]
