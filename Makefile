@@ -937,20 +937,6 @@ ifeq ($(TAILDROP),)
 endif
 >@bash scripts/ops/restore-data.sh TAILDROP="$(TAILDROP)"
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Sandbox modules (everything lives in data/sandbox/ — untracked, never pushed)
-# ──────────────────────────────────────────────────────────────────────────────
-
-.PHONY: sandbox-sync
-
-# The one manual reconcile. `make render` rsyncs data/rendered/caddy with
-# --delete, which drops the sandbox vhosts, and a project can stop after a
-# `compose down` — this re-applies every sandbox vhost, prunes the doors of
-# modules that are gone, revives stopped projects, then validates and restarts
-# the edge. It reads the repo and never writes it.
-sandbox-sync:
->@bash scripts/sandbox/editor.sh sync
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Snikket (XMPP) — module `xmpp` (modules/snikket/, project `snikket`). Its
 # containers already have dok-* targets (dok-recreate-snikket etc.) from the
