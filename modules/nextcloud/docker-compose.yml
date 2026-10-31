@@ -46,7 +46,7 @@ services:
       # Database: PostgreSQL. For now the db container runs on this host
       # (docker-compose.db.yml, bridge IP 172.22.0.15); when the operator's
       # 1 TB machine joins the tailnet, move pgdata + that compose file there and
-      # set POSTGRES_HOST to its tailnet IP (see docs/GUIDE.md "Nextcloud DB").
+      # set POSTGRES_HOST to its tailnet IP (see docs/MANUAL.md "Nextcloud DB").
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
