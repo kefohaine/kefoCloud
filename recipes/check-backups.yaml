@@ -26,7 +26,7 @@ prompt: |
   Audit the backup and restore posture, scope: {{ focus }}.
 
   Read docs/GUIDE.md (backup gotchas, storage row, protected resources) and
-  docs/ISSUES.md (open backup/restore items).
+  the repository's Issues tab (open backup/restore items).
 
   Inspect:
   - the Makefile `backup` and `import-data` recipes and scripts/ops/backup-bundles.sh, scripts/ops/restore-data.sh

@@ -32,7 +32,7 @@ prompt: |
   - ss -tlnp, sudo ufw status verbose
   - curl and openssl s_client probes from the host for TLS/route issues
 
-  Consult docs/GUIDE.md "Operational gotchas" and docs/ISSUES.md for known causes
+  Consult docs/GUIDE.md "Operational gotchas" and the repository's Issues tab for known causes
   before assuming anything novel.
 
   Return:

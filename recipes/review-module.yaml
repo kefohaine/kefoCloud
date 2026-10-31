@@ -26,7 +26,7 @@ prompt: |
 
   Inspect its implementation under modules/, scripts/, config/, and docs/.
   Cross-reference docs/GUIDE.md (service-reference table, per-service bullets,
-  operational gotchas) and docs/ISSUES.md.
+  operational gotchas) and the repository's Issues tab.
 
   Explain:
   - what it installs and which containers / compose files it uses
