@@ -1252,7 +1252,7 @@ migrate:
 # Git
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: git-start git-branch git-switch git-del git-branches git-pr git-land git-pull git-add git-com git-push git-force-push git-audit git-split
+.PHONY: git-issue git-start git-branch git-switch git-del git-branches git-pr git-land git-pull git-add git-com git-push git-force-push git-audit git-split
 
 # The branch + pull-request workflow (AGENTS rule 30). `main` is write-once: a
 # change is made on a branch named temp-<N> (temp-1, temp-2, … derived from the
@@ -1260,6 +1260,15 @@ migrate:
 # human reviews on GitHub. scripts/hooks/pre-push refuses any push to main, so
 # the refusal holds even when the recipe is bypassed. Every recipe delegates to
 # scripts/ops/git-pr.sh, which is the only place the flow is written down.
+
+# File an issue in the GitHub tracker BEFORE the branch that fixes it — the
+# issue is the record, and `make git-pr ISSUE=<n>` links the pull request to it
+# with `Closes #<n>`. TITLE is required. LABEL is a comma-separated list from
+# .github/labels.yml: a `type:` is required and `status: triage` is added when no
+# other status is named. BODY is a file holding the problem, then '**Fix:**' —
+# without one the body is read from stdin. An existing title is left alone.
+git-issue:
+>@bash scripts/ops/git-pr.sh issue $(if $(TITLE),--title "$(TITLE)",) $(if $(LABEL),--labels "$(LABEL)",) $(if $(BODY),--body-file "$(BODY)",)
 git-start:
 >@bash scripts/ops/git-pr.sh start
 
