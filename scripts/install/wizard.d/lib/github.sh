@@ -160,7 +160,8 @@ github_push() {
   git -C "$REPO" remote remove temppush 2>/dev/null || true
   printf '%s\n' "$push_out" >>"$LOG"
   if [ $rc -eq 0 ]; then
-    detail "  GitHub: pushed branch $branch to $url (main untouched — open a pull request from it)"
+    detail "  GitHub: pushed branch $branch to $url (main untouched)"
+    detail "  open the pull request: https://github.com/$GITHUB_USER/$REPO_NAME/compare/main...$branch?expand=1"
     return 0
   fi
   if printf '%s' "$push_out" | grep -q 'fetch first'; then
