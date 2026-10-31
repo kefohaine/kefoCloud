@@ -59,7 +59,7 @@
 
 - name: "status: in-progress"
   color: "bfd4f2"
-  description: "A work-<N> branch or pull request is open for this issue."
+  description: "A temp-<N> branch or pull request is open for this issue."
 
 - name: "area: frontend"
   color: "eeeeee"
