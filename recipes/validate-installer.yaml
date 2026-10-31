@@ -25,7 +25,7 @@ parameters:
 prompt: |
   Validate installer/script changes, target: {{ target }}.
 
-  Read docs/GUIDE.md "Everything about scripts" (house style, error framework,
+  Read docs/MANUAL.md "Everything about scripts" (house style, error framework,
   module awareness) and docs/AGENTS.md rule 12 (stay global).
 
   For each script in scope:

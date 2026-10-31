@@ -23,7 +23,7 @@ parameters:
 prompt: |
   Produce a deployment/upgrade/migration plan for this change: {{ change }}.
 
-  Read docs/GUIDE.md (deployment, protected resources, service-reference table,
+  Read docs/MANUAL.md (deployment, protected resources, service-reference table,
   operational gotchas), docs/MIGRATE.md where relevant, and docs/AGENTS.md
   rules 10/16/17.
 
