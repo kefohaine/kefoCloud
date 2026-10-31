@@ -1,219 +1,17 @@
-# Known issues and improvements
+# Known issues — frozen archive
 
-Tracked for follow-up. Items marked **[needs human approval]** require a decision or credential from the operator before an agent should act. Behaviours that look like bugs but are deliberate design choices are documented as rationale in `docs/GUIDE.md` — do not "fix" them. Resolved items are recorded under `## Solved`, one sentence each.
+This file is **not the tracker**. Open problems live in the repository's
+**Issues tab**, labelled by the prefixed taxonomy in `.github/labels.yml`
+(`type:` / `priority:` / `status:` / `area:`) and filed with the templates in
+`.github/ISSUE_TEMPLATE/`. The items that were open when the tracker moved are
+in `.github/issues/import.jsonl`, the manifest that migration was made from.
 
----
-
-## Open
-
-### `http: vault` Kuma monitor watches a module that is not installed
-- **File**: the `uptimekuma` module's SQLite (`monitor` table)
-- **Problem**: the monitor `http: vault` points at `https://vault.$DOMAIN`, but the `vault` module is not in `enabled_modules` in `wizard.state` — no container, no route — so it is permanently down. That is a *not installed* module, NOT a tailnet-only route (the two are distinct: see GUIDE "Module state vs route exposure").
-- **Fix** (operator, in the Kuma UI — an agent must not write to a user service): install the vault module, or pause/delete the monitor. Nothing in the repo needs to change.
-
-### Pending (Aug 2026)
-
-#### Kuma config copy from the $GITHUB_USER machine is blocked  **[needs human approval]**
-- **File**: `scripts/modules/kuma-import.sh` (prepared); source db on `$GITHUB_USER` (<the old box's tailnet IP>)
-- **Problem**: SSH to `$GITHUB_USER` denies every key tried from the app host (`root`/`root`/`debian`, incl. `github_key`), Tailscale SSH is not enabled there, and its Taildrop inbox is empty — the old `kuma.db` cannot be fetched. The operator's Mac is also blocked: $GITHUB_USER's ED25519 host key changed (`REMOTE HOST IDENTIFICATION HAS CHANGED`, new fingerprint `SHA256:o0MmsggDn/Hi2LiThbkSLlLGUadoQfEKi0NBvmFb61k`) — likely the machine was reinstalled. kuma.$DOMAIN currently has the seeded admin (reset Aug 2026 — rotate with `make kuma-passwd`) but not the old account/status pages.
-- **Fix**: on the Mac run `ssh-keygen -R <the old box's tailnet IP>` (clears the stale host key), then `ssh debian@<the old box's tailnet IP>` — if the box was reinstalled the old key may no longer be authorized; re-add it. Deliver the db either by taildrop from $GITHUB_USER (`tailscale file cp kuma.db the app host:`, then on the app host `tailscale file get {{DATA_DIR}}/kuma/import`) or by adding the the app host `root` SSH key to $GITHUB_USER's `authorized_keys`. Then `make kuma-import` swaps it in, adapts it ($DOMAIN→$DOMAIN URLs, old container names, deactivates retired-service monitors) and re-seeds the current monitor set.
-
-#### A vanished module is never recreated at boot
-- **File**: `scripts/stack/stack-up.sh` (`deployed()`)
-- **Problem**: `deployed()` gates on *container existence*, so when a module's containers are gone (an image prune, a `compose down`, a docker storage wipe) boot recovery logs `skip (not deployed)` and moves on — the stack reports "up" while the module is silently absent. This is how the Nextcloud DB stayed missing after the prune.
-- **Fix**: treat `wizard.state`'s `enabled_modules` as the source of truth for a module the installer deployed, and recreate any module whose compose file exists but whose containers are missing (keeping the container-existence check only for units no module declares).
-
-### Robustness
-
-#### The optimize offer is marked broken in the installer
-- **File**: `scripts/install/wizard.d/flow/optimize.sh`
-- **Problem**: `ask_optimize` carries a `## BROKEN — neither prompt answer fires optimize.sh` marker from an earlier run; the wiring looks correct (`resolve_errors` → `finalize_install` → `ask_optimize` → `bash scripts/ops/optimize.sh --yes`, and `ask_boolean` assigns by name), so the marker has never been reproduced or traced. Untested ≠ fixed: the marker stays until a real green run proves it.
-- **Fix**: on the next green operator run, answer `yes` and confirm optimize.sh actually starts (its output is in `$LOG`); if it does, delete the marker; if not, trace `ask_boolean`'s `printf -v` target from that call site.
-
-#### Most ops and module scripts have no dry-run or plan mode
-- **File**: `scripts/ops/*.sh`, `scripts/modules/*.sh`, `scripts/stack/stack-up.sh`
-- **Problem**: AGENTS rule 29 lets an agent exercise a script only through a dry/plan mode or a fixture target; apart from `optimize.sh --dry-run` and `restore-data.sh`'s preview, these have neither, so a change to one of them cannot be verified by an agent without a real run.
-- **Fix (candidate, not approved)**: add a `DRYRUN=1` path that prints the plan and exits before the first mutation, starting with the scripts that write state (`talk-gen.sh`, `nc-capture.sh`, `stack-up.sh`).
-
-#### Destructive make recipes run with no confirmation guard
-- **File**: `Makefile`
-- **Problem**: several recipes destroy data or overwrite live state with no prompt and no automatic backup. Data-destroying: `nc-user-del` / `mail-del` / `kuma-del-user` (user + data), `nc-datadir-nfs` → datadirectory (moves the datadirectory and can delete the local copy). Live-state overwriting: `install-config` (overwrites host config, restarts sshd/dnsmasq), `update` (pull/recreate; the apt half is now the separate `apt-upgrade`), `dok-recreate-all` / `dok-stop-all` / `dok-recreate-nextcloud-db`. Data restore is taildrop-only via `make backup TAILDROP=<device>` + `make import-backups`. Interrupting: `install-config`/`update` (recreate or restart units) and `nc-datadir-nfs` (datadirectory).
-- **Fix**: pick a policy — a `CONFIRM=1` gate on the destructive recipes, or keep them unguarded and list them explicitly in `make help-more`. Today they are not in one obvious list.
-- **Why approval**: changing recipe UX affects every documented workflow (GUIDE/README).
-
-#### PHP sessions live in a non-persistent Redis
-- **File**: `modules/nextcloud/docker-compose.yml` (redis runs `--save "" --appendonly no`, `allkeys-lru`)
-- **Problem**: the image entrypoint stores PHP sessions in Redis, so a `redis` restart/recreate (or eviction) logs every user out.
-- **Fix**: accept, or give Redis minimal RDB persistence so sessions survive a restart.
-
-#### NFS datadirectory: hard mount + `sync` export + `no_root_squash`
-- **File**: `/etc/fstab` (client), storage `/etc/exports`
-- **Problem**: a `sync` export over the tailnet is the write-latency bottleneck (the 2026-09-10 migration stalled at ~227 KB/s); `hard` means a storage outage blocks Nextcloud I/O (right for integrity, but no timeout escape); `no_root_squash` lets any tailnet host write as root on the export.
-- **Fix**: consider `async` (faster, weaker crash durability) and root-squashing — both change behaviour and need an explicit operator decision.
-
-#### No automated validation of the scripts
-- **File**: `scripts/`, `Makefile`
-- **Problem**: only `make smoke` + the git hooks run; nothing lints the large bash scripts that produced two bugs on 2026-09-10 (datadir-nfs.sh, optimize.sh).
-- **Fix**: run `bash -n` + `shellcheck` on `scripts/*.sh` in a pre-push/CI job.
-
-#### (solved 2026-09-22) the installer rewrote the tracked `config/dnsmasq/10-tailnet.conf` in place
-- **File**: the installer (`host_services`), `config/dnsmasq/10-tailnet.conf`
-- **Problem**: the installer `sed -i`s the live Tailscale IP into the repo's tracked reference copy before `make install-config` copies it to `/etc/dnsmasq.d/`, so every run leaves an instance-specific IP as an uncommitted diff — and a `git commit -a` would bake it into the repo (rule 12: stay global).
-- **Fix**: keep the repo file as a placeholder and write the instance value into the live file after the copy (`make install-config`, then `sed` `/etc/dnsmasq.d/10-tailnet.conf` + `systemctl restart dnsmasq`).
-
-#### talk-hpb was OOM-killed
-- **File**: `modules/nextcloud/docker-compose.yml` (RAM caps)
-- **Problem**: `journalctl` shows the kernel OOM-killing nextcloud-spreed-signaling on 2026-09-09 under the stack's RAM cap.
-- **Fix**: confirm recurrence; raise the cap or reduce concurrency if it repeats.
-
-#### Nextcloud reset (2026-09-01) — fresh install, recovery manifests
-- **File**: `cloud/recovery/{users,apps}.txt` (recovery manifests, OUTSIDE the repo — generated by `make nc-capture`) + the installer `nextcloud_setup`
-- **Problem**: the object-store migration corrupted the filecache repeatedly (blobs keyed `urn:oid:<fileid>`, scans trashing files, storage-switch SQL idempotency bugs). The instance held only default skeleton files, so it was erased and freshly installed: `cloud/users`, `pgdata` and `config.php` deleted, PostgreSQL recreated **on the app host** (local latency — the external machine is for files/backups, not the DB), `occ maintenance:install` run, then the recovery applied.
-- **Done (2026-09-01)**: fresh NC 34.0.3 on the local PG; `trusted_domains` + `cloud.$DOMAIN` (occ install only trusts localhost — added to the installer); users `admin`/`sunny`/`niyaz25` recreated from `cloud/recovery/users.txt` (new generated passwords for sunny/niyaz25 — printed once; share them with the users); apps `spreed`/`calendar`/`contacts`/`mail`/`notes` re-enabled, `app_api` disabled; occ config re-applied (trusted_proxies array, mail SMTP, serverid, maintenance window 4, cron mode, Talk signaling + TURN); quota admin 300 GB. Smoke passes. The recovery path is now scripted — a fresh install reproduces the exact setup (users, apps, config) without the data.
-- **Residual**: sunny/niyaz25 passwords are new (reset); nothing else lost (data was skeleton-only).
-
-#### No automated backup script (partial — DB side solved) — resolved
-- **File**: `Makefile` (`make backup` ships all modules as two bundles; `make import-backups` restores); `scripts/ops/backup-bundles.sh` (built by `make backup`), `scripts/ops/restore-data.sh` (used by `make import-backups`)
-- **Status**: resolved — `make backup TAILDROP=<device>` ships every module (DB + datadir) as `nextcloud-backup-*.tar.gz` and `other-backup-*.tar.gz` to a tailnet device, and `make import-backups` restores them; a typed `yes` is required before any data moves. Nightly/cron automation is a separate planned item.
-#### GUIDE "Nextcloud DB" section still documents moving PostgreSQL to the 1 TB machine
-- **File**: `docs/GUIDE.md` ("Nextcloud DB" section) + `modules/nextcloud/docker-compose.db.yml` comments
-- **Problem**: Setup A keeps PostgreSQL on the app host and puts only Nextcloud's user files on the 1 TB machine (which has already joined the tailnet — the nightly `pg_dump` lands on it), but GUIDE still gives step-by-step instructions to move the whole DB there and the db compose comments are tuned for "the 2 GB future DB host". One of the two is the plan.
-- **Fix**: operator decision — delete the DB-migration steps from GUIDE (Setup A won) or re-document them as an option if the DB ever outgrows the app host.
-
-#### A fresh install has no `www.$DOMAIN` homepage
-- **File**: `modules/caddy/vhosts/www.caddy`, `scripts/install/wizard.d/tasks/11-stack-config.sh`
-- **Problem**: pages are instance data only (`$DATA_DIR/pages/www`, repo ships none), so on a fresh install `/` matches the `@index` handle and `file_server` answers 404 until the operator drops an `index.html` there — the smoke's www check then fails on an otherwise-finished install.
-- **Fix**: operator adds `index.html` (and `welcome.html` if wanted) to `$DATA_DIR/pages/www`; alternatively have the installer seed a minimal placeholder only when the tree is empty.
-
-### Security
-#### Caddy edge lacks rate + connection limiting (all public vhosts)
-- **File**: `modules/caddy/Caddyfile` + per-vhost vhosts (`cloud.caddy`, `talk.caddy`, `vault.caddy`, `kuma.caddy`, `mail.caddy`, `ttyd.caddy`)
-- **Problem**: every public vhost reverse-proxies an upstream at `172.22.0.x:PORT` with no `ratelimit` or `connlimit` guard — a single client (or botnet) can exhaust any upstream's resources (`talk-hpb` 128m RAM, Nextcloud PHP-FPM children, Postgres) via `wss://`, `occ` sync or repeated API calls. Not recorded anywhere.
-- **Fix**: add site-level `connlimit` or global `ratelimit` guards per vhost; consider rate-limiting `/signaling` and Kuma's admin routes.
-
-#### Fail2ban covers sshd only — no web-app login jails
-- **File**: `config/fail2ban/jail.d/` (only `sshd.conf`)
-- **Problem**: brute-force protection exists only for SSH; Nextcloud/Talk/Roundcube/Vaultwarden/Kuma login pages have no jail — an attacker or scanner can hammer app password endpoints from one IP.
-- **Fix**: add per-app jails under `config/fail2ban/jail.d/` (nextcloud, vaultwarden, roundcube, kuma) pointing to each app's login route.
-
-
-#### docker.sock holders = host root (Uptime Kuma)
-- **File**: `modules/uptimekuma/docker-compose.yml` (ro socket).
-- **Problem**: a container with the docker socket is host root — a compromise of either is host root. `no-new-privileges` does not neutralise the socket. Accepted because the monitoring module needs the socket.
-- **Status**: accepted, documented. Tracked for the edge/agent work: any socket holder should be treated as host root when writing policy.
-#### goose server secret is in git history
-- **File**: `config/goose/goose.service` (history)
-- **Problem**: the installer used to `sed` a generated `GOOSE_SERVER__SECRET_KEY` into the tracked unit, so a real key sits in git history. The repo now uses `EnvironmentFile=$DATA_DIR/goose/.env` (root:root 0600), but the old value is still in history and unrotated.
-- **Fix**: rotate the key (new value in `data/goose/.env`, `systemctl restart goose`, update goose clients), then purge it from history if desired.
-- **Why approval**: rotation restarts the agent service; a history purge needs a force-push.
-
-#### `curl … | sh` in the installers
-- **File**: the installer (tailscale, goose), `scripts/ops/nc-datadir-nfs.sh` (tailscale)
-- **Problem**: piping a remote script into a shell is supply-chain exposure.
-- **Fix**: use the official Tailscale apt repo (keyring + sources.list + `apt-get install`); keep the vendor's goose installer (or verify a released binary) and note the exception.
-
-#### `make backup` copies live config into the repo
-- **File**: `Makefile` (`backup` recipe — the live-config pull)
-- **Problem**: `make backup` copies live host configs into `$(REPO)/repo/config/`; if one of those files ever carries a secret, the next `git add` commits it (the goose unit did exactly this until 2026-09-11).
-- **Fix**: keep secrets in dedicated files outside the copied set (as goose now does); optionally add a secret-scan guard to the pre-commit hook.
-- **Note (2026-09-12)**: the pull also resurrects *scrubbed* content — a stale live `/etc/sysctl.d/99-{{HOSTNAME}}.conf` re-imported a banned-assistant name the repo had deliberately removed (commit 070d35f), landing uncommitted in the working tree. After `make backup`, `git diff config/` before any `git add`; re-apply `make install-config` when the live copies are behind the repo.
-
-#### Mail platform: PTR record does not resolve to mail.$DOMAIN (operator must set it provider-side)  **[needs human approval]**
-- **File**: `modules/mailserver/docker-compose.yml` (installed); DNS + UFW configured
-- **Problem**: inbound TCP 25 is open (external nodes connect, postfix serves `220 mail.$DOMAIN ESMTP` with the LE cert). A reverse record for `$SERVER_IP` exists but points at the hosting provider's own hostname, not `mail.$DOMAIN` — outbound mail to Gmail/Outlook is rejected or spam-foldered until it matches. The reverse zone belongs to the provider, not us, so only the operator can change it.
-- **Fix** (operator, ~2 min): in the machine provider's control panel (rDNS / Reverse DNS) set the PTR for `$SERVER_IP` → `mail.$DOMAIN`, or open a support ticket asking for it. It must match the postfix HELO and the `mail.$DOMAIN` A record (both already `mail.$DOMAIN`). Verify with `dig -x $SERVER_IP`, then send a test to an external inbox.
-
-#### Tailscale tailnet has 2 stale devices  **[needs human approval]**
-- **File**: Tailscale admin console (outside repo)
-- **Problem**: `kaliusb` (linux, 18d offline) and `iosphone` (iOS, 6h offline) are still registered in the tailnet. `kaliusb` is a Kali USB stick — likely a forensic / on-demand tool, not a daily driver. Stale devices widen the ACL blast radius.
-- **Fix**: In Tailscale admin console, remove `kaliusb` and `iosphone`. Or rename and tag if they are still in active use.
-- **Why approval**: outside the repo; operator must decide which devices stay.
-
-#### Tailscale ACLs not configured  **[needs human approval]**
-- **File**: Tailscale admin console (outside repo)
-- **Problem**: `ts-input` accepts all tailnet traffic. Any added device reaches every open port on the machine.
-- **Fix**: In Tailscale admin console, restrict which devices/tags can reach the machine.
-- **Why approval**: outside the repo; operator must edit the Tailscale policy.
-
-#### Rotate the exposed GitHub PAT  **[needs human approval]**
-- **File**: GitHub account settings (outside repo)
-- **Problem**: The PAT that was in `.git/config` `origin` is compromised — it lived in git history before the purge. Even though the remote and the history are gone, the token value was exposed.
-- **Fix**: Revoke the PAT at https://github.com/settings/tokens (or confirm it's already expired). Drop PAT usage entirely in favor of SSH.
-- **Why approval**: operator action on GitHub.
-
-#### Nextcloud 2FA not enforced  **[needs human approval]**
-- **File**: `modules/nextcloud/docker-compose.yml` (app config via `occ`)
-- **Problem**: the setup check reports second-factor providers are available but two-factor authentication is not enforced — any stolen password alone grants access.
-- **Fix**: operator sets up a 2FA provider on their account (TOTP app), then `occ twofactorauth:enforce admin` (or `--all` for every user). Enforcing before the provider is configured can lock the account out.
-- **Why approval**: operator's own account; lockout risk.
-
-#### Nextcloud default phone region not set  **[needs human approval]**
-- **File**: app config via `occ`
-- **Problem**: `default_phone_region` is unset — profile phone numbers without a country code can't be validated (setup check warns).
-- **Fix**: `occ config:system:set default_phone_region --value <ISO-3166-1-ALPHA-2>` (e.g. `DE`, `FR`) — the operator picks their country code.
-- **Why approval**: operator-specific value.
-
-### Efficiency
-
-#### PHP-FPM pool sizing under concurrent sync
-- **File**: `modules/nextcloud/php-fpm.d/zz-custom.conf`
-- **Problem**: `pm.max_children = 8` with 200s terminate timeout. Slow syncs can occupy all 8 children. (Already switched to `ondemand` — idle workers now free at rest.)
-- **Fix**: Monitor `docker exec -w /var/www/html nextcloud php occ status` and `docker stats nextcloud`. Raise `max_children` only if sync load grows; lower `request_terminate_timeout` if 504s appear.
-
-#### Stop goose when idle  **[needs human approval]**
-- **File**: `/etc/systemd/system/goose.service`
-- **Problem**: The goose agent service (`goose serve`) holds memory idle when no session is active. Protected by `docs/AGENTS.md` safety rules (must not delete), but temporary `systemctl stop` between sessions would free RAM.
-- **Fix**: `systemctl stop goose` when not in use; `systemctl start goose` before use.
-- **Why approval**: operator convenience trade-off (cold start latency vs. idle RAM).
-
-#### Nextcloud Talk: no Client Push proxy
-- **File**: `modules/nextcloud/docker-compose.yml` (Talk stack: `talk-hpb` HPB + `talk-relay` already deployed)
-- **Problem**: mobile push notifications are delayed — no push proxy (UnifiedPush / nextcloud-push) is installed. The old entry's "no HPB" premise is stale: the Go signaling server (strukturag/nextcloud-spreed-signaling) has run since the 2026-08-30 rebuild.
-- **Fix**: install a push proxy + Notifications backend when Talk push becomes a real use case.
-
-#### `goose session remove` cannot prune sessions  **[goose 1.47.0 bug]**
-- **File**: `~/.local/share/goose/sessions/sessions.db` (host state; no `sqlite3` binary on the host)
-- **Problem**: `goose session remove --regex <re>` lists the matching sessions and then fails with `Error: not connected` — the CLI drives removal through the running `goose serve` ACP endpoint and the handshake never succeeds, so the store (which has no retention) can only be trimmed out-of-band.
-- **Fix**: prune with python3 against `sessions.db` (delete `messages` + `usage_ledger` by `session_id`, then the `sessions` row; keep the live session) — the procedure is in the goose token bullet of `docs/GUIDE.md`. Re-test after a goose upgrade; if ACP removal starts working, drop the workaround.
-
-#### Auto-compaction has never been observed firing
-- **File**: `config/goose/token-policy.yaml` (`GOOSE_AUTO_COMPACT_THRESHOLD` — the threshold the policy sets, not this entry)
-- **Problem**: the unit is settled (goose validates the value as `>0 … ≤1`, i.e. a fraction), but no session has been driven past the threshold, so what the built-in compaction actually sends (`Conversation summary` + `compaction_summary.md` visible in the binary) and whether the session is continued or forked is untested.
-- **Fix**: drive one session past the configured threshold (or set it to a deliberately tiny fraction once) and confirm in `~/.local/state/goose/logs/llm_request.*.jsonl` that the transcript is replaced by a summary inside the same session id.
-
----
-
-### Talk relay and Snikket coturn both want 3478/5349
-- **File**: `modules/nextcloud/docker-compose.yml` (talk-relay), `modules/snikket/.env` (Snikket)
-- **Problem**: Snikket's coturn is now on 3478/5349 (standard ports, advertised via XEP-0215) and talk-relay publishes the same two. Only one can bind them, so re-enabling the Talk stack stops Snikket's TURN from starting (it was off before for exactly this reason). The relay ranges do not overlap (Talk 49160-49200, Snikket 49201-65535).
-- **Fix**: give talk-relay its own listener pair (e.g. 3481 plain + 5351 TLS) in the compose published ports, `modules/nextcloud/talk/turnserver.conf.example`, the installer's `occ talk:turn:add`/`stun_servers` values and `03-firewall.sh`, then regenerate the live `$DATA_DIR/talk/turnserver.conf` with `make talk-gen` and re-register TURN — or keep Talk off.
-
-### Pending (Oct 2026)
-
-#### New modules are outside the backup/restore universe
-- **File**: `scripts/ops/backup-bundles.sh`, `scripts/ops/restore-data.sh`
-- **Problem**: both scripts list `vault mailserver kuma` explicitly, so the `home`, `blog` and `photos` datadirs are neither bundled nor restorable.
-- **Fix**: derive the datadir universe from `config/modules.conf` (one loop over `mod_all`/`mod_dir`) instead of extending the literals.
-
-## Planned ideas
-
-Future roadmap, operator-reviewed later; when one is picked up it moves to Open, when done it lands in Solved.
-
-#### social.$DOMAIN — Mastodon (or the minimal fediverse alternative)
-- **Status**: operator is thinking it through (2026-09-12) — do not start without the go-ahead.
-- **Decision needed**: Mastodon (5 containers, ~1.2–1.8 GB added idle — a full-featured instance) vs GoToSocial (single Go binary, SQLite, ~60 MB — same ActivityPub network, minimal by construction).
-- **If built (either way)**: new `social` module — compose file + data under `$DATA_DIR` local disk, SMTP via the mailserver (`social@$DOMAIN` mailbox, `mail-gen` pattern), CF-proxied A record + LE DNS-01, kuma monitor + smoke section + fetch row, the installer/uninstaller module hooks, mem limits from day one (the RAM-budget review applies), docs.
-
-#### NC user isolation across apps
-- **Goal**: keep Nextcloud users isolated from each other (own groups) across the apps they touch.
-- **Reality check**: mail, Nextcloud and Vaultwarden each have separate user models — full cross-app isolation needs per-app groups + consistent naming + documented matrix; true SSO-style isolation is a bigger architecture question. Spike/design before committing.
-
-#### GitHub workflow (Issues + Projects + PRs), ISSUES.md as backup
-- **Plan**: move day-to-day tracking to GitHub Issues/Projects/PRs; keep ISSUES.md canonical and mirror outward, not the reverse (GitHub-side state proved lossy/poisonable in the 2026-09 graph saga). Keep the Solved-by-month history in ISSUES.md.
+What stays here is history: everything resolved before the migration, one
+sentence each, under `## Solved`. Behaviours that look like bugs but are
+deliberate design choices are documented as rationale in `docs/GUIDE.md` —
+do not "fix" them.
 
 ## Solved
-
-Resolved items grouped by month. One line per item, one sentence per record.
 
 ### Jul 2026 — early system build
 - **Initial site + Docker** — `index.html` and the first `docker-compose.yml`.
@@ -449,6 +247,16 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **One page, one shell** — per-device ttyd/tmux sessions dropped (`ttyd-devices.sh`, `ttyd-session.sh`, `ttyd-devices.conf`, `make ttyd-*`); ttyd runs `tmux new-session -A -s main` with no `-a`, so the URL cannot name a session.
 - **Every Talk call forced through the HPB** — `make talk-config` pins `spreed signaling_mode=external` and points `stun_servers` at this host's coturn instead of `stun.nextcloud.com`.
 - **pre-push guards never ran under a real push** — the smoke's `openssl s_client` drained the hook's stdin (a pipe), so the ref loop exited at once; the hook now captures the refs first and closes the smoke's stdin.
+
+### Oct 2026 — GitHub workflow
+
+- **Issue tracker moved to the Issues tab** — the open set was imported from `.github/issues/import.jsonl` and ISSUES.md became the frozen archive of what was already resolved.
+- **`main` is write-once** — `pre-push` refuses that destination, the installer pushes the next `work-<N>` instead, and every change merges through a reviewed pull request (AGENTS rule 30).
+- **Sandbox modules removed** — `scripts/sandbox/editor.sh`, `docs/MODULES.md` and `make sandbox-sync` are gone; a module is tried by adding it to `modules/` and its `config/modules.conf` row.
+- **Installer no longer rewrites the tracked dnsmasq conf** — the placeholder stays tracked and the tailnet IP is written into the live file after `make install-config`.
+- **Automated backups** — `make backup TAILDROP=<device>` ships every module (DB + datadir) as verified bundles and `make import-backups` restores them.
+- **Nextcloud reset to a fresh install** — the object-store migration had corrupted the filecache, so the instance was reinstalled locally and the recovery manifests re-applied (2026-09-01).
+- **A container holding the docker socket is host root** — accepted because the monitoring module needs it; documented as rationale in GUIDE's kuma bullet, not as a fix.
 
 ### Oct 2026 — pages, apps and exposure
 

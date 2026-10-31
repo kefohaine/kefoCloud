@@ -1,6 +1,6 @@
 # Agent operating guide
 
-This file tells agents how to act in this repo. It is deliberately **portable** — it contains only generic rules that apply to any project using this template. When solutions compete, prefer: **secure › correct › reliable › reversible › simple › resource-efficient › maintainable**. Inspect before changing; never assume when you can look. Read it before making changes. For this project's layout, deployment commands, protected resources, per-service facts, rationale, and operational gotchas, see `docs/GUIDE.md` (the only place project-specific facts live). For open problems, see `docs/ISSUES.md`.
+This file tells agents how to act in this repo. It is deliberately **portable** — it contains only generic rules that apply to any project using this template. When solutions compete, prefer: **secure › correct › reliable › reversible › simple › resource-efficient › maintainable**. Inspect before changing; never assume when you can look. Read it before making changes. For this project's layout, deployment commands, protected resources, per-service facts, rationale, and operational gotchas, see `docs/GUIDE.md` (the only place project-specific facts live). Open problems live in the repository's Issues tab (labels in `.github/labels.yml`, templates in `.github/ISSUE_TEMPLATE/`); `docs/ISSUES.md` is the frozen archive of what was resolved before that migration.
 
 ## Safety rules
 
@@ -20,7 +20,7 @@ These are non-negotiable. Follow them on every task. Project-specific facts (pat
     - **Smoke before commit.** After the reload, exercise the routes from both the public and the access-controlled source (e.g. tailnet vs. non-tailnet). If any expected response fails, the change is not done — fix it before committing, or revert.
     - **Reload is part of the change.** "I edited the file but haven't reloaded yet" is a half-applied change. The project's reload + smoke sequence (in `docs/GUIDE.md`) is mandatory; without them the next agent finds a system that doesn't match the repo.
     - **No new listeners without an explicit operator request.** Don't bind to a new port, don't split listeners per-host, don't invent a new global block — these are easy to invent and hard to roll back cleanly. If the existing setup doesn't accommodate the change, ask before inventing.
-    - **TLS / cert changes must keep the production trust model.** If a vhost currently relies on ACME for its cert, don't replace its block with `tls internal`, `tls off`, `tls self_signed`, or a static cert path — browser clients will drop the connection. If a vhost genuinely needs a different cert mode, get explicit operator approval and update `docs/ISSUES.md` with the rationale.
+    - **TLS / cert changes must keep the production trust model.** If a vhost currently relies on ACME for its cert, don't replace its block with `tls internal`, `tls off`, `tls self_signed`, or a static cert path — browser clients will drop the connection. If a vhost genuinely needs a different cert mode, get explicit operator approval and record the rationale.
     - **Revert plan in the commit message, SHA-correct for significant changes.** For every config change that can take callers offline — and, in particular, for every **significant security, structural, or performance commit** (SSH/sudo/firewall/TLS/auth changes, moving/renaming/deleting scripts, Makefile recipes, marker files or service dependencies, deploy/render changes, or hot-path rewrites) — the commit message must include a one-line revert recipe naming the **real SHA**, never a `<sha>` placeholder. For a drop, `git reset --hard <parent-sha>` (the SHA you are on before committing, i.e. `git rev-parse HEAD`); for an inverse, `git revert <this-commit-sha>`. Because a commit cannot contain its own SHA, obtain it and fill the recipe in immediately after committing (`git commit --amend`, or `git log -1 --format=%H`), so the recipe in the landed message is executable as written. A change you can't easily revert isn't safe to commit.
 11. **After a debug hell, record the lesson in `docs/GUIDE.md`.** A debug hell is anything that took multiple non-obvious hops to root-cause — a symptom that doesn't match the obvious cause, a tool's failure mode that isn't documented, a config interaction that only surfaces under specific combinations. The facts that took you 30 minutes to discover by grepping the repo are facts the next agent will burn 30 minutes rediscovering unless you write them down. After you finish such a task, fold a bullet into the *relevant existing section* of `docs/GUIDE.md` (service bullet, gotcha, or script section — never a standalone "lessons" section) capturing: (a) the symptom, (b) the root cause, (c) the one-line takeaway (so a future agent can grep for it), and (d) any URLs / commands / file paths that took you to the answer. Don't write general engineering advice — write the *specific* facts that were non-obvious in this repo. Emphasize **findings**: the things you found out by reading the repo or by hitting an error, that weren't documented anywhere you'd think to look. Keep entries short and grep-able. If a future agent ends up with the same debug hell, the entry should save them the search. **Don't write a novel in commit messages either** — the diff speaks for itself; one sentence per change is enough.
 16. **Change procedure for anything that can affect a running service.** (1) inspect the current config, (2) understand its dependencies, (3) name the likely failure modes, (4) establish a rollback (backup / tag / revert recipe, rule 10), (5) make the smallest change, (6) validate before applying, (7) apply, (8) verify the service is healthy afterwards. One logical change at a time. Rule 10 is the network-facing instance of this.
@@ -44,7 +44,7 @@ These are non-negotiable. Follow them on every task. Project-specific facts (pat
 
 27. **No empty commits, and only the operator's GitHub identity commits.** Never author an empty commit (`git commit --allow-empty`) — every commit must change at least one tracked path; if there is nothing to change, there is nothing to commit, and the GitHub-index nudge is a real, meaningful (e.g. docs-only) commit, never an empty one. A commit's author **and** committer must be the logged-in GitHub account (`<id>+<login>@users.noreply.github.com`, or GitHub's own `noreply@github.com` for web commits) — never `root@<host>` and never an invented address, and git must **never** fall back to an invented identity (a host with no `user.name`/`user.email` silently becomes `root@<host>`, which is how root commits entered this history). This is enforced mechanically, not by convention: the repo-local `git config` sets `user.useConfigOnly true` (an unset identity is a hard error, not a `root@<host>` guess), the installer's `github_set_identity` writes the real identity at deploy time, and `scripts/hooks/pre-commit` + `scripts/hooks/pre-push` refuse any commit or any pushed range whose identity is not a GitHub one.
 
-28. **Do only what the task asked — an unrequested change is a defect, however small.** Before adding anything (a suffix on a string, an extra prompt, a "helpful" label, a defensive branch, a refactor you think is nicer), ask whether the operator asked for it AND whether it is needed to make the thing work. If neither, don't write it. An addition that fixes nothing is not free: it is unrequested behaviour the operator must now review, revert, or live with, and it hides the real signal in the diff. When you notice something else worth changing, say it in one line and let the operator decide — or file it in `docs/ISSUES.md` as a candidate — instead of doing it in the same commit. Example of the failure this rule exists for: a skipped row in the installer's checklist gained a trailing `— deliberately not run` label nobody asked for; it solved no reported problem and had to be removed again.
+28. **Do only what the task asked — an unrequested change is a defect, however small.** Before adding anything (a suffix on a string, an extra prompt, a "helpful" label, a defensive branch, a refactor you think is nicer), ask whether the operator asked for it AND whether it is needed to make the thing work. If neither, don't write it. An addition that fixes nothing is not free: it is unrequested behaviour the operator must now review, revert, or live with, and it hides the real signal in the diff. When you notice something else worth changing, say it in one line and let the operator decide — or file it as an issue (template applies `type:` + `status: triage`) — instead of doing it in the same commit. Example of the failure this rule exists for: a skipped row in the installer's checklist gained a trailing `— deliberately not run` label nobody asked for; it solved no reported problem and had to be removed again.
 
 15. **Image files are opt-in, per task, on-the-go.** Never open, view, or otherwise inspect image files (jpg/png/webp/gif/etc.) by default — no image viewers, thumbnails, screenshots, or OCR. Images can carry personal data and are usually unnecessary for repo work. The only exception is an **explicit, task-scoped authorization from the operator** given while the task is in progress (e.g. "review the screenshots of the live page" or "look at this image I uploaded"). A standing instruction to inspect images is never implied — each authorization applies to the images and task it names, and expires with that task. Screenshots of the operator's own public pages for layout review are covered by this rule too: only read them once the operator has said so for that run. Without authorization, if a task depends on what an image shows, ask the operator to describe it instead.
 
@@ -57,7 +57,7 @@ Each `.md` file in the repo has a single purpose. Don't blur them.
 - **`README.md`** — the GitHub repo page (visitor pitch). What the project is, what it runs, how to deploy it, where the docs live. Short and factual: no architecture, no operational detail, no volatile state (those live in `docs/GUIDE.md`).
 - **`docs/AGENTS.md`** (this file) — agent-facing rules. Portable to any look-alike system. The "how an agent must behave" — not "how this project works". Project-specific facts (recipe names, paths, vhost lists, port numbers) belong in `docs/GUIDE.md`, not here.
 - **`docs/GUIDE.md`** — project-facing operator guide. "How to do x, where is y, what's z" for this specific repo. Layout, deployment commands, protected resources, per-service edit-safe facts, operational gotchas, lessons, intended-behaviour rationales, architecture and design rationale. This is the ONLY file that carries project-specific facts (runbooks — `docs/MIGRATE.md`, `docs/DEBUG.md` — carry procedures that use them).
-- **`docs/ISSUES.md`** — task tracker. Open problems (bugs, security gaps, efficiency losses, robustness risks) that are not yet fixed; resolved problems for history, one sentence each. No rationale prose, no lessons, no intended-behaviour documentation — those live in `docs/GUIDE.md`.
+- **`docs/ISSUES.md`** — frozen archive, not the tracker: what was resolved before the Issues tab took over, one sentence each. New problems go to the Issues tab. No rationale prose, no lessons, no intended-behaviour documentation — those live in `docs/GUIDE.md`.
 - **`docs/DEBUG.md`** — the diagnostic runbook: how to deep-scan or triage an incident on this system (read-only first, layer ladder, verification probes, report template). Procedures only — the rules are here, the project facts in `docs/GUIDE.md`.
 
 When a fact fits two files, it belongs in the lower one in this list. A future agent reading only `README.md` should understand what the project is and offers; a future agent reading only `docs/AGENTS.md` should understand the rules; a future agent reading only `docs/GUIDE.md` should be able to deploy and operate the system.
@@ -68,9 +68,9 @@ These directives govern how agents detect and correct drift, stale content, and 
 
 **Docs always reflect the repo — never the reverse.** The repo (compose files, Makefile, systemd units, Caddyfile, Dockerfile, app source, the running system) is the ground truth; every `.md` is a derived description. When a doc and the repo disagree, the doc is wrong — fix the doc in place, never the repo.
 
-**Missing repo artifacts are deliberate until the operator says otherwise.** A file, directory, or service absent from the repo was removed on purpose — even if a doc, the Makefile, or a script still references it. Never restore, re-create, copy in, or resurrect anything missing: no `git checkout` of deleted paths, no copying from the host or from git history, no re-adding "reference copies". If the absence breaks tooling (e.g. `make install-config` copies a file that doesn't exist), that is an operator decision point, not an invitation to fix: log the gap in `docs/ISSUES.md` and leave the repo untouched. The only exception is an explicit operator instruction to restore.
+**Missing repo artifacts are deliberate until the operator says otherwise.** A file, directory, or service absent from the repo was removed on purpose — even if a doc, the Makefile, or a script still references it. Never restore, re-create, copy in, or resurrect anything missing: no `git checkout` of deleted paths, no copying from the host or from git history, no re-adding "reference copies". If the absence breaks tooling (e.g. `make install-config` copies a file that doesn't exist), that is an operator decision point, not an invitation to fix: log the gap in the Issues tab and leave the repo untouched. The only exception is an explicit operator instruction to restore.
 
-**When in doubt, treat the repo as authoritative and the artifact as deliberately removed.** Note the mismatch in `docs/ISSUES.md` for the operator instead of acting on it.
+**When in doubt, treat the repo as authoritative and the artifact as deliberately removed.** Note the mismatch as an issue for the operator instead of acting on it.
 
 **Drift** = a documented fact that disagrees with the executable source (compose files, Makefile, systemd units, Caddyfile, Dockerfile, app source). Examples: a wrong port, an old container name, a recipe name that no longer matches the Makefile, a Caddyfile matcher that has moved, a claimed "X is renamed to Y" in a Solved entry where the rename was never applied on disk.
 
@@ -86,7 +86,7 @@ These directives govern how agents detect and correct drift, stale content, and 
 
 ### What to do when you find drift / stale / duplicate
 
-1. **The source wins.** The executable source (compose, Makefile, systemd unit, Caddyfile, app source) is the truth; the doc is wrong. Fix the doc, not the source (unless the source is what's broken — that's a separate bug, log it in `docs/ISSUES.md`).
+1. **The source wins.** The executable source (compose, Makefile, systemd unit, Caddyfile, app source) is the truth; the doc is wrong. Fix the doc, not the source (unless the source is what's broken — that's a separate bug, log it in the Issues tab).
 2. **Be specific in the fix.** Don't rewrite the surrounding paragraph — replace the drifted/stale/duplicated fact with the correct one in place. Preserve verified useful guidance around it (writing rule 9).
 3. **For Solved entries that claim a change was made but wasn't**, downgrade the claim to match reality (e.g. "claimed rename; never actually applied — see Open" or revert the entry until the rename is done for real). A Solved entry that lies is worse than no entry — future agents act on it.
 4. **For intended-behaviour rationales that no longer reflect the code**, rewrite the rationale or move the behaviour to Open if it's actually unintended now.
@@ -96,7 +96,7 @@ These directives govern how agents detect and correct drift, stale content, and 
 
 - After every system change, refactor, or operational decision (mandatory per safety rule 4).
 - At the end of every task — see "Before finishing a task" for the full checklist.
-- When picking up an old issue in `docs/ISSUES.md` whose root cause might no longer apply (the fix landed elsewhere; the entry is stale).
+- When picking up an issue whose root cause might no longer apply (the fix landed elsewhere; the entry is stale).
 - Before committing any doc-only change (verify the new content doesn't introduce its own drift).
 - After any debug hell — fold a lesson into the relevant section of `docs/GUIDE.md` (safety rule 11). The lessons are the most valuable future-agent artifact; don't skip them.
 
@@ -104,7 +104,7 @@ These directives govern how agents detect and correct drift, stale content, and 
 
 1. Read `README.md` for the project pitch, then `docs/GUIDE.md` for how the system is built and operated.
 2. Read `docs/AGENTS.md` (this file) for the rules.
-3. Check `docs/ISSUES.md` for known problems or in-progress work.
+3. Check the Issues tab for known problems or in-progress work.
 4. Make changes following the rules.
 5. Verify the change works (run the project's status / logs / smoke commands listed in `docs/GUIDE.md`).
 6. Update `.md` files if the change altered layout, architecture, or design.
@@ -120,8 +120,8 @@ These directives govern how agents detect and correct drift, stale content, and 
    - **Organize duplicates** — each fact lives in exactly one place. If a sentence appears in two files, delete the one in the higher file (per the boundaries list). If a Solved entry is multi-line, collapse to one line (writing rule 10). If a section restates another doc, point at the other doc instead.
 4. Update `README.md` only if the project pitch (services offered, deploy flow) changed — architecture and design changes land in `docs/GUIDE.md`.
 5. Update `docs/GUIDE.md` if the layout, commands, per-service facts, or lessons changed.
-6. Update or resolve items in `docs/ISSUES.md` if you fixed something listed there.
-7. Add new issues you discovered to `docs/ISSUES.md`.
+6. Close the issue you fixed (the PR's `Closes #<n>` does it on merge).
+7. File the new issues you discovered in the Issues tab.
 8. Commit and push (Safety rule 3).
 
 ## `.md` writing rules
@@ -139,28 +139,21 @@ Follow these on every edit to any `.md` file in this repo.
 9. **Preserve verified useful guidance.** When editing an existing `.md`, keep what's accurate and high-signal; only delete fluff, duplicates, stale claims, and volatile state. Don't rewrite blindly.
 10. **Categorize `Solved` history by month.** In `docs/ISSUES.md`, group resolved items under `### Mon YYYY — short label` headings (e.g. `### Jul 2026 — early system build`). Add a new heading only when the month changes — never create a second heading for the same month; append to the existing one. **One line per resolved issue, one sentence, aggressively short** — format: `- **Short title** — one-sentence summary.` Aim for ~100 chars after the dash. Every resolved item stays recorded, but as a single short sentence — never multi-line entries, sub-bullets, paragraphs, or root-cause narratives (the full story lives in the git history).
 11. **Don't re-type what's in the repo.** If a fact can be confirmed by reading the compose file, config, app source, or Makefile, point at the file — don't paraphrase it. Anything that drifts the moment a file is edited is more harm than help. This applies to image tags, env vars, log caps, healthcheck commands, route tables, schema columns, and `content/` file contents in particular.
-12. **README = real and verified, never planned or unsure.** Anything you can't point at in the running system today doesn't belong in `README.md`. If it's planned, drop it; if it's speculative, drop it. `docs/ISSUES.md` is the right home for "we should add X" / "consider switching to Y" — even before approval, as long as it's framed as a candidate.
+12. **README = real and verified, never planned or unsure.** Anything you can't point at in the running system today doesn't belong in `README.md`. If it's planned, drop it; if it's speculative, drop it. The Issues tab is the right home for "we should add X" / "consider switching to Y" — even before approval, as long as it's framed as a candidate.
 13. **Never write volatile, operator-editable state** (rule 13 above): statistics, users, mailbox contents, monitor definitions, website-editable config values. Docs describe the setup, not the usage.
 14. **No "now removed" / "kept for history" commentary** (rule 14 above): delete dead things and their references instead of describing them.
 
-## docs/ISSUES.md workflow
+## Issue workflow
 
-`docs/ISSUES.md` is the task tracker. When you pick up an issue:
+Open problems are GitHub issues (Issues tab), labelled by the prefixed taxonomy in `.github/labels.yml`. When you pick one up:
 
-1. Move it under a `## In progress` heading (or just start working).
-2. Follow the **Fix** steps in the issue entry.
-3. Verify the fix.
-4. Remove the entry from `docs/ISSUES.md` when fully resolved, or update it with notes if partially done.
-5. Commit with a message referencing what was fixed.
+1. Label it `status: in-progress` and work on a `work-<N>` branch (`make git-start`).
+2. Verify the fix.
+3. Open the pull request with `Closes #<n>` in the body (`make git-pr` prints a body with it). The issue closes when a human merges.
+4. A behaviour that looks like a bug but is deliberate gets its rationale documented in the relevant section of `docs/GUIDE.md` — never as an issue to "fix".
 
-When you discover a new problem, append it under the appropriate severity heading (`High` / `Medium` / `Low`) with the same format:
-```
-### Short title
-- **File**: path/to/file
-- **Problem**: what's wrong and why it matters
-- **Fix**: concrete steps to resolve
-```
+New problems are filed with the Bug report template (applies `type: bug` + `status: triage`) or the Feature request one (`type: feature` + `status: triage`); the body carries the problem and the concrete fix, and a `priority:`/`area:` label is added during triage, not by the reporter.
 
-When a behaviour looks like a bug but is deliberate, document the rationale in the relevant section of `docs/GUIDE.md` (not `docs/ISSUES.md`) so future agents don't "correct" it. Only behaviours that genuinely need fixing belong in `docs/ISSUES.md`.
+`docs/ISSUES.md` is the frozen archive of what was resolved before the migration: add a line there only when a frozen entry is re-fixed later, one sentence, under its month.
 
 This template's project-specific section is intentionally absent: project-specific overrides live in `docs/GUIDE.md`.
