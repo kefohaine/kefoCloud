@@ -8,14 +8,20 @@ issue exists on GitHub, GitHub owns it.
 
 ## Importing (operator, once)
 
-Labels first, or every issue lands unlabelled:
+`make git-import-issues` does both halves in one idempotent pass:
+`scripts/ops/import-issues.sh` creates every label from `.github/labels.yml`
+(an existing label is updated to the manifest's colour and description) and
+opens the issues from `import.jsonl` that no issue — open or closed — already
+carries by title. Re-running adds only what is missing. `ARGS=--dry-run` prints
+what it would do without writing.
 
-1. Settings → Labels → New label, one row per entry in `.github/labels.yml`
-   (name, colour, description verbatim). Keep GitHub's native `good first issue`
-   and `help wanted` as they are.
-2. With a token that has `Issues: read and write` and `Metadata: read` on this
-   repository, run `scripts/ops/import-issues.sh` (`--dry-run` first). Without a
-   token, create the issues from the manifest in the GitHub UI, one per line.
+It needs one credential: `gh auth login` first (the installer's package set
+includes `gh`, and the script calls it through `gh api`), or `GITHUB_TOKEN`/
+`GH_TOKEN` with `Issues: read and write` + `Metadata: read`). GitHub's native
+`good first issue` and `help wanted` labels are left as they are.
+
+Without a checkout at hand, the same import can be done by hand: labels from
+Settings → Labels, then the issues from the manifest, one per line.
 
 ## After the import
 
@@ -24,7 +30,7 @@ Labels first, or every issue lands unlabelled:
 - The CLI path is `make git-issue TITLE="…" LABEL="type: bug,…" BODY=<file>`:
   it validates the labels against `.github/labels.yml`, requires a `type:`, adds
   `status: triage`, refuses a title that already exists, and prints the
-  new-issue URL when `gh` is absent.
+  new-issue URL when no credential is available.
 - An agent manages issues through that recipe or the Issues tab — never by
   appending to `import.jsonl`, which is a seed and not a queue.
 - A pull request closes an issue with `Closes #<n>` in its body
