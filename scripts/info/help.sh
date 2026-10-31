@@ -69,7 +69,7 @@ make git-branch [NAME=<b>]|same as git-start, or create + switch to NAME (BASE=<
 make git-switch BRANCH=<b>|switch to an existing branch — local, or origin's (tracked on the way in)
 make git-del BRANCH=<b> [FORCE=1]|delete a local branch — never main, never the current one; FORCE=1 drops unmerged commits
 make git-branches|every branch with its distance from origin/main, plus the next free temp-<N>
-make git-pr [ISSUE=<n>] [BASE=<b>]|audit the branch, push it, open the PR into main (or BASE); ISSUE=<n> links it with Closes #<n> — a human merges on GitHub
+make git-pr [ISSUE=<n>] [BASE=<b>]|audit the branch, push it, open the PR into main (or BASE) with gh or GITHUB_TOKEN/GH_TOKEN; ISSUE=<n> links it with Closes #<n> — a human merges on GitHub
 make git-land [BASE=<b>]|after the PR is merged: fast-forward main (or BASE) onto origin and delete the local branch
 make git-pull|pull remote changes
 make git-add|stage every change
