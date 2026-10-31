@@ -36,7 +36,7 @@ Every app is one self-contained unit — its own compose file, its own vhost, it
 
 #### Presets
 
-The installer asks once, on a single prompt that prints the app keys: answer `all` for every compatible app, or name the subset you want (space-separated, e.g. `cloud vault monitor`). The choice is recorded in `wizard.state`, and a re-run asks only what is still unanswered — so a `cloud vault` box stays a `cloud vault` box until you change it.
+The installer asks once, on a single prompt that prints the app keys: answer `all` for every compatible app, or name the subset you want (space-separated, e.g. `cloud vault monitor`). The answer is recorded in `wizard.state`, so a later run reuses it instead of asking again.
 
 ### Tips
 
