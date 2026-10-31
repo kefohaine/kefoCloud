@@ -44,7 +44,7 @@ Decide what "healthy" means *before* changing anything, then demonstrate it. Exa
 
 ## 5. Where the answers already are
 - Symptom → cause map: `docs/GUIDE.md` "Operational gotchas" (e.g. NFS client-helper failure, the `respond "ok"` edge stub, force-recreate name collisions, the tailscaled boot-race, `fs.protected_regular` root-writes in /tmp).
-- Open problems and their status: `docs/ISSUES.md`.
+- Open problems and their status: the repository's Issues tab.
 - Migration/rebuild path: `docs/MIGRATE.md`.
 - JS/static-client triage: diff the *served* page against the pristine upstream copy before assuming the server is broken; a single SyntaxError in the only inline script black-screens with no server-side error.
 

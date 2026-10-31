@@ -35,4 +35,4 @@ Closes #<!-- issue number: the link GitHub renders between this PR and the issue
 
 - [ ] one change per commit (`make git-audit` is clean)
 - [ ] every significant commit carries its `Revert:` line
-- [ ] docs updated to match (GUIDE / ISSUES / README as applicable)
+- [ ] docs updated to match (GUIDE / README as applicable)

@@ -43,7 +43,6 @@ Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Caddy, Vaultwarden, Uptime
 - `docs/SKELETON.md` — the skeleton: placeholder tokens, values and rendering
 - `docs/GUIDE.md` — the operator manual: layout, recipes, per-service facts, gotchas
 - `docs/AGENTS.md` — agent operating rules
-- `docs/ISSUES.md` — frozen archive of resolved problems (open problems live in the Issues tab)
 - `docs/DEBUG.md` — deep-scan diagnostics runbook
 - `docs/MIGRATE.md` — moving the stack to a new machine
 
