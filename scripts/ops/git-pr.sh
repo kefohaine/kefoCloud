@@ -15,11 +15,17 @@
 # Usage:
 #   git-pr.sh start  [--dry-run]   create + switch to the next work-<N> off origin/main
 #   git-pr.sh status [--dry-run]   where this checkout stands (branch, commits, base)
-#   git-pr.sh submit [--dry-run]   audit + push the branch + print the compare URL and PR body
+#   git-pr.sh submit [--dry-run] [--issue N]
+#                                   audit + push the branch + open the PR (authenticated
+#                                   gh) or print the compare URL and PR body. --issue N
+#                                   writes `Closes #N`, linking the issue to the PR.
 #   git-pr.sh land   [--dry-run]   after the PR is merged: main fast-forward, delete the local branch
 #
 # A --dry-run only reads and prints: nothing is fetched, created, committed,
 # pushed or deleted. That is the mode an agent may exercise (AGENTS rule 29).
+#
+# The last step is always a HUMAN's: the agent ends at the opened/printed pull
+# request and waits for review and merge. Nothing here merges or pushes main.
 
 set -uo pipefail
 export LC_ALL=C
@@ -36,12 +42,20 @@ G() { git -C "$REPO" "$@"; }
 cmd="${1:-status}"
 shift 2>/dev/null || true
 DRY=0
-for a in "$@"; do
-  case "$a" in
+ISSUE_NUM="${ISSUE:-}"
+while [ $# -gt 0 ]; do
+  case "$1" in
     --dry-run|-n) DRY=1 ;;
-    *) error "unknown argument '$a'"; exit 1 ;;
+    --issue) shift; ISSUE_NUM="${1:-}" ;;
+    --issue=*) ISSUE_NUM="${1#--issue=}" ;;
+    *) error "unknown argument '$1'"; exit 1 ;;
   esac
+  shift
 done
+if [ -n "$ISSUE_NUM" ] && ! printf '%s' "$ISSUE_NUM" | grep -qE '^[0-9]+$'; then
+  error "ISSUE must be an issue number (got '$ISSUE_NUM')"
+  exit 1
+fi
 run() { if [ "$DRY" = 1 ]; then printf '  would run: %s\n' "$*"; else "$@"; fi; }
 
 # The base branch and the remote it lives on, derived from the checkout.
@@ -132,18 +146,35 @@ cmd_submit() {
     G push -u "$REMOTE" "$b" || { error "push failed — nothing was published"; return 1; }
   fi
 
+  local body title
+  body="$(submit_body "$range" "$ISSUE_NUM")"
+  title="$(G log --format='%s' -1 "$range")"
+
   echo ""
   echo "  Commit(s) in this pull request:"
   G log --format='  %h %s' "$range"
+
+  # Open the PR when an authenticated gh exists; otherwise hand the human the
+  # compare URL and a ready body. Either way the merge is the human's.
+  if [ "$DRY" != 1 ] && command -v gh >/dev/null 2>&1 \
+     && gh auth status >/dev/null 2>&1; then
+    if printf '%s\n' "$body" | gh pr create --base "$BASE" --head "$b" --title "$title" --body-file -; then
+      echo ""
+      echo "  Pull request opened — a human reviews and merges it. The agent stops here."
+      return 0
+    fi
+    warn "gh could not open the pull request — falling back to the compare URL"
+  elif [ "$DRY" = 1 ]; then
+    printf '  would run: gh pr create --base %s --head %s --title %q --body-file -\n' "$BASE" "$b" "$title"
+  fi
+
   echo ""
-  echo "  Open the pull request (paste the body below):"
+  echo "  Open the pull request (paste the body below), then stop — a human merges:"
   echo "    $url"
   echo ""
-  cat <<EOF
-  ─── pull request body ───────────────────────────────────────────────
-$(submit_body "$range")
-  ─────────────────────────────────────────────────────────────────────
-EOF
+  printf '  ─── pull request body ───────────────────────────────────────────────\n'
+  printf '%s\n' "$body" | sed 's/^/  /'
+  printf '  ─────────────────────────────────────────────────────────────────────\n'
 }
 
 # submit_body <range> — the PR body for the commits in <range>: an issue link
@@ -151,37 +182,37 @@ EOF
 # commits; without one, the body states the new feature, how it works, its
 # benefits and its risks, which is the other accepted form.
 submit_body() {
-  local range="$1" n
-  n="$(G log --format='%s%n%b' "$range" | grep -oE '(Closes|Fix(es|ed)?|Resolves) #[0-9]+|#[0-9]+' | grep -oE '[0-9]+' | head -1)"
+  local range="$1" explicit="${2:-}" n
+  n="${explicit:-$(G log --format='%s%n%b' "$range" | grep -oE '(Closes|Fix(es|ed)?|Resolves) #[0-9]+|#[0-9]+' | grep -oE '[0-9]+' | head -1)}"
   if [ -n "$n" ]; then
     cat <<EOF
-  Closes #$n
+Closes #$n
 
-  ## What changed
-$(G log --format='  - %s' "$range")
+## What changed
+$(G log --format='- %s' "$range")
 
-  ## Why
-  <one paragraph: the behaviour this fixes and how to see it>
+## Why
+<one paragraph: the behaviour this fixes and how to see it>
 
-  ## How it was verified
-  <the commands you ran and their verdict>
+## How it was verified
+<the commands you ran and their verdict>
 EOF
   else
     cat <<EOF
-  ## What changed
-$(G log --format='  - %s' "$range")
+## What changed
+$(G log --format='- %s' "$range")
 
-  ## New feature: how it works
-  <what it does, which files implement it, and how to use it>
+## New feature: how it works
+<what it does, which files implement it, and how to use it>
 
-  ## Benefits
-  <what this makes possible or safer>
+## Benefits
+<what this makes possible or safer>
 
-  ## Risks
-  <what can break, and how to revert it>
+## Risks
+<what can break, and how to revert it>
 
-  ## How it was verified
-  <the commands you ran and their verdict>
+## How it was verified
+<the commands you ran and their verdict>
 EOF
   fi
 }
