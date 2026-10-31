@@ -2,8 +2,8 @@
 
 ![Repository Title](.github/images/title.png)
 
-One repo that turns any Debian system into your own self-hosted server stack — cloud, mail, monitoring and more — with one command and a few prompts.
-Fork it, run the installer, and the same board is yours — under your own domain, with no server but yours.
+A self-hosted apps installer for Debian. One command turns a fresh box into your own private kit of apps — files, passwords, mail, chat, photos, monitoring, a dashboard — installed behind a single HTTPS edge, under your own domain, on hardware that is yours alone.
+Fork it, run the installer, say which apps you want: the same set is yours, with no server but yours.
 
 ## Install
 
@@ -16,27 +16,33 @@ Prompts once then runs unattended — errors are listed with a hint each and re-
 
 `scripts/install/uninstall.sh` reverses it in the same style — no prompt has a default (only `yes`/`no` are accepted), operator data and the tailscale-only SSH path are never touched without an explicit confirm, and the tailnet membership goes last. Removal is the operator's call, never the installer's.
 
-### Modules
+### Apps
 
 ![Repository Banner](.github/images/modules.png)
 
-Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Caddy, Vaultwarden, Uptime Kuma, the Mailu + Roundcube platform, a Homarr dashboard, WriteFreely and Immich photos — public doors behind Cloudflare, admin doors (Nextcloud, Vaultwarden, the Mailu platform, the shell) tailnet-only, with tailscale, ttyd, dnsmasq and goose as host services. A poster welcome page and per-app `make` commands for accounts and maintenance ship with it.
+Every app is one self-contained unit — its own compose file, its own vhost, its own data directory — so the installer provisions exactly the ones you pick and nothing else. The compatible set: Nextcloud (with PostgreSQL, Redis and Talk HPB/TURN), oCIS, Snikket for XMPP chat, Vaultwarden, the Mailu + Roundcube mail platform, Uptime Kuma, Homarr, WriteFreely and Immich photos, all behind a Caddy edge that holds one certificate per door. Public doors run through Cloudflare; the admin doors (Nextcloud, Vaultwarden, the Mailu platform, the shell) answer only inside your tailnet. Tailscale, ttyd, dnsmasq and the goose agent run as host services beside the containers, and per-app `make` commands for accounts and maintenance ship with them.
 
-| name | app | note |
+| app | what you get | door |
 |---|---|---|
-| **Cloud** | Nextcloud | its own `nextcloud.` vhost, tailnet-only; app choices in `config/cloud/apps.conf` (untracked, empty by default; `spreed`/`app_api` are enforced in code, never asked) |
-| **Mail** | Mailu + Roundcube | SMTP/IMAPS, DKIM/SPF/DMARC on your own domain — public webmail, tailnet-only platform door |
-| **Vault** | Vaultwarden | any Bitwarden client, server included — tailnet-only door |
-| **Monitor** | Uptime Kuma | watches public *and* tailnet-only doors |
-| **Home** | Homarr | the dashboard on its own `home.` vhost (the welcome page's Home link) |
-| **Blog** | WriteFreely | its own `blog.` vhost, SQLite, pinned upstream release |
-| **Photos** | Immich | DNS-only vhost, its own PostgreSQL + Redis |
+| **Cloud** | Nextcloud — files, calendar, contacts, Talk | `nextcloud.` inside the tailnet; the public `cloud.` door is proxied (app choices in `config/cloud/apps.conf`, untracked and empty by default; `spreed`/`app_api` are enforced in code, never asked) |
+| **oCIS** | ownCloud Infinite Scale, the second cloud | `cloud.` — its own web UI, proxied |
+| **Chat** | Snikket — XMPP server, proxy and TURN | `chat.` (plus `groups.chat` / `share.chat`), DNS-only so the proxy cannot break XMPP |
+| **Vault** | Vaultwarden — any Bitwarden client, server included | `vault.` — tailnet-only |
+| **Mail** | Mailu + Roundcube — SMTP/IMAPS, DKIM/SPF/DMARC on your own domain | public webmail, `mailu.` platform door tailnet-only |
+| **Monitor** | Uptime Kuma — watches public *and* tailnet-only doors | `kuma.`, proxied |
+| **Home** | Homarr — the dashboard (the welcome page's Home link) | `home.`, proxied |
+| **Blog** | WriteFreely — SQLite, pinned upstream release | `blog.`, proxied |
+| **Photos** | Immich — its own PostgreSQL + Redis | `photos.`, DNS-only so uploads skip the proxy |
+
+#### Presets
+
+The installer asks once, on a single prompt that prints the app keys: answer `all` for every compatible app, or name the subset you want (space-separated, e.g. `cloud vault monitor`). The choice is recorded in `wizard.state`, and a re-run asks only what is still unanswered — so a `cloud vault` box stays a `cloud vault` box until you change it.
 
 ### Tips
 
 - `bash scripts/ops/optimize.sh` — automated performance optimization after install; useful for resource management
 - `make nc-datadir-nfs` — make an external machine the PERMANENT live Nextcloud datadir host over the tailnet; the database stays on this machine; useful for bulky external storage
-- `make backup TAILDROP=<device>` ships all modules to a Tailscale device as verified bundles (default) or raw datadirectories (`BACKUP_MODE=raw`); restore with `make import-backups`; useful for safety & migration
+- `make backup TAILDROP=<device>` ships every installed app to a Tailscale device as verified bundles (default) or raw datadirectories (`BACKUP_MODE=raw`); restore with `make import-backups`; useful for safety & migration
 
 ## Documentation
 
@@ -44,7 +50,7 @@ Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Caddy, Vaultwarden, Uptime
 - `docs/GUIDE.md` — the operator manual: layout, recipes, per-service facts, gotchas
 - `docs/AGENTS.md` — agent operating rules
 - `docs/DEBUG.md` — deep-scan diagnostics runbook
-- `docs/MIGRATE.md` — moving the stack to a new machine
+- `docs/MIGRATE.md` — moving the install to a new machine
 
 ## Risks & Considerations
 - System Requirements: minimum RAM is 4GB; minimum storage is 15GB; kefohaine recommends double the minimum for both specifications to avoid bottleneck.
