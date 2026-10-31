@@ -58,10 +58,15 @@ ask_modules() {
   done
   [ -n "$all" ] && return 0
   while :; do
-    printf '%s[INFO]%s Modules to install, separated by spaces (%s): ' \
+    printf '%s[INFO]%s Modules to install, separated by spaces (%s) — or 'all' for every one: ' \
       "$C_GREY" "$C_RST" "$(printf '%s' "$mods" | paste -sd' ' -)"
     read -r ans || exit 1
     ans="${ans,,}"; ans="${ans//,/ }"
+    # Presets: `all` (and `everything`) expands to the whole roster, which is
+    # the same choice as naming every app. Any other word must be an app key.
+    case " $ans " in
+      *" all "*|*" everything "*) ans="$mods" ;;
+    esac
     ok=1
     for k in $ans; do
       case " $mods " in *" $k "*) ;; *) echo "   unknown module: $k"; ok= ;; esac
