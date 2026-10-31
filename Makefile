@@ -75,7 +75,7 @@ $(foreach m,$(MODULES),$(foreach c,$(MODULE_CONTAINERS_$(m)),$(eval COMPOSE_FILE
 COMPOSE_FILE_caddy := modules/caddy/docker-compose.yml
 # Nextcloud ships TWO compose files in one project dir (app + PostgreSQL). One
 # container's action must run BOTH — a single file treats the other file's
-# containers as orphans and deletes them (docs/ISSUES.md: SQLSTATE[08006]).
+# containers as orphans and deletes them (see GUIDE's Nextcloud DB ordering note: SQLSTATE[08006]).
 NEXTCLOUD_STACK := $(shell awk '$$1=="cloud" {for(i=4;i<=NF;i++) printf "%s ", $$i}' $(REPO)/config/modules.conf 2>/dev/null)
 
 # Helper: $(compose-file-of $1) returns the absolute compose file path for
@@ -1263,12 +1263,13 @@ migrate:
 git-start:
 >@bash scripts/ops/git-pr.sh start
 
-# Audit (rule 26 + 10) the branch, push it, then print the commit list, the
-# compare URL and a PR body: `Closes #<issue>` when a commit names an issue,
-# otherwise the new-feature form (how it works / benefits / risks). The PR is
-# opened by a human on GitHub and merged by a human — nothing here merges.
+# Audit (rule 26 + 10) the branch, push it, then open the pull request with an
+# authenticated gh (or print the compare URL and a PR body). ISSUE=<n> writes
+# `Closes #<n>`, linking the issue to the PR; without one, the body uses the
+# new-feature form (how it works / benefits / risks). A human reviews and merges
+# — nothing here merges.
 git-pr:
->@bash scripts/ops/git-pr.sh submit
+>@bash scripts/ops/git-pr.sh submit $(if $(ISSUE),--issue $(ISSUE),)
 
 # After the pull request is MERGED: fast-forward main onto origin/main and drop
 # the local work branch. Refuses when the PR is not merged yet.
