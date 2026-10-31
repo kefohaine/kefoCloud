@@ -1252,29 +1252,53 @@ migrate:
 # Git
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: git-start git-pr git-land git-pull git-add git-com git-push git-force-push git-audit git-split
+.PHONY: git-start git-branch git-switch git-del git-branches git-pr git-land git-pull git-add git-com git-push git-force-push git-audit git-split
 
 # The branch + pull-request workflow (AGENTS rule 30). `main` is write-once: a
-# change is made on a branch named work-<N> (work-1, work-2, … derived from the
+# change is made on a branch named temp-<N> (temp-1, temp-2, … derived from the
 # branches that exist, never hardcoded) and merged through a pull request a
 # human reviews on GitHub. scripts/hooks/pre-push refuses any push to main, so
-# the refusal holds even when the recipe is bypassed. All three delegate to
+# the refusal holds even when the recipe is bypassed. Every recipe delegates to
 # scripts/ops/git-pr.sh, which is the only place the flow is written down.
 git-start:
 >@bash scripts/ops/git-pr.sh start
 
+# Create + switch to a branch off a freshly pulled BASE (default main). Bare
+# `make git-branch` picks the next free temp-<N>, exactly like git-start;
+# NAME=<branch> creates that name instead, for a branch that is not temp-<N>.
+git-branch:
+>@bash scripts/ops/git-pr.sh start $(if $(NAME),--name $(NAME),) $(if $(BASE),--base $(BASE),)
+
+# Switch to an existing branch — local, or origin's (tracked on the way in).
+# BRANCH is required. Refuses with a dirty tree rather than carrying changes
+# across branches.
+git-switch:
+>@bash scripts/ops/git-pr.sh switch $(BRANCH)
+
+# Delete a LOCAL branch. Never the base, never the current one, and never one
+# whose commits are not in HEAD (that is an unmerged pull request) unless
+# FORCE=1. The remote copy is removed by GitHub when the PR is merged.
+git-del:
+>@bash scripts/ops/git-pr.sh delete $(BRANCH) $(if $(FORCE),--force,)
+
+# Every local branch with its distance from origin/BASE, origin-only branches,
+# and the next free temp-<N>.
+git-branches:
+>@bash scripts/ops/git-pr.sh list
+
 # Audit (rule 26 + 10) the branch, push it, then open the pull request with an
 # authenticated gh (or print the compare URL and a PR body). ISSUE=<n> writes
 # `Closes #<n>`, linking the issue to the PR; without one, the body uses the
-# new-feature form (how it works / benefits / risks). A human reviews and merges
-# — nothing here merges.
+# new-feature form (how it works / benefits / risks). BASE=<branch> opens the PR
+# into that branch instead of main (a stacked change). A human reviews and
+# merges — nothing here merges.
 git-pr:
->@bash scripts/ops/git-pr.sh submit $(if $(ISSUE),--issue $(ISSUE),)
+>@bash scripts/ops/git-pr.sh submit $(if $(ISSUE),--issue $(ISSUE),) $(if $(BASE),--base $(BASE),)
 
-# After the pull request is MERGED: fast-forward main onto origin/main and drop
-# the local work branch. Refuses when the PR is not merged yet.
+# After the pull request is MERGED: fast-forward the base branch onto
+# origin/BASE and drop the local branch. Refuses when the PR is not merged yet.
 git-land:
->@bash scripts/ops/git-pr.sh land
+>@bash scripts/ops/git-pr.sh land $(if $(BASE),--base $(BASE),)
 
 git-pull:
 >cd $(REPO) && git pull --ff-only
