@@ -1252,7 +1252,7 @@ migrate:
 # Git
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: git-issue git-start git-branch git-switch git-del git-branches git-pr git-land git-pull git-add git-com git-push git-force-push git-audit git-split
+.PHONY: git-issue git-import-issues git-start git-branch git-switch git-del git-branches git-pr git-land git-pull git-add git-com git-push git-force-push git-audit git-split
 
 # The branch + pull-request workflow (AGENTS rule 30). `main` is write-once: a
 # change is made on a branch named temp-<N> (temp-1, temp-2, … derived from the
@@ -1303,6 +1303,14 @@ git-branches:
 # merges — nothing here merges.
 git-pr:
 >@bash scripts/ops/git-pr.sh submit $(if $(ISSUE),--issue $(ISSUE),) $(if $(BASE),--base $(BASE),)
+
+# One-time: seed the Issues tab from .github/issues/import.jsonl and create the
+# labels from .github/labels.yml (scripts/ops/import-issues.sh). Idempotent by
+# title — re-running adds only what is missing. Credential: `gh auth login`, or
+# GITHUB_TOKEN/GH_TOKEN with Issues read/write + Metadata read. ARGS=--dry-run
+# reports without writing.
+git-import-issues:
+>@bash scripts/ops/import-issues.sh $(ARGS)
 
 # After the pull request is MERGED: fast-forward the base branch onto
 # origin/BASE and drop the local branch. Refuses when the PR is not merged yet.
