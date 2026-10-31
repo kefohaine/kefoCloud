@@ -168,6 +168,11 @@ github_push() {
   if [ $rc -eq 0 ]; then
     detail "  GitHub: pushed branch $branch to $url (main untouched)"
     detail "  open the pull request: https://github.com/$GITHUB_USER/$REPO_NAME/compare/main...$branch?expand=1"
+    if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+      detail "  gh is signed in — 'make git-pr' opens that pull request (with its body) from here"
+    else
+      detail "  run 'gh auth login' once, then 'make git-pr' opens it — the merge stays yours"
+    fi
     return 0
   fi
   if printf '%s' "$push_out" | grep -q 'fetch first'; then
