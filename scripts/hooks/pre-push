@@ -12,7 +12,7 @@
 #
 # MAIN IS UNREACHABLE. This hook refuses any push whose destination is
 # refs/heads/main (or master), and any non-branch ref at all: every change
-# lands on a `work-<N>` branch and reaches main only through a human-reviewed
+# lands on a `temp-<N>` branch and reaches main only through a human-reviewed
 # pull request on GitHub (AGENTS rule 30). The check runs BEFORE the smoke
 # gate, so the refusal is unconditional — a broken edge must never mask, or be
 # blamed for, a main push.
@@ -31,7 +31,7 @@ repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 refs=$(cat)
 
 # Main is write-once. A push is allowed only to a branch of this repo, never to
-# refs/heads/main: `make git-start` creates the work branch, `make git-pr`
+# refs/heads/main: `make git-start` creates the temp branch, `make git-pr`
 # pushes it and prints the compare URL, and a human merges it. Tags are refused
 # too (a pushed pre-rewrite tag re-exposes scrubbed identities on GitHub).
 while read -r _lref _lsha rref _rsha; do
@@ -39,12 +39,12 @@ while read -r _lref _lsha rref _rsha; do
   case "$rref" in
     refs/heads/main|refs/heads/master)
       echo "pre-push: REFUSED — $rref cannot be updated: main only changes through a reviewed pull request."
-      echo "  Work on a work-<N> branch: make git-start MSG=\"<what you are doing>\" … make git-pr"
+      echo "  Work on a temp-<N> branch: make git-start, then make git-com MSG=\"<what you are doing>\" … make git-pr"
       exit 1 ;;
     refs/heads/*) ;;
     *)
       echo "pre-push: REFUSED — only branch pushes are allowed (destination was $rref)."
-      echo "  Every change lands on a work-<N> branch and reaches main via a reviewed pull request."
+      echo "  Every change lands on a temp-<N> branch and reaches main via a reviewed pull request."
       exit 1 ;;
   esac
 done <<< "$refs"
