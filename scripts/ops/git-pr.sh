@@ -2,24 +2,36 @@
 # scripts/ops/git-pr.sh — the branch + pull-request workflow, in one place.
 #
 # `main` is write-once (AGENTS rule 30): every change is made on a branch named
-# `work-<N>` created off a freshly pulled `main`, pushed, and merged through a
+# `temp-<N>` created off a freshly pulled `main`, pushed, and merged through a
 # pull request that a HUMAN reviews and accepts on GitHub. Nothing here (or
 # anywhere else in the repo) can push `main` — scripts/hooks/pre-push refuses
 # that destination outright, so a mistake fails loudly instead of publishing.
 #
-# Delegate every step through the Makefile: `make git-start`, `make git-pr`,
-# `make git-land`. The naming scheme (work-1, work-2, … derived from the
-# branches that exist) lives in scripts/lib/work-branch.sh, the SAME definition
-# the installer uses — it is never restated here.
+# Delegate every step through the Makefile: `make git-start`, `make git-branch`,
+# `make git-switch`, `make git-del`, `make git-branches`, `make git-pr` and
+# `make git-land`. The naming scheme (temp-1, temp-2, … derived from the branches
+# that exist) lives in scripts/lib/temp-branch.sh, the SAME definition the
+# installer uses — it is never restated here.
 #
 # Usage:
-#   git-pr.sh start  [--dry-run]   create + switch to the next work-<N> off origin/main
-#   git-pr.sh status [--dry-run]   where this checkout stands (branch, commits, base)
-#   git-pr.sh submit [--dry-run] [--issue N]
-#                                   audit + push the branch + open the PR (authenticated
-#                                   gh) or print the compare URL and PR body. --issue N
-#                                   writes `Closes #N`, linking the issue to the PR.
-#   git-pr.sh land   [--dry-run]   after the PR is merged: main fast-forward, delete the local branch
+#   git-pr.sh start  [--dry-run] [--name <branch>] [--base <branch>]
+#                                   create + switch to a branch off origin/<base>
+#                                   (default: the next free temp-<N> off origin/main)
+#   git-pr.sh switch <branch> [--dry-run]
+#                                   switch to an existing branch, tracking origin's
+#   git-pr.sh delete <branch> [--force] [--dry-run]
+#                                   delete a LOCAL branch (never the base, never the
+#                                   current one; --force drops unmerged commits)
+#   git-pr.sh list   [--dry-run]    local + origin branches and the next free name
+#   git-pr.sh status [--dry-run]    where this checkout stands (branch, commits, base)
+#   git-pr.sh submit [--dry-run] [--issue N] [--base <branch>]
+#                                   audit + push the branch + open the PR into <base>
+#                                   (default main) with an authenticated gh, or print
+#                                   the compare URL and PR body. --issue N writes
+#                                   `Closes #N`, linking the issue to the PR.
+#   git-pr.sh land   [--dry-run] [--base <branch>]
+#                                   after the PR is merged: <base> fast-forward,
+#                                   delete the local branch
 #
 # A --dry-run only reads and prints: nothing is fetched, created, committed,
 # pushed or deleted. That is the mode an agent may exercise (AGENTS rule 29).
@@ -31,7 +43,7 @@ set -uo pipefail
 export LC_ALL=C
 
 REPO="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
-. "$REPO/scripts/lib/work-branch.sh"
+. "$REPO/scripts/lib/temp-branch.sh"
 
 info()  { "${REPO}/scripts/lib/mklog" info  "$*" 2>/dev/null || echo "info:  $*"; }
 warn()  { "${REPO}/scripts/lib/mklog" warn  "$*" 2>/dev/null || echo "warn:  $*"; }
@@ -43,12 +55,23 @@ cmd="${1:-status}"
 shift 2>/dev/null || true
 DRY=0
 ISSUE_NUM="${ISSUE:-}"
+NAME_ARG="${NAME:-}"
+BASE="${BASE:-$TEMP_BASE_BRANCH}"
+FORCE=0
+POS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run|-n) DRY=1 ;;
-    --issue) shift; ISSUE_NUM="${1:-}" ;;
+    --issue)   shift; ISSUE_NUM="${1:-}" ;;
     --issue=*) ISSUE_NUM="${1#--issue=}" ;;
-    *) error "unknown argument '$1'"; exit 1 ;;
+    --name)    shift; NAME_ARG="${1:-}" ;;
+    --name=*)  NAME_ARG="${1#--name=}" ;;
+    --base)    shift; BASE="${1:-}" ;;
+    --base=*)  BASE="${1#--base=}" ;;
+    --force|-f) FORCE=1 ;;
+    --) shift; while [ $# -gt 0 ]; do POS+=("$1"); shift; done ;;
+    -*) error "unknown argument '$1'"; exit 1 ;;
+    *)  POS+=("$1") ;;
   esac
   shift
 done
@@ -56,10 +79,14 @@ if [ -n "$ISSUE_NUM" ] && ! printf '%s' "$ISSUE_NUM" | grep -qE '^[0-9]+$'; then
   error "ISSUE must be an issue number (got '$ISSUE_NUM')"
   exit 1
 fi
+BASE="$(temp_branch_name "$BASE")"
+if [ -z "$BASE" ]; then
+  error "BASE must name a branch (got an empty value)"
+  exit 1
+fi
 run() { if [ "$DRY" = 1 ]; then printf '  would run: %s\n' "$*"; else "$@"; fi; }
 
-# The base branch and the remote it lives on, derived from the checkout.
-BASE="$WORK_BASE_BRANCH"
+# The remote the base branch lives on, derived from the checkout.
 REMOTE=origin
 
 # owner/repo from the origin URL, for the compare link — derived, never hardcoded.
@@ -81,34 +108,127 @@ require_clean() {
 }
 
 # ─────────────────────────────── start ────────────────────────────────────
+# Create + switch to a branch off a freshly pulled base. Bare `start` picks the
+# next free temp-<N>; --name picks an explicit branch (same verb, so `make
+# git-start` and `make git-branch NAME=…` share one implementation).
 cmd_start() {
-  local branch
-  branch="$(work_branch_next "$REPO")"
-  if ! require_clean; then return 1; fi
-  if work_branch_is_work "$(current_branch)" \
-     && [ -n "$(G rev-list "$BASE..HEAD" 2>/dev/null)" ]; then
-    error "already on $(current_branch) with commits ahead of $BASE — keep working there, or 'make git-pr' to submit it"
+  local branch cur ahead
+  branch="$(temp_branch_name "${NAME_ARG:-$(temp_branch_next "$REPO")}")"
+  if temp_branch_is_base "$branch"; then
+    error "refusing to create '$TEMP_BASE_BRANCH' — it is write-once; a change goes on a temp branch"
+    return 1
+  fi
+  require_clean || return 1
+  cur="$(current_branch)"
+  ahead="$(G rev-list "$BASE..HEAD" 2>/dev/null)"
+  if [ -n "$ahead" ] && [ -z "$NAME_ARG" ] && temp_branch_is_temp "$cur"; then
+    error "already on $cur with commits ahead of $BASE — keep working there, or 'make git-pr' to submit it"
+    return 1
+  fi
+  if [ -n "$ahead" ] && [ "$branch" = "$cur" ]; then
+    error "already on $branch with commits ahead of $BASE — 'make git-pr' to submit it, or pick another name"
+    return 1
+  fi
+  if [ "$DRY" != 1 ] && G rev-parse --verify -q "refs/heads/$branch" >/dev/null; then
+    error "branch '$branch' already exists — 'make git-switch BRANCH=$branch' to use it, or pick another name"
     return 1
   fi
   printf 'start: %s from %s/%s\n' "$branch" "$REMOTE" "$BASE"
   run G fetch "$REMOTE" --prune || return 1
   if ! G rev-parse --verify -q "$REMOTE/$BASE" >/dev/null; then
-    error "$REMOTE/$BASE does not exist — the base branch must exist before a work branch can start"
+    error "$REMOTE/$BASE does not exist — the base branch must exist before a working branch can start"
     return 1
   fi
   run G checkout -B "$branch" "$REMOTE/$BASE" || return 1
   [ "$DRY" = 1 ] || info "on $branch — make your changes, commit with 'make git-com MSG=\"…\"' (one change per commit), then 'make git-pr'"
 }
 
+# ─────────────────────────────── switch ───────────────────────────────────
+cmd_switch() {
+  local b
+  b="$(temp_branch_name "${POS[0]:-${NAME_ARG:-}}")"
+  if [ -z "$b" ]; then
+    error "usage: git-pr.sh switch <branch>   (or make git-switch BRANCH=<branch>)"
+    return 1
+  fi
+  if [ "$b" = "$(current_branch)" ]; then
+    info "already on $b"
+    return 0
+  fi
+  require_clean || return 1
+  run G fetch "$REMOTE" --prune || return 1
+  if G rev-parse --verify -q "refs/heads/$b" >/dev/null; then
+    run G checkout "$b" || return 1
+  elif G rev-parse --verify -q "refs/remotes/$REMOTE/$b" >/dev/null; then
+    run G checkout -b "$b" --track "$REMOTE/$b" || return 1
+  else
+    error "no branch '$b' locally or on $REMOTE — create it with 'make git-branch NAME=$b'"
+    return 1
+  fi
+  [ "$DRY" = 1 ] || info "on $b"
+}
+
+# ─────────────────────────────── delete ───────────────────────────────────
+cmd_delete() {
+  local b cur
+  b="$(temp_branch_name "${POS[0]:-${NAME_ARG:-}}")"
+  if [ -z "$b" ]; then
+    error "usage: git-pr.sh delete <branch> [--force]   (or make git-del BRANCH=<branch>)"
+    return 1
+  fi
+  if temp_branch_is_base "$b"; then
+    error "refusing to delete '$b' — the base branch is write-once and never deleted"
+    return 1
+  fi
+  cur="$(current_branch)"
+  if [ "$b" = "$cur" ]; then
+    error "'$b' is the current branch — switch away first: make git-switch BRANCH=<other>"
+    return 1
+  fi
+  if ! G rev-parse --verify -q "refs/heads/$b" >/dev/null; then
+    error "no local branch '$b' (the remote copy is removed by GitHub when the pull request is merged)"
+    return 1
+  fi
+  if [ "$FORCE" != 1 ] && ! G merge-base --is-ancestor "refs/heads/$b" HEAD 2>/dev/null; then
+    error "'$b' has commits HEAD does not have — its pull request is not merged. Land it with 'make git-land', or FORCE=1 to discard those commits"
+    return 1
+  fi
+  if [ "$FORCE" = 1 ]; then run G branch -D "$b"; else run G branch -d "$b"; fi || return 1
+  [ "$DRY" = 1 ] || info "deleted local branch $b"
+}
+
+# ─────────────────────────────── list ─────────────────────────────────────
+cmd_list() {
+  local b cur ahead seen
+  cur="$(current_branch)"
+  printf '  base        : %s/%s   next free branch: %s\n' "$REMOTE" "$BASE" "$(temp_branch_next "$REPO")"
+  printf '  local       :\n'
+  for b in $(G for-each-ref --sort=refname --format='%(refname:short)' refs/heads); do
+    ahead="$(G rev-list --count "refs/heads/$b" --not "$REMOTE/$BASE" 2>/dev/null || echo '?')"
+    printf '    %s %-30s %s commit(s) not in %s\n' \
+      "$([ "$b" = "$cur" ] && printf '*' || printf ' ')" "$b" "$ahead" "$BASE"
+  done
+  seen=''
+  for b in $(G for-each-ref --format='%(refname:short)' "refs/remotes/$REMOTE" 2>/dev/null \
+             | sed -e "s#^$REMOTE/##" -e '/^HEAD$/d'); do
+    if G rev-parse --verify -q "refs/heads/$b" >/dev/null; then
+      seen="$seen $b"
+      continue
+    fi
+    printf '    %s %-30s %s only\n' ' ' "$b" "$REMOTE"
+  done
+  return 0
+}
+
 # ─────────────────────────────── status ───────────────────────────────────
 cmd_status() {
   local b; b="$(current_branch)"
   printf '  branch      : %s\n' "${b:-<detached>}"
-  if work_branch_is_main "$b"; then
-    printf '  state       : on %s — a change needs a work branch: make git-start\n' "$BASE"
+  if temp_branch_is_base "$b"; then
+    printf '  state       : on %s — a change needs a temp branch: make git-start\n' "$BASE"
     return 0
   fi
-  printf '  base        : %s/%s\n' "$REMOTE" "$BASE"
+  printf '  base        : %s/%s   next free branch: %s\n' "$REMOTE" "$BASE" "$(temp_branch_next "$REPO")"
   printf '  commits     : %s ahead of %s\n' "$(G rev-list --count "$REMOTE/$BASE..HEAD" 2>/dev/null || echo '?')" "$BASE"
   printf '  changes     : %s\n' "$(G status --porcelain | wc -l | tr -d ' ')"
   [ -n "$(G rev-list "$BASE..HEAD" 2>/dev/null)" ] && G log --oneline "$BASE..HEAD" | sed 's/^/  /'
@@ -119,13 +239,19 @@ cmd_status() {
 cmd_submit() {
   local b range or url
   b="$(current_branch)"
-  if work_branch_is_main "$b"; then
-    error "refusing to submit $BASE itself — a change goes on a work-<N> branch (make git-start)"
+  if temp_branch_is_base "$b"; then
+    error "refusing to submit $b itself — a change goes on a temp branch (make git-start)"
     return 1
   fi
-  work_branch_is_work "$b" \
-    || warn "branch '$b' is not named work-<N> — the workflow expects the branch 'make git-start' created"
+  if [ "$b" = "$BASE" ]; then
+    error "the pull request would go from $b into itself — set BASE=<target branch> (default main)"
+    return 1
+  fi
+  temp_branch_is_temp "$b" \
+    || warn "branch '$b' is not named temp-<N> — the workflow expects the branch 'make git-start' created"
   require_clean || return 1
+  G rev-parse --verify -q "$REMOTE/$BASE" >/dev/null \
+    || { error "$REMOTE/$BASE does not exist — fetch the target branch first (make fetch)"; return 1; }
   range="$REMOTE/$BASE..HEAD"
   if [ -z "$(G rev-list "$range" 2>/dev/null)" ]; then
     error "no commits ahead of $REMOTE/$BASE — nothing to submit"
@@ -151,6 +277,7 @@ cmd_submit() {
   title="$(G log --format='%s' -1 "$range")"
 
   echo ""
+  printf '  Pull request: %s -> %s\n' "$b" "$BASE"
   echo "  Commit(s) in this pull request:"
   G log --format='  %h %s' "$range"
 
@@ -177,10 +304,11 @@ cmd_submit() {
   printf '  ─────────────────────────────────────────────────────────────────────\n'
 }
 
-# submit_body <range> — the PR body for the commits in <range>: an issue link
-# (the preferred form) is taken from a 'Closes #N' / '(#N)' mention in the
-# commits; without one, the body states the new feature, how it works, its
-# benefits and its risks, which is the other accepted form.
+# submit_body <range> [issue] — the PR body for the commits in <range>: an issue
+# link (the preferred form) is taken from an explicit issue number or a
+# 'Closes #N' mention in the commits; without one, the body states the new
+# feature, how it works, its benefits and its risks, which is the other
+# accepted form.
 submit_body() {
   local range="$1" explicit="${2:-}" n
   n="${explicit:-$(G log --format='%s%n%b' "$range" | grep -oE '(Closes|Fix(es|ed)?|Resolves) #[0-9]+|#[0-9]+' | grep -oE '[0-9]+' | head -1)}"
@@ -220,7 +348,7 @@ EOF
 # ──────────────────────────────── land ────────────────────────────────────
 cmd_land() {
   local b; b="$(current_branch)"
-  work_branch_is_main "$b" && { error "already on $BASE — nothing to land"; return 1; }
+  temp_branch_is_base "$b" && { error "already on $b — nothing to land"; return 1; }
   require_clean || return 1
   printf 'land: %s -> %s/%s (only after the pull request was MERGED on GitHub)\n' "$b" "$REMOTE" "$BASE"
   run G fetch "$REMOTE" --prune || return 1
@@ -233,8 +361,11 @@ cmd_land() {
 
 case "$cmd" in
   start)  cmd_start ;;
+  switch) cmd_switch ;;
+  delete) cmd_delete ;;
+  list)   cmd_list ;;
   status) cmd_status ;;
   submit) cmd_submit ;;
   land)   cmd_land ;;
-  *) echo "usage: $0 <start|status|submit|land> [--dry-run]" >&2; exit 1 ;;
+  *) echo "usage: $0 <start|switch|delete|list|status|submit|land> [--dry-run]" >&2; exit 1 ;;
 esac
