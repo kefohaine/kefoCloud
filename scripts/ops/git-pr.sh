@@ -8,10 +8,10 @@
 # that destination outright, so a mistake fails loudly instead of publishing.
 #
 # Delegate every step through the Makefile: `make git-start`, `make git-branch`,
-# `make git-switch`, `make git-del`, `make git-branches`, `make git-pr` and
-# `make git-land`. The naming scheme (temp-1, temp-2, … derived from the branches
-# that exist) lives in scripts/lib/temp-branch.sh, the SAME definition the
-# installer uses — it is never restated here.
+# `make git-switch`, `make git-del`, `make git-branches`, `make git-issue`,
+# `make git-pr` and `make git-land`. The naming scheme (temp-1, temp-2, … derived
+# from the branches that exist) lives in scripts/lib/temp-branch.sh, the SAME
+# definition the installer uses — it is never restated here.
 #
 # Usage:
 #   git-pr.sh start  [--dry-run] [--name <branch>] [--base <branch>]
@@ -23,6 +23,13 @@
 #                                   delete a LOCAL branch (never the base, never the
 #                                   current one; --force drops unmerged commits)
 #   git-pr.sh list   [--dry-run]    local + origin branches and the next free name
+#   git-pr.sh issue  [--dry-run] [--title <title>] [--labels <a,b>] [--body-file <path>]
+#                                   file an issue in the GitHub tracker BEFORE the
+#                                   branch that fixes it: the body (the problem, then
+#                                   `**Fix:**`) comes from <path> or stdin, labels are
+#                                   checked against .github/labels.yml (`type:` is
+#                                   required, `status: triage` is added), and a title
+#                                   that already exists is left alone
 #   git-pr.sh status [--dry-run]    where this checkout stands (branch, commits, base)
 #   git-pr.sh submit [--dry-run] [--issue N] [--base <branch>]
 #                                   audit + push the branch + open the PR into <base>
@@ -57,6 +64,9 @@ DRY=0
 ISSUE_NUM="${ISSUE:-}"
 NAME_ARG="${NAME:-}"
 BASE="${BASE:-$TEMP_BASE_BRANCH}"
+TITLE_ARG="${TITLE:-}"
+LABEL_ARG="${LABEL:-}"
+BODY_FILE="${BODY:-}"
 FORCE=0
 POS=()
 while [ $# -gt 0 ]; do
@@ -68,6 +78,12 @@ while [ $# -gt 0 ]; do
     --name=*)  NAME_ARG="${1#--name=}" ;;
     --base)    shift; BASE="${1:-}" ;;
     --base=*)  BASE="${1#--base=}" ;;
+    --title)   shift; TITLE_ARG="${1:-}" ;;
+    --title=*) TITLE_ARG="${1#--title=}" ;;
+    --label|--labels)     shift; LABEL_ARG="${1:-}" ;;
+    --label=*|--labels=*) LABEL_ARG="${1#*=}" ;;
+    --body-file)   shift; BODY_FILE="${1:-}" ;;
+    --body-file=*) BODY_FILE="${1#--body-file=}" ;;
     --force|-f) FORCE=1 ;;
     --) shift; while [ $# -gt 0 ]; do POS+=("$1"); shift; done ;;
     -*) error "unknown argument '$1'"; exit 1 ;;
@@ -220,6 +236,111 @@ cmd_list() {
   return 0
 }
 
+# ─────────────────────────────── issue ────────────────────────────────────
+# File an issue in the GitHub tracker, BEFORE the branch that fixes it. The body
+# is required — the house shape is the problem, then `**Fix:**` — read from
+# --body-file/BODY or stdin. Labels are validated against .github/labels.yml (the
+# one label list): a `type:` label is mandatory and `status: triage` is applied
+# when no other status is named, exactly what the issue templates do. An issue
+# whose title already exists (open or closed) is left alone, so re-running cannot
+# duplicate one — the same idempotency scripts/ops/import-issues.sh has.
+manifest_labels() {
+  sed -n 's/^- name: "\(.*\)"$/\1/p' "$REPO/.github/labels.yml"
+  printf 'good first issue\nhelp wanted\n'
+}
+
+# has_label_prefix <prefix> <label>... — true when one label starts with <prefix>
+# (a `type:`/`status:` present check, without a pipeline that pipefail can trip).
+has_label_prefix() {
+  local p="$1" x
+  shift
+  for x in "$@"; do
+    case "$x" in "$p"*) return 0 ;; esac
+  done
+  return 1
+}
+
+cmd_issue() {
+  local title body or url enc n l known
+  local -a labels=()
+  title="${TITLE_ARG:-${POS[*]:-}}"
+  if [ -z "${title// /}" ]; then
+    error "no title — make git-issue TITLE=\"<what is wrong>\" LABEL=\"type: bug,…\" BODY=<file>"
+    return 1
+  fi
+  if [ -n "$BODY_FILE" ]; then
+    [ -r "$BODY_FILE" ] || { error "BODY='$BODY_FILE' is not a readable file"; return 1; }
+    body="$(cat "$BODY_FILE")"
+  elif [ ! -t 0 ]; then
+    body="$(cat)"
+  else
+    body=''
+  fi
+  if [ -z "${body//[[:space:]]/}" ]; then
+    error "no issue body — set BODY=<file> (or pipe it in): the problem, then '**Fix:**'"
+    return 1
+  fi
+  known="$(manifest_labels)"
+  while IFS= read -r l; do
+    [ -n "$l" ] || continue
+    if ! grep -Fxq -- "$l" <<< "$known"; then
+      error "unknown label '$l' — .github/labels.yml is the only label list"
+      return 1
+    fi
+    labels+=("$l")
+  done <<< "$(printf '%s' "$LABEL_ARG" | tr ',' '\n' \
+               | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e '/^$/d')"
+  if ! has_label_prefix 'type: ' "${labels[@]}"; then
+    error "no type: label — the templates apply one (type: bug | feature | refactor | docs)"
+    return 1
+  fi
+  if ! has_label_prefix 'status: ' "${labels[@]}"; then
+    labels+=("status: triage")
+  fi
+  or="$(owner_repo)" || { error "cannot read the origin URL"; return 1; }
+
+  printf 'issue: %s\n' "$title"
+  printf '  labels: %s\n' "$(printf '%s, ' "${labels[@]}" | sed 's/, $//')"
+  if [ "$DRY" = 1 ]; then
+    printf '  would run: gh issue create --title "%s" %s--body-file -\n' \
+      "$title" "$(printf -- '--label "%s" ' "${labels[@]}")"
+    printf '  ─── issue body ─────────────────────────────────────────────────────\n'
+    printf '%s\n' "$body" | sed 's/^/  /'
+    printf '  ─────────────────────────────────────────────────────────────────────\n'
+    return 0
+  fi
+
+  if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    n="$(gh issue list --state all --search "\"$title\" in:title" --limit 100 \
+           --template '{{range .}}{{.number}}{{"\t"}}{{.title}}{{"\n"}}{{end}}' 2>/dev/null \
+          | awk -F'\t' -v t="$title" '$2 == t { print $1; exit }')"
+    if [ -n "$n" ]; then
+      info "issue #$n already carries this title — nothing filed, edit that one instead"
+      return 0
+    fi
+    local -a args=()
+    for l in "${labels[@]}"; do args+=(--label "$l"); done
+    if printf '%s\n' "$body" | gh issue create --title "$title" "${args[@]}" --body-file -; then
+      info "issue filed — fix it on a temp branch ('make git-start') and link the pull request with 'make git-pr ISSUE=<n>'"
+      return 0
+    fi
+    warn "gh could not file the issue — falling back to the new-issue URL"
+  fi
+
+  enc="$(python3 -c 'import sys,urllib.parse as u;print(u.urlencode({"title":sys.argv[1],"labels":sys.argv[2],"body":sys.argv[3]}))' \
+        "$title" "$(printf '%s,' "${labels[@]}" | sed 's/,$//')" "$body" 2>/dev/null)"
+  url="https://github.com/$or/issues/new"
+  [ -n "$enc" ] && url="$url?$enc"
+  echo ""
+  echo "  File the issue (paste the body below), then start the change with 'make git-start':"
+  echo "    $url"
+  echo ""
+  printf '  ─── issue body ─────────────────────────────────────────────────────\n'
+  printf '%s\n' "$body" | sed 's/^/  /'
+  printf '  ─────────────────────────────────────────────────────────────────────\n'
+  return 0
+}
+
 # ─────────────────────────────── status ───────────────────────────────────
 cmd_status() {
   local b; b="$(current_branch)"
@@ -364,8 +485,9 @@ case "$cmd" in
   switch) cmd_switch ;;
   delete) cmd_delete ;;
   list)   cmd_list ;;
+  issue)  cmd_issue ;;
   status) cmd_status ;;
   submit) cmd_submit ;;
   land)   cmd_land ;;
-  *) echo "usage: $0 <start|switch|delete|list|status|submit|land> [--dry-run]" >&2; exit 1 ;;
+  *) echo "usage: $0 <start|switch|delete|list|issue|status|submit|land> [--dry-run]" >&2; exit 1 ;;
 esac
