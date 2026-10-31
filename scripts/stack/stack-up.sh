@@ -217,7 +217,7 @@ if [ -n "$EDGE" ]; then
               docker tag "${IMG%:*}:rollback" "$IMG"
               compose "$EDGE_FILE" up -d --force-recreate \
                 && warn "edge rolled back to the previous image — the door is up, the update was NOT applied" \
-                || err "edge rollback ALSO failed — restore from $DATA (see docs/GUIDE.md)"
+                || err "edge rollback ALSO failed — restore from $DATA (see docs/MANUAL.md)"
             fi
             FAILURE+=("$EDGE (rolled back)")
           fi
