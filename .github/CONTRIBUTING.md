@@ -11,6 +11,8 @@ and closed there (or through the GitHub API), never in a markdown file.
 ## Reporting bugs
 Open an issue with the Bug report template (it applies `type: bug` and
 `status: triage`): steps to reproduce, what you expected, and what happened.
+From a checkout, `make git-issue TITLE="…" LABEL="type: bug" BODY=<file>` files
+the same report without leaving the terminal.
 
 ## Proposing changes
 Open an issue first — the Feature request template applies `type: feature` and
@@ -21,9 +23,9 @@ Open an issue first — the Feature request template applies `type: feature` and
 2. Make your changes, committing one change per commit (`make git-com MSG="…"`; `make git-audit` checks it).
 3. Test them (`make smoke` on a deployed instance, `bash -n` on the scripts you touched).
 4. `make git-pr` — audits the branch, pushes it through the hooks, and opens the
-   pull request (via an authenticated `gh` or a `GITHUB_TOKEN`/`GH_TOKEN`) or prints
-   the compare URL plus the
-   pull request body. Use `make git-pr ISSUE=<n>` when the change fixes an issue.
+   pull request (via an authenticated `gh` — sign in once with `gh auth login` — or a
+   `GITHUB_TOKEN`/`GH_TOKEN`) or prints the compare URL plus the pull request body.
+   Use `make git-pr ISSUE=<n>` when the change fixes an issue.
 5. The pull request must either close that issue (`Closes #<n>`) or state how
    the feature works, its benefits and its risks.
 
