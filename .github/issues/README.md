@@ -21,8 +21,12 @@ Labels first, or every issue lands unlabelled:
 
 - New work is filed with the templates in `.github/ISSUE_TEMPLATE/`, which apply
   `type:` and `status: triage` automatically.
-- An agent manages issues through the Issues tab or the GitHub API
-  (`GITHUB_TOKEN`/`GH_TOKEN`) — never by appending to a file.
+- The CLI path is `make git-issue TITLE="…" LABEL="type: bug,…" BODY=<file>`:
+  it validates the labels against `.github/labels.yml`, requires a `type:`, adds
+  `status: triage`, refuses a title that already exists, and prints the
+  new-issue URL when `gh` is absent.
+- An agent manages issues through that recipe or the Issues tab — never by
+  appending to `import.jsonl`, which is a seed and not a queue.
 - A pull request closes an issue with `Closes #<n>` in its body
   (`make git-pr ISSUE=<n>` writes it); GitHub links the pair and closes the
   issue when a human merges the PR.
