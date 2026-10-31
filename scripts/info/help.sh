@@ -55,13 +55,6 @@ make backup|ship ALL modules as two bundles (nextcloud-backup-*.tar.gz DB+datadi
 make import-backups|preview + interactive restore of module bundles from a tailnet device's backups/ (TAILDROP= required; preview + typed yes are built in — no DRYRUN flag; stops all non-caddy containers); never stops caddy
 EOF
 
-  sec "sandbox modules (data/sandbox, untracked)"
-  rows <<'EOF'
-make sandbox-sync|re-apply sandbox vhosts into data/rendered/caddy + revive stopped projects (after make render)
-bash scripts/sandbox/editor.sh|create · remove · list — try a module without touching the repo
-make snikket-status|Snikket XMPP (module xmpp) — accounts + instance utilities: see make help-more
-EOF
-
   sec "migrate / restore"
   rows <<'EOF'
 make migrate|print the migration runbook (docs/MIGRATE.md)
