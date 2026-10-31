@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: ../../security/policy
+    about: Do not open a public issue for a vulnerability — see SECURITY.md.
