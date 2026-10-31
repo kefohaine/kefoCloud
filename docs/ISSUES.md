@@ -21,7 +21,7 @@ Tracked for follow-up. Items marked **[needs human approval]** require a decisio
 #### A vanished module is never recreated at boot
 - **File**: `scripts/stack/stack-up.sh` (`deployed()`)
 - **Problem**: `deployed()` gates on *container existence*, so when a module's containers are gone (an image prune, a `compose down`, a docker storage wipe) boot recovery logs `skip (not deployed)` and moves on — the stack reports "up" while the module is silently absent. This is how the Nextcloud DB stayed missing after the prune.
-- **Fix**: treat `wizard.state`'s `enabled_modules` as the source of truth for a module the installer deployed, and recreate any module whose compose file exists but whose containers are missing (keeping the container-existence check only for sandbox/undeclared units).
+- **Fix**: treat `wizard.state`'s `enabled_modules` as the source of truth for a module the installer deployed, and recreate any module whose compose file exists but whose containers are missing (keeping the container-existence check only for units no module declares).
 
 ### Robustness
 
@@ -385,7 +385,6 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Kernel hardening applied** — `kernel.yama.ptrace_scope=1` + `kernel.kptr_restrict=2` in `config/sysctl/99-kefo.conf` (`rp_filter` left at 0 for exit-node routing).
 - **Backup reads module state through the accessor** — `backup-bundles.sh` uses `scripts/lib/modules.sh` (`mod_all`/`mod_installed`) instead of sourcing `wizard.state` itself.
 - **Dead-record comments removed** — `optimize.sh` no longer names a retired `make cleanup`, `replace-string.sh` no longer recites its one-time use, and the Caddyfile no longer describes the wildcard cert it stopped using.
-- **Sandbox tree went stale and fell back to usage** — `editor.sh` stamps the tree with its own sha256 (`data/sandbox/.stamp`) and refreshes every file when the script changes, so an older `flow/cli.sh` can no longer answer a real command with the usage message.
 - **Stale installer SSH rules lingered** — prior installs left `22/tcp` allow rules for old IPs (old machine IP + retired tailnet device); phase-1 and `finalize_hardening` now sweep any non-tailnet 22 rule.
 
 - **Hostname + login account + tailnet node renamed kefoCloud → kefomachine** — `data/instance.conf` HOSTNAME, all module `.env` instance blocks, the installer's `NODE_NAME`, `/etc/hostname`/`kefo-banner.sh`, the boot unit, and the Tailscale node (`tailscale up --hostname=kefomachine`) updated; `make render` re-derives every service `.env` and `data/rendered` so no hardcoded value remains, `git diff -- data/` stays empty, smoke still green.
@@ -456,7 +455,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **Nextcloud moved off the public edge** — its stack was brought down and its door is the tailnet-only `nextcloud.$DOMAIN`; `cloud.$DOMAIN` now serves ownCloud (oCIS), which makes the per-hostname Cloudflare WAF skip moot.
 - **Poster welcome page** — `/welcome` is `$DATA_DIR/pages/www/welcome.html`, with a page nav and a `Home →` button.
 - **WriteFreely blog** — new `blog` module and `blog.$DOMAIN` vhost, built from the pinned upstream release tarball.
-- **Snikket's vhost moved into the tracked tree** — the sandbox-only copy was wiped by `make render`'s `rsync --delete`, so the site died on the next Caddy restart; the door has been tracked since (now `modules/caddy/vhosts/chat.caddy`).
+- **Snikket's vhost moved into the tracked tree** — a copy outside the tracked tree was wiped by `make render`'s `rsync --delete`, so the site died on the next Caddy restart; the door has been tracked since (now `modules/caddy/vhosts/chat.caddy`).
 - **Makefile git recipes restored** — `git-pull/add/com/ch/com-audit/split/push/force-push` and the tmux/Nextcloud/goose blocks were missing again; restored from history (`e1a371f^`).
 - **Container roster derived from `config/modules.conf`** — `CONTAINERS`/`MODULES` and the per-container compose map are generated from the catalog (one `$(eval)` per module row), so every declared container and module gets its `dok-*` target; the nextcloud family runs both compose files in one invocation.
 - **Rocket.Chat removed** — the `chat` module, its installer step, smoke section and docs are gone; `chat.$DOMAIN` sat empty until Snikket took the name (2026-10-30).
@@ -479,7 +478,7 @@ Resolved items grouped by month. One line per item, one sentence per record.
 - **`optimize.sh` gained a repo-wide pass (2026-10-29)** — one `sysctl -a` snapshot + parsed table replaces ~30 `sysctl -n` forks per check round, one apt transaction installs all missing helpers, `systemctl list-unit-files` replaces a call per unit, the sysctl file is applied with `sysctl -p` (system fallback), and a checkout gets git's fast paths + pack maintenance (`WITH_GIT=0` opts out).
 - **`editor.sh` logs its own aborts** — stderr is mirrored into the run log and the EXIT trap records the rc with the step in flight, so a run that dies outside `die()` no longer ends mid-question in the log; answers are logged except secrets, and the `ask_var` target shadowing that broke `set -u` is gone.
 - **Snikket TURNS no longer depends on a chown race** — the tracked wrapper `modules/snikket/coturn-run` stages the cert pair in a `turnserver`-owned copy and `make snikket-turn` verifies it (2026-10-29).
-- **oCIS promoted to module `ocis`** — `modules/ocis/` (compose, 172.22.0.27:9200), a `config/modules.conf` row, installer seeding + `containers_up` block, backup coverage and a smoke section; data moved to `data/ocis`, sandbox copy deleted (2026-10-30).
-- **Snikket promoted to module `xmpp`** — `modules/snikket/` owns `chat.$DOMAIN` (+ `groups.chat`/`share.chat`), the vhost is `modules/caddy/vhosts/chat.caddy`, the coturn wrapper and account CLI moved into the repo tree; data at `data/snikket`, sandbox copy deleted (2026-10-30).
+- **oCIS promoted to module `ocis`** — `modules/ocis/` (compose, 172.22.0.27:9200), a `config/modules.conf` row, installer seeding + `containers_up` block, backup coverage and a smoke section; data moved to `data/ocis` (2026-10-30).
+- **Snikket promoted to module `xmpp`** — `modules/snikket/` owns `chat.$DOMAIN` (+ `groups.chat`/`share.chat`), the vhost is `modules/caddy/vhosts/chat.caddy`, the coturn wrapper and account CLI moved into the repo tree; data at `data/snikket` (2026-10-30).
 - **`dok-recreate-<ctn>` repo-root bug fixed** — the multi-line `awk` in `$(shell)` collapsed to one line, so only the first `COMPOSE_FILE_*` existed and every other recipe ran compose against the repo root; now one `$(eval)` per module row (2026-10-30).
 - **Orphan stacks removed** — the `homer`, `beszel-hub`/`beszel-agent` and `rocketchat`/`rocketchat-db`/`rocketchat-db-init` containers and their `data/` trees (`rocketchat` 212 MB, `beszel` 5 MB) are gone; `modules/homer/` was an untracked leftover and is deleted (2026-10-30).
