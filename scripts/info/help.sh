@@ -64,7 +64,7 @@ EOF
   sec "git"
   rows <<'EOF'
 make git-start|create + switch to the next work-<N> branch off a freshly pulled main — every change starts here (main is never pushed)
-make git-pr|audit the branch, push it, print the compare URL + a PR body (Closes #<issue>, or how it works / benefits / risks) — a human merges on GitHub
+make git-pr|audit the branch, push it, open the PR (or print its URL + body); ISSUE=<n> links it with Closes #<n> — a human merges on GitHub
 make git-land|after the PR is merged: fast-forward main onto origin/main and delete the local work branch
 make git-pull|pull remote changes
 make git-add|stage every change
