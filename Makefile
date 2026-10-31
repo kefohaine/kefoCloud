@@ -1252,7 +1252,28 @@ migrate:
 # Git
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: git-pull git-add git-com git-push git-force-push git-audit git-split
+.PHONY: git-start git-pr git-land git-pull git-add git-com git-push git-force-push git-audit git-split
+
+# The branch + pull-request workflow (AGENTS rule 30). `main` is write-once: a
+# change is made on a branch named work-<N> (work-1, work-2, … derived from the
+# branches that exist, never hardcoded) and merged through a pull request a
+# human reviews on GitHub. scripts/hooks/pre-push refuses any push to main, so
+# the refusal holds even when the recipe is bypassed. All three delegate to
+# scripts/ops/git-pr.sh, which is the only place the flow is written down.
+git-start:
+>@bash scripts/ops/git-pr.sh start
+
+# Audit (rule 26 + 10) the branch, push it, then print the commit list, the
+# compare URL and a PR body: `Closes #<issue>` when a commit names an issue,
+# otherwise the new-feature form (how it works / benefits / risks). The PR is
+# opened by a human on GitHub and merged by a human — nothing here merges.
+git-pr:
+>@bash scripts/ops/git-pr.sh submit
+
+# After the pull request is MERGED: fast-forward main onto origin/main and drop
+# the local work branch. Refuses when the PR is not merged yet.
+git-land:
+>@bash scripts/ops/git-pr.sh land
 
 git-pull:
 >cd $(REPO) && git pull --ff-only
