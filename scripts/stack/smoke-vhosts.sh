@@ -264,14 +264,19 @@ hdr xmpp "XMPP — Snikket (module: xmpp) · chat.$DOMAIN"
 check xmpp "chat.$DOMAIN" "/" "200 301 302 307 308" html "Snikket portal answers"
 check_tls "chat.$DOMAIN"
 check_ctns xmpp snikket-server snikket-proxy snikket-portal snikket-certs
+# Capture the listener table first: `ss | grep -q` under `set -o pipefail`
+# reports the SIGPIPE ss gets when grep exits at the first match as a failed
+# pipeline (the port is listening, yet the check fails).
+ltn=$(ss -ltn 2>/dev/null)
+lun=$(ss -lun 2>/dev/null)
 for _sp in 5222 5269; do
-  if ss -ltn 2>/dev/null | grep -q ":$_sp "; then
+  if grep -q ":$_sp " <<<"$ltn"; then
     say "ok   xmpp-port — listening on $_sp/tcp"
   else
     say "FAIL xmpp-port: nothing listening on $_sp/tcp (prosody is down?)"; bad
   fi
 done
-if ss -lun 2>/dev/null | grep -q ':3478 '; then
+if grep -q ':3478 ' <<<"$lun"; then
   say "ok   xmpp-turn — coturn listening on 3478/udp"
 else
   say "FAIL xmpp-turn: coturn not listening on 3478/udp (is TURN enabled in the module .env?)"; bad
@@ -336,7 +341,8 @@ if [ "$(state_get VIDEO_CALLING)" != "false" ]; then
   # reports talk-ports on every re-run.
   coturn_ok=""
   for _ in $(seq 1 15); do
-    if ss -lun 2>/dev/null | grep -q ':3478 ' && ss -ltn 2>/dev/null | grep -q ':5349 '; then
+    lun_now=$(ss -lun 2>/dev/null); ltn_now=$(ss -ltn 2>/dev/null)
+    if grep -q ':3478 ' <<<"$lun_now" && grep -q ':5349 ' <<<"$ltn_now"; then
       coturn_ok=1; break
     fi
     sleep 2
