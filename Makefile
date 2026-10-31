@@ -327,7 +327,7 @@ install-hooks:
 >@mkdir -p .git/hooks
 >@cp scripts/hooks/pre-commit scripts/hooks/prepare-commit-msg scripts/hooks/pre-push .git/hooks/
 >@chmod +x .git/hooks/pre-commit .git/hooks/prepare-commit-msg .git/hooks/pre-push
->@scripts/lib/mklog info "installed git hooks: pre-commit (identity + Caddy validate + app-vhost stub guard), prepare-commit-msg (auto-split per unit: one folder + one subfolder), pre-push (live vhost smoke + history-rewrite warning + auto-split/revert)"
+>@scripts/lib/mklog info "installed git hooks: pre-commit (identity + Caddy validate + app-vhost stub guard), prepare-commit-msg (auto-split per unit: one folder + one subfolder), pre-push (refuses main + live vhost smoke + history-rewrite warning + auto-split/revert)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Mailboxes (Mailu `flask mailu` CLI — see `make help-more` > mail server).
