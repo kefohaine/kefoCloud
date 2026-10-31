@@ -149,7 +149,7 @@ Open problems are GitHub issues (Issues tab), labelled by the prefixed taxonomy 
 
 1. Label it `status: in-progress` and work on a `temp-<N>` branch (`make git-start`).
 2. Verify the fix.
-3. Commit with the installed hooks (`make git-com MSG="…"`), then `make git-pr ISSUE=<n>` — it audits the range, pushes the branch, and prints a PR body whose `Closes #<n>` links the issue. It opens the PR itself when `gh` is authenticated or `GITHUB_TOKEN`/`GH_TOKEN` is exported (REST API); otherwise open the printed compare URL.
+3. Commit with the installed hooks (`make git-com MSG="…"`), then `make git-pr ISSUE=<n>` — it audits the range, pushes the branch, and prints a PR body whose `Closes #<n>` links the issue. It opens the PR itself when `gh` is authenticated (the wizard installs `gh`; `gh auth login` once is the operator's) or `GITHUB_TOKEN`/`GH_TOKEN` is exported (REST API); otherwise open the printed compare URL.
 4. Stop and wait. A human reviews and merges the PR (rebase-and-merge); the issue closes on merge. An agent never merges, approves, or pushes `main`.
 5. A behaviour that looks like a bug but is deliberate gets its rationale documented in the relevant section of `docs/GUIDE.md` — never as an issue to "fix".
 
