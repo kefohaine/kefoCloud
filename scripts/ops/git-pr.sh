@@ -114,6 +114,16 @@ owner_repo() {
     | sed -e 's#\.git$##' -e 's#/$##'
 }
 
+# One line naming the fix when the PR/issue has to be opened by hand: gh is
+# installed everywhere the installer runs, but a login is the operator's to make.
+gh_hint() {
+  if command -v gh >/dev/null 2>&1; then
+    printf '  gh is installed but not signed in — run: gh auth login (or export GITHUB_TOKEN)\n'
+  else
+    printf '  gh is not installed — apt-get install gh, then: gh auth login (or export GITHUB_TOKEN)\n'
+  fi
+}
+
 current_branch() { G rev-parse --abbrev-ref HEAD 2>/dev/null; }
 
 require_clean() {
@@ -379,6 +389,7 @@ cmd_issue() {
     warn "gh could not file the issue — falling back to the new-issue URL"
   fi
 
+  gh_hint
   enc="$(python3 -c 'import sys,urllib.parse as u;print(u.urlencode({"title":sys.argv[1],"labels":sys.argv[2],"body":sys.argv[3]}))' \
         "$title" "$(printf '%s,' "${labels[@]}" | sed 's/,$//')" "$body" 2>/dev/null)"
   url="https://github.com/$or/issues/new"
@@ -477,6 +488,7 @@ cmd_submit() {
     warn "the GitHub API could not open the pull request — falling back to the compare URL"
   fi
 
+  gh_hint
   echo ""
   echo "  Open the pull request (paste the body below), then stop — a human merges:"
   echo "    $url"
