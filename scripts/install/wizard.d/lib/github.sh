@@ -98,10 +98,17 @@ github_auth_ok() {
 # that may not write here, and that rejection is reported as an error. Runs
 # only in the installer's tail (after a green smoke), never as a pre-check.
 #
+# It pushes a WORK BRANCH, never `main` (AGENTS rule 30). The checkout is moved
+# onto the next free `work-<N>` (naming lives in scripts/lib/work-branch.sh) and
+# that branch is pushed, so the installer's commits reach the operator as a pull
+# request and `main` stays untouched on the remote. The checkout STAYS on that
+# branch: every later change in this clone is made there, one PR per branch.
+#
 # NOTE (AGENTS rule 3): raw git is normally reserved for the make recipes — the
 # one exception is right here, because the installer must push to a TEMPORARY
 # remote with --no-verify (the pre-push hook's live smoke cannot pass before the
-# stack exists, and the installer has already run smoke itself).
+# stack exists, and the installer has already run smoke itself). The hook's
+# main-refusal is not bypassed in spirit: the destination is a branch.
 github_push() {
   [ "${GH_REMOTE:-false}" = "true" ] || return 0
   if [ -z "${GITHUB_USER:-}" ] || [ "${GITHUB_USER:-}" = "exampleuser" ]; then
@@ -123,6 +130,18 @@ github_push() {
          GIT_AUTHOR_NAME="$GITHUB_COMMIT_NAME" GIT_AUTHOR_EMAIL="$GITHUB_COMMIT_EMAIL"
   local url="git@github.com:$GITHUB_USER/$REPO_NAME.git"
 
+  # The installer NEVER pushes main: it creates (or reuses) the working branch
+  # and pushes that, so the operator merges through a pull request. The name is
+  # the next free work-<N>, derived from the branches that exist — local and on
+  # origin — never hardcoded and never stored in a file.
+  . "$REPO/scripts/lib/work-branch.sh"
+  local branch
+  branch="$(work_branch_next "$REPO")"
+  if ! git -C "$REPO" checkout -B "$branch" >>"$LOG" 2>&1; then
+    warn github_push "could not switch the checkout to $branch — push skipped"
+    return 1
+  fi
+
   # Idempotent by construction: the push itself creates no persistent remote.
   # `temppush` is a one-shot URL remote — added, pushed, removed — and it is
   # removed BEFORE the push (run both steps, then clean up on every exit path),
@@ -136,18 +155,18 @@ github_push() {
   local push_out rc
   push_out="$(git -C "$REPO" -c user.name="$GITHUB_COMMIT_NAME" -c user.email="$GITHUB_COMMIT_EMAIL" \
                 -c remote.temppush.url="$url" \
-                push --no-verify temppush HEAD 2>&1)"
+                push --no-verify temppush "HEAD:refs/heads/$branch" 2>&1)"
   rc=$?
   git -C "$REPO" remote remove temppush 2>/dev/null || true
   printf '%s\n' "$push_out" >>"$LOG"
   if [ $rc -eq 0 ]; then
-    detail "  GitHub: pushed to $url"
+    detail "  GitHub: pushed branch $branch to $url (main untouched — open a pull request from it)"
     return 0
   fi
   if printf '%s' "$push_out" | grep -q 'fetch first'; then
     warn github_push "push rejected — local history diverged from the remote (fetch first); run 'make fetch' or 'git pull --rebase' and re-run the installer"
   else
-    warn github_push "push rejected — $url refused $GITHUB_USER (not a collaborator, or the key is not authorized)"
+    warn github_push "push rejected — $url refused $GITHUB_USER for branch $branch (not a collaborator, or the key is not authorized)"
   fi
   return 1
 }
