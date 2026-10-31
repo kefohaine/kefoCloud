@@ -63,15 +63,19 @@ EOF
 
   sec "git"
   rows <<'EOF'
-make git-start|create + switch to the next work-<N> branch off a freshly pulled main — every change starts here (main is never pushed)
-make git-pr|audit the branch, push it, open the PR (or print its URL + body); ISSUE=<n> links it with Closes #<n> — a human merges on GitHub
-make git-land|after the PR is merged: fast-forward main onto origin/main and delete the local work branch
+make git-start|create + switch to the next temp-<N> branch off a freshly pulled main — every change starts here (main is never pushed)
+make git-branch [NAME=<b>]|same as git-start, or create + switch to NAME (BASE=<b> bases it on another branch)
+make git-switch BRANCH=<b>|switch to an existing branch — local, or origin's (tracked on the way in)
+make git-del BRANCH=<b> [FORCE=1]|delete a local branch — never main, never the current one; FORCE=1 drops unmerged commits
+make git-branches|every branch with its distance from origin/main, plus the next free temp-<N>
+make git-pr [ISSUE=<n>] [BASE=<b>]|audit the branch, push it, open the PR into main (or BASE); ISSUE=<n> links it with Closes #<n> — a human merges on GitHub
+make git-land [BASE=<b>]|after the PR is merged: fast-forward main (or BASE) onto origin and delete the local branch
 make git-pull|pull remote changes
 make git-add|stage every change
 make git-com MSG=<sentence>|commit staged changes — single-sentence MSG only
 make git-audit RANGE=<a..b>|monitor the commit-hygiene rules (26 one change per commit, 10 revert recipe) — default: what a push would publish; the pre-push hook enforces it
 make git-split RANGE=<a..b>|rewrite a local range to satisfy those rules — auto-split bundles per unit (one folder + one subfolder), auto-SHA the Revert: lines; ARGS=--dry-run to preview; refuses published commits — the hooks run it for you
-make git-push|push the current work branch to the remote (main is refused by the pre-push hook)
+make git-push|push the current temp branch to the remote (main is refused by the pre-push hook)
 make git-force-push BRANCH=<b>|force-push a rewritten branch (--force-with-lease only; BRANCH required — never clobbers another's commits)
 EOF
 
