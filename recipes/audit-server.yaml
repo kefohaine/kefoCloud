@@ -29,7 +29,7 @@ parameters:
 prompt: |
   Audit this self-hosted server repository, focus: {{ focus_area }}.
 
-  Read docs/AGENTS.md (agent rules) and docs/GUIDE.md (project facts) first,
+  Read docs/AGENTS.md (agent rules) and docs/MANUAL.md (project facts) first,
   then the repository's Issues tab for already-known problems.
 
   Inspect the relevant files:

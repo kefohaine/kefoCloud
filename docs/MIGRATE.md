@@ -2,7 +2,7 @@
 
 `make migrate` prints this runbook. The primary path is the installer: a **root-only**,
 prompt-once-unattended script. For the full prompt order and the run's behaviour see
-`docs/GUIDE.md` "First-time setup and migration"; this file is the migration procedure.
+`docs/MANUAL.md` "Install, repair, uninstall"; this file is the migration procedure.
 
 ## Run it
 
@@ -38,7 +38,7 @@ first, then the installer again.
 - **Provider-side PTR** — only the machine provider can set reverse DNS. Printed as
   follow-up 1 when the mail module is on.
 - **Cloudflare WAF rule skip for `cloud.$DOMAIN`** — optional; desktop/mobile sync is
-  bot-challenged otherwise (rationale in `docs/GUIDE.md`).
+  bot-challenged otherwise (rationale in `docs/MANUAL.md`).
 
 ## Prerequisites (manual, unavoidable)
 

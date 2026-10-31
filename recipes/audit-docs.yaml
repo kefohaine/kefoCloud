@@ -20,14 +20,14 @@ parameters:
   - key: scope
     input_type: string
     requirement: optional
-    description: "Optional scope: all, or a single doc (GUIDE, ISSUES, DEBUG, MIGRATE, REF, README)"
+    description: "Optional scope: all, or a single doc (WHAT, MANUAL, DEBUG, MIGRATE, SKELETON, README)"
     default: "all"
 prompt: |
   Audit documentation for drift/stale/duplicate, scope: {{ scope }}.
 
   The repo (compose files, Makefile, scripts, config, the running system) is the
   ground truth; docs are derived. Read docs/AGENTS.md doc-audit directives and
-  docs/GUIDE.md first.
+  docs/MANUAL.md first.
 
   For every concrete fact in the docs (port, path, command, recipe name,
   container name, unit name, image tag, route matcher), grep the executable

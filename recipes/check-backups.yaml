@@ -25,7 +25,7 @@ parameters:
 prompt: |
   Audit the backup and restore posture, scope: {{ focus }}.
 
-  Read docs/GUIDE.md (backup gotchas, storage row, protected resources) and
+  Read docs/MANUAL.md (backup gotchas, storage row, protected resources) and
   the repository's Issues tab (open backup/restore items).
 
   Inspect:

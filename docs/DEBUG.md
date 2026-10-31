@@ -1,6 +1,6 @@
 # Deep scan & debugging runbook
 
-How to run an occasional deep scan or triage an incident on this system. **The rules live in `docs/AGENTS.md`; the project facts (paths, recipes, hostnames, limits) live in `docs/GUIDE.md`** — this file is the procedure that uses them. Read-only until a finding is confirmed.
+How to run an occasional deep scan or triage an incident on this system. **The rules live in `docs/AGENTS.md`; the project facts (paths, recipes, hostnames, limits) live in `docs/MANUAL.md`** — this file is the procedure that uses them. Read-only until a finding is confirmed.
 
 ## Operating discipline
 - **Read-only first.** Inspect before changing; understand dependencies before touching a service.
@@ -23,7 +23,7 @@ How to run an occasional deep scan or triage an incident on this system. **The r
 make fetch                   # AIO dashboard: perf, modules, git, units, docker, tmux, backups, mail, tailnet
 make smoke                    # every vhost must serve its real app; runs ONLY on a finished install (wizard.state finished=true); not-installed modules' failures are listed once at the end and don't fail the run
 docker ps --format '{{.Names}}	{{.Status}}'
-ss -tlnp                      # listeners — compare with GUIDE "Domains and access model"
+ss -tlnp                      # listeners — compare with WHAT.md "Access model"
 sudo ufw status verbose
 findmnt -R $DATA_DIR      # mounts, incl. the NFS datadirectory
 free -m; df -h /              # memory / disk headroom
@@ -43,7 +43,7 @@ bash scripts/info/gh-web-health.sh                      # after any history rewr
 Decide what "healthy" means *before* changing anything, then demonstrate it. Examples: a vhost is healthy when `make smoke` passes; Nextcloud is healthy when `occ status` reports installed + no maintenance and a file write round-trips; the NFS datadirectory is healthy when `findmnt` shows the mount and a real file reads at expected speed.
 
 ## 5. Where the answers already are
-- Symptom → cause map: `docs/GUIDE.md` "Operational gotchas" (e.g. NFS client-helper failure, the `respond "ok"` edge stub, force-recreate name collisions, the tailscaled boot-race, `fs.protected_regular` root-writes in /tmp).
+- Symptom → cause map: `docs/MANUAL.md` "Operational gotchas" (e.g. NFS client-helper failure, the `respond "ok"` edge stub, force-recreate name collisions, the tailscaled boot-race, `fs.protected_regular` root-writes in /tmp).
 - Open problems and their status: the repository's Issues tab.
 - Migration/rebuild path: `docs/MIGRATE.md`.
 - JS/static-client triage: diff the *served* page against the pristine upstream copy before assuming the server is broken; a single SyntaxError in the only inline script black-screens with no server-side error.

@@ -15,7 +15,7 @@ activities:
   - "Check Caddy vhosts and the tailnet-only matcher"
   - "Check TLS issuer/dates per vhost from the host"
   - "Check mail SPF/DKIM/DMARC/PTR and postfix serving"
-  - "Report discrepancies with docs/GUIDE.md 'Domains and access model'"
+  - "Report discrepancies with docs/MANUAL.md 'Domains and access model'"
 parameters:
   - key: focus
     input_type: string
@@ -25,7 +25,7 @@ parameters:
 prompt: |
   Review the ingress and mail stack, focus: {{ focus }}.
 
-  Cross-check docs/GUIDE.md "Domains and access model" and the service-reference
+  Cross-check docs/MANUAL.md "Domains and access model" and the service-reference
   table against the live config.
 
   Inspect:
