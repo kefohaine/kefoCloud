@@ -153,6 +153,6 @@ Open problems are GitHub issues (Issues tab), labelled by the prefixed taxonomy 
 4. Stop and wait. A human reviews and merges the PR (rebase-and-merge); the issue closes on merge. An agent never merges, approves, or pushes `main`.
 5. A behaviour that looks like a bug but is deliberate gets its rationale documented in the relevant section of `docs/GUIDE.md` — never as an issue to "fix".
 
-New problems are filed with the Bug report template (applies `type: bug` + `status: triage`) or the Feature request one (`type: feature` + `status: triage`); the body carries the problem and the concrete fix, and a `priority:`/`area:` label is added during triage, not by the reporter. An agent files them through the Issues tab or the GitHub API (`GITHUB_TOKEN`/`GH_TOKEN`, as `scripts/ops/import-issues.sh` does), never in a file.
+New problems are filed with the Bug report template (applies `type: bug` + `status: triage`) or the Feature request one (`type: feature` + `status: triage`); the body carries the problem and the concrete fix, and a `priority:`/`area:` label is added during triage, not by the reporter. `make git-issue TITLE="…" LABEL="type: bug,…" BODY=<file>` files one from the CLI (labels validated against `.github/labels.yml`, `status: triage` added, an existing title left alone, the URL printed when `gh` is absent), so an agent files through it or the Issues tab — never in a file.
 
 This template's project-specific section is intentionally absent: project-specific overrides live in `docs/GUIDE.md`.
