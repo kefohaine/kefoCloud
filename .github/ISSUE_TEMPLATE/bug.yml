@@ -1,0 +1,41 @@
+name: Bug report
+description: Something is broken or behaves against the documented intent.
+title: "bug: "
+labels: ["type: bug", "status: triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. A bug is a real failure, not a preference — if you
+        want different behaviour, use the feature request template.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: The observed behaviour, as precisely as you can state it.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+      description: The behaviour the docs (GUIDE / README) describe, if they do.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: The commands or UI steps, in order, that lead to the failure.
+      placeholder: |
+        1. make ...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Which module/area, the relevant log lines (redact secrets), and anything else that narrows it down.
+    validations:
+      required: false

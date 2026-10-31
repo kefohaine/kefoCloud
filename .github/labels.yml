@@ -1,0 +1,81 @@
+# Label manifest — the repo's complete label set.
+#
+# GitHub does not read this file; it is the SOURCE the labels are created from
+# (Settings -> Labels, one row each) and the scope every label is applied by.
+# Keep it the only list: a label that is not here does not exist, and one that
+# is here carries a written description, because an undescribed label drifts
+# into a second meaning within a month.
+#
+# The taxonomy is prefixed: `type:` what kind of work, `priority:` how urgent,
+# `status:` where in the workflow, `area:` which part of the repo. The two
+# contributor labels keep GitHub's NATIVE names (`good first issue`,
+# `help wanted`) — unprefixed, because GitHub's community discovery only finds
+# those exact names.
+#
+# Colour coding is strict and deliberately narrow: every `type:` label is the
+# same light green so it blends into the issue list, every `priority:` label a
+# red/orange shade so a blocker is the only thing that pops, every `area:`
+# label the same neutral light grey so it never competes. `status:` gets quiet
+# blues/yellows — it changes as the work moves, so it must not read as urgency.
+#
+# Size discipline: 14 custom labels + 2 native. Do not grow this past ~20-30
+# total; a new `area:` label must replace an existing one, not sit beside it.
+
+- name: "type: bug"
+  color: "b5e8b0"
+  description: "Something is broken or behaves against the documented intent."
+
+- name: "type: feature"
+  color: "b5e8b0"
+  description: "New capability that does not exist yet."
+
+- name: "type: refactor"
+  color: "b5e8b0"
+  description: "Behaviour-preserving restructure: clarity, structure, performance, no new capability."
+
+- name: "type: docs"
+  color: "b5e8b0"
+  description: "Documentation only: README, docs/*.md, comments, templates."
+
+- name: "priority: critical"
+  color: "8b0000"
+  description: "Data loss, an exposed secret, a service offline, or a security hole. Fix before anything else."
+
+- name: "priority: high"
+  color: "d93f0b"
+  description: "Breaks a documented workflow or degrades a live service; planned for the current cycle."
+
+- name: "priority: low"
+  color: "ffb08a"
+  description: "Real but not urgent: an edge case, a small efficiency loss, a nice-to-have."
+
+- name: "status: triage"
+  color: "c5def5"
+  description: "Not yet assessed: no priority or area decided. Every new issue starts here."
+
+- name: "status: blocked"
+  color: "fef2c0"
+  description: "Cannot proceed until an external decision, credential or operator action lands. Name the blocker in the issue."
+
+- name: "status: in-progress"
+  color: "bfd4f2"
+  description: "A work-<N> branch or pull request is open for this issue."
+
+- name: "area: frontend"
+  color: "eeeeee"
+  description: "Web UI, pages, vhost content, anything the operator sees in a browser."
+
+- name: "area: backend"
+  color: "eeeeee"
+  description: "Compose stack, containers, host units, scripts, installer."
+
+- name: "area: api"
+  color: "eeeeee"
+  description: "Interfaces other software calls: occ, the Mailu CLI, module helpers, GitHub."
+
+- name: "area: security"
+  color: "eeeeee"
+  description: "Exposure, auth, TLS, firewall, secrets, identity, permissions."
+
+# GitHub's native labels — created by GitHub itself, never recreated here.
+# `good first issue` is purple (#7057ff), `help wanted` teal (#008672).

@@ -1,0 +1,45 @@
+name: Feature request
+description: A new capability, or a change to how something already works.
+title: "feat: "
+labels: ["type: feature", "status: triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A feature is accepted only with how it works, its benefits and its risks —
+        the same three sections the pull request must carry.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is missing
+      description: The problem this solves, or the workflow it unblocks.
+    validations:
+      required: true
+  - type: textarea
+    id: how
+    attributes:
+      label: How it would work
+      description: The behaviour and the surface (recipe, config, container, doc) you expect.
+    validations:
+      required: true
+  - type: textarea
+    id: benefits
+    attributes:
+      label: Benefits
+      description: What becomes possible or safer.
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks
+      description: What could break, the blast radius, and how it would be reverted.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What else was tried or rejected, and why.
+    validations:
+      required: false
