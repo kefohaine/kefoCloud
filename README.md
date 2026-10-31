@@ -41,7 +41,6 @@ Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Caddy, Vaultwarden, Uptime
 ## Documentation
 
 - `docs/SKELETON.md` — the skeleton: placeholder tokens, values and rendering
-- `docs/MODULES.md` — sandbox modules: try or backtest an app without touching the repo
 - `docs/GUIDE.md` — the operator manual: layout, recipes, per-service facts, gotchas
 - `docs/AGENTS.md` — agent operating rules
 - `docs/ISSUES.md` — open problems, planned ideas, and resolved history
