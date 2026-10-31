@@ -9,6 +9,13 @@
 # There is NO bypass: smoke itself refuses to run unless wizard.state records
 # finished=true, and this hook never writes state (the installer is its sole
 # writer). A host without a finished install therefore cannot push — accepted.
+#
+# MAIN IS UNREACHABLE. This hook refuses any push whose destination is
+# refs/heads/main (or master), and any non-branch ref at all: every change
+# lands on a `work-<N>` branch and reaches main only through a human-reviewed
+# pull request on GitHub (AGENTS rule 30). The check runs BEFORE the smoke
+# gate, so the refusal is unconditional — a broken edge must never mask, or be
+# blamed for, a main push.
 [ "${GIT_SPLIT_INTERNAL:-}" = 1 ] && exit 0   # a git-split replay: our own commits, stand down
 set -uo pipefail
 
@@ -22,6 +29,25 @@ repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 # 0 having checked nothing. Grep-able symptom: a push that publishes a bundle
 # or a non-GitHub identity and no pre-push line printed at all.
 refs=$(cat)
+
+# Main is write-once. A push is allowed only to a branch of this repo, never to
+# refs/heads/main: `make git-start` creates the work branch, `make git-pr`
+# pushes it and prints the compare URL, and a human merges it. Tags are refused
+# too (a pushed pre-rewrite tag re-exposes scrubbed identities on GitHub).
+while read -r _lref _lsha rref _rsha; do
+  [ -n "${rref:-}" ] || continue
+  case "$rref" in
+    refs/heads/main|refs/heads/master)
+      echo "pre-push: REFUSED — $rref cannot be updated: main only changes through a reviewed pull request."
+      echo "  Work on a work-<N> branch: make git-start MSG=\"<what you are doing>\" … make git-pr"
+      exit 1 ;;
+    refs/heads/*) ;;
+    *)
+      echo "pre-push: REFUSED — only branch pushes are allowed (destination was $rref)."
+      echo "  Every change lands on a work-<N> branch and reaches main via a reviewed pull request."
+      exit 1 ;;
+  esac
+done <<< "$refs"
 
 smoke="$repo/scripts/stack/smoke-vhosts.sh"
 [ -x "$smoke" ] || [ -f "$smoke" ] || exit 0
@@ -99,7 +125,7 @@ while read -r lref lsha rref rsha; do
   if ! git merge-base --is-ancestor "$rsha" "$lsha" 2>/dev/null; then
     echo "pre-push: WARNING — this push replaces existing remote history (not a fast-forward)."
     echo "  After it lands, github.com may 404/500 while git stays healthy (2026-09-03 lesson)."
-    echo "  Verify with: make gh-web-health   (remedy if red: an empty nudge commit re-triggers the rebuild)"
+    echo "  Verify with: make gh-web-health   (remedy if red: a real, meaningful commit — e.g. docs-only — re-triggers the rebuild; never an empty one, AGENTS rule 27)"
   fi
 done <<< "$refs"
 
