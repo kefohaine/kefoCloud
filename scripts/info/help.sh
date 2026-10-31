@@ -63,6 +63,7 @@ EOF
 
   sec "git"
   rows <<'EOF'
+make git-issue TITLE=<s> LABEL=<l> [BODY=<file>]|file an issue in the tracker before the change — LABEL from .github/labels.yml (type: required, status: triage added), body from BODY or stdin; then make git-start and make git-pr ISSUE=<n>
 make git-start|create + switch to the next temp-<N> branch off a freshly pulled main — every change starts here (main is never pushed)
 make git-branch [NAME=<b>]|same as git-start, or create + switch to NAME (BASE=<b> bases it on another branch)
 make git-switch BRANCH=<b>|switch to an existing branch — local, or origin's (tracked on the way in)
