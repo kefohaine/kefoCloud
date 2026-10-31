@@ -123,6 +123,58 @@ require_clean() {
   return 1
 }
 
+# Open the pull request through the GitHub REST API with GITHUB_TOKEN (or
+# GH_TOKEN) — the path for a host without `gh`. Prints the pull request URL and
+# returns 0 when one is open (created now, or already open for the same head);
+# returns 1 and explains on stderr when the API refused. The token is the
+# operator's: nothing here reads, stores or prints it.
+open_pr_api() {
+  local slug="$1" head="$2" base="$3" title="$4"
+  TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}" SLUG="$slug" HEAD_BRANCH="$head" \
+  BASE_BRANCH="$base" PR_TITLE="$title" PR_BODY="${5:-}" python3 - <<'PY'
+import json, os, sys, urllib.error, urllib.request
+
+token = os.environ.get("TOKEN", "")
+slug, head = os.environ["SLUG"], os.environ["HEAD_BRANCH"]
+base, title = os.environ["BASE_BRANCH"], os.environ["PR_TITLE"]
+body = os.environ.get("PR_BODY", "")
+api = "https://api.github.com/repos/%s" % slug
+
+
+def call(method, path, payload=None):
+    data = json.dumps(payload).encode() if payload is not None else None
+    req = urllib.request.Request(api + path, data=data, method=method)
+    req.add_header("Authorization", "Bearer " + token)
+    req.add_header("Accept", "application/vnd.github+json")
+    if data is not None:
+        req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req) as r:
+            return r.status, json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, json.loads(e.read() or b"{}")
+        except ValueError:
+            return e.code, {}
+
+
+status, res = call("POST", "/pulls",
+                   {"title": title, "head": head, "base": base, "body": body})
+if status in (200, 201):
+    print(res.get("html_url", ""))
+    sys.exit(0)
+if status == 422:  # a pull request for this head is already open
+    owner = slug.split("/")[0]
+    st, prs = call("GET", "/pulls?state=open&head=%s:%s" % (owner, head))
+    if st == 200 and prs:
+        print(prs[0].get("html_url", ""))
+        sys.exit(0)
+print("%s (HTTP %s)" % (res.get("message", "the API refused the request"), status),
+      file=sys.stderr)
+sys.exit(1)
+PY
+}
+
 # ─────────────────────────────── start ────────────────────────────────────
 # Create + switch to a branch off a freshly pulled base. Bare `start` picks the
 # next free temp-<N>; --name picks an explicit branch (same verb, so `make
@@ -402,18 +454,27 @@ cmd_submit() {
   echo "  Commit(s) in this pull request:"
   G log --format='  %h %s' "$range"
 
-  # Open the PR when an authenticated gh exists; otherwise hand the human the
-  # compare URL and a ready body. Either way the merge is the human's.
-  if [ "$DRY" != 1 ] && command -v gh >/dev/null 2>&1 \
-     && gh auth status >/dev/null 2>&1; then
+  # Open the PR from here when a credential exists — an authenticated `gh`, or a
+  # GITHUB_TOKEN/GH_TOKEN for the REST API on a host without gh. Otherwise hand
+  # the human the compare URL and a ready body. Either way the merge is theirs.
+  local pr_url=""
+  if [ "$DRY" = 1 ]; then
+    printf '  would run: gh pr create --base %s --head %s --title %q --body-file - (or POST /repos/%s/pulls with GITHUB_TOKEN)\n' "$BASE" "$b" "$title" "$or"
+  elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     if printf '%s\n' "$body" | gh pr create --base "$BASE" --head "$b" --title "$title" --body-file -; then
       echo ""
       echo "  Pull request opened — a human reviews and merges it. The agent stops here."
       return 0
     fi
     warn "gh could not open the pull request — falling back to the compare URL"
-  elif [ "$DRY" = 1 ]; then
-    printf '  would run: gh pr create --base %s --head %s --title %q --body-file -\n' "$BASE" "$b" "$title"
+  elif [ -n "${GITHUB_TOKEN:-${GH_TOKEN:-}}" ]; then
+    if pr_url="$(open_pr_api "$or" "$b" "$BASE" "$title" "$body")" && [ -n "$pr_url" ]; then
+      echo ""
+      printf '  Pull request opened: %s\n' "$pr_url"
+      echo "  A human reviews and merges it. The agent stops here."
+      return 0
+    fi
+    warn "the GitHub API could not open the pull request — falling back to the compare URL"
   fi
 
   echo ""
