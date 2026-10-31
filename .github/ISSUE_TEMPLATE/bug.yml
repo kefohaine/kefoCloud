@@ -19,7 +19,7 @@ body:
     id: expected
     attributes:
       label: What you expected instead
-      description: The behaviour the docs (GUIDE / README) describe, if they do.
+      description: The behaviour the docs (MANUAL / WHAT / README) describe, if they do.
     validations:
       required: true
   - type: textarea
