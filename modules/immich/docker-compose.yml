@@ -4,12 +4,14 @@ services:
     container_name: immich-server
     restart: unless-stopped
 
-    # Hard RAM caps (no container swap). The machine-learning container is
+    # Hard RAM caps (no container swap), 2 GB: doubled from 1 GB because the
+    # thumbnail/metadata workers were being OOM-killed under import load.
+    # The machine-learning container is
     # deliberately NOT deployed: this host has 2 vCPU and no GPU, so ML would
     # take the largest share of RAM for a feature that runs at a crawl. Smart
     # search / facial recognition stay off (IMMICH_MACHINE_LEARNING_ENABLED).
-    mem_limit: 1024m
-    memswap_limit: 1024m
+    mem_limit: 2048m
+    memswap_limit: 2048m
 
     environment:
       TZ: ${TIMEZONE:-UTC}
