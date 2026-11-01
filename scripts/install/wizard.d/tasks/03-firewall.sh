@@ -19,13 +19,17 @@ task_firewall() {
   fi
   ufw allow 80/tcp >/dev/null 2>&1
   ufw allow 443/tcp >/dev/null 2>&1
-  # Self-hosted mail (Mailu): SMTP + submission + IMAPS.
-  if [ "${MOD_MAIL:-false}" = "true" ]; then
-    ufw allow 25/tcp >/dev/null 2>&1
-    ufw allow 465/tcp >/dev/null 2>&1
-    ufw allow 587/tcp >/dev/null 2>&1
-    ufw allow 993/tcp >/dev/null 2>&1
-  fi
+  # Self-hosted mail (Mailu): SMTP + submission + IMAPS. Converges both ways —
+  # a module turned OFF in repair loses the ports, so the box does not keep a
+  # public mail door open for a stack that no longer exists.
+  local p
+  for p in 25 465 587 993; do
+    if [ "${MOD_MAIL:-false}" = "true" ]; then
+      ufw allow "$p/tcp" >/dev/null 2>&1
+    else
+      ufw --force delete allow "$p/tcp" >/dev/null 2>&1 || true
+    fi
+  done
   # Default-deny incoming, set explicitly: some base images ship ufw's
   # DEFAULT_INPUT_POLICY as "ACCEPT" (this one did), and with that `ufw enable`
   # plus the allow rules above restrict nothing — every port, 22 included, stays
