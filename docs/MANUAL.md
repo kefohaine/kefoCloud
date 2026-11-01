@@ -347,6 +347,7 @@ certificates and `make smoke`.
 | Is every door serving its app? | `make smoke` (also asserts the git hooks are installed) |
 | Pull + recreate every deployed unit, edge last | `make update` |
 | Recreate / restart / stop / log one container | `make dok-recreate-<ctn>`, `dok-restart-`, `dok-stop-`, `dok-logs-` (`-all` for every) |
+| Stop or recreate the whole stack | `make dok-stop-all CONFIRM=yes`, `make dok-recreate-all CONFIRM=yes` — both refuse without `CONFIRM=yes` |
 | Restart / log one host unit | `make systemd-restart-<svc>`, `systemd-log-<svc>` |
 | Config in the repo → live | `make render`, `make install-config`, `make deploy` |
 | Backup, restore | `make backup`, `make kopia-status`, `make kopia-snapshots` |
