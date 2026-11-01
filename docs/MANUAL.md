@@ -377,7 +377,9 @@ Issues live **only** in the repository's Issues tab — created, labelled, linke
 
 `.github/workflows/validate.yml` runs the same three checks on every branch push and pull request — `bash -n` over every tracked shell script, `scripts/info/prose-audit.sh` and `scripts/info/git-audit.sh origin/main..HEAD` — read-only, so a commit made in the web editor or from another clone is caught before review.
 
-**Enforcement on GitHub is the operator's to apply once** (it cannot be stored in the repo): Settings → Rulesets → New branch ruleset targeting `main` with *Require a pull request before merging* (0 required approvals is fine — the review is human, the gate is the PR), *Block force pushes*, *Restrict deletions*, and no bypass actors; the same effect via classic branch protection is *Require a pull request before merging* + *Do not allow bypassing the above settings* + *Restrict who can push*. Auto-merge stays off, because the merge is the human decision.
+**Enforcement on GitHub is the repository's "Base Ruleset"** (Settings → Rulesets; it cannot be stored in the repo). It targets the default branch, is active and has **no bypass actors**: *Require a pull request before merging* with 0 required approvals (the review is the human merge, the gate is the PR), rebase merge only, *Require linear history*, *Require conversation resolution*, *Require status checks* naming the `validate` workflow, *Block force pushes*, *Restrict deletions*, and Copilot code review on every push. Auto-merge stays off, because the merge is the human decision.
+
+The ruleset must not carry the *Restrict updates* or *Restrict creations* rules alongside "no bypass actors": a pull-request merge **is** an update of the default branch, so that pair leaves every PR at `mergeStateStatus: BLOCKED` — green checks, zero requested approvals, no stated reason — and nothing can be merged. The `pull_request` rule already refuses direct pushes, so those two add only a lockout (lesson 2026-11-01).
 
 ## Releases, tags and milestones
 
