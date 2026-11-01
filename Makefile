@@ -1,7 +1,7 @@
 .RECIPEPREFIX = >
 # Use bash explicitly so SHELLFLAGS go to bash, not /bin/sh (dash on Debian).
 # Without this, `dash -eu -c '<recipe>'` runs the recipe with `set -eu` and
-# bites any line that references an unset variable — see docs/MANUAL.md
+# bites any line that references an unset variable
 # "Operational gotchas" for the symptom and the fix.
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -c
@@ -75,7 +75,7 @@ $(foreach m,$(MODULES),$(foreach c,$(MODULE_CONTAINERS_$(m)),$(eval COMPOSE_FILE
 COMPOSE_FILE_caddy := modules/caddy/docker-compose.yml
 # Nextcloud ships TWO compose files in one project dir (app + PostgreSQL). One
 # container's action must run BOTH — a single file treats the other file's
-# containers as orphans and deletes them (see docs/MANUAL.md's Nextcloud DB ordering note: SQLSTATE[08006]).
+# containers as orphans and deletes them (SQLSTATE[08006]).
 NEXTCLOUD_STACK := $(shell awk '$$1=="cloud" {for(i=4;i<=NF;i++) printf "%s ", $$i}' $(REPO)/config/modules.conf 2>/dev/null)
 
 # Helper: $(compose-file-of $1) returns the absolute compose file path for
@@ -348,7 +348,7 @@ mail-gen:
 
 # Disposable forwarding alias: random 7-digit local part forwarding to TO
 # (see scripts/modules/mail-alias-gen.sh). No mailbox is consumed; same-domain
-# targets are refused by the script (see docs/MANUAL.md).
+# targets are refused by the script.
 mail-gen-alias:
 >@[ -n "$(TO)" ] || { scripts/lib/mklog error "usage: make mail-gen-alias TO=target@example.com"; exit 1; }
 >@bash scripts/modules/mail-alias-gen.sh "$(TO)"
