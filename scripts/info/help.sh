@@ -64,7 +64,6 @@ EOF
   sec "git"
   rows <<'EOF'
 make git-issue TITLE=<s> LABEL=<l> [BODY=<file>]|file an issue in the tracker before the change — LABEL from .github/labels.yml (type: required, status: triage added), body from BODY or stdin; then make git-start and make git-pr ISSUE=<n>
-make git-import-issues [ARGS=--dry-run]|one-time: create the labels from .github/labels.yml and open the seed issues from .github/issues/import.jsonl (gh auth login, or GITHUB_TOKEN); idempotent by title
 make git-start|create + switch to the next temp-<N> branch off a freshly pulled main — every change starts here (main is never pushed)
 make git-branch [NAME=<b>]|same as git-start, or create + switch to NAME (BASE=<b> bases it on another branch)
 make git-switch BRANCH=<b>|switch to an existing branch — local, or origin's (tracked on the way in)
@@ -76,7 +75,7 @@ make git-pull|pull remote changes
 make git-add|stage every change
 make git-com MSG=<sentence>|commit staged changes — single-sentence MSG only
 make git-audit RANGE=<a..b>|monitor the commit-hygiene rules (26 one change per commit, 10 revert recipe) — default: what a push would publish; the pre-push hook enforces it
-make prose-audit|monitor the prose rules (31 docs path, size, timing, foreign host, plan) in every tracked file — the pre-push hook and make git-pr enforce it
+make prose-audit|monitor the prose rules (31 docs path, size, timing, foreign host, plan; an open task in a doc, which belongs to the Issues tab) — the pre-push hook and make git-pr enforce it
 make git-split RANGE=<a..b>|rewrite a local range to satisfy those rules — auto-split bundles per unit (one folder + one subfolder), auto-SHA the Revert: lines; ARGS=--dry-run to preview; refuses published commits — the hooks run it for you
 make git-push|push the current temp branch to the remote (main is refused by the pre-push hook)
 make git-force-push BRANCH=<b>|force-push a rewritten branch (--force-with-lease only; BRANCH required — never clobbers another's commits)

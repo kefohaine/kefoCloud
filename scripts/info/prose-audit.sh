@@ -14,14 +14,21 @@
 #               not the machine reading it.
 #   HOST        another box of the operator's, or a live address of one (public
 #               or tailnet IPv4 literals) — instance data, not config.
-#   FUTURE      a plan or a guess ("future DB host", "planned", "TODO",
-#               "eventually") — the repo describes what runs now.
+#   FUTURE      a plan or a guess ("future DB host", "planned", "eventually") —
+#               the repo describes what runs now.
+#   PENDING     an outstanding task, an open question or a live state
+#               ("TODO", "TBD", "pending", "awaiting", "- [ ]") — those belong to
+#               the Issues tab, where a human can close them; a doc that carries
+#               one has no owner and never gets finished.
 #
-# Scope: every tracked file except markdown (docs carry the facts, and this
-# audit is not a spell-check for prose), the gitignored `data/` tree, and
-# binaries. Two exemptions, both deliberate: `recipes/*.yaml` — pointing an
-# agent at the doc that holds the procedure is the recipe's whole job — and the
-# one `make migrate` line that prints the runbook.
+# Scope: every tracked file, in two passes. Comments and strings are checked for
+# all four kinds; markdown is checked for PENDING only (docs carry the facts, so
+# a size or a path there is the point). The gitignored `data/` tree and binaries
+# are skipped. Exemptions, all deliberate: `recipes/*.yaml` — pointing an agent
+# at the doc that holds the procedure is the recipe's whole job — the one
+# `make migrate` line that prints the runbook, this file (it quotes the shapes),
+# `docs/AGENTS.md` (states the rule), and the issue/PR templates (a checklist is
+# what a template is).
 #
 # Usage: scripts/info/prose-audit.sh [file ...]   (default: the whole tree)
 #   PROSE_AUDIT_OVERRIDE=1  report and exit 0
@@ -101,6 +108,26 @@ for f in "${files[@]}"; do
         is_private_ip "$ip" && continue
         finding HOST "$f" "$n" "names the live address $ip"; fails=$((fails + 1))
       done < <(grep -oE '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b' <<<"$line" | sort -u)
+    fi
+  done <"$f"
+done
+
+# Second pass: markdown. A doc describes the steady state; anything outstanding
+# is an issue, not a paragraph.
+for f in $(git ls-files '*.md'); do
+  case "$f" in
+    docs/AGENTS.md|.github/pull_request_template.md|.github/ISSUE_TEMPLATE/*) continue ;;
+  esac
+  n=0
+  while IFS= read -r line; do
+    n=$((n + 1))
+    # A task shape, not the word: "an error is pending" is behaviour, "Pending:"
+    # is somebody's open item.
+    if [[ $line =~ (^|[^[:alnum:]_])(TODO|TBD|FIXME|WIP|awaiting)([^[:alnum:]_]|$) ]] \
+       || [[ $line =~ [Pp]ending:[[:space:]] ]] \
+       || [[ $line =~ pending[[:space:]]+(operator|task|work|decision|item|action) ]] \
+       || [[ $line =~ ^[[:space:]]*-[[:space:]]\[[[:space:]]\] ]]; then
+      finding PENDING "$f" "$n" "records an outstanding task or state"; fails=$((fails + 1))
     fi
   done <"$f"
 done
