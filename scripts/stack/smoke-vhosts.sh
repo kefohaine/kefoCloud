@@ -153,30 +153,17 @@ check_tn() {
 # `header` directive appends to upstream values (a same-field delete+set even
 # ends up deleted), so the fix is header_down at the proxy + a set-only
 # snippet. A regression (missing or duplicated XFO/XCTO/HSTS — the
-# scan.nextcloud.com flags) must fail the smoke and block the push.
-# A fifth argument of `framed` marks a vhost that one sibling origin must be
-# allowed to frame (mail, embedded by the Nextcloud mail_roundcube app): there
-# X-Frame-Options must be ABSENT and the anti-framing property must instead be
-# carried by a CSP frame-ancestors naming nextcloud.$DOMAIN. Requiring XFO=0 keeps
-# the check honest — a stale SAMEORIGIN there breaks the iframe, and dropping
-# the header without the CSP would silently un-frame-bust the host.
+# header scans flag) must fail the smoke and block the push.
 check_sec_headers() {
-  local name="$1" host="$2" path="${3:-/}" desc="${4:-}" framed="${5:-}"
+  local name="$1" host="$2" path="${3:-/}" desc="${4:-}"
   local args=(--resolve "$host:443:127.0.0.1" -sI --max-time 12)
-  local hdrs xfo_want xfo xcto hsts csp=0
+  local hdrs xfo xcto hsts
   hdrs=$(curl "${args[@]}" "https://$host$path")
   xfo=$(grep -icE '^x-frame-options: SAMEORIGIN' <<<"$hdrs")
   xcto=$(grep -icE '^x-content-type-options: nosniff' <<<"$hdrs")
   hsts=$(grep -icE '^strict-transport-security: max-age=31536000' <<<"$hdrs")
-  if [ "$framed" = framed ]; then
-    xfo_want=0
-    csp=$(grep -icE "^content-security-policy: .*frame-ancestors 'self' https://nextcloud\.$DOMAIN" <<<"$hdrs")
-  else
-    xfo_want=1
-    csp=1
-  fi
-  if [ "$xfo" != "$xfo_want" ] || [ "$xcto" != 1 ] || [ "$hsts" != 1 ] || [ "$csp" != 1 ]; then
-    say "FAIL $name sec-headers: xfo=$xfo(want $xfo_want) xcto=$xcto hsts=$hsts frame-ancestors=$csp (want exactly 1 each) — https://$host$path"; bad
+  if [ "$xfo" != 1 ] || [ "$xcto" != 1 ] || [ "$hsts" != 1 ]; then
+    say "FAIL $name sec-headers: xfo=$xfo xcto=$xcto hsts=$hsts (want exactly 1 each) — https://$host$path"; bad
   else
     say "ok   $name sec-headers${desc:+ — }$desc"
   fi
@@ -232,8 +219,8 @@ for f in "$ROOT/data/pages/www"/*.html; do
   check "www-$pg" "www.$DOMAIN" "/$pg" "200 301 302 307 308" html "$pg page"
 done
 check_tls "www.$DOMAIN"
-# chat.$DOMAIN belongs to Snikket (module: xmpp) and is asserted in the XMPP
-# section below, with its own certificate and its groups/share names.
+# chat.$DOMAIN and matrix.$DOMAIN belong to the chat module and are asserted in
+# its own section below.
 
 
 # ttyd.$DOMAIN is deliberately NOT in smoke: it is tailnet-only and its LE
@@ -255,119 +242,36 @@ check_ctns ocis ocis
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Module: xmpp — Snikket. chat.$DOMAIN is its web door (plus groups.chat/
-# share.chat, the server's own component names); XMPP 5222/5269, TURN
-# 3478/3479 + 5349/5350, proxy65 5000 and the relay range are HOST-NETWORKED and
-# never touch the edge, so the listeners are asserted directly.
+# Module: chat — Matrix (Synapse + Element + PostgreSQL). chat.$DOMAIN serves
+# Element (a static browser app), matrix.$DOMAIN serves the homeserver's
+# client-server API. Both are public: Element is proxied, Synapse is DNS-only.
 # ─────────────────────────────────────────────────────────────────────────────
-hdr xmpp "XMPP — Snikket (module: xmpp) · chat.$DOMAIN"
-check xmpp "chat.$DOMAIN" "/" "200 301 302 307 308" html "Snikket portal answers"
+hdr chat "Chat — Matrix (module: chat) · chat.$DOMAIN + matrix.$DOMAIN"
+check chat "chat.$DOMAIN" "/" "200 301 302 307 308" html "Element answers"
+check_sec_headers chat "chat.$DOMAIN" "/" "one of each"
 check_tls "chat.$DOMAIN"
-check_ctns xmpp snikket-server snikket-proxy snikket-portal snikket-certs
-# Capture the listener table first: `ss | grep -q` under `set -o pipefail`
-# reports the SIGPIPE ss gets when grep exits at the first match as a failed
-# pipeline (the port is listening, yet the check fails).
-ltn=$(ss -ltn 2>/dev/null)
-lun=$(ss -lun 2>/dev/null)
-for _sp in 5222 5269; do
-  if grep -q ":$_sp " <<<"$ltn"; then
-    say "ok   xmpp-port — listening on $_sp/tcp"
-  else
-    say "FAIL xmpp-port: nothing listening on $_sp/tcp (prosody is down?)"; bad
-  fi
-done
-if grep -q ':3478 ' <<<"$lun"; then
-  say "ok   xmpp-turn — coturn listening on 3478/udp"
-else
-  say "FAIL xmpp-turn: coturn not listening on 3478/udp (is TURN enabled in the module .env?)"; bad
-fi
+# /_matrix/client/versions is the one route every client calls first; a bare
+# `respond "ok"` stub answers 200 text/plain and fails this html-typed check.
+check matrix-api "matrix.$DOMAIN" "/_matrix/client/versions" "200" "" "Synapse client API answers"
+check_sec_headers matrix "matrix.$DOMAIN" "/_matrix/client/versions" "one of each"
+check_tls "matrix.$DOMAIN"
+check_ctns chat matrix-synapse matrix-element matrix-db
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Module: cloud — Nextcloud (FPM app + PostgreSQL + Redis) + Talk HPB/TURN.
-# The stack's door is nextcloud.$DOMAIN (tailnet-only); cloud.$DOMAIN belongs to
-# the ocis module above.
+# Module: kopia — backup server. kopia.$DOMAIN is TAILNET-ONLY: both halves are
+# asserted (a public source gets 403, a tailnet source gets the UI), so a
+# half-applied change fails here instead of passing on one side.
 # ─────────────────────────────────────────────────────────────────────────────
-hdr cloud "Cloud — Nextcloud + Talk (module: cloud) · nextcloud.$DOMAIN (tailnet-only)"
-# `docker compose down` (operator decision 2026-10-29: ownCloud took over
-# cloud.$DOMAIN) REMOVES the containers; a crash leaves an exited one behind.
-# Only the absent case is a deliberate shutdown — it is reported and skipped so
-# a down-by-choice stack does not block every push, while a crash still fails.
-nc_up=1
-if [ -z "$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -x nextcloud)" ]; then
-  nc_up=0
-  say "ok   cloud: Nextcloud stack is down by operator choice (containers removed, data kept) — door nextcloud.$DOMAIN stays tailnet-only; service checks skipped"
-else
+hdr kopia "Backup — Kopia (module: kopia) · kopia.$DOMAIN (tailnet-only)"
 if [ -z "$TS_IP" ]; then
-  say "FAIL cloud: no Tailscale IPv4 — cannot probe the tailnet-only door"; bad
+  say "FAIL kopia: no Tailscale IPv4 — cannot probe the tailnet-only door"; bad
 else
-  check_tn cloud "nextcloud.$DOMAIN" "/" "200 301 302 307 308" html "Nextcloud answers on the tailnet"
+  check_tn kopia "kopia.$DOMAIN" "/" "200 301 302 307 308" html "Kopia UI answers on the tailnet"
 fi
-check cloud-public "nextcloud.$DOMAIN" "/" "403" "" "public sources are refused"
-check_sec_headers cloud "nextcloud.$DOMAIN" "/" "one of each"
-check_tls "nextcloud.$DOMAIN"
-# Web updater: must be reachable (not Caddy's "not found") and actually present.
-check updater "nextcloud.$DOMAIN" "/updater/" "200" html "Web updater reachable"
-
-# Talk is optional (wizard.state VIDEO_CALLING); skip its checks when off.
-if [ "$(state_get VIDEO_CALLING)" != "false" ]; then
-  # talk.$DOMAIN — Talk HPB + TURN. The backend API must answer with the
-  # signaling server's Welcome JSON and the client websocket route must reject
-  # an unauthenticated handshake (400/426/101). A bare `respond "ok"` stub
-  # returns 200 on both and fails here — the ok-stub guard for Talk. Probe
-  # /signaling/spreed, the path the Talk client actually upgrades on (the app
-  # appends /spreed to the registered signaling URL); probing bare /signaling
-  # validated a route no client uses.
-  check talk-root "talk.$DOMAIN" "/" "200" "" "Talk signaling served"
-  talk_welcome=$(curl -s --max-time 12 --resolve "talk.$DOMAIN:443:127.0.0.1" "https://talk.$DOMAIN/signaling/api/v1/welcome" 2>/dev/null)
-  if ! echo "$talk_welcome" | grep -q '"Welcome"'; then
-    say "FAIL talk-signaling: /signaling/api/v1/welcome is not the signaling server: $(echo "$talk_welcome" | head -c 80)"; bad
-  else
-    say "ok   talk-signaling — HPB backend API answers"
-  fi
-  talk_ws=$(curl -s -o /dev/null -w '%{http_code}' --http1.1 --max-time 12 --resolve "talk.$DOMAIN:443:127.0.0.1" \
-    -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
-    "https://talk.$DOMAIN/signaling/spreed" 2>/dev/null)
-  if [ "$talk_ws" != "400" ] && [ "$talk_ws" != "426" ] && [ "$talk_ws" != "101" ]; then
-    say "FAIL talk-signaling: websocket handshake got HTTP $talk_ws (want 400/426/101 — signaling server must answer)"; bad
-  else
-    say "ok   talk-signaling — websocket endpoint answers ($talk_ws)"
-  fi
-  check_tls "talk.$DOMAIN"
-
-  # coturn listeners: TURN (udp 3478) + TURNS (tcp 5349) must be bound. A re-run
-  # recreates the containers and smoke runs right after, so the relay may still be
-  # binding its ports — poll briefly (30 s) before failing, or a working install
-  # reports talk-ports on every re-run.
-  coturn_ok=""
-  for _ in $(seq 1 15); do
-    lun_now=$(ss -lun 2>/dev/null); ltn_now=$(ss -ltn 2>/dev/null)
-    if grep -q ':3478 ' <<<"$lun_now" && grep -q ':5349 ' <<<"$ltn_now"; then
-      coturn_ok=1; break
-    fi
-    sleep 2
-  done
-  if [ -n "$coturn_ok" ]; then
-    say "ok   talk-ports — coturn listening on 3478/udp + 5349/tcp"
-  else
-    say "FAIL talk-ports: coturn not listening on 3478/udp + 5349/tcp (is talk-relay up?)"; bad
-  fi
-
-fi
-
-nc_status="$(docker exec -u www-data nextcloud php occ status --output=json 2>/dev/null)"
-if ! grep -q '"installed":true' <<<"$nc_status" || grep -q '"maintenance":true' <<<"$nc_status"; then
-  say "FAIL nc-status: Nextcloud not installed or stuck in maintenance mode"; bad
-else
-  say "ok   nc-status — Nextcloud installed, out of maintenance mode"
-fi
-
-if [ "$(state_get VIDEO_CALLING)" != "false" ]; then
-  check_ctns cloud nextcloud postgresql redis talk-hpb talk-relay
-else
-  check_ctns cloud nextcloud postgresql redis
-fi
-fi
+check kopia-public "kopia.$DOMAIN" "/" "403" "" "public sources are refused"
+check_tls "kopia.$DOMAIN"
+check_ctns kopia kopia
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -444,7 +348,7 @@ hdr mail "Mail — Mailu platform + Roundcube webmail (module: mail)"
 # every source outside 100.64.0.0/10. Both halves are asserted, so a
 # half-applied change fails here instead of passing.
 check mail "mail.$DOMAIN" "/" "200 301 302 307 308" html "Roundcube webmail"
-check_sec_headers mail "mail.$DOMAIN" "/" "no XFO, CSP frame-ancestors for cloud" framed
+check_sec_headers mail "mail.$DOMAIN" "/" "one of each"
 check_tls "mail.$DOMAIN"
 if [ -z "$TS_IP" ]; then
   say "FAIL mailu: no Tailscale IPv4 — cannot probe a tailnet-only door"; bad
@@ -454,22 +358,6 @@ fi
 check mailu-public "mailu.$DOMAIN" "/" "403" "" "public sources are refused"
 check_sec_headers mailu "mailu.$DOMAIN" "/" "one of each"
 check_tls "mailu.$DOMAIN"
-# Same-origin webmail path the mail_roundcube app embeds (nextcloud.caddy); the
-# app reads the iframe DOM, so a cross-origin mail.$DOMAIN fails regardless.
-# Skipped while the Nextcloud stack is brought down (no app to embed it).
-if mod_in cloud && [ "${nc_up:-0}" = 1 ]; then
-  check_tn rc-cloud "nextcloud.$DOMAIN" "/roundcube/" "200" html "Roundcube on the Nextcloud door (same-origin iframe)"
-  # Roundcube must generate its URLs under the prefix (request_path comes from
-  # X-Forwarded-Prefix); a bare `action="/?` means the form would leave the route.
-  # Capture the body first: `curl | grep -q` under `set -o pipefail` reports the
-  # SIGPIPE curl gets when grep exits at the first match as a failed pipeline.
-  rc_body=$(curl -s --max-time 12 --interface "$TS_IP" --resolve "nextcloud.$DOMAIN:443:$TS_IP" "https://nextcloud.$DOMAIN/roundcube/")
-  if grep -q 'action="/roundcube/' <<<"$rc_body"; then
-    say "ok   rc-cloud-prefix — Roundcube keeps the /roundcube/ base path"
-  else
-    say "FAIL rc-cloud-prefix: /roundcube/ does not keep its prefix in generated URLs"; bad
-  fi
-fi
 
 # SMTP 25/587 + IMAPS 993 must answer.
 for port in 25 587; do
@@ -520,15 +408,6 @@ else
   say "ok   ufw — firewall active"
 fi
 
-# NFS datadirectory: only asserted when fstab expects the mount (no fstab
-# entry = storage not onboarded; the check then passes vacuously).
-if grep -q 'cloud/users' /etc/fstab 2>/dev/null; then
-  if ! findmnt -n $ROOT/data/cloud/users >/dev/null 2>&1; then
-    say "FAIL nfs-datadir: fstab expects cloud/users but it is not mounted"; bad
-  else
-    say "ok   nfs-datadir — datadirectory mounted"
-  fi
-fi
 
 disk_pcent="$(df --output=pcent / 2>/dev/null | tail -1 | tr -dc '0-9')"
 if [ -n "$disk_pcent" ] && [ "$disk_pcent" -ge 90 ]; then
