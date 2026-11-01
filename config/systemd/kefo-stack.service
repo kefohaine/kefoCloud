@@ -1,6 +1,5 @@
 [Unit]
 Description={{HOSTNAME}} stack — every deployed compose unit up on boot
-Documentation=file://{{REPO_DIR}}/docs/MANUAL.md
 After=docker.service network-online.target tailscaled.service remote-fs.target
 Wants=network-online.target
 Requires=docker.service
