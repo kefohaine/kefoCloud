@@ -447,6 +447,11 @@ cmd_submit() {
     error "the branch breaks the commit-hygiene rules — run 'make git-split' and push again"
     return 1
   fi
+  if ! bash "$REPO/scripts/info/prose-audit.sh" >/dev/null; then
+    bash "$REPO/scripts/info/prose-audit.sh" | sed 's/^/  /'
+    error "the tree breaks the prose rules (AGENTS rule 31) — make prose-audit"
+    return 1
+  fi
   or="$(owner_repo)" || { error "cannot read the origin URL"; return 1; }
   url="https://github.com/$or/compare/$BASE...$b?expand=1"
 
