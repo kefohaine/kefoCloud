@@ -19,7 +19,7 @@
 #     browser preflights OPTIONS and then PUTs to the slot URL, which lands on
 #     /upload/* — prosody answers BOSH/WS preflights itself, the edge covers
 #     the upload component;
-#   * a body limit above the server's own 100MB + 16 bytes file-share ceiling.
+#   * a body limit above the server's own file-share ceiling.
 # TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
 
 http://chat.{{DOMAIN}}, http://groups.chat.{{DOMAIN}}, http://share.chat.{{DOMAIN}} {
