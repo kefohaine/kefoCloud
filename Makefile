@@ -1246,7 +1246,7 @@ nc-logs:
 .PHONY: migrate
 
 migrate:
->@cat $(REPO)/docs/MIGRATE.md
+>@awk '/^## Migration/{f=1} f&&/^## Commands/{exit} f' $(REPO)/docs/MANUAL.md
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Git
