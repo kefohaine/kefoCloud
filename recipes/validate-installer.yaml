@@ -25,8 +25,8 @@ parameters:
 prompt: |
   Validate installer/script changes, target: {{ target }}.
 
-  Read docs/MANUAL.md "Everything about scripts" (house style, error framework,
-  module awareness) and docs/AGENTS.md rule 12 (stay global).
+  Read docs/MANUAL.md (house style, error framework) and docs/AGENTS.md rule 12
+  (stay global); a script's own neighbourhood is its house style.
 
   For each script in scope:
   - bash -n <script> (syntax)
