@@ -6,13 +6,13 @@
 # • Removes Cloudflare DNS records (A, CNAME, TXT for domain and services)
 # • Revokes Let's Encrypt certificates via certbot cleanup
 # • Clears instance state and logs
-# • Disables modules (cloud, vault, mail, monitor) and cleans up configs
+# • Disables modules (every module config/modules.conf declares) and cleans up configs
 # • Optionally removes GitHub remote authentication keys
 # homelab uninstall.sh — the exact opposite of the installer, in the same style.
 #
-# Reverse-onboarding: takes the deployment apart module by module (cloud,
-# vault, mail, monitor — none removed unless the operator answers yes per
-# module), then optionally the edge
+# Reverse-onboarding: takes the deployment apart module by module (every
+# module config/modules.conf declares — none removed unless the operator
+# answers yes per module), then optionally the edge
 # (Caddy + caddy_data), the host services (goose, ttyd, dnsmasq, cron,
 # fail2ban, the stack's ufw rules), the installed packages (docker, …),
 # the 'root' user, and the tailscale membership (always LAST, so the session
@@ -111,8 +111,9 @@ cat <<'EOF'
  ╚══╝╚══╝  ╚═════╝ ╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝
 
   One-shot teardown for the homelab stack: reverses the installer
-  step by step — modules first (cloud, vault, mail, monitor; nothing removed
-  unless the operator answers yes one by one), then the edge, the host services, the
+  step by step — modules first (every module config/modules.conf declares;
+  nothing removed unless the operator answers yes one by one), then the edge,
+  the host services, the
   installed packages, the operator user, and the tailnet membership
   (last). Destructive by design: no prompt has a default — only the words
   yes/no are accepted — and data is never touched without an explicit
@@ -180,8 +181,18 @@ done
 unset _a
 
 # The stack scope, used by BOTH the removal and the verification so a check can
-# never disagree with what was removed.
-STACK_MODULES="ocis chat kopia vault mail monitor"
+# never disagree with what was removed. DERIVED from the catalog
+# (config/modules.conf) — the same declaration the installer, `make fetch` and
+# the smoke test read — never a hand-kept list: the hardcoded one here missed
+# home, blog and photos, so their containers survived a teardown and a module
+# turned off in repair kept serving.
+MODULES_CONF="$REPO/config/modules.conf"
+STACK_MODULES="$(awk '!/^#/ && NF>=3 {printf "%s ", $1}' "$MODULES_CONF" 2>/dev/null)"
+module_dir_of()    { awk -v m="$1" '!/^#/ && $1==m {print $2; exit}' "$MODULES_CONF" 2>/dev/null; }
+module_host_of()   { awk -v m="$1" '!/^#/ && $1==m {print $3; exit}' "$MODULES_CONF" 2>/dev/null; }
+# The .svc-<group>.sha names the installer's repair skip uses (a module name is
+# not always its service group).
+svc_group_of() { case "$1" in chat) echo matrix;; vault) echo vaultwarden;; mail) echo mailserver;; monitor) echo uptimekuma;; *) echo "$1";; esac; }
 
 # data/ goes as ONE directory — no granular folder picks. The stack owns every
 # path under it (module dirs, caddy_data, rendered/, pages/, logs, wizard.state),
@@ -281,7 +292,7 @@ ask_modules() {
   # removing a module destroys its containers and (on data-confirm) its
   # data; the operator opts in per module.
   local k answer
-  for k in cloud vault mail monitor; do
+  for k in $STACK_MODULES; do
     local var="RM_MOD_${k^^}"
     if [ -z "${!var:-}" ]; then
       while :; do
@@ -322,7 +333,7 @@ ask_mode() {
       # to keep — the operator confirms the scope once, then per-category
       # data confirms below decide what user data dies
       local k
-      for k in cloud vault mail monitor; do
+      for k in $STACK_MODULES; do
         eval "RM_MOD_${k^^}=true"
       done
       RM_EDGE=true; RM_HOST=true; RM_PKGS=true; RM_USER=true; RM_TAILNET=true
@@ -350,7 +361,7 @@ ask_inputs() {
   RM_MOD_DATA=true
   ask RM_REPO     "Delete the repo clone at $REPO (scheduled after this script exits)?"
   local ml=""
-  for k in cloud vault mail monitor; do
+  for k in $STACK_MODULES; do
     mod_rm "$k" && ml+="$k "
   done
   echo ""
@@ -370,26 +381,27 @@ mod_rm() { # indirection: is module $1 selected for removal?
 
 ctn_list() { docker ps -a --format '{{.Names}}' 2>/dev/null; }
 
-compose_file_of() { # module -> its compose file (repo layout)
-  case "$1" in
-    chat)    echo "$REPO/modules/matrix/docker-compose.yml";;
-    kopia)   echo "$REPO/modules/kopia/docker-compose.yml";;
-    vault)   echo "$REPO/modules/vaultwarden/docker-compose.yml";;
-    mail)    echo "$REPO/modules/mailserver/docker-compose.yml";;
-    monitor) echo "$REPO/modules/uptimekuma/docker-compose.yml";;
-  esac
+compose_file_of() { # module -> its compose file (the catalog's dir column)
+  local d; d="$(module_dir_of "$1")"
+  [ -n "$d" ] && echo "$REPO/modules/$d/docker-compose.yml"
 }
 
 ctn_of_module() { grep -E '^\s*container_name:' "$1" 2>/dev/null | awk '{print $2}'; }
 
-module_data_dirs() { # module -> its host data dirs (never the storage export)
-  case "$1" in
-    chat)    echo "$PROJECT_DIR/matrix";;
-    kopia)   echo "$PROJECT_DIR/kopia";;
-    vault)   echo "$PROJECT_DIR/vault";;
-    mail)    echo "$PROJECT_DIR/mailserver";;
-    monitor) echo "$PROJECT_DIR/kuma";;
-  esac
+module_data_dirs() { # module -> the host data dirs its compose file binds
+  # Derived from the compose bind mounts (the catalog's dir column names the
+  # module DIRECTORY, which is not always the data dir: vault -> data/vault,
+  # monitor -> data/kuma, photos -> data/photos).
+  # The EDGE-OWNED trees are never a module's data, even though a module's
+  # compose file may mount them read-only (roundcube reads rendered/,
+  # a vhost serves pages/): removing them here would delete the whole edge
+  # config because one module was turned off.
+  local f; f="$(compose_file_of "$1")"
+  [ -f "$f" ] || return 0
+  grep -ohE '\$\{DATA_DIR\}/[A-Za-z0-9._-]+' "$f" 2>/dev/null \
+    | sed -E 's|^\$\{DATA_DIR\}/||' | sort -u \
+    | grep -vxE 'rendered|pages|caddy_data|download' \
+    | while IFS= read -r d; do printf '%s/%s\n' "$PROJECT_DIR" "$d"; done
 }
 
 remove_module() { # $1=module
@@ -686,7 +698,7 @@ success_block() {
   echo "=============================================================="
   echo " SUCCESS — the stack is down:"
   local m
-  for m in cloud vault mail monitor; do
+  for m in $STACK_MODULES; do
     if mod_rm "$m"; then
       echo "   removed    $m"
     fi
@@ -815,18 +827,13 @@ granular_stack_only() {
   mod_on() { local n="MOD_${1^^}"; [ "${!n:-true}" = "true" ]; }
   log "=== uninstall.sh --granular — wizard repair hand-off (wizard.state-driven)"
 
-  local k svc
+  local k h
   for k in $STACK_MODULES; do
     mod_on "$k" && continue
     echo "   teardown   $k (disabled in wizard.state)"
     RM_MOD_DATA=true remove_module "$k"
-    case "$k" in   # drop the stale service hashes so a later re-enable re-applies
-      chat)    svc=matrix;;
-      vault)   svc=vaultwarden;;
-      mail)    svc=mailserver;;
-      monitor) svc=uptimekuma;;
-    esac
-    rm -f "$PROJECT_DIR/.svc-$svc.sha"
+    # drop the stale service hash so a later re-enable re-applies from scratch
+    rm -f "$PROJECT_DIR/.svc-$(svc_group_of "$k").sha"
   done
 
   # disabled doors lose their Cloudflare A records (needs the wizard.state creds)
@@ -847,11 +854,16 @@ granular_stack_only() {
       "https://api.cloudflare.com/client/v4/zones/$zid/dns_records/$rid" >>"$LOG" 2>&1 || true
     log "  A record removed: $fqdn (disabled in wizard.state)"
   }
-  mod_on ocis    || cf_a_del cloud
-  mod_on chat    || { cf_a_del chat; cf_a_del matrix; }
-  mod_on vault   || cf_a_del vault
-  mod_on monitor || cf_a_del kuma
-  mod_on mail    || cf_a_del mail
+  for k in $STACK_MODULES; do
+    mod_on "$k" && continue
+    h="$(module_host_of "$k")"
+    [ -n "$h" ] && [ "$h" != "-" ] && cf_a_del "$h"
+    # doors that live on a second hostname of the same module
+    case "$k" in
+      chat) cf_a_del matrix ;;
+      mail) cf_a_del mailu ;;
+    esac
+  done
   return 0
 }
 
@@ -886,7 +898,7 @@ interactive_teardown() {
   ask_inputs
   # nothing selected = nothing to do (all defaults are safe/keep)
   local any=false k
-  for k in cloud vault mail monitor; do
+  for k in $STACK_MODULES; do
     mod_rm "$k" && any=true
   done
   for v in RM_EDGE RM_HOST RM_PKGS RM_USER RM_TAILNET; do
@@ -894,7 +906,7 @@ interactive_teardown() {
   done
   # NO partial teardowns: selecting any module for removal selects all of them.
   if [ "$any" = true ]; then
-    for k in cloud vault mail monitor; do
+    for k in $STACK_MODULES; do
       eval "RM_MOD_${k^^}=true"
     done
   fi
@@ -902,7 +914,7 @@ interactive_teardown() {
     log "nothing selected — every prompt answered keep. Nothing was removed."
     exit 0
   fi
-  for k in cloud vault mail monitor; do
+  for k in $STACK_MODULES; do
     if mod_rm "$k"; then
       remove_module "$k"
     fi
@@ -916,7 +928,7 @@ interactive_teardown() {
   # is wiped whole — backups/, logs and wizard.state all die with it (the
   # installer recreates everything fresh on the rebuild).
   local went=false m
-  for m in cloud vault mail monitor; do
+  for m in $STACK_MODULES; do
     mod_rm "$m" && went=true
   done
   [ "$went" = true ] && wipe_data
