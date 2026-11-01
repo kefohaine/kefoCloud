@@ -5,24 +5,22 @@
 # the dok-recreate-all / update loops never pick it up — this file intentionally
 # has no `docker-compose.yml` name).
 #
-# Currently runs on this host (bridge IP 172.22.0.15, no published ports —
-# only the nextcloud container on the 'net' bridge reaches it). When the
-# operator's 1 TB / 2 GB machine joins the tailnet, migrate by: stopping this unit,
-# rsyncing ${DATA_DIR}/pgdata to the big disk there,
-# re-deploying this compose on that host with the port published on the
-# tailnet interface only, and pointing modules/nextcloud/.env POSTGRES_HOST
-# at the new tailnet IP (see docs/MANUAL.md "Nextcloud DB" for the full steps).
+# Runs on this host by default: bridge IP 172.22.0.15, no published port — only
+# the nextcloud container on the 'net' bridge reaches it. The data dir is
+# portable: to run the database on another host over the tailnet, stop this
+# unit, move ${DATA_DIR}/pgdata there, publish the port on the tailnet
+# interface only, and set POSTGRES_HOST in modules/nextcloud/.env to its
+# tailnet IP.
 #
-# Tuning targets the 2 GB RAM of the future DB host; on this (larger) host it
-# is deliberately conservative. Postgres default (not tuned here) settings
-# apply everywhere else.
+# Tuning is deliberately conservative so the unit also fits a small host.
+# Postgres default (not tuned here) settings apply everywhere else.
 services:
   postgresql:
     image: postgres:17-alpine
     container_name: postgresql
     restart: unless-stopped
 
-    # Hard RAM cap (no container swap). Part of the 3 GB Nextcloud-stack
+    # Hard RAM cap (no container swap). Part of the Nextcloud-stack
     # ceiling here: 1g+128m+256m+128m+512m = 2.02g total.
     mem_limit: 512m
     memswap_limit: 512m
