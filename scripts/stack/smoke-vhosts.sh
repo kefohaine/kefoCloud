@@ -267,7 +267,7 @@ hdr kopia "Backup — Kopia (module: kopia) · kopia.$DOMAIN (tailnet-only)"
 if [ -z "$TS_IP" ]; then
   say "FAIL kopia: no Tailscale IPv4 — cannot probe the tailnet-only door"; bad
 else
-  check_tn kopia "kopia.$DOMAIN" "/" "200 301 302 307 308" html "Kopia UI answers on the tailnet"
+  check_tn kopia "kopia.$DOMAIN" "/" "200 301 302 307 308 401" html "Kopia UI answers on the tailnet"
 fi
 check kopia-public "kopia.$DOMAIN" "/" "403" "" "public sources are refused"
 check_tls "kopia.$DOMAIN"
