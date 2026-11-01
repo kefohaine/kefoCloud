@@ -142,7 +142,14 @@ $(foreach s,$(CONTAINERS),$(eval $(call dok_logs_rule,$s)))
 # Every compose FILE of a module dir, passed as one invocation (docker compose
 # -f a -f b): a project that ships several files is never split, and no module
 # dir is missed because its file is not docker-compose.yml.
+# Destructive recipes refuse unless CONFIRM=yes: a
+# shell that cannot answer a prompt must not take the whole stack down because
+# someone recalled the target name wrong.
+CONFIRM ?= no
+guard_confirm = @case "$(CONFIRM)" in yes) ;; *) scripts/lib/mklog error "$(1) is destructive — re-run with CONFIRM=yes"; exit 1;; esac
+
 dok-recreate-all:
+>$(call guard_confirm,make dok-recreate-all)
 >@for d in $(REPO)/modules/*/; do \
     set -- $$(ls $$d/docker-compose*.yml 2>/dev/null) || continue; \
     [ $$# -gt 0 ] || continue; \
@@ -159,6 +166,7 @@ dok-restart-all:
   done
 
 dok-stop-all:
+>$(call guard_confirm,make dok-stop-all)
 >@for d in $(REPO)/modules/*/; do \
     set -- $$(ls $$d/docker-compose*.yml 2>/dev/null) || continue; \
     [ $$# -gt 0 ] || continue; \
@@ -577,7 +585,7 @@ mail-alias-add:
 
 # The Mailu (instance) admin login — NOT a mailbox password (that is
 # mail-password). The CLI shape is `admin <localpart> <domain> <password>`;
-# the malformed `flask mailu password admin fxmq.net 'admin123'` that took the
+# the malformed `flask mailu password admin <domain> 'admin123'` that took the
 # page down on 2026-10-19 was one argument too many and changed nothing.
 mail-admin-password:
 >@p="$(if $(filter command line,$(origin PWD)),$(PWD))"; gen=0; \
