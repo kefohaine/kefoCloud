@@ -57,7 +57,7 @@ services:
 
     volumes:
       # Data lives in the repo-sibling runtime dir (like /cloud/, /kuma/…).
-      # This is the directory that migrates to the 1 TB machine.
+      # This is the directory to move when the database runs on another host.
       - ${DATA_DIR}/pgdata:/var/lib/postgresql/data
 
     healthcheck:

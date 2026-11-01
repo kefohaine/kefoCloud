@@ -96,7 +96,7 @@ services:
     restart: unless-stopped
     mem_limit: 128m
     memswap_limit: 128m
-    # Pure cache: no persistence, LRU eviction at 128 MB. Locks live here too —
+    # Pure cache: no persistence, LRU eviction at the cap. Locks live here too —
     # losing them on restart is harmless (they are ephemeral by design).
     command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--save", "", "--appendonly", "no"]
     healthcheck:
