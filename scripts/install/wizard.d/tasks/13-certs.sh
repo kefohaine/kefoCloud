@@ -45,6 +45,8 @@ issue_certs() {
   mod_on vault   && hosts="$hosts vault"
   mod_on monitor && hosts="$hosts kuma"
   mod_on home    && hosts="$hosts home"
+  mod_on blog    && hosts="$hosts blog"
+  mod_on photos  && hosts="$hosts photos"
   mod_on mail    && hosts="$hosts mail"
   mod_on mail    && hosts="$hosts mailu"
   # ttyd.$DOMAIN joins the attempt like every other vhost. DNS-01 does not
