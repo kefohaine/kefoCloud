@@ -8,14 +8,16 @@
 # verification), device SSH key, Tailscale auth key, Cloudflare API token,
 # domain, modules (one space-separated line). Every affirmation takes only the
 # literal words `yes`/`no` (no shortcut, no default); the answer is recorded as
-# the boolean true/false. Then it runs unattended as a fixed 18-row checklist
+# the boolean true/false. Then it runs unattended as a fixed 19-row checklist
 # (grey [WAIT] -> animated orange [EXEC] -> green [DONE] / red [FAIL]; a failed
 # task pauses the run on its row and hands the error to the operator, and the
-# errors are reported after): host services, docker, tailscale, the full stack —
-# Matrix (Synapse + Element + PostgreSQL), Caddy, Vaultwarden, Uptime Kuma,
-# Docker Mailserver + Roundcube, Kopia — Cloudflare DNS records, and LE cert
-# issuance. The repo already carries the canonical <domain> naming
-# (modules/<domain>/, vhosts/<host>.caddy); no legacy renames are applied.
+# errors are reported after): host services, docker, tailscale, every module
+# config/modules.conf declares — Matrix (Synapse + Element + PostgreSQL), oCIS,
+# Vaultwarden, Mailu + Roundcube, Uptime Kuma, Kopia, Homarr, WriteFreely,
+# Immich — behind the Caddy edge, the Cloudflare DNS records, LE cert issuance
+# for every enabled door, and the module setup/verification steps. The repo
+# already carries the canonical <domain> naming (modules/<domain>/,
+# vhosts/<host>.caddy); no legacy renames are applied.
 #
 # Fully autonomous: the Kuma admin account is created
 # automatically (the admin passwords are printed once in the final summary —
