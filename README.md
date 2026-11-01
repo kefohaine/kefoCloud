@@ -1,10 +1,12 @@
-# kefoCloud - Self-hosted Apps Installer, Deployer & Manager
+# kefoCloud - Own your data at the mercy of nobody.
 
-Own your data at the mercy of nobody.
+Self-hosted Apps Installer, Deployer & Manager
 
 ![Repository Title](.github/images/title.png)
 
 **One Debian server, one plug-and-play installer, dozens of strong apps.** kefoCloud bundles a suite of community-maintained self-hosted apps ready to be deployed in a matter of minutes -- all thanks to my advanced idempotent installation wizard. It configures the server from the ground up with high performance & security standards, for a seamless integration of your selected apps.
+
+## Install Command
 
 ```bash
 git clone https://github.com/kefohaine/kefoCloud.git
