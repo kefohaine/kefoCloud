@@ -81,6 +81,11 @@ problem() {
     vaultwarden)    echo "vaultwarden container is not running" ;;
     kuma)           echo "uptimekuma container is not running" ;;
     mailserver)     echo "Mailu front container (mailu-front) is not running (mail platform)" ;;
+    containers)     echo "one or more enabled containers are not up/healthy:${CTN_NOT_READY:-}" ;;
+    ocis)           echo "the oCIS container is not running" ;;
+    homarr)         echo "the homarr container is not running" ;;
+    writefreely)    echo "the writefreely container is not running" ;;
+    immich)         echo "the Immich stack is not running (immich-server / immich-db / immich-redis)" ;;
     matrix_gen)     echo "Matrix secrets or configs not generated (make matrix-gen failed)" ;;
     kopia)          echo "the kopia container is not running" ;;
     kopia_gen)      echo "kopia secrets not generated (make kopia-gen failed)" ;;
@@ -127,6 +132,10 @@ hint() {
     vaultwarden)    echo "run: make dok-recreate-vaultwarden, then re-check" ;;
     kuma)           echo "run: make dok-recreate-uptimekuma, then re-check" ;;
     mailserver)     echo "run: make dok-recreate-mailserver, then re-check" ;;
+    containers)     echo "inspect each one with: docker ps -a && make dok-logs TARGET=<container>; a container that keeps restarting is fixed by make dok-recreate TARGET=<container>, then re-check" ;;
+    ocis)           echo "run: make dok-recreate-ocis (then make dok-logs-ocis), then re-check" ;;
+    writefreely)    echo "run: make dok-recreate-writefreely (then make dok-logs-writefreely), then re-check" ;;
+    immich)         echo "run: make dok-recreate-immich-server (then make dok-logs-immich-server), then re-check" ;;
     homarr)         echo "run: make dok-recreate-homarr, then re-check (SECRET_ENCRYPTION_KEY must be set in modules/homarr/.env)" ;;
     kuma_admin)     echo "create the admin account at https://kuma.$DOMAIN in the UI, then re-check" ;;
     kuma_seed)      echo "run: make dok-recreate-uptimekuma (UPTIME_KUMA_DB_TYPE=sqlite makes Kuma create its schema), wait for /app/data/kuma.db to have tables, then: docker exec -i uptimekuma sqlite3 /app/data/kuma.db < modules/uptimekuma/seed-monitors.sql" ;;
@@ -171,6 +180,11 @@ recheck() {
     vaultwarden) docker ps --format '{{.Names}}' | grep -qx vaultwarden ;;
     kuma) docker ps --format '{{.Names}}' | grep -qx uptimekuma ;;
     mailserver) docker ps --format '{{.Names}}' | grep -qx mailu-front && docker ps --format '{{.Names}}' | grep -qx roundcube ;;
+    containers) wait_containers ;;
+    ocis) docker ps --format '{{.Names}}' | grep -qx ocis ;;
+    homarr) docker ps --format '{{.Names}}' | grep -qx homarr ;;
+    writefreely) docker ps --format '{{.Names}}' | grep -qx writefreely ;;
+    immich) for _c in immich-server immich-db immich-redis; do docker ps --format '{{.Names}}' | grep -qx "$_c" || return 1; done ;;
     kuma_admin) [ "$(docker exec uptimekuma sqlite3 /app/data/kuma.db "SELECT COUNT(*) FROM user WHERE username='admin';" 2>/dev/null | tr -d '\n')" = "1" ] ;;
     kuma_seed) [ "$(docker exec uptimekuma sqlite3 /app/data/kuma.db "SELECT COUNT(*) FROM monitor;" 2>/dev/null | tr -d '\n')" -gt 0 ] ;;
     zone) [ -n "$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" | jq -r '.result[0].id // empty')" ] ;;
