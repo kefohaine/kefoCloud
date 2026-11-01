@@ -6,9 +6,18 @@ directly: every change arrives here as a temp-<N> branch, and a human operator
 reviews and merges it.
 -->
 
-## Shape A — this fixes an issue
+## Issues this pull request closes
 
-Closes #<!-- issue number: the link GitHub renders between this PR and the issue -->
+<!-- One row per issue, `Closes #<n>` plus a link to the section that fixes it.
+     Every closing reference lives in this table and nowhere else: a section
+     can then be rewritten without silently dropping a link, and the merge
+     closes the issue automatically. -->
+
+| Issue | Fixed by |
+|---|---|
+| Closes #<!-- n --> — <!-- title --> | [§<!-- n --> <!-- section name -->](#<!-- anchor -->) |
+
+## Shape A — this fixes an issue
 
 ### What changed
 <!-- one bullet per commit — `git log --oneline main..HEAD` -->
