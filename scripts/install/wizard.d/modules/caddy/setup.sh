@@ -9,6 +9,9 @@ caddy_data() {
   # reads env_file host-side, so it needs +x on the dir or it dies with
   # "open .../CF_API_TOKEN: permission denied" and Caddy never starts.
   sudo chmod 0711 $ROOT/data/caddy_data
-  sudo chown root:root $ROOT/data/caddy_data/CF_API_TOKEN
-  sudo chmod 0644 $ROOT/data/caddy_data/CF_API_TOKEN
+  # The token is a credential: owner 201 (the uid Caddy's image runs as) and
+  # 0600 — never the root umask's world-readable 0644, which left the
+  # Cloudflare token readable by every local account.
+  sudo chown 201:201 $ROOT/data/caddy_data/CF_API_TOKEN
+  sudo chmod 0600 $ROOT/data/caddy_data/CF_API_TOKEN
 }
