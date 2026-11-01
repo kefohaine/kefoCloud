@@ -16,10 +16,11 @@
 # (`docs/*`, any `*.md`) are NOT part of the rule: they describe the change
 # they ride with, so they never make a commit a bundle.
 #
-# SIGNIFICANT (AGENTS rule 10): a security / structure / performance path — a
-# change here can take a service offline or change how the box is reached, so
-# its commit must ship a `Revert:` recipe. Monitoring-only scripts (scripts/info)
-# are deliberately NOT significant.
+# SIGNIFICANT (AGENTS rule 10): a commit that changes MORE THAN
+# `SIGNIFICANT_FILE_THRESHOLD` files. A wide change is the one worth a revert
+# recipe; a one- or two-file fix is trivially undone. Docs are not counted at
+# all — `docs/*` and every `*.md` describe the change they accompany, so a
+# documentation-only commit is never significant and never needs a recipe.
 #
 # SOURCED, never executed.
 
@@ -88,16 +89,30 @@ commit_units_for() {
   printf '%s\n' "$ns" | cut -f2 | commit_units
 }
 
-# significant_path <path> — return 0 when the path is significant (rule 10).
-significant_path() {
-  case "$1" in
-    Makefile) return 0 ;;
-    modules/caddy/*) return 0 ;;
-    modules/*/docker-compose.yml) return 0 ;;
-    config/ssh/*|config/sysctl/*|config/systemd/*|config/docker/*|config/dnsmasq/*|config/cron/*|config/goose/*) return 0 ;;
-    scripts/hooks/*|scripts/lib/*|scripts/install/*|scripts/render/*|scripts/stack/*|scripts/ops/*|scripts/modules/*) return 0 ;;
-  esac
-  return 1
+# SIGNIFICANT_FILE_THRESHOLD — a commit changing MORE files than this is
+# significant (rule 10). Four files is the line: three related edits are still
+# one small change, four or more is a change worth a revert recipe.
+SIGNIFICANT_FILE_THRESHOLD=3
+
+# commit_change_count <commit> — how many files the commit changes, counting
+# only the ones rule 26 judges: `docs/*` and every `*.md` are documentation and
+# are excluded, so a docs-only commit counts zero.
+commit_change_count() {
+  local ns
+  ns=$(git -C "${REPO:-.}" diff-tree -r --name-status --no-commit-id --root --no-renames "$1" 2>/dev/null) || return 1
+  printf '%s\n' "$ns" | cut -f2 | while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    commit_folder "$p" >/dev/null || continue
+    printf '%s\n' "$p"
+  done | grep -c . || true
+}
+
+# commit_is_significant <commit> — 0 when the commit changes more than
+# SIGNIFICANT_FILE_THRESHOLD non-doc files (rule 10).
+commit_is_significant() {
+  local n
+  n=$(commit_change_count "$1") || return 1
+  [ "${n:-0}" -gt "$SIGNIFICANT_FILE_THRESHOLD" ]
 }
 
 # revert_parent_sha <commit> — the SHA named in the commit's
