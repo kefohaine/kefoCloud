@@ -114,44 +114,11 @@ unit_up() {   # unit_up <file> [service...]
   esac
 }
 
-# ── nextcloud: no unattended core upgrade ─────────────────────────────────
-# The nextcloud image entrypoint runs `occ upgrade` by itself whenever the
-# IMAGE is newer than the code mounted at /var/www/html (version.php), so any
-# plain `up -d` after a tag bump upgrades the instance without an operator
-# decision. Refuse that: when the pinned tag and the installed code disagree,
-# the unit is started WITHOUT its nextcloud service and reported as blocked.
-# Core only moves through `make nc-core-update VERSION=x.y.z`, which bumps the
-# tag and lets the entrypoint do the upgrade in one deliberate step.
-nc_unit() {    # nc_unit <file> -> "<service><TAB><tag>" (empty when not nextcloud)
-  compose "$1" config --format json 2>/dev/null | jq -r '
-    .services | to_entries[]
-    | select((.value.image // "") | test("^nextcloud:"))
-    | "\(.key)\t\(.value.image | sub("^nextcloud:"; "") | sub("-.*$"; ""))"' 2>/dev/null | head -1
-}
-nc_installed() {  # the on-disk code version, not the DB/config version
-  sed -n 's/^\$OC_Version[[:space:]]*=[[:space:]]*array[[:space:]]*(\([0-9]*\),[[:space:]]*\([0-9]*\),[[:space:]]*\([0-9]*\).*/\1.\2.\3/p' \
-    "$DATA/cloud/html/version.php" 2>/dev/null | head -1
-}
-
 bring_up() {   # bring_up <file>
-  local f=$1 svc tag inst nc
+  local f=$1
   case "$MODE" in
     check) running "$f" && { info "up: ${f#$REPO/}"; return 0; } ;;
   esac
-  nc=$(nc_unit "$f")
-  if [ -n "$nc" ]; then
-    svc=${nc%%$'\t'*}; tag=${nc#*$'\t'}
-    inst=$(nc_installed)
-    if [ -z "$inst" ] || [ "$tag" != "$inst" ]; then
-      err "nextcloud: image tag ${tag:-?} != installed code ${inst:-unreadable} — not starting '$svc' (the entrypoint would run occ upgrade unattended)"
-      err "nextcloud: move tag+code together with 'make nc-core-update VERSION=${inst:-x.y.z}', or restore the code to ${tag:-the pinned tag}"
-      BLOCKED+=("${f#$REPO/} ($svc)")
-      local -a rest=()
-      mapfile -t rest < <(compose "$f" config --services 2>/dev/null | grep -vx "$svc")
-      [ "${#rest[@]}" -eq 0 ] || unit_up "$f" "${rest[@]}" || err "unit failed: ${f#$REPO/} (except $svc)"
-      return 1
-    fi
-  fi
   case "$MODE" in
     check) info "repair: starting ${f#$REPO/}" ;;
   esac
@@ -165,7 +132,6 @@ if [ "$MODE" = validate ]; then
 fi
 
 declare -a FAILURE=()
-declare -a BLOCKED=()   # nextcloud drift: skipped on purpose, must not gate the edge
 
 # ── every deployed unit EXCEPT the edge ────────────────────────────────────
 for d in "$REPO"/modules/*/; do
@@ -174,14 +140,7 @@ for d in "$REPO"/modules/*/; do
   for f in "$d"docker-compose*.yml; do
     [ -f "$f" ] || continue
     deployed "$f" || { info "skip (not deployed): ${f#$REPO/}"; continue; }
-    n=${#BLOCKED[@]}
-    bring_up "$f" || {
-      if [ "${#BLOCKED[@]}" -gt "$n" ]; then
-        warn "blocked (no unattended upgrade): ${f#$REPO/}"
-      else
-        err "unit failed: ${f#$REPO/}"; FAILURE+=("${f#$REPO/}")
-      fi
-    }
+    bring_up "$f" || { err "unit failed: ${f#$REPO/}"; FAILURE+=("${f#$REPO/}"); }
   done
 done
 
@@ -237,11 +196,7 @@ if [ -n "$EDGE" ]; then
 fi
 
 # ── summary ────────────────────────────────────────────────────────────────
-if [ "${#BLOCKED[@]}" -gt 0 ]; then
-  err "nextcloud blocked (image tag and installed code disagree): ${BLOCKED[*]}"
-  err "nothing was upgraded — core updates are operator-only: make nc-core-update VERSION=x.y.z"
-fi
-if [ "${#FAILURE[@]}" -eq 0 ] && [ "${#BLOCKED[@]}" -eq 0 ]; then
+if [ "${#FAILURE[@]}" -eq 0 ]; then
   case "$MODE" in
     update) info "update complete — every deployed unit recreated, edge verified" ;;
     check)  info "repair pass complete" ;;
@@ -250,5 +205,4 @@ if [ "${#FAILURE[@]}" -eq 0 ] && [ "${#BLOCKED[@]}" -eq 0 ]; then
   exit 0
 fi
 err "completed with ${#FAILURE[@]} failure(s): ${FAILURE[*]}"
-[ "${#BLOCKED[@]}" -eq 0 ] || err "blocked unit(s), untouched on purpose: ${BLOCKED[*]}"
 exit 1
