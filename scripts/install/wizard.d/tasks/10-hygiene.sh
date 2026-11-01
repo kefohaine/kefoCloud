@@ -10,8 +10,8 @@ sweep_hits() {
   # rename (the skeleton shipped "exampleuser" as owner and "homelab" as project).
   # Scoped to the two dirs that can actually carry a placeholder: the tracked
   # modules/ and config/ trees. Scanning $REPO root-wide walked data/ (the live
-  # instance: maildirs, pgdata, certs — hundreds of thousands of files, ~23 s per
-  # pass) and had to be filtered back out afterwards; `-not -path` was a FIND flag
+  # instance: maildirs, pgdata, certs) and had to be filtered back out
+  # afterwards; `-not -path` was a FIND flag
   # handed to grep, so it did nothing and the exclusion rested on the kefoCloud
   # grep alone. docs/ and scripts/ are out of scope by design: docs record the
   # rename as history and these scripts name the old project by nature.

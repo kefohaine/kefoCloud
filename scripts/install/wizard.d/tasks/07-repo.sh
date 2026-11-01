@@ -30,7 +30,7 @@ ensure_repo() {
 install_hooks() {
   # Git hooks live in .git/hooks — untracked, so a fresh clone has none. Install
   # them here so a new host is guarded (pre-commit edge validation, pre-push
-  # smoke) without a manual `make install-hooks` (docs/MANUAL.md). Idempotent;
+  # smoke) without a manual `make install-hooks`. Idempotent;
   # the pre-push smoke gate stays shut until this run records finished=true, and
   # the installer's own push uses --no-verify so the hook never blocks it.
   if make -C "$REPO" install-hooks >>"$LOG" 2>&1; then
