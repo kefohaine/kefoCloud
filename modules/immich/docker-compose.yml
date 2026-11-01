@@ -4,8 +4,8 @@ services:
     container_name: immich-server
     restart: unless-stopped
 
-    # Hard RAM caps (no container swap), 2 GB: doubled from 1 GB because the
-    # thumbnail/metadata workers were being OOM-killed under import load.
+    # Hard RAM caps (no container swap) sized for the thumbnail/metadata
+    # workers, which are the heaviest consumers under import load.
     # The machine-learning container is
     # deliberately NOT deployed: this host has 2 vCPU and no GPU, so ML would
     # take the largest share of RAM for a feature that runs at a crawl. Smart
@@ -64,10 +64,9 @@ services:
     container_name: immich-db
     restart: unless-stopped
 
-    # 1 GB, not 512 MB: this image preloads the vectorchord + pgvectors shared
-    # libraries, and the vector index maintenance on first boot was OOM-killed
-    # (signal 9, one crashed backend every ~16 s) at half that — which in turn
-    # restarted immich-server in a loop.
+    # The image preloads the vectorchord + pgvectors shared libraries, so it
+    # needs headroom for vector index maintenance on first boot; too little and
+    # a killed backend restarts immich-server in a loop.
     mem_limit: 1024m
     memswap_limit: 1024m
 
