@@ -22,8 +22,10 @@
 #           and docs/ (the docs that describe a change ride with it). Order
 #           changes so each stands alone.
 #   REVERT  the commit is SIGNIFICANT (rule 10) but its message has no
-#           `Revert:` line. Significant = a security / structure / performance
-#           path (below), or any deletion or rename.
+#           `Revert:` line. Significant = MORE THAN 3 changed non-doc files;
+#           a docs-only commit is never significant. `DOCS_ONLY=1` (or
+#           `--docs-only`) skips this check entirely — what the pull-request
+#           workflow passes for a range that only touches documentation.
 #
 # HISTORY_AUDIT_OVERRIDE=1 reports and exits 0.
 
@@ -34,6 +36,7 @@ set -uo pipefail
 REPO="${REPO_DIR:-$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)}"
 G() { git -C "$REPO" "$@"; }
 
+case "${1:-}" in --docs-only) DOCS_ONLY=1; shift ;; esac
 range="${1:-${RANGE:-}}"
 if [ -z "$range" ]; then
   up=$(G rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)
@@ -74,15 +77,17 @@ for c in $commits; do
   ns=$(G diff-tree -r --name-status --no-commit-id -M --root "$c" 2>/dev/null)
   [ -z "$ns" ] && continue
 
-  paths='' sig=''
+  paths=''
   while IFS= read -r line; do
     [ -z "$line" ] && continue
-    st=${line%%$'\t'*}; p=${line#*$'\t'}
-    p=${p##*$'\t'}                                  # R100\told\tnew -> new
-    case "$st" in D*|R*) sig=rename_or_delete ;; esac
-    significant_path "$p" && sig="$sig $p"
+    p=${line#*$'\t'}; p=${p##*$'\t'}                  # R100\told\tnew -> new
     paths="$paths$p"$'\n'
   done <<< "$ns"
+
+  sig=''
+  if [ -z "${DOCS_ONLY:-}" ] && commit_is_significant "$c"; then
+    sig="$(commit_change_count "$c") files"
+  fi
 
   units=$(printf '%s' "$paths" | commit_units | paste -sd, -)
   nunits=$(printf '%s' "$units" | tr ',' '\n' | grep -c . || true)
@@ -99,7 +104,7 @@ for c in $commits; do
     if ! printf '%s\n' "$msg" | grep -qE '^[[:space:]]*Revert:'; then
       reverts=$((reverts + 1))
       printf '  %sREVERT%s %s  %s\n' "$R" "$N" "$short" "$subject"
-      printf '         %ssignificant:%s%s\n' "$D" "${sig# }" "$N"
+      printf '         %schange:%s %s files (threshold %s)\n' "$D" "${sig# }" "$N" "$SIGNIFICANT_FILE_THRESHOLD"
       printf '         %sadd: Revert: git reset --hard %s  (rule 10)%s\n' "$D" "$want" "$N"
     else
       # A recipe that names an OLD parent (a stale SHA after a rewrite) is as
