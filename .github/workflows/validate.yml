@@ -1,0 +1,34 @@
+# Read-only validation on every branch push and every pull request: shell
+# syntax, the prose gate and the commit-hygiene audit. It never writes, merges
+# or pushes.
+
+name: validate
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Shell syntax
+        run: |
+          status=0
+          while IFS= read -r script; do
+            bash -n "$script" || status=1
+          done < <(git ls-files '*.sh')
+          exit "$status"
+
+      - name: Prose gate
+        run: bash scripts/info/prose-audit.sh
+
+      - name: Commit hygiene
+        run: bash scripts/info/git-audit.sh origin/main..HEAD
