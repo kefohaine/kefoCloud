@@ -36,8 +36,8 @@ MODULE_CONTAINERS := $(shell awk '!/^#/ && NF>=4 {for(i=4;i<=NF;i++) printf "%s 
 MODULES := $(shell awk '!/^#/ && NF>=4 {printf "%s ", $$1}' $(REPO)/config/modules.conf 2>/dev/null)edge
 CONTAINERS := caddy $(sort $(MODULE_CONTAINERS))
 HOST     := ttyd dnsmasq goose
-# The tailnet device that receives files/bundles — one spelling for backup,
-# import-backups and the taildrop helpers (TAILDROP_HOST is an alias). No
+# The tailnet device that receives files — one spelling for the taildrop
+# helpers (TAILDROP_HOST is an alias). No
 # default: shipping to an arbitrary device is worse than a usage error.
 TAILDROP ?= $(TAILDROP_HOST)
 
@@ -62,7 +62,7 @@ TAILDROP ?= $(TAILDROP_HOST)
 
 # Per-container compose file, also derived from the catalog: every container of
 # a module resolves to that module dir's compose file (mailu-* + roundcube ->
-# modules/mailserver, immich-server -> modules/immich, talk-hpb -> nextcloud).
+# modules/mailserver, immich-server -> modules/immich, matrix-synapse -> matrix).
 #
 # One $(eval) per module row, never one awk that prints every assignment:
 # `$(shell)` collapses newlines, so a multi-line awk lands in make as a SINGLE
@@ -73,15 +73,10 @@ module_dir = $(shell awk -v m=$(1) '$$1==m{print $$2; exit}' $(REPO)/config/modu
 $(foreach m,$(MODULES),$(eval MODULE_CONTAINERS_$(m) := $(shell awk -v m=$(m) '$$1==m{for(i=4;i<=NF;i++) printf "%s ", $$i}' $(REPO)/config/modules.conf 2>/dev/null)))
 $(foreach m,$(MODULES),$(foreach c,$(MODULE_CONTAINERS_$(m)),$(eval COMPOSE_FILE_$(c) := modules/$(call module_dir,$(m))/docker-compose.yml)))
 COMPOSE_FILE_caddy := modules/caddy/docker-compose.yml
-# Nextcloud ships TWO compose files in one project dir (app + PostgreSQL). One
-# container's action must run BOTH — a single file treats the other file's
-# containers as orphans and deletes them (SQLSTATE[08006]).
-NEXTCLOUD_STACK := $(shell awk '$$1=="cloud" {for(i=4;i<=NF;i++) printf "%s ", $$i}' $(REPO)/config/modules.conf 2>/dev/null)
-
-# Helper: $(compose-file-of $1) returns the absolute compose file path for
-# the named service. Recipes use this directly instead of $(COMPOSE_FILE_$1)
-# so the expansion happens at recipe-expansion time, not recipe-execution time.
-compose-file-of = $(if $(filter $(NEXTCLOUD_STACK),$1),$(REPO)/modules/nextcloud/docker-compose.db.yml -f $(REPO)/modules/nextcloud/docker-compose.yml,$(REPO)/$(COMPOSE_FILE_$1))
+# Every compose unit's argument list comes from the catalog: one file per
+# module dir. A project that ships several files is passed as "-f a -f b" by
+# dok-recreate-all below.
+compose-file-of = $(REPO)/$(COMPOSE_FILE_$1)
 
 # One compose unit's force-recreate, shared by dok-recreate-<ctn> and
 # dok-recreate-all so the two can never drift. caddy rebuilds its image
@@ -145,8 +140,8 @@ $(foreach s,$(CONTAINERS),$(eval $(call dok_logs_rule,$s)))
 # Shared loop: force-recreate every compose unit under modules/ (the same
 # per-file body the -<ctn> rules use).
 # Every compose FILE of a module dir, passed as one invocation (docker compose
-# -f a -f b): a project that ships several files (nextcloud app + db) is never
-# split, and no module dir is missed because its file is not docker-compose.yml.
+# -f a -f b): a project that ships several files is never split, and no module
+# dir is missed because its file is not docker-compose.yml.
 dok-recreate-all:
 >@for d in $(REPO)/modules/*/; do \
     set -- $$(ls $$d/docker-compose*.yml 2>/dev/null) || continue; \
@@ -247,12 +242,12 @@ systemd-action:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: fetch fetch-more render smoke talk-config gh-web-health install-hooks update apt-upgrade install-config help talk-gen nc-capture nc-default-user-quota
+.PHONY: fetch fetch-more render smoke gh-web-health install-hooks update apt-upgrade install-config help matrix-gen matrix-admin matrix-users matrix-add matrix-passwd matrix-admin-flag matrix-del matrix-status matrix-logs kopia-gen kopia-status kopia-password kopia-snapshot kopia-snapshots kopia-logs
 .PHONY: kuma-import kuma-list-users kuma-add-user kuma-passwd kuma-del-user
 .PHONY: vaultwarden-list-users vaultwarden-add-user vaultwarden-del-user
 .PHONY: writefreely-users writefreely-add-user writefreely-passwd writefreely-del-user
 .PHONY: immich-users immich-admin-pass immich-grant-admin dns-sync
-.PHONY: deploy backup nc-datadir-nfs import-backups
+.PHONY: deploy backup
 
 # The web terminal is ONE page and ONE shell: ttyd.$DOMAIN (the shell IS the
 # homepage) attaches the single `main` tmux session (created by tmux-main.service at boot, or on first
@@ -700,42 +695,74 @@ immich-grant-admin:
 dns-sync:
 >@bash scripts/ops/dns-sync.sh
 
-# Generate the Nextcloud-stack secrets + Talk service configs (idempotent).
-# Creates modules/nextcloud/.env entries (DB, Redis, signaling, TURN, SMTP)
-# if missing and renders $(REPO)/data/talk/{server,turnserver}.conf.
-talk-gen:
->@bash scripts/modules/talk-gen.sh
+# Generate the Matrix module's secrets and runtime config (idempotent):
+# modules/matrix/.env values and $DATA_DIR/matrix/{synapse,element} configs.
+# Re-running never rotates a key or rewrites an existing config.
+matrix-gen:
+>@bash scripts/modules/matrix-gen.sh
 
-# Force EVERY Talk call through this stack's signalling server and media path —
-# not only the calls that happen to need media relay:
-#  * signaling_mode=external — pins the high-performance backend for every
-#    conversation, 1:1 calls included. Without the explicit pin Talk DERIVES the
-#    mode from the server list and falls back to internal signalling (no HPB at
-#    all: no chat relay, no participant relay) whenever that list looks empty.
-#  * stun_servers — replaces the third-party default (stun.nextcloud.com:443)
-#    with our own coturn, so every candidate a client learns comes from this
-#    host and no call depends on Nextcloud's public STUN. TURN (udp/tcp 3478,
-#    tls 5349) is registered by `make nc-talk-turn-add` / the installer and is
-#    the only ICE server that can produce a relayed candidate.
-talk-config:
->@$(NC_OCC) config:app:set spreed signaling_mode --value external
->@$(NC_OCC) config:app:set spreed stun_servers --value '["stun:talk.$(DOMAIN):3478"]'
->@scripts/lib/mklog info "Talk: every call pinned to the HPB (signaling_mode=external); STUN/TURN = talk.$(DOMAIN)"
+# Generate the Kopia module's secrets (idempotent): modules/kopia/.env.
+kopia-gen:
+>@bash scripts/modules/kopia-gen.sh
 
-# Snapshot the live NC users/groups/quotas into cloud/recovery/ outside the
-# repo (generated recovery manifests — the installer recreates exactly this
-# state on fresh installs; re-run after any user/group change).
-nc-capture:
->@bash scripts/modules/nc-capture.sh
+# ─────────────────────────────────────────────────────────────────────────────
+# Matrix accounts — module `chat` (modules/matrix/, Synapse + Element).
+# An account is a Matrix user id (@name:$DOMAIN). Every recipe delegates to
+# scripts/modules/matrix-admin.sh, which talks to Synapse's own admin API as
+# the admin bot created at install.
+# ─────────────────────────────────────────────────────────────────────────────
 
-# `make nc-datadir-nfs`: make an external machine the PERMANENT live
-# datadir host for THIS Nextcloud over the tailnet. export: this host's
-# datadirectory moves over NFS to the external machine (database stays here);
-# import restores THIS host's own previously-exported datadir (marker-driven:
-# import only accepts the datadir exported by this host, never a foreign one).
-# The external machine gets tailscale + ufw + the NFS stack set up.
-nc-datadir-nfs:
->@bash scripts/ops/nc-datadir-nfs.sh
+MATRIX_ADMIN := $(REPO)/scripts/modules/matrix-admin.sh
+
+matrix-admin:
+>@bash $(MATRIX_ADMIN) add "$(USER)" "$(PASS)"
+
+# PASS is generated and printed once when omitted.
+matrix-users:
+>@bash $(MATRIX_ADMIN) users
+
+matrix-add:
+>@bash $(MATRIX_ADMIN) add "$(USER)" "$(PASS)"
+
+matrix-passwd:
+>@bash $(MATRIX_ADMIN) passwd "$(USER)" "$(PASS)"
+
+# ADMIN=true|false grants or revokes the server-admin flag on the account.
+matrix-admin-flag:
+>@bash $(MATRIX_ADMIN) admin "$(USER)" "$(ADMIN)"
+
+# Deactivates the account (a Matrix account is never deleted outright).
+matrix-del:
+>@bash $(MATRIX_ADMIN) del "$(USER)"
+
+matrix-status:
+>@bash $(MATRIX_ADMIN) status
+
+matrix-logs:
+>@bash $(MATRIX_ADMIN) logs "$(or $(N),50)"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Kopia backups — module `kopia` (modules/kopia/). The web UI is
+# kopia.$DOMAIN (tailnet-only); these recipes drive the same CLI headlessly.
+# ─────────────────────────────────────────────────────────────────────────────
+
+KOPIA_ADMIN := $(REPO)/scripts/modules/kopia-admin.sh
+
+kopia-status:
+>@bash $(KOPIA_ADMIN) status
+
+# PASS is generated and printed once when omitted; the container is recreated.
+kopia-password:
+>@bash $(KOPIA_ADMIN) password "$(PASS)"
+
+kopia-snapshot:
+>@bash $(KOPIA_ADMIN) snapshot "$(SOURCE)"
+
+kopia-snapshots:
+>@bash $(KOPIA_ADMIN) snapshots
+
+kopia-logs:
+>@bash $(KOPIA_ADMIN) logs "$(or $(N),50)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # config/ (live <-> repo)
@@ -788,8 +815,6 @@ sudo cp $(RENDER_DIR)/config/bash/banner.sh /etc/kefo-banner.sh
 sudo chmod 0644 /etc/kefo-banner.sh
 @grep -qxF '. /etc/kefo-banner.sh' "$$HOME/.bashrc" || printf '%s\n' '. /etc/kefo-banner.sh' >> "$$HOME/.bashrc"
 sudo cp $(RENDER_DIR)/config/fail2ban/jail.d/sshd.conf /etc/fail2ban/jail.d/sshd.conf
-sudo cp $(RENDER_DIR)/config/cron/nextcloud /etc/cron.d/nextcloud
-sudo chmod 0644 /etc/cron.d/nextcloud
 # Logging: ONE namespace ({{LOG_DIR}}) for every log this project writes,
 # bounded by ONE logrotate rule. Docker output is capped globally in
 # config/docker/daemon.json (10m x3); no journald drop-in exists —
@@ -817,7 +842,7 @@ install-config:
 
 # Full host restore: config/ → live paths. Same one-shot body as
 # install-config (one implementation, so the two can never diverge); module
-# data and secrets are restored separately with import-backups.
+# data and secrets are restored separately from the kopia snapshots.
 deploy: install-config
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -891,24 +916,7 @@ install-sysctl:
 >@sudo sysctl --system >/dev/null
 
 install-cron:
->@echo "install-cron: /etc/cron.d/nextcloud (Nextcloud occ cron, every 5 min)"
->@sudo cp $(RENDER_DIR)/config/cron/nextcloud /etc/cron.d/nextcloud
->@sudo chmod 0644 /etc/cron.d/nextcloud
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Nextcloud stack — the DB (modules/nextcloud/docker-compose.db.yml) and the app
-# (modules/nextcloud/docker-compose.yml) are ONE compose project, so every
-# dok-<action>-<nextcloud|postgresql|talk-hpb|talk-relay|notify-push> already
-# runs BOTH files (see compose-file-of). This alias is the name the docs use.
-# ─────────────────────────────────────────────────────────────────────────────
-
-dok-recreate-nextcloud-stack: dok-recreate-nextcloud
-
-.PHONY: dok-recreate-nextcloud-stack dok-logs-nextcloud-stack
-
-dok-logs-nextcloud-stack:
->docker logs postgresql --tail 50 -f
-
+>@echo "install-cron: nothing to install — no module needs a host cron job"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Backups
@@ -916,96 +924,12 @@ dok-logs-nextcloud-stack:
 
 .PHONY: backup
 
-# Ships ALL installed modules to a tailnet device (taildrop), in one of two modes
-# (prompted, or BACKUP_MODE=bundle|raw):
-#   bundle — nextcloud-backup-<date>.tar.gz (PostgreSQL DB + Nextcloud datadir),
-#            other-backup-<date>.tar.gz (vault / mailserver / kuma datadirs).
-#   raw    — nextcloud-<date>/ and others-<date>/ raw datadirectories.
-# Staged in a temp dir, taildropped to the device's ~/backups/, sha256-verified,
-# then deleted locally. No local copies; repo/config is never read or written.
+# One snapshot of every module's data, through Kopia — the backup server on
+# kopia.$DOMAIN (tailnet-only). The repository lives in $DATA_DIR/kopia and
+# holds every data dir plus the rendered config; restoring, retention and
+# off-box copies are done from the Kopia UI or `make kopia-*`.
 backup:
-ifeq ($(TAILDROP),)
->@scripts/lib/mklog error "usage: make backup requires TAILDROP=<tailnet-device> — ships all modules to a tailnet device as bundles (default) or raw datadirectories (BACKUP_MODE=raw); data/ is untouched and repo/config is never read or written"
->@exit 1
-endif
->BACKUP_MODE="$(BACKUP_MODE)" bash scripts/ops/backup-bundles.sh TAILDROP="$(TAILDROP)"
-
-import-backups:
-ifeq ($(TAILDROP),)
->@scripts/lib/mklog error "usage: make import-backups requires TAILDROP=<tailnet-device> — previews the bundles or raw datadirectories on the device and asks for a typed yes before restoring anything"
->@exit 1
-endif
->@bash scripts/ops/restore-data.sh TAILDROP="$(TAILDROP)"
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Snikket (XMPP) — module `xmpp` (modules/snikket/, project `snikket`). Its
-# containers already have dok-* targets (dok-recreate-snikket etc.) from the
-# catalog; the recipes below are the ACCOUNT layer. Accounts are Prosody
-# accounts reached through `prosodyctl shell` inside the server container:
-# create = invite (the Snikket app generates device keys client-side), while
-# passwd/disable/delete act on the server directly. Every recipe delegates to
-# scripts/modules/snikket-admin.sh, which derives the compose project, the
-# domain and the container names from the module itself — never argv.
-# ─────────────────────────────────────────────────────────────────────────────
-
-SNIKKET_ADMIN := $(REPO)/scripts/modules/snikket-admin.sh
-
-.PHONY: snikket-users snikket-invite snikket-invites snikket-revoke snikket-reset snikket-passwd snikket-disable snikket-enable snikket-del-user snikket-status snikket-doctor snikket-tls snikket-turn snikket-logs snikket-restart snikket-exec snikket-shell
-
-snikket-users:
->@bash $(SNIKKET_ADMIN) users
-
-# ADMIN=true|false is required (true grants the prosody:admin role); no USER =
-# an invite that any username may redeem; QR=1 renders a scannable code.
-snikket-invite:
->@bash $(SNIKKET_ADMIN) invite "$(USER)" "$(ADMIN)" "$(QR)"
-
-snikket-invites:
->@bash $(SNIKKET_ADMIN) invites
-
-snikket-revoke:
->@bash $(SNIKKET_ADMIN) revoke "$(TOKEN)"
-
-snikket-reset:
->@bash $(SNIKKET_ADMIN) reset "$(USER)"
-
-# PASS is passed on stdin, never in argv; empty = generated and printed once.
-snikket-passwd:
->@bash $(SNIKKET_ADMIN) passwd "$(USER)" "$(PASS)"
-
-snikket-disable:
->@bash $(SNIKKET_ADMIN) disable "$(USER)"
-
-snikket-enable:
->@bash $(SNIKKET_ADMIN) enable "$(USER)"
-
-# Destructive: asks for a typed yes unless FORCE=1.
-snikket-del-user:
->@bash $(SNIKKET_ADMIN) del-user "$(USER)" "$(FORCE)"
-
-snikket-status:
->@bash $(SNIKKET_ADMIN) status
-
-snikket-doctor:
->@bash $(SNIKKET_ADMIN) doctor
-
-snikket-tls:
->@bash $(SNIKKET_ADMIN) tls
-
-snikket-turn:
->@bash $(SNIKKET_ADMIN) turn
-
-snikket-logs:
->@bash $(SNIKKET_ADMIN) logs "$(SERVICE)" "$(N)"
-
-snikket-restart:
->@bash $(SNIKKET_ADMIN) restart "$(SERVICE)"
-
-snikket-exec:
->@bash $(SNIKKET_ADMIN) exec "$(CMD)"
-
-snikket-shell:
->@bash $(SNIKKET_ADMIN) shell
+>@bash $(REPO)/scripts/modules/kopia-admin.sh snapshot /source
 
 # Tmux sessions
 # Persistent terminal sessions on the host — detach (Ctrl-b d) and the
@@ -1053,191 +977,6 @@ tmux-kill:
 
 tmux-list:
 >@tmux ls 2>/dev/null || echo "No tmux sessions."
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Nextcloud (occ) — every recipe wraps `docker exec -u www-data nextcloud
-# php occ` (the container is named nextcloud; the FPM user owns occ).
-# Generic escape hatch: make nc-occ CMD='<any occ command + args>'.
-# Secrets never go into argv: passwords use OC_PASS (occ prompts otherwise)
-# and occ config:system:set output is left as-is (never echoed to logs).
-# ─────────────────────────────────────────────────────────────────────────────
-
-NC_OCC := docker exec -u www-data nextcloud php occ
-
-.PHONY: nc-occ nc-status nc-check nc-update-check nc-upgrade nc-cron nc-cron-run \
-	nc-maintenance-on nc-maintenance-off nc-repair nc-db-indices nc-db-columns \
-	nc-db-primary-keys nc-db-bigint nc-apps nc-app-enable nc-app-disable \
-	nc-config-get nc-config-set nc-users nc-user-add nc-user-del nc-user-password \
-	nc-user-setting nc-scan nc-groups nc-jobs nc-talk-signaling nc-core-update nc-app-update \
-	nc-talk-signaling-del nc-talk-turn nc-talk-turn-add nc-talk-turn-del \
-	nc-2fa-enforce nc-logs
-
-nc-occ:
->@if [ -z "$(CMD)" ]; then \
-    scripts/lib/mklog error "usage: make nc-occ CMD='<occ command + args>'  (e.g. CMD='status' or CMD='app:list')"; \
-    exit 1; \
-  fi
->$(NC_OCC) $(CMD)
-
-nc-status:
->$(NC_OCC) status
-
-nc-check:
->$(NC_OCC) check
-
-nc-update-check:
->$(NC_OCC) update:check
-
-nc-upgrade:
->$(NC_OCC) upgrade
-
-# Core update by compose image tag (the web updater also works — data/cloud/html
-# is a host bind mount, so its result survives recreates — this keeps the tag in
-# step with the installed code). Without VERSION it resolves the latest patch of
-# the running major from Docker Hub, and refuses a downgrade.
-nc-core-update:
->@VERSION=$(VERSION) $(REPO)/scripts/modules/nc-core-update.sh
-
-nc-app-update:
->$(NC_OCC) app:update --all
-
-nc-cron:
->$(NC_OCC) background:cron
-
-nc-cron-run:
->docker exec -u www-data nextcloud php -f /var/www/html/cron.php
-
-nc-maintenance-on:
->$(NC_OCC) maintenance:mode --on
-
-nc-maintenance-off:
->$(NC_OCC) maintenance:mode --off
-
-nc-repair:
->$(NC_OCC) maintenance:repair --include-expensive
-
-nc-db-indices:
->$(NC_OCC) db:add-missing-indices
-
-nc-db-columns:
->$(NC_OCC) db:add-missing-columns
-
-nc-db-primary-keys:
->$(NC_OCC) db:add-missing-primary-keys
-
-nc-db-bigint:
->$(NC_OCC) db:convert-filecache-bigint
-
-nc-apps:
->$(NC_OCC) app:list
-
-nc-app-enable:
->@if [ -z "$(APP)" ]; then scripts/lib/mklog error "usage: make nc-app-enable APP=<app-id>"; exit 1; fi
->$(NC_OCC) app:enable "$(APP)"
-
-nc-app-disable:
->@if [ -z "$(APP)" ]; then scripts/lib/mklog error "usage: make nc-app-disable APP=<app-id>"; exit 1; fi
->$(NC_OCC) app:disable "$(APP)"
-
-nc-config-get:
->@if [ -z "$(KEY)" ]; then scripts/lib/mklog error "usage: make nc-config-get KEY=<config-key>"; exit 1; fi
->$(NC_OCC) config:system:get "$(KEY)"
-
-nc-config-set:
->@if [ -z "$(KEY)" ] || [ -z "$(VALUE)" ]; then \
-    scripts/lib/mklog error "usage: make nc-config-set KEY=<key> VALUE=<value> [TYPE=string|integer|boolean|array]"; \
-    exit 1; \
-  fi
->$(NC_OCC) config:system:set "$(KEY)" --value "$(VALUE)" $(TYPE:%=--type %)
-
-# Set the default storage quota for NEW users (files app 'default_quota' —
-# an APP config, so nc-config-set (system config) is the wrong tool) and sync
-# the recovery manifest so a fresh install reproduces it.
-nc-default-user-quota:
->@if [ -z "$(VALUE)" ]; then \
-    scripts/lib/mklog error "usage: make nc-default-user-quota VALUE='100 GB'  (or 'none' for unlimited)"; \
-    exit 1; \
-  fi
->$(NC_OCC) config:app:set files default_quota --value "$(VALUE)"
->@printf '# GENERATED by make nc-default-user-quota (%s) — do not edit; re-run to refresh.\n# Default storage quota for NEW users (files app '\''default_quota'\'').\n%s\n' "$$(date -Is)" "$(VALUE)" > $(REPO)/data/cloud/recovery/default-quota
-
-nc-users:
->$(NC_OCC) user:list
-
-nc-user-add:
->@if [ -z "$(USER)" ]; then scripts/lib/mklog error "usage: make nc-user-add USER=<uid> [PASS=<password>]"; exit 1; fi
->@if [ -n "$(PASS)" ]; then \
-    docker exec -u www-data -e OC_PASS="$(PASS)" nextcloud php occ user:add --password-from-env "$(USER)"; \
-  else \
-    $(NC_OCC) user:add "$(USER)"; \
-  fi
-
-nc-user-del:
->@if [ -z "$(USER)" ]; then scripts/lib/mklog error "usage: make nc-user-del USER=<uid>"; exit 1; fi
->$(NC_OCC) user:delete "$(USER)"
-
-nc-user-password:
->@if [ -z "$(USER)" ]; then scripts/lib/mklog error "usage: make nc-user-password USER=<uid> [PASS=<password>]"; exit 1; fi
->@if [ -n "$(PASS)" ]; then \
-    docker exec -u www-data -e OC_PASS="$(PASS)" nextcloud php occ user:resetpassword --password-from-env "$(USER)"; \
-  else \
-    $(NC_OCC) user:resetpassword "$(USER)"; \
-  fi
-
-nc-user-setting:
->@if [ -z "$(USER)" ] || [ -z "$(KEY)" ] || [ -z "$(VALUE)" ]; then \
-    scripts/lib/mklog error "usage: make nc-user-setting USER=<uid> KEY=<setting-key> VALUE=<value>  (e.g. KEY=email)"; \
-    exit 1; \
-  fi
->$(NC_OCC) user:setting "$(USER)" settings "$(KEY)" "$(VALUE)"
-
-nc-scan:
->@if [ -n "$(USER)" ]; then \
-    $(NC_OCC) files:scan "$(USER)"; \
-  else \
-    $(NC_OCC) files:scan --all; \
-  fi
-
-nc-groups:
->$(NC_OCC) group:list
-
-nc-jobs:
->$(NC_OCC) background-job:list
-
-nc-talk-signaling:
->$(NC_OCC) talk:signaling:list
-
-nc-talk-signaling-add:
->@if [ -z "$(URL)" ] || [ -z "$(SECRET)" ]; then \
-    scripts/lib/mklog error "usage: make nc-talk-signaling-add URL=<server-url> SECRET=<shared-secret>"; \
-    exit 1; \
-  fi
->$(NC_OCC) talk:signaling:add "$(URL)" "$(SECRET)"
-
-nc-talk-signaling-del:
->@if [ -z "$(URL)" ]; then scripts/lib/mklog error "usage: make nc-talk-signaling-del URL=<server-url>"; exit 1; fi
->$(NC_OCC) talk:signaling:delete "$(URL)"
-
-nc-talk-turn:
->$(NC_OCC) talk:turn:list
-
-nc-talk-turn-add:
->@if [ -z "$(SERVER)" ] || [ -z "$(SECRET)" ]; then \
-    scripts/lib/mklog error "usage: make nc-talk-turn-add SERVER='<schemes> <host:port> <protocols>' SECRET=<shared-secret>  (schemes: turn|turns|turn,turns; protocols: udp|tcp|udp,tcp — positional, spreed has no --udp/--tcp)"; \
-    exit 1; \
-  fi
->$(NC_OCC) talk:turn:add $(SERVER) --secret "$(SECRET)"
-
-nc-talk-turn-del:
->@if [ -z "$(SERVER)" ]; then scripts/lib/mklog error "usage: make nc-talk-turn-del SERVER='scheme host:port'"; exit 1; fi
->$(NC_OCC) talk:turn:delete $(SERVER)
-
-nc-2fa-enforce:
->@if [ -z "$(USER)" ]; then scripts/lib/mklog error "usage: make nc-2fa-enforce USER=<uid>"; exit 1; fi
->$(NC_OCC) twofactorauth:enforce "$(USER)"
-
-nc-logs:
->$(NC_OCC) log:tail $(or $(N),100)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Migration
@@ -1396,7 +1135,7 @@ help-more:
 # ─────────────────────────────────────────────────────────────────────────────
 .PHONY: taildrop-file taildrop-folder
 
-# Same device argument as backup/import-backups (TAILDROP, defined at the top).
+# Same device argument as the taildrop helpers (TAILDROP, defined at the top).
 # make taildrop-file FILE=path TAILDROP=<device>    (sudo tailscale file cp)
 # make taildrop-folder DIR=path TAILDROP=<device>
 taildrop-file:
