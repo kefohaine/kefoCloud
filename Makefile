@@ -1252,7 +1252,7 @@ migrate:
 # Git
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: git-issue git-import-issues git-start git-branch git-switch git-del git-branches git-pr git-land git-pull git-add git-com git-push git-force-push git-audit git-split
+.PHONY: git-issue git-import-issues git-start git-branch git-switch git-del git-branches git-pr git-land git-pull git-add git-com git-push git-force-push git-audit prose-audit git-split
 
 # The branch + pull-request workflow (AGENTS rule 30). `main` is write-once: a
 # change is made on a branch named temp-<N> (temp-1, temp-2, … derived from the
@@ -1331,6 +1331,14 @@ git-pull:
 # in the GitHub web editor, which runs no local hook.
 git-audit:
 >@bash scripts/info/git-audit.sh $(RANGE)
+
+# Prose monitor (scripts/info/prose-audit.sh). Comments and user-facing strings
+# describe the CURRENT configuration only: no docs/ path, no size or duration
+# measured on one host, no other machine or its live address, no plan or guess
+# (AGENTS rule 31). Whole tree, read-only; the pre-push hook and `make git-pr`
+# both gate on it.
+prose-audit:
+>@bash scripts/info/prose-audit.sh
 
 # The rewriter behind the two hooks (scripts/info/git-split.sh). It performs the
 # fix `git-audit` only reports: split a bundle commit into one commit per unit
