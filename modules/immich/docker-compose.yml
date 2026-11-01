@@ -15,7 +15,7 @@ services:
 
     environment:
       TZ: ${TIMEZONE:-UTC}
-      # Its OWN PostgreSQL — never the Nextcloud one (different major,
+      # Its OWN PostgreSQL — never another module's (different major,
       # different extensions, different lifecycle).
       DB_HOSTNAME: immich-db
       DB_USERNAME: ${DB_USERNAME}
@@ -108,7 +108,7 @@ services:
     mem_limit: 128m
     memswap_limit: 128m
 
-    # Pure cache, like the Nextcloud one: no persistence, no fork-on-write.
+    # Pure cache, like every cache here: no persistence, no fork-on-write.
     command: ["redis-server", "--save", "", "--appendonly", "no"]
 
     healthcheck:
