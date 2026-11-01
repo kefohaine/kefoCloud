@@ -47,19 +47,9 @@ AUTHOR="$(G log -1 --format='%an <%ae>' 2>/dev/null || true)"
 
 die() { printf 'git-split: %s\n' "$*" >&2; exit 1; }
 
-# commit_is_significant <commit> — 0 when any changed path is significant
-# (rule 10), or the commit renames/deletes anything.
-commit_is_significant() {
-  local ns line st p
-  ns=$(G diff-tree -r --name-status --no-commit-id --no-renames --root "$1" 2>/dev/null) || return 1
-  while IFS= read -r line; do
-    [ -z "$line" ] && continue
-    st="${line%%$'\t'*}"; p="${line#*$'\t'}"; p="${p##*$'\t'}"
-    case "$st" in D*|R*) return 0 ;; esac
-    significant_path "$p" && return 0
-  done <<< "$ns"
-  return 1
-}
+# commit_is_significant comes from scripts/lib/commit-areas.sh: a commit that
+# changes more than SIGNIFICANT_FILE_THRESHOLD non-doc files (rule 10). Docs
+# never count, so a documentation-only commit never gets a recipe.
 
 # split_from_status <subject> <body> — stdin is `git diff-tree --name-status`
 # lines. HEAD is at the parent; `git reset` has not run yet. Stages one commit
@@ -100,14 +90,13 @@ split_from_status() {
         [ "$u" = "$primary" ] || continue              # a doc: rides the biggest unit
       fi
       files+=("$p")
-      case "$st" in D*|R*) sig=1 ;; esac
-      significant_path "$p" && sig=1
+      commit_folder "$p" >/dev/null && sig=$((sig + 1)) || true
     done <<< "$lines"
     [ "${#files[@]}" -eq 0 ] && continue
 
     G add -A -- "${files[@]}" >/dev/null 2>&1 || return 1
 
-    rev=''; [ "$sig" = 1 ] && rev=$(G rev-parse HEAD)
+    rev=''; [ "${sig:-0}" -gt "$SIGNIFICANT_FILE_THRESHOLD" ] && rev=$(G rev-parse HEAD)
     label="$u"; [ "$u" = "." ] && label=root
     subj="$subject"; [ "$n" -gt 1 ] && subj="$subject ($label)"
     msg="$subj"
