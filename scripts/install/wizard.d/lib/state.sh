@@ -15,7 +15,7 @@ load_state() {
 # run that should be doing the full job, not silently skipping steps. Every
 # caller goes through here, so a step can never disagree with the module record
 # written to wizard.state (2026-10-15: three different call sites disagreed on
-# the fallback, and one of them made a healthy Nextcloud report a failure).
+# the fallback, and one of them made a healthy app report a failure).
 mod_on() {
   # Build the name first, then indirect it: `${MOD_${1^^}:-true}` is NOT valid
   # bash (nested expansion inside a variable name) — it errors and every test
@@ -76,9 +76,6 @@ save_state() {
       _mv="MOD_${_mk^^}"
       printf 'MOD_%s=%q\n' "${_mk^^}" "${!_mv:-}"
     done
-    # The cloud module's optional services, answered before the apps plan.
-    printf 'VIDEO_CALLING=%q\n'       "${VIDEO_CALLING:-}"
-    printf 'CLIENT_PUSH=%q\n'         "${CLIENT_PUSH:-}"
     # The RECORD (for other scripts) — only real once the install is finished.
     printf 'enabled_modules=%q\n'    "$em"
     printf 'finished=%q\n'           "${FINISHED:-false}"
@@ -86,10 +83,6 @@ save_state() {
     printf 'GH_AUTH_OK=%q\n'         "${GH_AUTH_OK:-0}"
     printf 'GITHUB_COMMIT_NAME=%q\n' "${GITHUB_COMMIT_NAME:-}"
     printf 'GITHUB_COMMIT_EMAIL=%q\n' "${GITHUB_COMMIT_EMAIL:-}"
-    # The app-actions fingerprint that was APPLIED (see ask_nc_apps): a resume
-    # whose config/cloud/apps.conf still hashes the same never re-asks, because
-    # the actions are already in the instance. Empty until they are applied.
-    printf 'NC_APPS_APPLIED=%q\n'    "${NC_APPS_APPLIED:-}"
     printf 'ERR_TAGS=(%s)\n'         "$(printf '%q ' "${ERR_TAGS[@]}")"
   } > "$tmp"
   chmod 600 "$tmp"

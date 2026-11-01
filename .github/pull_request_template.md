@@ -34,5 +34,5 @@ Closes #<!-- issue number: the link GitHub renders between this PR and the issue
 <!-- the commands you ran and their verdict: make smoke, make git-audit, bash -n, a dry run -->
 
 - [ ] one change per commit (`make git-audit` is clean)
-- [ ] every significant commit carries its `Revert:` line
+- [ ] every commit touching more than 3 files carries its `Revert:` line (docs-only commits need none)
 - [ ] docs updated to match (WHAT / MANUAL / README as applicable)

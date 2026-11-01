@@ -17,8 +17,8 @@ TASK_NAMES=(
   "Repository Setup" "Host Services" "DNS Records"
   "Repo Hygiene"
   "Stack Config" "Docker Containers" "SSL Certificates"
-  "Mail Setup" "Nextcloud Setup" "Vaultwarden Setup"
-  "Monitoring Setup"
+  "Mail Setup" "Matrix Setup" "Vaultwarden Setup"
+  "Monitoring Setup" "Backup Setup"
   "Smoke Pass"
 )
 # Set in main() when the operator confirms repair — the mode the run's start
@@ -48,6 +48,6 @@ TASK_TOTAL=${#TASK_NAMES[@]}
 TASKS=(
   task_packages task_ssh task_firewall task_tailscale task_docker task_goose
   task_repo task_host task_dns task_hygiene
-  task_stackcfg task_containers task_certs task_mail task_cloud task_vault
-  task_monitor task_smoke
+  task_stackcfg task_containers task_certs task_mail task_matrix task_vault
+  task_monitor task_kopia task_smoke
 )

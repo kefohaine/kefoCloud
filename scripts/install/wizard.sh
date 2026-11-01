@@ -12,9 +12,9 @@
 # (grey [WAIT] -> animated orange [EXEC] -> green [DONE] / red [FAIL]; a failed
 # task pauses the run on its row and hands the error to the operator, and the
 # errors are reported after): host services, docker, tailscale, the full stack —
-# Nextcloud (app + PostgreSQL + Redis + Talk HPB/TURN), Caddy, Vaultwarden,
-# Uptime Kuma, Docker Mailserver + Roundcube — Cloudflare DNS records, and LE
-# cert issuance. The repo already carries the canonical <domain> naming
+# Matrix (Synapse + Element + PostgreSQL), Caddy, Vaultwarden, Uptime Kuma,
+# Docker Mailserver + Roundcube, Kopia — Cloudflare DNS records, and LE cert
+# issuance. The repo already carries the canonical <domain> naming
 # (modules/<domain>/, vhosts/<host>.caddy); no legacy renames are applied.
 #
 # Fully autonomous: the Kuma admin account is created

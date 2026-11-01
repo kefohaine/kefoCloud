@@ -29,7 +29,7 @@ pause_and_resolve() {
     printf '%s[INFO]%s Fix / complete the items above, then press Enter to re-check (Ctrl-C aborts): ' "$C_GREY" "$C_RST"
     # The prompt line wraps to 2+ screen rows at 80 cols — count it via the same
     # physical-row rule as _note, or every Enter cycle drifts the checklist one
-    # row down (the "Nextcloud Setupp" tear, 2026-10-19).
+    # row down (a row name losing its tail, 2026-10-19).
     local _pn="[INFO] Fix / complete the items above, then press Enter to re-check (Ctrl-C aborts): "
     local _pnrows=$(_wrapped_rows "$_pn")
     # Aborted (Ctrl-C / EOF) with the error still open → hard stop.
@@ -41,7 +41,7 @@ pause_and_resolve() {
       # not a boolean to probe), then inspect the state it leaves.
       case "$tag" in
         dkim_setup) mail_wait_ready 2>/dev/null || true; dkim_setup ;;
-        nextcloud_setup) mail_wait_ready 2>/dev/null || true; nextcloud_setup ;;
+        matrix_setup) matrix_setup ;;
         vaultwarden_setup) vaultwarden_setup ;;
       esac
       if recheck "$tag"; then
@@ -76,13 +76,15 @@ problem() {
     install_config) echo "host services are not up (make install-config failed)" ;;
     fail2ban)       echo "fail2ban is not running (sshd jail dead)" ;;
     caddy)          echo "caddy container is not running" ;;
-    nextcloud)      echo "nextcloud container is not running (or talk-hpb/talk-relay are down)" ;;
-    nextcloud_db)   echo "postgresql container is not running (docker-compose.db.yml)" ;;
+    matrix)         echo "the Matrix stack is not running (matrix-synapse / matrix-element / matrix-db)" ;;
+    matrix_element) echo "Element does not answer on chat.$DOMAIN" ;;
     vaultwarden)    echo "vaultwarden container is not running" ;;
     kuma)           echo "uptimekuma container is not running" ;;
     mailserver)     echo "Mailu front container (mailu-front) is not running (mail platform)" ;;
-    datadirectory)  echo "nextcloud datadirectory is not /data" ;;
-    talk_gen)       echo "nextcloud stack secrets not generated (make talk-gen failed)" ;;
+    matrix_gen)     echo "Matrix secrets or configs not generated (make matrix-gen failed)" ;;
+    kopia)          echo "the kopia container is not running" ;;
+    kopia_gen)      echo "kopia secrets not generated (make kopia-gen failed)" ;;
+    kopia_setup)    echo "the kopia repository does not open" ;;
     kuma_admin)     echo "uptime kuma admin user is missing" ;;
     kuma_seed)      echo "uptime kuma monitors are not seeded" ;;
     zone)           echo "Cloudflare zone '$DOMAIN' not found" ;;
@@ -90,7 +92,7 @@ problem() {
     cert_*)         echo "cert for ${1#cert_}.$DOMAIN is not issued by Let's Encrypt" ;;
     sweep)          echo "old project name is still referenced in the repo tree" ;;
     sslmode)        echo "Cloudflare SSL/TLS mode is not Full (or strict)" ;;
-    nextcloud_setup) echo "Nextcloud occ wiring incomplete (Talk signaling/TURN, SMTP, background cron, mail_roundcube externalLocation/emailAddressChoice)" ;;
+    matrix_setup)   echo "Matrix wiring incomplete (homeserver health, admin account, Element reachable)" ;;
     dkim_setup)      echo "DKIM key / dkim._domainkey TXT record not published" ;;
     dns_mail_txt)   echo "one or more mail records (MX, SPF, DMARC) are missing" ;;
     vaultwarden_setup) echo "Vaultwarden SMTP sender mailbox missing (vaultwarden@$DOMAIN)" ;;
@@ -116,22 +118,24 @@ hint() {
     install_config) echo "run: make install-config in $REPO, then re-check" ;;
     fail2ban)       echo "ensure /etc/fail2ban/jail.d/sshd.conf has backend = systemd, then: systemctl restart fail2ban; fail2ban-client status sshd" ;;
     caddy)          echo "run: make dok-recreate-caddy, then re-check" ;;
-    nextcloud)      echo "run: make dok-recreate-nextcloud, then re-check" ;;
-    nextcloud_db)   echo "run: make dok-recreate-nextcloud-db, then re-check" ;;
-    talk_gen)       echo "run: make talk-gen in $REPO, then re-check" ;;
+    matrix)         echo "run: make dok-recreate-matrix-synapse, then re-check" ;;
+    matrix_element) echo "run: make dok-logs-matrix-element, then re-check" ;;
+    matrix_gen)     echo "run: make matrix-gen in $REPO, then re-check" ;;
+    kopia)          echo "run: make dok-recreate-kopia, then re-check" ;;
+    kopia_gen)      echo "run: make kopia-gen in $REPO, then re-check" ;;
+    kopia_setup)    echo "run: make kopia-status (then make dok-logs-kopia), then re-check" ;;
     vaultwarden)    echo "run: make dok-recreate-vaultwarden, then re-check" ;;
     kuma)           echo "run: make dok-recreate-uptimekuma, then re-check" ;;
     mailserver)     echo "run: make dok-recreate-mailserver, then re-check" ;;
     homarr)         echo "run: make dok-recreate-homarr, then re-check (SECRET_ENCRYPTION_KEY must be set in modules/homarr/.env)" ;;
-    datadirectory)  echo "run: docker exec -w /var/www/html nextcloud php occ config:system:set datadirectory --value /data, then re-check" ;;
     kuma_admin)     echo "create the admin account at https://kuma.$DOMAIN in the UI, then re-check" ;;
     kuma_seed)      echo "run: make dok-recreate-uptimekuma (UPTIME_KUMA_DB_TYPE=sqlite makes Kuma create its schema), wait for /app/data/kuma.db to have tables, then: docker exec -i uptimekuma sqlite3 /app/data/kuma.db < modules/uptimekuma/seed-monitors.sql" ;;
     zone)           echo "add $DOMAIN as a zone in the Cloudflare dashboard, then re-check" ;;
-    dns_*)          echo "create an A record ${1#dns_}.$DOMAIN -> ${HOST_IP:-<machine IP>} in Cloudflare (turn must be DNS-only/grey-cloud — TURN bypasses the proxy; the rest proxied), then re-check" ;;
+    dns_*)          echo "create an A record ${1#dns_}.$DOMAIN -> ${HOST_IP:-<machine IP>} in Cloudflare (matrix must be DNS-only/grey-cloud; the rest proxied), then re-check" ;;
     cert_*)         echo "hit https://${1#cert_}.$DOMAIN once to trigger ACME, wait a few seconds, then re-check" ;;
     sweep)          echo "rename or remove the files listed by: grep -rlI $GITHUB_USER $REPO --exclude-dir=.git --exclude-dir=docs --exclude-dir=archives --exclude-dir=scripts, then re-check" ;;
     sslmode)        echo "Cloudflare dashboard -> SSL/TLS -> Overview -> set mode to Full (or Full strict), then re-check" ;;
-    nextcloud_setup) echo "the occ wiring is re-applied automatically on each re-check (nextcloud_occ_remediate); if it still fails, ensure the nextcloud/talk containers are up (make dok-recreate-nextcloud) and the mail module's SMTP_PASSWORD exists in modules/nextcloud/.env — see the nextcloud_setup function in this script, then re-check" ;;
+    matrix_setup)   echo "the setup is re-applied automatically on each re-check; if it still fails, check the homeserver log (make matrix-logs) and that SYNAPSE_ADMIN_USER/PASSWORD exist in modules/matrix/.env, then re-check" ;;
     dkim_setup)      echo "re-run the wizard (dkim_setup generates the key through Mailu's ORM when the domain has none), verify the CF token has Zone > DNS > Edit, then dig @<zone NS> TXT dkim._domainkey.$DOMAIN" ;;
     dns_mail_txt)   echo "the installer retries the MX, SPF and DMARC records on re-check; verify the token has Zone > DNS > Edit and inspect Cloudflare DNS for $DOMAIN (MX -> mail.$DOMAIN, TXT v=spf1 a:mail.$DOMAIN mx -all, _dmarc)" ;;
     vaultwarden_setup) echo "the mail step waits for the mailserver's account API (mail_wait_ready) then retries the add — a repeat failure means SMTP_PASSWORD is missing from modules/vaultwarden/.env; verify the mail module is enabled (else this step is skipped) and that the mailserver container is healthy (make smoke), then re-check" ;;
@@ -161,12 +165,12 @@ recheck() {
     install_config) systemctl is-active --quiet ttyd dnsmasq goose ;;
     fail2ban) systemctl is-active --quiet fail2ban && fail2ban-client status sshd >/dev/null 2>&1 ;;
     caddy) docker ps --format '{{.Names}}' | grep -qx caddy ;;
-    nextcloud) docker ps --format '{{.Names}}' | grep -qx nextcloud && docker ps --format '{{.Names}}' | grep -qx talk-hpb && docker ps --format '{{.Names}}' | grep -qx talk-relay ;;
-    nextcloud_db) docker ps --format '{{.Names}}' | grep -qx postgresql ;;
+    matrix) docker ps --format '{{.Names}}' | grep -qx matrix-synapse && docker ps --format '{{.Names}}' | grep -qx matrix-element && docker ps --format '{{.Names}}' | grep -qx matrix-db ;;
+    matrix_element) curl -sk --max-time 15 "https://chat.$DOMAIN/" | grep -qi '<title>' ;;
+    kopia) docker ps --format '{{.Names}}' | grep -qx kopia ;;
     vaultwarden) docker ps --format '{{.Names}}' | grep -qx vaultwarden ;;
     kuma) docker ps --format '{{.Names}}' | grep -qx uptimekuma ;;
     mailserver) docker ps --format '{{.Names}}' | grep -qx mailu-front && docker ps --format '{{.Names}}' | grep -qx roundcube ;;
-    datadirectory) if docker exec -w /var/www/html nextcloud php occ status 2>/dev/null | grep -q "installed: true"; then [ "$(docker exec -w /var/www/html nextcloud php occ config:system:get datadirectory 2>/dev/null | tr -d '\n')" = "/data" ]; else true; fi ;;
     kuma_admin) [ "$(docker exec uptimekuma sqlite3 /app/data/kuma.db "SELECT COUNT(*) FROM user WHERE username='admin';" 2>/dev/null | tr -d '\n')" = "1" ] ;;
     kuma_seed) [ "$(docker exec uptimekuma sqlite3 /app/data/kuma.db "SELECT COUNT(*) FROM monitor;" 2>/dev/null | tr -d '\n')" -gt 0 ] ;;
     zone) [ -n "$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" | jq -r '.result[0].id // empty')" ] ;;
@@ -174,7 +178,8 @@ recheck() {
     cert_*) local h=${1#cert_}; echo | timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$h.$DOMAIN" 2>/dev/null | openssl x509 -noout -issuer 2>/dev/null | grep -q "Let's Encrypt" ;;
     sweep) [ -z "$(sweep_hits)" ] ;;
     sslmode) ssl_mode_full ;;
-    nextcloud_setup) nextcloud_occ_remediate; if ! mod_on mail || { docker exec -u www-data nextcloud php occ config:system:get mail_smtphost 2>/dev/null | grep -q "mail.$DOMAIN" && docker exec -u www-data nextcloud php occ config:app:get mail_roundcube externalLocation 2>/dev/null | grep -qx "https://nextcloud.$DOMAIN/roundcube" && docker exec -u www-data nextcloud php occ config:app:get mail_roundcube emailAddressChoice 2>/dev/null | grep -qx "userChosenEmail"; }; then docker exec -u www-data nextcloud php occ talk:signaling:list 2>/dev/null | grep -q "https://talk.$DOMAIN/signaling" && docker exec -u www-data nextcloud php occ talk:turn:list 2>/dev/null | grep -q "talk.$DOMAIN:3478" && docker exec -u www-data nextcloud php occ config:system:get trusted_domains 2>/dev/null | grep -qx "nextcloud.$DOMAIN"; else false; fi ;;
+    matrix_setup) docker exec matrix-synapse python3 -c 'import urllib.request,sys; sys.exit(0 if urllib.request.urlopen("http://127.0.0.1:8008/health").status == 200 else 1)' >/dev/null 2>&1 && curl -sk --max-time 15 "https://chat.$DOMAIN/" | grep -qi '<title>' ;;
+    kopia_setup) docker exec -e KOPIA_PASSWORD="$(sed -n 's/^KOPIA_PASSWORD=//p' "$REPO/modules/kopia/.env" 2>/dev/null)" kopia kopia --config-file=/data/config/repository.config repository status >/dev/null 2>&1 ;;
     dkim_setup)      dig +short TXT "dkim._domainkey.$DOMAIN" @"$(dig +short NS "$DOMAIN" | head -1)" 2>/dev/null | tr -d '"' | grep -qE 'p=[A-Za-z0-9+/=]{100,}' ;;
     dns_mail_txt) mod_on mail || return 0; cf_mail_dns; local records; records=$(curl -fsS -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" 2>/dev/null) || return 1; printf '%s' "$records" | jq -e --arg d "$DOMAIN" --arg s "v=spf1 a:mail.$DOMAIN mx -all" --arg m 'v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s;' '[.result[] | {type,name,content}] as $r | [[$d,"MX"],["_dmarc."+$d,"TXT"]] as $fs | [($fs[] | . as $x | any($r[]; .type==$x[1] and .name==$x[0])), any($r[]; .type=="TXT" and .name==$d and .content==$s)] | all' >/dev/null ;;
     vaultwarden_setup) if mod_on mail; then . modules/vaultwarden/.env 2>/dev/null; mailbox_add "vaultwarden@$DOMAIN" "${SMTP_PASSWORD:-}" >/dev/null 2>&1; mailbox_exists "vaultwarden@$DOMAIN"; else false; fi ;;
@@ -230,12 +235,12 @@ resolve_errors() {
     for tag in "${remaining[@]}"; do
       # A recorded setup failure is not a boolean to probe — re-RUN its setup
       # step first (the steps are idempotent), then inspect the state it leaves.
-      # Without this a tag whose recheck arm inspects occ config (nextcloud_setup)
-      # or a mailbox (vaultwarden_setup) can never heal: nextcloud_setup's own
-      # wiring only ran during the failed pass, and the containers it was running
-      # against are recreated by then (2026-10-15).
+      # Without this a tag whose recheck arm inspects app state (matrix_setup)
+      # or a mailbox (vaultwarden_setup) can never heal: that setup only ran
+      # during the failed pass, and the containers it was running against are
+      # recreated by then (2026-10-15).
       case "$tag" in
-        nextcloud_setup) mail_wait_ready 2>/dev/null || true; nextcloud_setup;;
+        matrix_setup) matrix_setup;;
         vaultwarden_setup) vaultwarden_setup;;
         dkim_setup) mail_wait_ready 2>/dev/null || true; dkim_setup;;
       esac

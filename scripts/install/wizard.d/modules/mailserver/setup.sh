@@ -14,7 +14,7 @@ mail_wait_ready() {
     if docker exec mailu-admin true >/dev/null 2>&1 \
        && docker exec mailu-admin flask mailu config-export -j >/dev/null 2>&1; then
       # Only worth a log line when the caller actually had to wait: every
-      # re-run of vaultwarden/nextcloud/dkim_setup probes this again and the
+      # re-run of vaultwarden/dkim_setup probes this again and the
       # per-caller "ready after 0s" line just spams the log (2026-10-19).
       [ "$i" -gt 0 ] && log "  Mailu admin CLI ready after ${i}s"
       # Ensure the primary domain object exists before any mailbox is created.

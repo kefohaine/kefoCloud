@@ -67,8 +67,10 @@ success_block() {
   # Only the enabled modules' sites are listed — a site the operator chose not
   # to install (and so will not answer) must not appear. Shell (the tailnet
   # door) and the machine's own addresses are always part of the stack.
-  mod_on cloud && printf '  %sNextcloud%s    https://nextcloud.%s    %sadmin / %s%s\n' \
-    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${NEXTCLOUD_ADMIN_PASSWORD:-<see modules/nextcloud/.env>}" "$C_RST"
+  mod_on chat && printf '  %sElement%s      https://chat.%s      admin %s@%s:%s %s(password: modules/matrix/.env)%s\n' \
+    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${SYNAPSE_ADMIN_USER:-mkadmin}" "$DOMAIN" "$C_RST" "$C_GREY" "$C_RST"
+  mod_on kopia && printf '  %sKopia%s        https://kopia.%s     %s%s / modules/kopia/.env%s\n' \
+    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${KOPIA_SERVER_USERNAME:-kopia}" "$C_RST"
   mod_on vault && printf '  %sVaultwarden%s  https://vault.%s    %s%s / %s%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${VAULTWARDEN_ADMIN_USER:-admin@$DOMAIN}" "${VAULTWARDEN_ADMIN_PASSWORD:-<see modules/vaultwarden/.env>}" "$C_RST"
   mod_on monitor && printf '  %sUptime Kuma%s  https://kuma.%s    %sadmin / %s%s\n' \
@@ -115,8 +117,8 @@ success_block() {
   if [ "${TAIL_TLS_FALLBACK:-false}" = true ]; then
     n=$((n+1)); printf '   %d. Run scripts/ops/tailscale-https.sh — the ttyd.%s LE order failed (often the LE rate limit), so the door is served over Tailscale HTTPS instead\n' "$n" "$DOMAIN"
   fi
-  if mod_on cloud; then
-    n=$((n+1)); printf '   %d. %s(optional)%s Cloudflare WAF rule skip for nextcloud.%s (desktop sync)\n' "$n" "$C_GREY" "$C_RST" "$DOMAIN"
+  if mod_on chat; then
+    n=$((n+1)); printf '   %d. %s(optional)%s open federation from the Matrix admin room if you want other servers to reach this one\n' "$n" "$C_GREY" "$C_RST"
   fi
   n=$((n+1)); if [ "${GH_REMOTE:-false}" = "true" ]; then
     printf '   %d. GitHub remote access: origin is git@github.com:%s/%s.git, key /root/.ssh/github_key\n' "$n" "$GITHUB_USER" "$REPO_NAME"
@@ -126,7 +128,7 @@ success_block() {
   if mod_on mail; then
     n=$((n+1)); printf '   %d. Mailboxes: make mail-gen MAIL=name@%s (or bare make mail-gen for a disposable)\n' "$n" "$DOMAIN"
     local senders=""
-    mod_on cloud && senders+=" nextcloud@$DOMAIN"
+    mod_on chat && senders+=" matrix@$DOMAIN"
     mod_on vault && senders+=" vaultwarden@$DOMAIN"
     [ -n "$senders" ] && printf '      %sthe app SMTP sender mailboxes are created automatically:%s%s\n' "$C_GREY" "$senders" "$C_RST"
   fi

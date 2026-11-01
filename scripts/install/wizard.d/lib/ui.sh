@@ -56,7 +56,7 @@ _task_row() {
 # escapes are zero-width). _TAIL counts SCREEN rows, so every console write must
 # be counted through this — a ~90-col Enter prompt wraps to 2 rows and counting
 # it as 1 drifted every later relative move one row down, tearing the checklist
-# ("[DONE] Nextcloud Setupp", 2026-10-19).
+# (a row name losing its tail, 2026-10-19).
 _wrapped_rows() { # _wrapped_rows <string> -> prints physical row count
   local plain len cols="${_COLS:-80}"
   plain=$(printf '%s' "$1" | sed 's/\x1b\[[0-9;]*m//g')
@@ -78,7 +78,7 @@ _note() {
   # A background animator redraws the running row 10x/s with the _TAIL it
   # inherited at fork time — it cannot see a note growing the tail, so its next
   # frame lands ON the note line and tears the checklist apart (2026-10-19,
-  # "[EXEC] Nextcloud Setup / [WAIT] Vaultwarden Setup" interleaved garbage
+  # "[EXEC] Matrix Setup / [WAIT] Vaultwarden Setup" interleaved garbage
   # after a WARN). Stop the animator, print, then restart it with the new tail.
   if [ -n "$ANIM_PID" ]; then
     kill "$ANIM_PID" 2>/dev/null; wait "$ANIM_PID" 2>/dev/null; ANIM_PID=

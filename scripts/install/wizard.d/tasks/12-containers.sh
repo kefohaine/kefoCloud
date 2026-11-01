@@ -29,31 +29,18 @@ containers_up() {
     detail "  Caddy image built"
   fi
   svc_note_applied caddy caddy --
-  # PostgreSQL first — the nextcloud entrypoint's fresh install needs the DB
-  # reachable (POSTGRES_HOST from .env, set by talk-gen above). Caddy's
-  # DNS-01 issuance runs at startup, so the mail/turn certs the talk stack
-  # and mailserver need are on disk by the time they start. Modules respect
-  # the install-time choice (default: everything ON).
-  if mod_on cloud; then
-    if svc_skip_repair nextcloud nextcloud -- nextcloud postgresql; then
-      detail "  nextcloud-db + nextcloud already up, inputs unchanged — skipped"
+  # The homeserver needs its database reachable before it migrates its schema,
+  # so the whole matrix unit is one compose invocation (depends_on enforces the
+  # order inside it). Caddy's DNS-01 issuance runs at startup, so the
+  # mail/matrix certs are on disk by the time those containers start.
+  if mod_on chat; then
+    if svc_skip_repair matrix matrix -- matrix-synapse matrix-element matrix-db; then
+      detail "  matrix stack already up, inputs unchanged — skipped"
     else
-      log "  recreate: nextcloud-db + nextcloud"
-      # ONE compose invocation for BOTH files. They live in the same directory
-    # (modules/nextcloud/), so compose treats them as one project — and running
-    # `up --remove-orphans` on either file ALONE sees the other file's containers
-    # as orphans and DELETES them. That is exactly what happened on 2026-10-15:
-    # the app recreate removed the just-started postgresql, nextcloud could not
-    # reach 172.22.0.15:5432, and `occ maintenance:install` died with
-    # SQLSTATE[08006] "No route to host". Naming both -f files keeps every
-    # service in the project, so nothing is ever an orphan.
-    docker compose \
-      -f "$REPO/modules/nextcloud/docker-compose.db.yml" \
-      -f "$REPO/modules/nextcloud/docker-compose.yml" \
-      up -d --force-recreate --remove-orphans >>"$LOG" 2>&1 \
-      || { fail nextcloud_db; fail nextcloud; }
+      log "  recreate: matrix stack"
+      make dok-recreate-matrix-synapse >>"$LOG" 2>&1 || fail matrix
     fi
-    svc_note_applied nextcloud nextcloud --
+    svc_note_applied matrix matrix --
   fi
   if mod_on ocis; then
     if svc_skip_repair ocis ocis -- ocis; then
@@ -63,15 +50,13 @@ containers_up() {
     fi
     svc_note_applied ocis ocis --
   fi
-  if mod_on xmpp; then
-    # Snikket is host-networked and its four services start in order (server,
-    # then portal/proxy/certs), so one compose invocation is the whole unit.
-    if svc_skip_repair snikket snikket -- snikket-server snikket-proxy snikket-portal snikket-certs; then
-      detail "  snikket already up, inputs unchanged — skipped"
+  if mod_on kopia; then
+    if svc_skip_repair kopia kopia -- kopia; then
+      detail "  kopia already up, inputs unchanged — skipped"
     else
-      log "  recreate: snikket"; make dok-recreate-snikket >>"$LOG" 2>&1 || fail snikket
+      log "  recreate: kopia"; make dok-recreate-kopia >>"$LOG" 2>&1 || fail kopia
     fi
-    svc_note_applied snikket snikket --
+    svc_note_applied kopia kopia --
   fi
   if mod_on vault; then
     if svc_skip_repair vaultwarden vaultwarden -- vaultwarden; then
@@ -123,7 +108,6 @@ containers_up() {
     fi
     svc_note_applied immich immich --
   fi
-  redis_door_sanity
 }
 
 

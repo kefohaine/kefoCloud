@@ -128,11 +128,11 @@ cf_mail_dns() {
       "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$rid" >>"$LOG" 2>&1 || true
     detail "  A record removed: $fqdn (disabled in wizard.state)"
   }
-  # proxied (orange cloud): the apex + kuma/www. talk rides on the cloud door.
+  # proxied (orange cloud): the apex + kuma/www.
   for h in "" cloud kuma www; do
     case "$h" in
       "")    cf_record "" true;;
-      cloud) mod_on cloud && cf_record "$h" false || cf_a_del cloud;;
+      cloud) mod_on ocis && cf_record "$h" true || cf_a_del cloud;;
       kuma)  mod_on monitor && cf_record "$h" true || cf_a_del kuma;;
       www)   cf_record "$h" true;;
     esac
@@ -145,24 +145,21 @@ cf_mail_dns() {
   # blog.$DOMAIN is WriteFreely on its own hostname (proxied like cloud/kuma).
   mod_on blog && cf_record blog true || cf_a_del blog
   mod_on home && cf_record home true || cf_a_del home
-  # chat.$DOMAIN is Snikket (module: xmpp). DNS-ONLY (grey cloud) like every
-  # name that carries a non-HTTP protocol: XMPP c2s/s2s (5222/5269) and the
-  # TURN/STUN ports are not HTTP and the CF proxy cannot carry them.
-  mod_on xmpp && cf_record chat false || cf_a_del chat
-  # Snikket's cert covers its group-chat and file-share names too; all three
-  # must answer HTTP-01 on port 80 or no certificate issues.
-  mod_on xmpp && cf_record groups.chat false || cf_a_del groups.chat
-  mod_on xmpp && cf_record share.chat false || cf_a_del share.chat
+  # chat.$DOMAIN is Element (module: chat) — a browser app, so it is proxied
+  # like the other public doors.
+  mod_on chat && cf_record chat true || cf_a_del chat
+  # matrix.$DOMAIN is Synapse. DNS-ONLY (grey cloud): federation and media
+  # transfers are long lived and large, and the origin holds its own LE cert
+  # via DNS-01. Element reaches it directly, so the name must resolve publicly.
+  mod_on chat && cf_record matrix false || cf_a_del matrix
+  # kopia.$DOMAIN is the backup server and is TAILNET-ONLY: dnsmasq answers it
+  # for tailnet clients and the vhost 403s every other source.
+  cf_a_del kopia
   # photos.$DOMAIN is Immich, DNS-ONLY (grey cloud): uploads and video streams
   # must not pass through the CF proxy.
   mod_on photos && cf_record photos false || cf_a_del photos
   # home.$DOMAIN is Homarr (Next.js root-absolute assets, so it cannot live
   # under a path); proxied like cloud/kuma.
-  # talk MUST be DNS-only (grey cloud): TURN relays media over UDP/TCP
-  # 3478/5349 + 49160-49200, which the CF proxy cannot carry. Caddy still gets
-  # its LE cert via DNS-01. talk exists only when video calling was enabled.
-  mod_on cloud && [ "${VIDEO_CALLING:-true}" != "false" ] && cf_record talk false
-  mod_on cloud && [ "${VIDEO_CALLING:-true}" = "false" ] && cf_a_del talk
   # mail.$DOMAIN is the public mail door: Roundcube's web UI AND the name
   # mailu-front publishes 25/465/587/993 on and serves the SMTP/IMAP cert for
   # (the MX and SPF point at it). DNS-ONLY (grey cloud) — the CF proxy carries
@@ -174,11 +171,6 @@ cf_mail_dns() {
   # by @not_tailnet in the vhost, so the public zone must hold NO record for it
   # (DNS-01 only needs the TXT record for the certificate).
   cf_a_del mailu
-  # nextcloud.$DOMAIN is the Nextcloud-stack door and is TAILNET-ONLY (same
-  # model as vault/mailu): dnsmasq answers it for tailnet clients and the vhost
-  # 403s every other source, so the public zone must hold NO record for it —
-  # cloud.$DOMAIN is ownCloud's name (public).
-  cf_a_del nextcloud
   mod_on mail && cf_mail_dns
   curl -s -X PATCH -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
     "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/settings/ssl" -d '{"value":"full"}' >>"$LOG" 2>&1 || true
