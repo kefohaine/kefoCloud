@@ -36,11 +36,11 @@ nextcloud_setup() {
       fail nextcloud_setup "occ maintenance:install failed — see $LOG"
     fi
   fi
-  # Then wait for a usable instance: a cold cache (fresh image pull + the
-  # ~3 min Caddy build hogging the box) blew the old 3-minute budget, so every
-  # occ step below — Talk signaling/TURN, SMTP, cron — silently never ran
-  # (2026-09-25). 30 minutes now, with a secondary HTTP probe to nextcloud.$DOMAIN
-  # and a per-call occ timeout so a hanging occ never stalls the loop.
+  # Then wait for a usable instance: a cold cache (fresh image pull, the Caddy
+  # build) can leave occ unusable for a while, and a step that gives up early
+  # silently skips every occ step below — Talk signaling/TURN, SMTP, cron. Poll
+  # with a secondary HTTP probe to nextcloud.$DOMAIN and a per-call occ timeout
+  # so a hanging occ never stalls the loop.
   local i=0
   while [ $i -lt 1800 ]; do
     if timeout 20 docker exec -u www-data nextcloud php occ status 2>/dev/null | grep -q "installed: true"; then
@@ -233,9 +233,8 @@ nextcloud_setup() {
   occ_check() {
     local pattern="$1"; shift
     local attempt=0 rc=1
-    # 12 attempts x 1 s (12 s) covers the short occ DB warm-up window after a
-    # container restart — a warm-up race is TIME, not a fault, so it must not
-    # hold the run for a minute (the old 60 s budget made this step feel stuck).
+    # Poll for the short occ DB warm-up window after a container restart — a
+    # warm-up race is TIME, not a fault, so it must not fail the step.
     while [ $attempt -lt 12 ]; do
       if "$@" | grep -q "$pattern"; then rc=0; break; fi
       attempt=$((attempt+1)); [ $attempt -lt 12 ] && sleep 1

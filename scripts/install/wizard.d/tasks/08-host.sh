@@ -36,10 +36,8 @@ host_services() {
   # verify so a silently-dead jail can never pass as hardened.
   systemctl restart fail2ban >>"$LOG" 2>&1 || true
   # `systemctl restart` returns while the unit is still activating, and
-  # install-config restarts fail2ban again seconds later — so poll for the
-  # server + the sshd jail instead of judging the unit on the first look
-  # (2026-09-25: the tag fired ~0.3 s before the jail came up and then sat in
-  # the summary as a phantom "not running" error on an active fail2ban).
+  # install-config restarts fail2ban again — so poll for the server + the sshd
+  # jail instead of judging the unit on the first look.
   local i=0
   while [ $i -lt 30 ]; do
     systemctl is-active --quiet fail2ban && fail2ban-client status sshd >/dev/null 2>&1 && break

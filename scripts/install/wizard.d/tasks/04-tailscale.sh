@@ -45,8 +45,8 @@ task_tailscale() {
   TS_IP=$(tailscale ip -4 2>/dev/null | head -1)
   [ -n "$TS_IP" ] && log "tailscale IP: $TS_IP" || fail ts_ip
   # A rejoin can hand the node a NEW tailnet IP, and dnsmasq binds its split-DNS
-  # resolver to that address — a stale bind makes tailnet *.$DOMAIN refuse (seen:
-  # bound 100.83.215.34 while the live IP was 100.106.87.43). The `address=`
+  # resolver to that address — a stale bind makes tailnet *.$DOMAIN refuse. The
+  # `address=`
   # answers for ttyd.$DOMAIN (and the other tailnet-only doors) must move with
   # it: a bind on the live IP plus an answer on the old one resolves the door to
   # a departed address. Refresh the render whenever either line no longer
