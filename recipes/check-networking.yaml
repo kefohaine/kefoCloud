@@ -15,7 +15,7 @@ activities:
   - "Check Caddy vhosts and the tailnet-only matcher"
   - "Check TLS issuer/dates per vhost from the host"
   - "Check mail SPF/DKIM/DMARC/PTR and postfix serving"
-  - "Report discrepancies with WHAT.md 'Access model'"
+  - "Report discrepancies with the operator manual's 'Access model'"
 parameters:
   - key: focus
     input_type: string
@@ -25,7 +25,7 @@ parameters:
 prompt: |
   Review the ingress and mail stack, focus: {{ focus }}.
 
-  Cross-check WHAT.md "Access model" and the service-reference
+  Cross-check the operator manual's "Access model" and the service-reference
   table against the live config.
 
   Inspect:

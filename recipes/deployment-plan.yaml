@@ -24,8 +24,7 @@ prompt: |
   Produce a deployment/upgrade/migration plan for this change: {{ change }}.
 
   Read docs/MANUAL.md (deployment, protected resources, service-reference table,
-  operational gotchas), docs/MIGRATE.md where relevant, and docs/AGENTS.md
-  rules 10/16/17.
+  operational gotchas, migration) and docs/AGENTS.md rules 10/16/17.
 
   Determine:
   - what files/modules/configs are affected (compose files, Makefile recipes,
