@@ -1,5 +1,6 @@
 # Read-only validation on every branch push and every pull request: shell
-# syntax, the prose gate and the commit-hygiene audit. It never writes, merges
+# syntax, the config audit (YAML parses, every token declared, no operator value
+# in a tracked file), the prose gate and the commit-hygiene audit. It never writes, merges
 # or pushes.
 
 name: validate
@@ -26,6 +27,9 @@ jobs:
             bash -n "$script" || status=1
           done < <(git ls-files '*.sh')
           exit "$status"
+
+      - name: Config audit
+        run: bash scripts/info/config-audit.sh
 
       - name: Prose gate
         run: bash scripts/info/prose-audit.sh
