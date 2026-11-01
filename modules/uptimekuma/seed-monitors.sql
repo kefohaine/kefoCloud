@@ -46,9 +46,9 @@ FROM docker_host d WHERE d.name = 'local'
   AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: {{DOMAIN}}');
 
 INSERT INTO monitor (name, type, interval, retry_interval, maxretries, active, user_id, docker_host, docker_container, description)
-SELECT 'docker: nextcloud', 'docker', 3600, 60, 0, 1, 1, d.id, 'nextcloud', 'Nextcloud PHP-FPM'
+SELECT 'docker: matrix-synapse', 'docker', 3600, 60, 0, 1, 1, d.id, 'matrix-synapse', 'Matrix homeserver'
 FROM docker_host d WHERE d.name = 'local'
-  AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: nextcloud');
+  AND NOT EXISTS (SELECT 1 FROM monitor WHERE name = 'docker: matrix-synapse');
 
 INSERT INTO monitor (name, type, interval, retry_interval, maxretries, active, user_id, docker_host, docker_container, description)
 SELECT 'docker: vaultwarden', 'docker', 3600, 60, 0, 1, 1, d.id, 'vaultwarden', 'Vaultwarden'
