@@ -20,7 +20,7 @@ parameters:
   - key: module
     input_type: string
     requirement: required
-    description: "Module to review: cloud (nextcloud), vault (vaultwarden), mail (mailserver+roundcube), monitor (uptimekuma), or edge (caddy/{{DOMAIN}})"
+    description: "Module to review: chat (matrix+element), vault (vaultwarden), mail (mailserver+roundcube), monitor (uptimekuma), kopia, or edge (caddy/{{DOMAIN}})"
 prompt: |
   Review the {{ module }} module in this repository.
 

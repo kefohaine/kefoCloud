@@ -12,15 +12,15 @@ extensions:
     name: developer
 activities:
   - "Enumerate backup artifacts and schedules"
-  - "Check the nightly Nextcloud pg_dump and the NFS datadirectory copies"
-  - "Check make backup / make import-backups recipes and taildrop device coverage"
+  - "Check the Kopia repository, its snapshots and retention policies"
+  - "Check make backup / make kopia-* recipes and what the snapshot covers"
   - "Assess restore procedures and off-site/DR coverage"
   - "Report gaps and a prioritized remediation list"
 parameters:
   - key: focus
     input_type: string
     requirement: optional
-    description: "Optional scope: cloud, vault, kuma, mail, or all"
+    description: "Optional scope: chat, vault, kuma, mail, kopia, or all"
     default: "all"
 prompt: |
   Audit the backup and restore posture, scope: {{ focus }}.
@@ -29,15 +29,16 @@ prompt: |
   the repository's Issues tab (open backup/restore items).
 
   Inspect:
-  - the Makefile `backup` and `import-data` recipes and scripts/ops/backup-bundles.sh, scripts/ops/restore-data.sh
-  - scripts/ops/nc-datadir-nfs.sh (external datadir marker and NFS mount)
-  - the nightly pg_dump cron (/etc/cron.d/nc-storage) and its 7-day retention
-  - the taildrop device's ~/backups/ contents (ssh TAILDROP=<device> 'ls -la ~/backups/')
-  - what is and is not covered: Nextcloud /data, PostgreSQL, vaultwarden data,
-    kuma db, mailserver Maildirs/config, secrets
-  - whether there is an off-site/DR copy beyond the tailnet device
+  - the Makefile `backup` and `kopia-*` recipes and scripts/modules/kopia-admin.sh
+  - the kopia container: repository status, snapshot list, retention policies,
+    and what the /source mount actually contains
+  - what is and is not covered: matrix (PostgreSQL + media), vaultwarden data,
+    kuma db, mailserver Maildirs/config, ocis, pages, rendered config, secrets
+  - whether there is an off-box copy of the repository beyond this host (Kopia
+    `repository sync-to` target, or a second copy on another device)
 
   Return:
+Return:
   - an inventory of what is backed up, where, and how often
   - what is NOT covered
   - restore-procedure gaps
