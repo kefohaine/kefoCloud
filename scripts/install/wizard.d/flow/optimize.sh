@@ -4,7 +4,7 @@
 # optimize.sh is a separate tool (the machine performance pass), so it is offered,
 # never assumed. It is idempotent — re-running it is a no-op — which is why a
 # re-run of the installer may offer it again.
-ask_optimize() { ## BROKEN - NEITHER PROMPT ANSWERS FIRE OPTIMIZE.SH - SILENT FAIL - INVESTIGATE AND FIX
+ask_optimize() {
   local answer="" rc
   local script="$REPO/scripts/ops/optimize.sh"
 
