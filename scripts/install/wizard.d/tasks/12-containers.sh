@@ -112,9 +112,54 @@ containers_up() {
 
 
 # Docker Containers: bring the compose stack up and re-check every container.
+#
+# The module setup rows after this one (mail, matrix, vault, monitor, kopia) and
+# the smoke pass at the end all assume the containers are actually SERVING, not
+# merely created. oCIS migrates its IDM store, Immich initialises its PostgreSQL
+# and Homarr/WriteFreely run their first-boot setup — minutes on a fresh host —
+# so without this wait the first `make smoke` raced those first boots and left a
+# green pipeline recorded as unfinished. Bounded, and idempotent: an already
+# healthy stack returns immediately.
+CTN_WAIT_MAX=420
+
+# The containers this run is responsible for: the edge + every enabled module.
+enabled_containers() {
+  local m c _decl
+  printf '%s' caddy
+  while IFS= read -r m; do
+    mod_on "$m" || continue
+    _decl="$(awk -v x="$m" '$1 !~ /^#/ && $1 == x { $1=""; $2=""; $3=""; sub(/^ +/,""); print; exit }' "$REPO/config/modules.conf" 2>/dev/null)"
+    for c in $_decl; do printf ' %s' "$c"; done
+  done < <(awk '$1 !~ /^#/ && NF { print $1 }' "$REPO/config/modules.conf" 2>/dev/null)
+}
+
+# wait_containers — bounded wait until every one runs (and reports healthy when
+# its compose file declares a healthcheck). Returns 1 on timeout.
+wait_containers() {
+  local i=0 c state health bad
+  local ctns; ctns="$(enabled_containers)"
+  while [ "$i" -lt "$CTN_WAIT_MAX" ]; do
+    bad=""
+    for c in $ctns; do
+      state=$(docker inspect -f '{{.State.Status}}' "$c" 2>/dev/null || echo missing)
+      health=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$c" 2>/dev/null || true)
+      case "$state" in
+        running) [ -z "$health" ] || [ "$health" = healthy ] || bad="$bad $c:$health" ;;
+        *) bad="$bad $c:$state" ;;
+      esac
+    done
+    [ -z "$bad" ] && { detail "  every enabled container is up and healthy"; return 0; }
+    [ "$i" -gt 0 ] && [ $((i % 30)) -eq 0 ] && log "  waiting for containers:${bad} (${i}s)"
+    sleep 2; i=$((i+2))
+  done
+  CTN_NOT_READY="$bad"
+  return 1
+}
+
 task_containers() {
   task_start
   cd "$REPO" || exit 1
   containers_up
+  wait_containers || fail containers "not up/healthy after ${CTN_WAIT_MAX}s:${CTN_NOT_READY}"
   task_end
 }
