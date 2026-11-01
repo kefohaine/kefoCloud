@@ -375,6 +375,8 @@ Every actor follows one line: the human operator, the `make git-*` recipes, `scr
 
 Issues live **only** in the repository's Issues tab — created, labelled, linked and closed there, through `make git-issue`, or through the GitHub API, never in a markdown file. A new problem is filed with `make git-issue` or the UI. Labels come from `.github/labels.yml` (type / priority / status / area, plus GitHub's native `good first issue` / `help wanted`) and the forms from `.github/ISSUE_TEMPLATE/`. The installer's first push is the one documented `--no-verify` exception (its pre-push smoke cannot pass before `wizard.state` records `finished=true`); it still pushes a `temp-<N>` branch, prints the compare URL, and leaves the checkout on that branch.
 
+`.github/workflows/validate.yml` runs the same three checks on every branch push and pull request — `bash -n` over every tracked shell script, `scripts/info/prose-audit.sh` and `scripts/info/git-audit.sh origin/main..HEAD` — read-only, so a commit made in the web editor or from another clone is caught before review.
+
 **Enforcement on GitHub is the operator's to apply once** (it cannot be stored in the repo): Settings → Rulesets → New branch ruleset targeting `main` with *Require a pull request before merging* (0 required approvals is fine — the review is human, the gate is the PR), *Block force pushes*, *Restrict deletions*, and no bypass actors; the same effect via classic branch protection is *Require a pull request before merging* + *Do not allow bypassing the above settings* + *Restrict who can push*. Auto-merge stays off, because the merge is the human decision.
 
 ## Releases, tags and milestones
