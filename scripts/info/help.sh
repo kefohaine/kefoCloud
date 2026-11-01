@@ -57,7 +57,7 @@ EOF
 
   sec "migrate / restore"
   rows <<'EOF'
-make migrate|print the migration runbook (docs/MIGRATE.md)
+make migrate|print the migration runbook
 make deploy|restore a host — config/ → live paths (same body as install-config)
 EOF
 
@@ -156,7 +156,7 @@ EOF
 make goose-recipes|list the reusable agent recipes
 make goose-audit [FOCUS=<area>]|read-only audit — security, backups, mail, docker, networking, docs
 make goose-review MODULE=<m>|read-only module review (any module in config/modules.conf, or edge)
-make goose-troubleshoot SERVICE=<s>|triage a failure via docs/DEBUG.md
+make goose-troubleshoot SERVICE=<s>|triage a failure (layer ladder, read-only)
 make goose-check-backups [FOCUS=<area>]|audit the backup/restore posture
 make goose-check-network [FOCUS=<area>]|review DNS/TLS/mail/reverse-proxy
 make goose-validate-installer [TARGET=<script>]|lint and review script changes (bash -n, no apply)
