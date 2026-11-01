@@ -1,6 +1,7 @@
 # kefoCloud
 
-Deploy your data at the mercy of nobody.
+Self-hosted apps deployer.
+Own your data at the mercy of nobody.
 
 ![Repository Title](.github/images/title.png)
 
