@@ -61,7 +61,9 @@ is_private_ip() {
 
 for f in "${files[@]}"; do
   [ -f "$f" ] || continue
-  case "$f" in recipes/*.yaml) continue ;; esac
+  # Two files quote the banned shapes by necessity: the recipes (pointing an
+  # agent at the doc holding the procedure is their job) and this checker.
+  case "$f" in recipes/*.yaml|scripts/info/prose-audit.sh) continue ;; esac
 
   n=0
   while IFS= read -r line; do
