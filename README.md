@@ -28,6 +28,7 @@ The wizard asks for five things up front (SSH key, Tailscale key, Cloudflare tok
 
 - **[docs/MANUAL.md](docs/MANUAL.md)** — everything: what the machine is and why, install/repair/uninstall, migration, backup, the service reference, the diagnostic runbook and the operational gotchas.
 - **[docs/AGENTS.md](docs/AGENTS.md)** — the rules an agent follows in this repo.
+- **[Releases](https://github.com/kefohaine/kefoCloud/releases)** — the tagged milestones, `v0.1.0` through the current stable.
 
 ## License
 

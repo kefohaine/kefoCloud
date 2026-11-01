@@ -377,6 +377,14 @@ Issues live **only** in the repository's Issues tab — created, labelled, linke
 
 **Enforcement on GitHub is the operator's to apply once** (it cannot be stored in the repo): Settings → Rulesets → New branch ruleset targeting `main` with *Require a pull request before merging* (0 required approvals is fine — the review is human, the gate is the PR), *Block force pushes*, *Restrict deletions*, and no bypass actors; the same effect via classic branch protection is *Require a pull request before merging* + *Do not allow bypassing the above settings* + *Restrict who can push*. Auto-merge stays off, because the merge is the human decision.
 
+## Releases, tags and milestones
+
+A release is a `v<major>.<minor>.<patch>` tag plus a GitHub Release, cut at the commit that closes its milestone. The `v0.x` releases are pre-releases, each retro-tagged at the commit that ends one era of the build — the first installer, the operator surface, the five-container stack, the reusable template, the recipes, the module architecture, migration and backup, the kefoCloud rename and mail platform, the modular wizard and the nine-module set. `v1.0.0` is the first stable release; its commit is the point where the nine modules, the modular wizard and the GitHub workflow are all in place.
+
+The tag is created by the release step through the GitHub API or the Releases form, never pushed from a clone — `scripts/hooks/pre-push` refuses every non-branch ref. Release notes state the milestone's scope, not a per-commit changelog, because the history is linear and one logical change spans several per-file commits.
+
+A milestone names the release that closes its issues, and every open issue carries exactly one: `v1.1` exposure, auth, TLS and secrets; `v1.2` module lifecycle, backup coverage, port conflicts and new modules; `v1.3` installer and ops guards, dry runs and automated validation; `v1.4` docs and UI. An issue's `type:` / `priority:` / `status:` / `area:` labels stay independent of its milestone.
+
 ## Boot and recovery
 
 `kefo-stack.service` (`config/systemd/kefo-stack.service`; installed and enabled by `make install-config`) is the boot guarantee: a `oneshot` unit that runs `scripts/stack/stack-up.sh` after `docker.service` and `network-online.target`. It closes the one gap `restart: unless-stopped` cannot — a container stopped *cleanly* by hand (`docker stop`, `make dok-stop-*`) never comes back on its own, while `up -d` starts it again.
