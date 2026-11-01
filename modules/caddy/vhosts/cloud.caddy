@@ -1,6 +1,4 @@
-# cloud.{{DOMAIN}} — ownCloud Infinite Scale (oCIS). The instance owns this
-# hostname; the Nextcloud-stack door moved to nextcloud.{{DOMAIN}}
-# (./nextcloud.caddy, tailnet-only).
+# cloud.{{DOMAIN}} — ownCloud Infinite Scale (oCIS).
 #
 # ownCloud is module `ocis` (modules/ocis/, container `ocis`), pinned at bridge
 # 172.22.0.27 and serving port 9200. Caddy runs with network_mode: host, so it
