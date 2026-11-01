@@ -7,11 +7,10 @@ x-mailu-env: &mailu-env
     # tailnet-only mailu.${DOMAIN} door.
     HOSTNAMES: "mail.${DOMAIN}"
     # The mail cache is `mailu-redis`, NOT `redis`: both compose files join the
-    # same external `net` bridge, so a service named `redis` published a second
-    # `redis` DNS alias next to the Nextcloud cache. Inside the cloud container
-    # the name resolved to both IPs, phpredis round-robined onto Mailu's
-    # instance and every session SET hung on its MISCONF error (2026-10-19:
-    # cloud.fxmq.net timed out with HTTP 000 while `occ status` was fine).
+    # same external `net` bridge, so a service named `redis` would publish a
+    # second `redis` DNS alias next to another module's cache. A container that
+    # resolves the bare name then round-robins onto Mailu's instance and hangs
+    # on its MISCONF error (2026-10-19).
     REDIS_ADDRESS: "mailu-redis"
     # The front's jinja template (/conf/nginx.conf in the image) emits
     # `location {{ WEB_ADMIN }}` only inside `{% if ADMIN %}`, and it takes
