@@ -1,6 +1,256 @@
 # Manual
 
-How to install, operate, back up, upgrade and fix this machine. The system itself (parts, traffic paths, design rationale) is described in [`../WHAT.md`](../WHAT.md); agent rules are in `docs/AGENTS.md`; open problems live in the repository's Issues tab.
+How to install, operate, back up, upgrade, migrate and fix this machine — and why it
+is built the way it is. This is the project's single document: the system's parts and
+traffic paths, its values and rendering, every procedure, the service reference, the
+diagnostic runbook and the accumulated operational gotchas. For a one-screen pitch see
+`README.md`; the rules an agent follows are in `docs/AGENTS.md`; open problems live in
+the repository's Issues tab.
+
+## What this machine is
+
+A single Debian machine serving the apps declared in `config/modules.conf`, each as one
+Docker Compose unit under `modules/`, behind one Caddy edge. This part describes the
+system — its parts, its traffic paths and why each choice was made.
+
+Each app is a module: `cloud` (Nextcloud + Talk), `ocis` (ownCloud Infinite Scale),
+`xmpp` (Snikket), `vault` (Vaultwarden), `mail` (Mailu + Roundcube), `monitor` (Uptime
+Kuma), `home` (Homarr), `blog` (WriteFreely) and `photos` (Immich). `config/modules.conf`
+is the one place a module is declared: it maps the module name to its directory, its
+host label and its container list, and every tool (`make fetch`, `make smoke`, the
+installer, the `dok-*` recipes) derives its roster from it.
+
+Beside the containers run host services: `ttyd` (web terminal on a single `tmux` session), `dnsmasq` (tailnet DNS), `fail2ban`, `sshd` (key-only, tailnet only), `ufw`, `cron`, and the Goose agent (`goose.service`). `kefo-stack.service` brings the deployed compose units back on boot.
+
+**Module state is runtime, never documentation.** A module that is off has no container, no data and no route — its vhost answers 502 if one is deployed. That is *not* "tailnet-only": see "Module state vs route exposure".
+
+### Request flow
+
+```
+                   ┌─────────────────────────────────────────────┐
+    Public DNS ──► │            Cloudflare (proxy)               │
+                   │     cloud / kuma / www / home / blog        │
+                   └──────────────┬──────────────────────────────┘
+                                  │ HTTPS (LE cert via DNS-01)
+                                  ▼
+                           ┌──────────────┐
+                           │    Caddy     │  port 80 → 308 redirect
+                           │  ($DOMAIN)   │  port 443 (per-vhost LE)
+                           └──────┬───────┘  custom image + caddy-dns/cloudflare
+                ┌─────────────────┼─────────────────┐
+                ▼                 ▼                 ▼
+           reverse_proxy    reverse_proxy      php_fastcgi
+           oCIS (cloud)     uptime-kuma        nextcloud:9000
+           (172.22.0.27:9200) (172.22.0.6:3001) (Nextcloud FPM)
+           (also: roundcube 172.22.0.10:80 for mail.$DOMAIN; the mail platform
+            Postfix/Dovecot at 172.22.0.9 owns ports 25/465/587/993)
+
+    ttyd.$DOMAIN is tailnet-only (not in public DNS) — "/" IS the host shell:
+    the single `main` tmux session, no second credential (Tailscale membership
+    only); anything off the tailnet gets 403 first. vault.$DOMAIN,
+    nextcloud.$DOMAIN and mailu.$DOMAIN are tailnet-only the same way.
+
+                     ┌─────────────────────────────────────────────┐
+                     │ Tailscale split DNS forwards $DOMAIN        │
+                     │ queries to this machine's resolver          │
+                     └──────────────┬──────────────────────────────┘
+                                    │ UDP/TCP <tailnet IP>:53
+                                    ▼
+                             ┌──────────────┐
+                             │   dnsmasq    │  host systemd service
+                             │  (host)      │  (not a container)
+                             └──────────────┘
+```
+
+### Access model
+
+| Hostname | Module | Cloudflare | Reachable by | Serves |
+|---|---|---|---|---|
+| `cloud.` | `ocis` | proxied | anyone | oCIS |
+| `nextcloud.` | `cloud` | not in public DNS | tailnet only | Nextcloud (FPM + PostgreSQL + Redis + Talk) |
+| `vault.` | `vault` | not in public DNS | tailnet only | Vaultwarden |
+| `kuma.` | `monitor` | proxied | anyone | Uptime Kuma |
+| `www.` | — | proxied | anyone | instance pages in `$DATA_DIR/pages/www` (`/welcome`, …), `/download` drop folder |
+| `home.` | `home` | proxied | anyone | Homarr |
+| `blog.` | `blog` | proxied | anyone | WriteFreely |
+| `photos.` | `photos` | DNS-only | anyone | Immich |
+| `mail.` | `mail` | DNS-only | anyone | Roundcube webmail + the SMTP/IMAP name (MX/SPF point here) |
+| `mailu.` | `mail` | not in public DNS | tailnet only | Mailu admin (`/admin`) |
+| `talk.` | `cloud` | DNS-only | anyone | Talk signaling `/signaling/spreed` + TURN/STUN |
+| `chat.` (+ `groups.`, `share.`) | `xmpp` | DNS-only | anyone | Snikket XMPP, calls, TURN (host networking) |
+| `ttyd.` | — (host unit) | not in public DNS | tailnet only | the host shell at `/` |
+
+Two rules generate that table: traffic that is not HTTP(S) (mail, talk, XMPP) stays
+grey-cloud at Cloudflare, and a tailnet hostname never enters public DNS — `dnsmasq`
+answers it for tailnet clients and Caddy's `@not_tailnet` matcher 403s every other
+source, so a forged Host header against the public IP gets nothing.
+
+#### Module state vs route exposure
+
+| Axis | Values | Truth |
+|---|---|---|
+| module state | `installed` / `not installed` | `enabled_modules` in `wizard.state` |
+| route exposure | `public` / `tailnet-only` | the vhost; `exposure()` in `scripts/lib/modules.sh` classifies |
+
+An uninstalled module has no route at all — `kuma.` answering 502 means the monitor is not installed, never that it is tailnet-only. Tailnet-only describes a route that exists and is reachable only from the tailnet. `make fetch` prints `module (not installed)` in words, and `make fetch-more` prints a `routes` row that classifies each deployed vhost.
+
+### Design rationale
+
+**Edge: Caddy over nginx / Traefik.** One vhost per file (`modules/caddy/vhosts/<host>.caddy`), ACME renewal built in, `caddy-dns/cloudflare` for DNS-01 so a cert issues whether or not port 80 reaches the origin, certs persisted in the bind-mounted `/data` so recreates don't restart the 90-day clock, HTTP/3 free. Trade-off: Bot Fight Mode challenges non-JS clients on proxied hostnames; Nextcloud sits behind the tailnet instead, so its clients never meet it.
+
+**Admin doors off public DNS.** `ttyd.` is reachable only from the operator's devices, so public DNS would hand every bot a port that isn't public. Tailscale split-DNS means the name resolves the moment a device joins, with a normal LE cert by DNS-01 (same fallback issuer chain as every vhost: Buypass, then ZeroSSL) — trusted by browsers, no port forward, no firewall hole. The machine also advertises exit-node routes; IPv4/IPv6 forwarding is in `config/sysctl/99-kefo.conf`.
+
+**Mail: Mailu.** Postfix + Dovecot in active release with DKIM/DMARC/Rspamd/fail2ban built in, plus the official Roundcube image — the lightest trusted option (Mailcow costs roughly 6–8 GB RAM).
+
+**dnsmasq on the host, bound to the Tailscale IP.** One small file answers the tailnet names and forwards everything else. On the host it survives `docker stop`, image pulls and `systemctl restart docker` — the failures a container restart policy cannot cover — with `Restart=always` as the only supervisor. It binds port 53 to the Tailscale IP only, never `0.0.0.0`, so the machine is not an open resolver. The split-DNS route only reaches this host if the host's own `/etc/resolv.conf` asks Tailscale (tracked copy applied by `make install-resolv`); otherwise every public name resolves while the tailnet names answer NXDOMAIN on the machine that serves them.
+
+**One `net` bridge.** Inter-container DNS needs a user-defined bridge; Docker's embedded resolver answers container names, so no service registry is needed. One shared `172.22.0.0/16` network (`external: true`) is reused by every compose file so the pinned bridge IPs attach cleanly.
+
+**Nextcloud: PostgreSQL + Redis + self-hosted TURN.** PostgreSQL replaced SQLite, whose file locking caused intermittent 504s under concurrent sync and made consistent backups hard; its data dir is portable. Redis is a cache with no persistence. Talk runs the official Go signaling server plus a self-hosted coturn, so call media never touches a public STUN/TURN service. Every container carries `mem_limit`/`memswap_limit` ceilings (not allocations — idle stays low) so a runaway process cannot reach the host. Mail is reciprocal: Nextcloud (Mail app, notifications) and Vaultwarden (invite mail) send through the same local mailboxes over the bridge.
+
+### Repository layout
+
+```
+Makefile      the command surface (recipes call scripts/ or one command)
+modules/      one dir per app: docker-compose.yml (+ Dockerfiles, caddy/vhosts/*.caddy)
+config/       catalogue (modules.conf, instance.defaults) + tracked host configs
+scripts/      install/ (wizard + uninstall), ops/, stack/, render/, modules/,
+              lib/, hooks/, info/
+recipes/      Goose agent tasks (read-only inspection + reports)
+data/         instance state, written at install time — never committed
+```
+
+`config/` holds catalogues and reference copies of host-level configs (systemd units, SSH hardening, dnsmasq, ttyd, docker daemon, sysctl, logrotate, tmux); `make render` renders them with instance values and `make install-config` pushes them live. Web pages are not in the repo — they are instance data under `$DATA_DIR/pages/`.
+
+## Instance values, tokens and rendering
+
+Deployable files carry `{{TOKENS}}`; the values live in `data/instance.conf`; `make
+render` writes `data/rendered/` and every script reads values through
+`scripts/lib/instance.sh`. This repo is a **skeleton**: the real values exist only on a
+live host, and no instance value is ever committed. That is what makes a fresh clone
+installable anywhere, and a rename a value change instead of a refactor.
+
+### How a value reaches a file
+
+Three mechanisms, one table:
+
+| Kind of file | Mechanism | Where the value comes from |
+|---|---|---|
+| Templates: `config/**`, `modules/caddy/**` | `{{TOKEN}}` + `scripts/render/render.sh` | `data/instance.conf` |
+| Compose files (`modules/*/docker-compose*.yml`) | `${VAR}` (docker compose substitution) | the instance block `make render` writes into `modules/*/.env` |
+| Scripts (`scripts/**`) | plain shell variables, never tokens | `scripts/lib/instance.sh`, sourced from `data/instance.conf` |
+| Filenames | domain-free by construction (`vhosts/cloud.caddy`, `kefo-stack.service`, `config/logrotate/instance`) | — |
+
+Docs use plain variables (`$DOMAIN`, `$DATA_DIR`, …), never tokens. `recipes/**` carry
+`{{TOKEN}}` only in their `contact:` metadata, which nothing renders — a recipe is read
+by the agent, not substituted.
+
+### The tokens
+
+| Token | Meaning |
+|---|---|
+| `{{DOMAIN}}` | public domain: every vhost, cert and mail address |
+| `{{HOSTNAME}}` | machine name and tailnet node name |
+| `{{OPERATOR}}` | the single login user on the box |
+| `{{GITHUB_USER}}` | GitHub account that owns the repos |
+| `{{REPO_NAME}}` | repository name |
+| `{{REPO_DIR}}` | absolute path of the checkout |
+| `{{DATA_DIR}}` | all untracked instance state (`$REPO_DIR/data`) |
+| `{{LOG_DIR}}` | every log the project writes |
+| `{{SERVER_IP}}` | the host's public IPv4 (DNS + mail PTR checks) |
+| `{{EMAIL}}` | operator contact address |
+| `{{TIMEZONE}}` | IANA zone for containers and cron |
+
+`config/instance.defaults` (tracked) is the documentation for that list — it is
+never installed; it is what a new operator reads to know what to provide. To
+see every token with its current live value:
+
+```
+scripts/render/render.sh --tokens
+```
+
+### The one file with real values
+
+`data/instance.conf` (untracked, mode 0600) is the only place an instance value
+lives. The installer writes it from what it prompts and detects
+(the domain is prompted, `{{GITHUB_USER}}` is read from the checkout's `origin`
+remote, paths come from its own location); it is plain `KEY=VALUE` and safe to
+edit by hand (`make render` afterwards).
+
+### Rendering
+
+```
+make render          # rebuild data/rendered/ + refresh the .env instance blocks
+```
+
+`make render` produces:
+
+- `data/rendered/caddy/` — the Caddyfile and `vhosts/*.caddy`. **The edge
+  container mounts this directory, never the tracked one**; pointing it at the
+  tracked tree starts Caddy on a literal `www.{{DOMAIN}}` and it serves nothing
+  (see "Operational gotchas").
+- `data/rendered/config/` — every file under `config/`, rendered. `make
+  install-config` installs from here.
+- `$DATA_DIR/pages/` — the instance web roots: `pages/www/` (operator pages,
+  edited in place; the repo ships none and render never touches them). The edge
+  mounts `pages` at `/srv/pages` read-only; no other vhost serves files.
+
+`scripts/stack/stack-up.sh` renders first, in every mode, so a fresh clone, a
+`git pull` or an edited `instance.conf` can never deploy stale config.
+
+### Adding a token
+
+1. add the name + a one-line description to `config/instance.defaults`
+2. add the value to your `data/instance.conf`
+3. use `{{NAME}}` in a template, `${NAME}` in a compose file, or `$NAME` in a
+   script (after sourcing `scripts/lib/instance.sh`)
+
+`render.sh --check <file>` exits 1 if a token is unresolved, so a typo is a
+failed render rather than an empty string in a live config. Unresolved tokens
+are always left verbatim and reported on stderr — never silently blanked.
+`config/instance.defaults` is documentation, not an installable template, so
+`render-all` excludes it from the rendered tree.
+
+### Renaming or moving the instance
+
+Everything above exists so that renaming is a value change, not a refactor:
+
+```bash
+# 1. new values
+$EDITOR data/instance.conf          # REPO_DIR=… REPO_NAME=… HOSTNAME=…
+# 2. the checkout itself (same filesystem, so running mounts stay valid)
+mv <old-checkout> <new-checkout>
+# 3. re-render + re-create what mounts a path
+make render && make update
+```
+
+### Compose substitution, in practice
+
+`make render` appends a marked block to each `modules/*/.env`:
+
+```
+# >>> instance values (generated by 'make render' from data/instance.conf — do not edit)
+DOMAIN=…
+REPO_DIR=…
+DATA_DIR=…
+# <<< instance values
+```
+
+The block is replaced, never duplicated, and the secrets already in those files
+(the Nextcloud/Vaultwarden `.env` values) are untouched. Compose reads the
+`.env` next to the compose file, which is why the repo's compose files can use
+`${DOMAIN}` with no real value anywhere in git history.
+
+### Rules that go with the skeleton
+
+- Docs use the *variables* (`$DOMAIN`, `$DATA_DIR`, …) and templates use the
+  tokens; nothing in git names a real host, domain, path or user.
+- Secrets never belong in git; `data/instance.conf` is 0600, and rendered
+  output (`data/rendered/`) is where live config actually comes from.
+
+### Generalization principle
+
+Scripts derive instance facts from the live system instead of hardcoding them (the installer and `scripts/ops/nc-datadir-nfs.sh` auto-detect container names, the datadirectory and DB credentials; user lists come from `occ`, never a fixed roster), and generated manifests are **generated** (`make nc-capture` writes `cloud/recovery/`, outside the repo). Before writing a user, host, IP, port, path or container name into a script or doc, ask whether it can change — if it can, detect or prompt for it.
 
 ## Install, repair, uninstall
 
@@ -13,11 +263,86 @@ The installer asks `Do you wish to continue?` and, on a machine that already has
 
 It then runs unattended through eighteen rows — System Packages, SSH Hardening, Firewall Rules, Tailscale Connectivity, Docker Engine, Goose CLI, Repository Setup, Host Services, DNS Records, Repo Hygiene, Stack Config, Docker Containers, SSL Certificates, Mail Setup, Nextcloud Setup, Vaultwarden Setup, Monitoring Setup, Smoke Pass. A row is `[WAIT]` → `[EXEC]` → `[DONE]`, `[SKIP]` for a module that is off, or `[FAIL]`: a failure pauses the run on that row, prints the problem and a hint, and waits for `Enter` to re-check; unresolved, it hard-stops with every later row left `[WAIT]`. The run ends when the push (if opted in), `write_state` (`finished=true`) and one `make smoke` all pass — a failure writes `finished=false` and suppresses the success block.
 
-Repair is idempotent and add-only: it never tears the stack down, skips services whose inputs are unchanged, recreates Caddy only when the rendered config is newer, never re-issues a certificate that is already served, and hands a module the operator turned off to `uninstall.sh --granular`. A resume re-runs the whole pipeline (every step is safe to repeat) and asks only for values it is missing. The cloud module's app choices come from the operator's own `config/cloud/apps.conf` (untracked, copied from the tracked `config/cloud/apps.conf.default`; read on a fresh install); `spreed` (install&enable) and `app_api` (install&disable) are enforced in code and never prompted.
+Repair is idempotent and add-only: it never tears the stack down, skips services whose inputs are unchanged, recreates Caddy only when the rendered config is newer, never re-issues a certificate that is already served, and hands a module the operator turned off to `uninstall.sh --granular`. A resume re-runs the whole pipeline (every step is safe to repeat) and asks only for values it is missing; a run started fresh asks every prompt again and ignores the saved answers without deleting them, so a later run can still resume. There is no prompt-defaults file. The cloud module's app choices come from the operator's own `config/cloud/apps.conf` (untracked, copied from the tracked `config/cloud/apps.conf.default`; read on a fresh install); `spreed` (install&enable) and `app_api` (install&disable) are enforced in code and never prompted.
 
 Uninstall is the exact opposite in the same style: three consequence confirmations by default, or `--interactive` to pick the scope (modules, the whole framework, or cancel). SSH hardening is deliberately kept and operator data is never deleted without a per-category confirm; the tailnet membership goes last so the session survives. The run prints how to rebuild.
 
-State lives in `$DATA_DIR/wizard.state` (mode 0600, sole writer: the installer) — enabled modules, the `finished` checkpoint and the prompted secrets. Logs: `$LOG_DIR/wizard.log` (truncated at every run), `uninstall.log`, module logs. The installer reads the repo owner from the checkout's own `origin`, never a prompt.
+Logs: `$LOG_DIR/wizard.log` (truncated at every run), `uninstall.log`, module logs; the run state is described under "State, logs, ownership". The installer reads the repo owner from the checkout's own `origin`, never a prompt.
+
+## Migration (new machine, new domain)
+
+The primary path is the installer: a **root-only**, prompt-once-unattended script. The
+prompt order and the run's behaviour are in "Install, repair, uninstall"; this section is
+the migration procedure. `make migrate` prints it.
+
+### Run it
+
+The installer runs from a checkout — it sources `scripts/install/wizard.d/` and derives
+`$REPO` from its own path, so a lone copied file does not work:
+
+```bash
+git clone https://github.com/$GITHUB_USER/$REPO_NAME.git
+cd $REPO_NAME && bash scripts/install/wizard.sh
+```
+
+Every input is collected before any work and persisted as it is given, so an interrupted
+run resumes instead of re-asking. Then the run is unattended through the pipeline
+"Install, repair, uninstall" describes — host services, the stack from
+`config/modules.conf`, the Cloudflare records, the certificates and the module setup
+steps — and ends with `write_state` (`finished=true`) → one `make smoke`, whose exit code
+is the verdict; a failure records `finished=false`. Log: `$LOG_DIR/wizard.log`.
+
+Re-running it on a finished install offers **repair** after a yes/no confirmation; to
+rebuild from scratch, run `scripts/install/uninstall.sh` first, then the installer again.
+
+### What the script does not do
+
+- **Tailscale split DNS** — add `$DOMAIN` → this node's `100.x` in the admin console; the
+  host's dnsmasq already answers the tailnet-only names. Printed as a follow-up.
+- **Mailboxes** — create them with `make mail-gen [MAIL=…]` / `make mail-gen-alias TO=…`.
+  The installer creates only the app sender addresses (`nextcloud@`, `vaultwarden@`).
+- **Provider-side PTR** — only the machine provider can set reverse DNS. Printed as
+  follow-up 1 when the mail module is on.
+- **Cloudflare WAF rule skip for `cloud.$DOMAIN`** — optional; desktop/mobile sync is
+  bot-challenged otherwise (the trade-off is in "Design rationale").
+
+### Prerequisites (manual, unavoidable)
+
+- Cloudflare zone `$DOMAIN` exists (checked up front; the installer fails fast if not) and
+  an API token with `Zone > DNS > Edit` for it.
+- Tailscale auth key.
+- The device's public SSH key (ssh hardening is applied in the same run).
+- Nothing GitHub-side to type: the repo is public and cloned over HTTPS; the optional
+  collaborator step mints `/root/.ssh/github_key` and switches `origin` to SSH only once
+  GitHub accepts the key. `gh auth login` afterwards (once, on the new box) is what lets
+  `make git-pr` open the pull request instead of printing the compare URL.
+
+### Carrying existing data to a new machine
+
+1. `make backup TAILDROP=<device>` on the old host — ships `nextcloud-backup-*.tar.gz`
+   (PostgreSQL DB + datadir) and `other-backup-*.tar.gz` (vault / mailserver / kuma
+   datadirs) to a tailnet device.
+2. Install on the new machine, then `make import-backups TAILDROP=<device>` — it previews
+   the bundles and requires a typed `yes`.
+3. Copy `modules/*/.env` (gitignored secrets) from the old checkout, then `make render`
+   and recreate the affected units.
+4. Mail: the bundles carry `mailserver/mail`, `mailserver/data`, `mailserver/dkim` and
+   `mailserver/roundcube`; re-publish the DKIM TXT from the carried keys (the installer's
+   `dkim_setup` reads Mailu's own public key) and keep the domain's MX/SPF/DMARC records.
+5. Data-only restore is safe; the database stays on the main machine unless
+   `make nc-datadir-nfs` moved the datadirectory (the DB never moves with it).
+
+### Manual fallback
+
+If the script cannot be used, it automates exactly: host packages + `root` login +
+sshd hardening + `/etc/docker/daemon.json` + `tailscale up` + ufw + dnsmasq + the repo
+clone + `docker network create net --subnet=172.22.0.0/16` + `make install-config`, then
+the Nextcloud DB and app in ONE invocation (`docker compose -f
+modules/nextcloud/docker-compose.db.yml -f modules/nextcloud/docker-compose.yml up -d
+--force-recreate --remove-orphans` — running either file alone orphans and deletes the
+other's containers), then `make dok-recreate-caddy`, `make dok-recreate-vaultwarden`,
+`make dok-recreate-uptimekuma`, `make dok-recreate-mailserver`, the CF records, the
+certificates and `make smoke`.
 
 ## Commands
 
@@ -33,6 +358,8 @@ State lives in `$DATA_DIR/wizard.state` (mode 0600, sole writer: the installer) 
 | Config in the repo → live | `make render`, `make install-config`, `make deploy` |
 | Backup, restore | `make backup TAILDROP=<device>`, `make import-backups TAILDROP=<device>` |
 | Ops with no recipe | `scripts/ops/optimize.sh` (host tuner, `--dry-run`/`--verify`), `scripts/ops/nc-datadir-nfs.sh` (`export`/`import` the Nextcloud datadir over NFS) |
+
+Every script here acts on the live instance, so a real run is an **operator action**: an agent reads it, lints it (`bash -n`) or runs it against its dry/plan mode or a scratch target, and never fabricates a run.
 
 Recipe output is uniform: `info: <done>`, `warn: <non-fatal>`, `error: <failed>` (exit 1); usage mistakes print `error: usage: …`. Raw `git`, `docker compose`, `docker exec`, `systemctl` and `tar` are for cases no recipe covers. `make git-com MSG="…"` takes one sentence — embedded newlines or double quotes break the quoting (wrap the whole `MSG=` in single quotes if a quote mark is needed).
 
@@ -84,8 +411,10 @@ The compose files are the source of truth. This table is the one-line reference 
 | Service | Compose | Container | Edit mounted config | After compose / image change |
 |---------|---------|-----------|---------------------|------------------------------|
 | caddy   | `modules/caddy/docker-compose.yml` | `caddy` | `make dok-restart-caddy` | `make dok-recreate-caddy` (rebuilds `caddy:local` from `modules/caddy/Dockerfile`) |
-| cloud   | `modules/nextcloud/docker-compose.yml` | `nextcloud` + `redis` + `talk-hpb` + `talk-relay` | `make dok-restart-nextcloud` | `make dok-recreate-nextcloud` |
+| cloud   | `modules/nextcloud/docker-compose.yml` | `nextcloud` + `redis` + `talk-hpb` + `talk-relay` (+ `notify-push` in the `push` profile) | `make dok-restart-nextcloud` | `make dok-recreate-nextcloud` |
 | cloud-db | `modules/nextcloud/docker-compose.db.yml` | `postgresql` | `make dok-restart-nextcloud-db` | `make dok-recreate-nextcloud-db` |
+| ocis    | `modules/ocis/docker-compose.yml` | `ocis` | `make dok-restart-ocis` | `make dok-recreate-ocis` |
+| xmpp    | `modules/snikket/docker-compose.yml` | `snikket-server` + `snikket-proxy` + `snikket-portal` + `snikket-certs` | `make dok-restart-snikket` | `make dok-recreate-snikket` (host networking — see the Snikket bullet) |
 | vault   | `modules/vaultwarden/docker-compose.yml` | `vaultwarden` | `make dok-restart-vaultwarden` | `make dok-recreate-vaultwarden` |
 | kuma    | `modules/uptimekuma/docker-compose.yml` | `uptimekuma` | `make dok-restart-uptimekuma` | `make dok-recreate-uptimekuma` |
 | mail | `modules/mailserver/docker-compose.yml` | `mailu-front` + `mailu-imap` + `mailu-smtp` + `mailu-antispam` + `mailu-admin` + `mailu-redis` + `roundcube` | `make dok-restart-mailserver` | `make dok-recreate-mailserver` |
@@ -95,9 +424,9 @@ The compose files are the source of truth. This table is the one-line reference 
 | terminal | n/a (host systemd; see Protected host resources) | n/a | `make systemd-restart-ttyd` | `make install-config` |
 | dnsmasq | n/a (host systemd) | n/a | `make systemd-restart-dnsmasq` | n/a |
 | goose   | n/a (host systemd; see Protected host resources) | n/a | `make systemd-restart-goose` | n/a |
-| nc-datadir-nfs | 1 TB / 2 GB machine, tailnet-only | NFS export (live NC datadirectory) on the external machine | n/a | `make nc-datadir-nfs` `export` makes the external machine the PERMANENT live datadir host (THIS datadir moves over NFS; database never moves); `import` restores THIS host's own previously-exported datadir. Idempotent |
+| nc-datadir-nfs | n/a (host-side NFS) | NFS export (live NC datadirectory) on the external machine | n/a | `make nc-datadir-nfs` `export` makes the external machine the PERMANENT live datadir host (THIS datadir moves over NFS; database never moves); `import` restores THIS host's own previously-exported datadir. Idempotent |
 
-The `net` Docker network is `external: true` — create once on a fresh host with `docker network create net --subnet=172.22.0.0/16` (the compose files pin `172.22.0.x` bridge IPs; a default-subnet network rejects them). All inter-container services use `expose`, not `ports`. The exception is `caddy`: it runs with `network_mode: host` so Caddy sees the real client source IP — without host networking, Docker DNAT rewrites every packet to `172.22.0.1` (the bridge gateway) before Caddy sees it, which breaks the `@not_tailnet` remote_ip matcher on the tailnet-only vhosts (`https://ttyd.$DOMAIN`, `vault`, `nextcloud`, `mailu`). The host network namespace is on the `net` bridge at `172.22.0.0/16`, so Caddy still dials upstream containers by their bridge IP (see Caddyfile). dnsmasq binds to the Tailscale IP only, not `0.0.0.0`.
+The `net` Docker network is `external: true` — create once on a fresh host with `docker network create net --subnet=172.22.0.0/16` (the compose files pin `172.22.0.x` bridge IPs; a default-subnet network rejects them). All inter-container services use `expose`, not `ports`. The exception is `caddy`: it runs with `network_mode: host` so it sees the real client source IP — Docker DNAT would otherwise rewrite every packet to the bridge gateway and the `@not_tailnet` matcher on the tailnet-only vhosts (`ttyd.`, `vault.`, `nextcloud.`, `mailu.`) would match nothing (see the gotcha below). Being in the host namespace on the `net` bridge, Caddy still dials upstream containers by their bridge IP (see the Caddyfile). dnsmasq binds to the Tailscale IP only, not `0.0.0.0`.
 
 ### Per-service edit pointers
 
@@ -129,11 +458,11 @@ When you need to know "what does X do / where do I edit Y", read the file at the
 1. **Signaling** (`talk-hpb`, the official Go server) — the "switchboard". Every Talk client keeps a websocket open to it (`wss://talk.$DOMAIN/signaling/spreed`); the signaling server tells participants who else is in the call and relays small control messages. Nothing about the call *media* flows through it.
 **Gotcha: the Talk websocket path is `/signaling/spreed`, not `/signaling`.** Talk's web client builds the websocket URL as `signalingServer + "/spreed"` (`getWebSocketUrl()` in the spreed bundle), so with `https://talk.$DOMAIN/signaling` registered it opens `wss://talk.$DOMAIN/signaling/spreed`. A vhost that matches only the bare `/signaling` falls through to the `respond "ok"` stub for the real handshake — the browser says "websocket connection failed", calls then run without the HPB, and the signaling server logs nothing because it never sees the request (`docker logs talk-hpb` shows only its startup block). Probe the client path with `curl --http1.1` and expect 101. A `curl --http2` probe gets 400 because Caddy's H2 layer drops `Connection`/`Upgrade` (forbidden in HTTP/2) — a curl artifact; browsers upgrade over HTTP/1.1, which `reverse_proxy` bridges. Use a literal-path `rewrite /signaling/spreed /spreed`, never a regex `uri replace`.
 2. **STUN** — "what's my public IP?" so two devices behind home NATs can find each other. coturn answers this on `talk.$DOMAIN:3478`.
-3. **TURN** — when direct P2P fails (mobile CGNAT, hotel/corporate WiFi, firewalled networks), coturn *relays* the media between the two sides. Credentials are minted per-session by Nextcloud from a shared secret, so it is not an open relay. Both STUN and TURN live in the same coturn container (~9 MB RAM actual).
+3. **TURN** — when direct P2P fails (mobile CGNAT, hotel/corporate WiFi, firewalled networks), coturn *relays* the media between the two sides. Credentials are minted per-session by Nextcloud from a shared secret, so it is not an open relay. Both STUN and TURN live in the same coturn container.
 
 Nextcloud tells clients about the public endpoint (`https://talk.$DOMAIN/signaling`) — the only registered signaling entry (NC 34 deprecates multiple high-performance backends). The signaling server reaches Nextcloud back via its own `[backend1] urls` (`extra_hosts` maps `nextcloud.$DOMAIN` → 172.22.0.1), so no internal URL registration is needed. The Caddy vhost strips the `/signaling` prefix before proxying — the signaling server serves its websocket at `/spreed` and its API at `/api/v1/*`.
 
-`modules/nextcloud/docker-compose.yml` runs four containers: `nextcloud` (.5), `redis` (.11), `talk-hpb` (.12, strukturag/nextcloud-spreed-signaling — the official Go server, no NATS needed), `talk-relay` (.14). RAM hard caps sum to 2.02 GB with the DB (1g + 128m + 256m + 128m + 512m) — the operator's 3 GB ceiling. All four carry compose healthchecks (`docker ps` shows them `healthy`); talk-relay's is a real STUN binding probe via the image's `turnutils_stunclient` — a bare TCP connect would pass while the UDP/STUN path is broken.
+`modules/nextcloud/docker-compose.yml` runs four containers: `nextcloud` (.5), `redis` (.11), `talk-hpb` (.12, strukturag/nextcloud-spreed-signaling — the official Go server, no NATS needed), `talk-relay` (.14). Every container carries a hard `mem_limit`/`memswap_limit` (read them in the compose file), so the stack fits the host's memory budget. All four carry compose healthchecks (`docker ps` shows them `healthy`); talk-relay's is a real STUN binding probe via the image's `turnutils_stunclient` — a bare TCP connect would pass while the UDP/STUN path is broken.
 
 - **Config generation** — `make talk-gen` (idempotent): writes missing secrets into `modules/nextcloud/.env` (`SIGNALING_SECRET`, `SIGNALING_HASH_KEY`, `SIGNALING_BLOCK_KEY`, `SIGNALING_INTERNAL_SECRET`, `TURN_SECRET`, `SMTP_PASSWORD`, plus `POSTGRES_*`/`REDIS_HOST`) and renders `$DATA_DIR/talk/{server.conf,turnserver.conf}` from the committed `modules/nextcloud/talk/*.example` templates. Run it once after a fresh clone/deploy before starting the stack.
 - **Every call is forced through the HPB + our own coturn (2026-10-27)** — `make talk-config` (also run by the installer) sets `spreed` appconfig `signaling_mode=external` and `stun_servers=["stun:talk.$DOMAIN:3478"]`. The explicit mode pins the high-performance backend for every conversation — 1:1 calls included — because without it Talk derives the mode from the server list and can fall back to internal signalling; the STUN list replaces the third-party default (`stun.nextcloud.com:443`), so no call depends on an outside STUN server. Relay itself is TURN-only-when-needed by design: spreed 24 has no server-side relay-only switch (`iceTransportPolicy` is a client decision — only the admin TURN test uses `relay`), so a call with a usable direct path still takes it, and every call that cannot connects through coturn.
@@ -147,9 +476,9 @@ Nextcloud tells clients about the public endpoint (`https://talk.$DOMAIN/signali
 
 ### Nextcloud DB (PostgreSQL)
 
-`modules/nextcloud/docker-compose.db.yml` (deliberately named `docker-compose.db.yml` so the `-all` loops never pick it up; always start it with the app via `make dok-recreate-nextcloud-stack` — a lone `make dok-recreate-nextcloud-db` orphans the app containers and vice versa, see the ordering note above). Data in `$DATA_DIR/pgdata/`, tuning passed as `-c` flags (shared_buffers 256MB, effective_cache_size 640MB, work_mem 8MB, max_connections 50 — sized for the 2 GB RAM of the future DB host). No published ports — only the `nextcloud` container reaches it at 172.22.0.15:5432.
+`modules/nextcloud/docker-compose.db.yml` (deliberately named `docker-compose.db.yml` so the `-all` loops never pick it up; always start it with the app via `make dok-recreate-nextcloud-stack` — a lone `make dok-recreate-nextcloud-db` orphans the app containers and vice versa, see the ordering note above). Data in `$DATA_DIR/pgdata/`, tuning passed as `-c` flags (read them in the compose file). No published ports — only the `nextcloud` container reaches it at 172.22.0.15:5432.
 
-**Migration to the 1 TB / 2 GB machine (when it joins the tailnet)** — operator-driven; steps:
+**Moving `pgdata` to another host** — operator-driven; steps:
 1. `make dok-stop-nextcloud-db` on the app host.
 2. rsync `$DATA_DIR/pgdata/` to the big disk on the new host (stop first — no live copy).
 3. Clone the repo there, deploy `docker-compose.db.yml` with the port published on the tailnet interface only (`ports: ["<tailnet-ip>:5432:5432"]`) and its own UFW rule for 100.64.0.0/10 → 5432.
@@ -160,23 +489,23 @@ Nextcloud tells clients about the public endpoint (`https://talk.$DOMAIN/signali
 
 **Never delete or disable any of these without explicit operator approval.** Per `docs/AGENTS.md` safety rule 1, if a task seems to require removing any of them, stop and ask.
 
-- `/etc/systemd/system/goose.service` — goose agent systemd unit (`enabled`, `Restart=always`). Its server secret lives in `$DATA_DIR/goose/.env` (root:root 0600, instance state — the unit reads it via `EnvironmentFile=`; the pre-2026-10-27 path was `/etc/goose/goose.env`, migrated by `make install-config`).
+- `/etc/systemd/system/goose.service` — goose agent systemd unit (`enabled`, `Restart=always`). Its server secret lives in `$DATA_DIR/goose/.env` (root:root 0600, instance state — the unit reads it via `EnvironmentFile=`).
 - Credentials are never left in loose files: the Kuma admin hash lives in its database, service secrets in `modules/*/.env` + `$DATA_DIR/goose/.env`, and generated passwords are printed once at creation (`make kuma-passwd`, `make mail-password`). Never commit or re-print an existing secret.
 - `/etc/systemd/system/ttyd.service` — ttyd web-terminal unit (`enabled`, `Restart=always`). Binds `127.0.0.1:7681` only (loopback), reached solely through Caddy's tailnet-gated `ttyd.$DOMAIN` proxy (`/` proxies straight to it) — no bridge bind and no UFW allow. It runs `tmux new-session -A -s main` with no `-a`, so every visitor lands in the ONE `main` session (created by `tmux-main.service` at boot); there are no per-device sessions and no session name can be passed through the URL.
 - `/etc/dnsmasq.d/10-tailnet.conf` and `/etc/systemd/system/dnsmasq.service.d/override.conf` — host DNS resolver + systemd drop-in (`Restart=always`). Binds the host's Tailscale IP on port 53 only.
 - `/etc/resolv.conf` — points at Tailscale's resolver `100.100.100.100` (tracked copy `config/resolv/resolv.conf`, applied by `make install-resolv` with a `*.pre-tailscale.bak` backup). This is what makes the split-DNS route for `$DOMAIN` apply to THIS host: without it `ttyd.$DOMAIN`/`vault.$DOMAIN`/`mail.$DOMAIN` answer NXDOMAIN on the machine that serves them. Deliberately NOT part of `install-config` — it must be applied only once tailscaled is up.
 - `/etc/default/tailscaled` — tailscaled unit flags (`FLAGS=`, read via `EnvironmentFile=`). The installer sets `FLAGS="--encrypt-state"` **only when a TPM is present** (`/dev/tpmrm0`): on Linux the flag needs TPM, so forcing it on a TPM-less machine makes tailscaled fail to start and takes the node offline (there the console's `tsStateEncrypted` stays false — no TPM, no state encryption).
 - The `caddy` container — NEVER alter, stop, or restart it without explicit operator approval; it is the ingress edge for all `$DOMAIN` routes (`make backup` / `make import-backups` exclude it).
-- `$DATA_DIR/caddy_data/` — Caddy runtime data dir (LE certs under `caddy/acme/`, ACME account keys, OCSP staples) and the `CF_API_TOKEN` file used for per-vhost ACME DNS-01. The Caddy container bind-mounts this dir at `/data` so certs persist across container recreates. The `CF_API_TOKEN` file is created by the operator (see `docs/MIGRATE.md`); do not commit it.
-- `$DATA_DIR/cloud/html/` and `$DATA_DIR/cloud/users/` — Nextcloud bind mounts (html root + datadirectory; both owned by uid 33 with a `.ncdata` marker in `users/`). After the datadirectory move, `cloud/users/` is an NFSv4 mount of the external machine (`/etc/fstab`, `nofail`, boot-race-hardened per the fstab options in `scripts/ops/nc-datadir-nfs.sh`) — the live datadirectory lives on the 1 TB box, and the local copy is kept at `cloud/users.local-backup` until the operator deletes it (the script won't offer the delete until the copy is verified).
-- `$DATA_DIR/pgdata/` — Nextcloud PostgreSQL data dir (bind-mounted into the `postgresql` container). This directory migrates to the operator's 1 TB machine when it joins the tailnet (see "Nextcloud DB" below).
+- `$DATA_DIR/caddy_data/` — Caddy runtime data dir (LE certs under `caddy/acme/`, ACME account keys, OCSP staples) and the `CF_API_TOKEN` file used for per-vhost ACME DNS-01. The Caddy container bind-mounts this dir at `/data` so certs persist across container recreates. The `CF_API_TOKEN` file is created by the operator (see "Prerequisites (manual, unavoidable)"); do not commit it.
+- `$DATA_DIR/cloud/html/` and `$DATA_DIR/cloud/users/` — Nextcloud bind mounts (html root + datadirectory; both owned by uid 33 with a `.ncdata` marker in `users/`). After the datadirectory move, `cloud/users/` is an NFSv4 mount of the external machine (`/etc/fstab`, `nofail`, boot-race-hardened per the fstab options in `scripts/ops/nc-datadir-nfs.sh`) — the live datadirectory lives on the export host, and the local copy is kept at `cloud/users.local-backup` until the operator deletes it (the script won't offer the delete until the copy is verified).
+- `$DATA_DIR/pgdata/` — Nextcloud PostgreSQL data dir (bind-mounted into the `postgresql` container). It can move to another host (see "Nextcloud DB" below).
 - `$DATA_DIR/talk/` — generated Talk configs: `server.conf` (signaling; 644 — the signaling container drops to uid 850 and must read it) and `turnserver.conf` (coturn; 600). Rendered by `make talk-gen` from `modules/nextcloud/talk/*.example`; contains the signaling + TURN secrets (do not commit — gitignored).
 - `$DATA_DIR/download/` — file-browser drop folder, served read-only at `www.$DOMAIN/download` (Caddy bind mount `/download:ro`). Owned by `root`; anything dropped here is publicly readable.
 - `$DATA_DIR/pages/` — the web roots (Caddy bind mount `pages:/srv/pages:ro`, so no repo path and no instance path share a name): `pages/www/` for `www.$DOMAIN` (operator-owned pages, edited in place; the repo ships none and `make render` never writes or deletes one). `ttyd.$DOMAIN` has no web root at all — its homepage is the shell.
-- `$DATA_DIR/goose/.env` — the goose server secret + the token-policy environment, root:root 0600, read by the unit's `EnvironmentFile=`. Untracked instance state, never a repo file (migrated from `/etc/goose/goose.env` on 2026-10-27).
+- `$DATA_DIR/goose/.env` — the goose server secret + the token-policy environment, root:root 0600, read by the unit's `EnvironmentFile=`. Untracked instance state, never a repo file.
 - `$DATA_DIR/mailserver/` — mail platform data: `mail/` (Maildirs), `data/` (Mailu SQLite config), `dkim/` (RSA keys, mounted at `/dkim`), `filter/` (Rspamd), `certs/` (the mail.$DOMAIN pair copied from caddy_data), `redis/`, and `roundcube/` (webmail sqlite). `prep_dirs` enforces the ownership each container needs — `data/` is `100:1000` (mailu-admin's uid after `/start.py` drops privileges), `redis/` is `999:1000`, `roundcube/` is `33:33`, the rest `root`.
 - `net` Docker network — user-defined bridge, `external: true`, subnet `172.22.0.0/16`. Reused by all inter-container services.
-- SSH keys, Nextcloud data, Vaultwarden data, uploaded files — user-only (also `docs/AGENTS.md` safety rules 7 and 8).
+- SSH keys, Nextcloud data, Vaultwarden data, uploaded files — user-only (also `docs/AGENTS.md` safety rules 8 and 9).
 
 ## SSH access
 
@@ -184,14 +513,14 @@ SSH is restricted to the Tailscale network only — the public internet cannot r
 
 ## Goose recipes
 
-`recipes/` holds reusable Goose agent tasks — each one a `version/title/description/instructions/extensions/parameters/prompt` YAML file that tells the agent what to inspect, which tools it may use, what inputs it accepts, and what report to produce. Every recipe is **read-only**: it inspects and reports, never mutates the host, and the operator applies changes after review (the same "read-only first" discipline as `docs/DEBUG.md`). The agent's own rules stay in `docs/AGENTS.md`; these recipes point at it and at `docs/MANUAL.md` rather than restating them.
+`recipes/` holds reusable Goose agent tasks — each one a `version/title/description/instructions/extensions/parameters/prompt` YAML file that tells the agent what to inspect, which tools it may use, what inputs it accepts, and what report to produce. Every recipe is **read-only**: it inspects and reports, never mutates the host, and the operator applies changes after review (the same "read-only first" discipline as "Deep scan and debugging"). The agent's own rules stay in `docs/AGENTS.md`; these recipes point at it and at `docs/MANUAL.md` rather than restating them.
 
 The `make goose-*` front doors wrap `goose run --recipe <name>` with the repo-local `GOOSE_RECIPE_PATH` (`recipes/`), so the recipes stay versioned with the scripts and docs they operate on:
 
 - `make goose-recipes` — list them (`goose recipe list`).
 - `make goose-audit [FOCUS=…]` — full read-only audit (security/reliability/ops/docs drift).
 - `make goose-review MODULE=…` — review one module (any name in `config/modules.conf`, or `edge`).
-- `make goose-troubleshoot SERVICE=…` — triage a failure via `docs/DEBUG.md`.
+- `make goose-troubleshoot SERVICE=…` — triage a failure via "Deep scan and debugging".
 - `make goose-check-backups [FOCUS=…]`, `make goose-check-network [FOCUS=…]` — backup and ingress/mail reviews.
 - `make goose-validate-installer [TARGET=…]` — lint/review script changes (`bash -n`, no apply).
 - `make goose-audit-docs [SCOPE=…]` — find doc drift/stale/duplicate.
@@ -203,17 +532,75 @@ The command list is rendered by `scripts/info/help.sh` (the same source as `make
 
 - `origin` is `git@github.com:$GITHUB_USER/$REPO_NAME.git` (pushes use `/root/.ssh/github_key`) or the HTTPS URL (anonymous clone — a push there waits for credentials). Read `git remote -v`, never assume.
 - `gh` is installed by the wizard so `make git-pr` opens the pull request and `make git-issue` files the issue. It needs one `gh auth login` (operator action; an agent never runs it). Without it the recipes fall back to `GITHUB_TOKEN`/`GH_TOKEN`, then to printing the compare URL and a ready body.
-- Every commit is authored `<id>+$GITHUB_USER@users.noreply.github.com` (repo-local `git config`, `user.useConfigOnly true` so git errors instead of inventing `root@<host>`); the hooks refuse any other identity. `--no-verify` is forbidden — a failing hook is fixed, never bypassed; the installer's first push to its one-shot `temppush` remote is the single designed exception.
+- `$GITHUB_USER` is the operator's GitHub identity and lives only in `data/instance.conf`: every tracked file references it as `$GITHUB_USER`, never the literal value (the `README.md` clone URL, `LICENSE`, the `.github/` metadata and git history are the only places the literal appears).
+- Every commit is authored `<id>+$GITHUB_USER@users.noreply.github.com` (repo-local `git config` written by the installer at deploy time, `user.useConfigOnly true` so git errors instead of inventing `root@<host>`); the hooks refuse any other identity. `--no-verify` is forbidden — a failing hook is fixed, never bypassed; the installer's first push to its one-shot `temppush` remote is the single designed exception.
 - Comments and user-facing strings are held to the same line as the docs — current configuration only, no `docs/` path, size, timing, foreign host or plan (AGENTS rule 31): `make prose-audit` reports over the tracked tree, and the `pre-push` hook plus `make git-pr` refuse on a finding (`PROSE_AUDIT_OVERRIDE=1` overrides). Markdown is checked for open tasks only — a pending-marker, a task label or an unchecked box outside the issue/PR templates; those belong to the Issues tab, where a human closes them. `recipes/*.yaml` and `make migrate` are exempt.
-- One change per commit and a `Revert:` line on every significant commit are defined once in `scripts/lib/commit-areas.sh`: `make git-audit` reports (read-only, over the range a push would publish), `make git-split` fixes (splits bundles, fills the real parent SHA, refuses published commits). The `prepare-commit-msg` hook splits a staged change spanning several units and aborts the outer commit; the `pre-push` hook splits the pushed range — the only place a web-editor commit can be caught. Overrides: `GIT_SPLIT_DISABLE=1`, `ONE_CHANGE_OVERRIDE=1`, `HISTORY_AUDIT_OVERRIDE=1`, `REWRITE_PUBLISHED=1` (operator-approved rewrite).
+- One change per commit and a `Revert:` line on every significant commit are defined once in `scripts/lib/commit-areas.sh`; `docs/*` and every `*.md` are exempt from the area rule (a doc rides with the change it describes): `make git-audit` reports (read-only, over the range a push would publish), `make git-split` fixes (splits bundles, fills the real parent SHA, refuses published commits). The `prepare-commit-msg` hook splits a staged change spanning several units and aborts the outer commit; the `pre-push` hook splits the pushed range — the only place a web-editor commit can be caught. Overrides: `GIT_SPLIT_DISABLE=1`, `ONE_CHANGE_OVERRIDE=1`, `HISTORY_AUDIT_OVERRIDE=1`, `REWRITE_PUBLISHED=1` (operator-approved rewrite).
 - History rewrites use the plumbing `commit-tree` loop (`scripts/ops/identity-rebuild.sh`, `drop-path.sh`): `filter-branch` and `filter-repo` drop commits on this DAG. Verify after a rewrite: uniform identities, unchanged tip tree, byte-identical messages and dates, no new root, no merge, `git fsck` clean. Never tag old histories (GitHub counts tags) and never re-rewrite to chase the contribution graph. After a full-history force-push, run `make gh-web-health` — GitHub's web git-data can 500 until a real (never empty) commit nudges a rebuild.
 
 ## State, logs, ownership
 
 - `data/` holds everything the install produced: `instance.conf`, `rendered/`, `wizard.state`, `caddy_data/` (certs, ACME account keys, `CF_API_TOKEN`), `cloud/{html,users}`, `pgdata/`, `talk/` (`server.conf` 644, `turnserver.conf` 600), `download/` (public drop folder), `pages/` (web roots), `goose/.env` (root:root 0600), `mailserver/{mail,data,dkim,filter,certs,redis,roundcube}`, `vaultwarden/`, `uptimekuma/` and the other module dirs. `prep_dirs` enforces the per-container ownership each one needs.
 - Docker logging is capped in `config/docker/daemon.json` (json-file, 10m × 3); the installed systemd units are `kefo-stack.service` and `tmux-main.service`.
-- The repo is owned by `root:root`; edit as root, do not `chown` it elsewhere.
+- `$DATA_DIR/wizard.state` (mode 0600) is the run state: `enabled_modules` (what exists), the `finished` checkpoint (the precondition for `make smoke` and therefore for a push) and the prompted secrets. The installer is its **sole writer** and records `finished=true` only when a run reaches the end; `uninstall.sh` clearing `enabled_modules`/`finished` on a full teardown is the one documented exception. Every consumer reads it through `scripts/lib/modules.sh`, never its bytes directly; `installed-modules.detected.conf` + `installed-modules.report.txt` are its independent-probe confirmation. A missing state file means nothing is recorded — never "assume everything is present".
+- The repo is owned by `root:root`; edit as root, do not `chown` it elsewhere. Agent changes are confined to tracked paths — every `data/` change is an operator action, and `git diff -- data/` must be empty before a commit.
 - `make nc-capture` mirrors the live Nextcloud app set into `cloud/recovery/` (generated, outside the repo).
+
+## Deep scan and debugging
+
+The procedure for an occasional deep scan or for triaging an incident: read-only until a
+finding is confirmed, one logical change at a time, and every claim proven with a probe.
+The rules an agent follows are in `docs/AGENTS.md`; the facts this procedure uses are in
+"Service reference", "State, logs, ownership" and "Operational gotchas" above and below.
+
+### Operating discipline
+- **Read-only first.** Inspect before changing; understand dependencies before touching a service.
+- **One logical change at a time.** Baseline → hypothesis → smallest change → retest. Never stack unrelated changes.
+- **Validate before applying, verify after.** Syntax-check (`caddy validate`, `docker compose -f <file> config -q`, `bash -n <script>`) *and* prove the outcome with a probe.
+- **Rollback first.** Every risky change ships with a one-line revert recipe in the commit message (AGENTS safety rule 10).
+- If a change makes things worse: stop, restore the last known-good state, verify, report — never compound it.
+- No fabrication: never report a result you did not actually observe; say so when a test could not run.
+
+### Layer ladder (resolve in order, stop at the first failure)
+1. **DNS** — `dig +short <host>`; tailnet name not resolving → `make systemd-restart-dnsmasq`.
+2. **TCP** — `curl -sS -o /dev/null -w '%{http_code}\n' --connect-timeout 5 https://<host>/`.
+3. **TLS** — issuer/dates on a fresh handshake *from the host* (`openssl s_client … -servername <host>`), not through Cloudflare.
+4. **Edge / proxy** — `make dok-logs-caddy`; config valid (`docker exec caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile`); `make smoke`.
+5. **Upstream / app** — `docker ps` health, `docker logs --since 10m <ctn>`, `journalctl -u <unit>`.
+6. **Access control** — the code tells the layer: 403 = matcher/ACL, 401 = auth, 404 = route, 502 = upstream down.
+
+### Standard scan (read-only)
+```
+make fetch                   # AIO dashboard: perf, modules, git, units, docker, tmux, backups, mail, tailnet
+make smoke                    # every vhost must serve its real app; runs ONLY on a finished install (wizard.state finished=true); not-installed modules' failures are listed once at the end and don't fail the run
+docker ps --format '{{.Names}}	{{.Status}}'
+ss -tlnp                      # listeners — compare with "Access model" above
+sudo ufw status verbose
+findmnt -R $DATA_DIR      # mounts, incl. the NFS datadirectory
+free -m; df -h /              # memory / disk headroom
+sudo journalctl -p err --since "-3 days" | tail -30
+```
+
+### Repo-consistency probes (does the running system match the repo?)
+```
+git status
+make nc-check                                     # Nextcloud setup checks
+bash scripts/ops/optimize.sh --verify                  # host tuning converged
+bash scripts/ops/nc-datadir-nfs.sh                            # NFS datadirectory export/import
+bash scripts/info/gh-web-health.sh                      # after any history rewrite
+```
+
+### Prove the outcome, not the config
+Decide what "healthy" means *before* changing anything, then demonstrate it. Examples: a vhost is healthy when `make smoke` passes; Nextcloud is healthy when `occ status` reports installed + no maintenance and a file write round-trips; the NFS datadirectory is healthy when `findmnt` shows the mount and a real file reads at expected speed.
+
+### Where the answers already are
+- Symptom → cause map: "Operational gotchas" below (e.g. NFS client-helper failure, the `respond "ok"` edge stub, force-recreate name collisions, the tailscaled boot-race, `fs.protected_regular` root-writes in /tmp).
+- Open problems and their status: the repository's Issues tab.
+- Migration/rebuild path: "Migration (new machine, new domain)" above.
+- JS/static-client triage: diff the *served* page against the pristine upstream copy before assuming the server is broken; a single SyntaxError in the only inline script black-screens with no server-side error.
+
+### Report template
+What changed · what was tested · did the tests pass · remaining issues · security/operational notes. Cite the probe output, not an assumption.
 
 ## Operational gotchas
 - A deliberate `systemctl stop dnsmasq` takes all tailnet-side `*.$DOMAIN` resolution down. Restart with `make systemd-restart-dnsmasq`.
@@ -245,7 +632,7 @@ The command list is rendered by `scripts/info/help.sh` (the same source as `make
 - **`fs.protected_regular=2` silently blocks root writes in /tmp (lesson 2026-09-12)** — when a root-run script does `: > /tmp/file-owned-by-root` (O_CREAT on an existing file owned by another uid in a sticky world-writable dir), the kernel returns `Permission denied` **even for root**, with no log anywhere. It looks like an immutable file or a broken script; it's the kernel's symlink/hardlink-attack mitigation. Repro: `sudo : > /tmp/x` where x is root-owned. When testing scripts with temp files, either write to a non-sticky dir (`mkdir -p /tmp/subdir && chmod`), pre-chown the file, or expect EACCES on cross-uid creates in /tmp and /var/tmp.
 - **A lingering test container can poison every later probe (lesson 2026-09-12)** — while iterating on a port-bound service, an earlier `timeout 150 docker run … --name <svc>-test` was still alive and holding the port; three "fix attempts" appeared to change nothing — because every probe hit the OLD broken container, and the new container's log showed `FAILED TO BIND: Address already in use` (easy to miss under a wall of startup output). Rule: before debugging a port-bound service, `docker ps -a` + `ss -tlnp | grep <port>` and remove every stale test container; treat "FAILED TO BIND" in the log as the primary signal, not the connect errors.
 - **Bash array pitfalls that produced real uninstall.sh bugs (lesson 2026-09-12)** — (1) `arr=("${EMPTY[@]:-}")` with an empty array creates a **one-element array containing the empty string**, not an empty array — the loop body runs once with a bogus empty item (`bad array subscript` on an associative lookup). Use `arr=(); [ ${#SRC[@]} -gt 0 ] && arr=("${SRC[@]}")`. (2) Nested name construction `${RM_MOD_${k^^}:-false}` is a **bad substitution** in this bash — build the name first and use indirection: `v="RM_MOD_${k^^}"; [ "${!v}" = true ]`. Both compile fine under `bash -n`; they only explode at runtime — test with real data, not just syntax checks.
-- **`scripts/ops/optimize.sh` applied here 2026-09-01** — fully automatic, **zero prompts** (every choice auto-detected or env-overridable). sysctl (BBR, buffers, dirty ratios, swappiness, `kernel.nmi_watchdog=0`, `sched_autogroup_enabled=0`, `vm.min_free_kbytes` = 1% of RAM computed live, `kernel.core_pattern=/dev/null`, THP=madvise incl. `defrag` via `/etc/tmpfiles.d/99-optimize.conf`), limits (nofile 65535 + `DefaultTasksMax=infinity`), journald caps, apt speed, **swap auto = RAM/3 rounded up, recreated only when the live size differs** (4G here — the host previously had **no active swap**), `noatime,nodiratime` auto on `/`, apt autoremove/clean + docker prune (make-cleanup style, no backup pruning), and **`tuned` (profile via `tuned-adm recommend`) + `irqbalance` + `earlyoom`** (the only packages the script installs — performance helpers; service software is never installed). **SSD/HDD auto-detect** (nvme name → ssd; `rotational=0` → ssd; discard support → ssd; else hdd): SSD gets fstrim, HDD gets SETRA. Here `vda` = rotational 1 + no discard → **hdd → SETRA 512 active** (256 kB readahead + `/etc/udev/rules.d/99-readahead.rules`), fstrim off. **tuned/sysctl cooperation**: tuned applies first, then `/etc/sysctl.d` overrides conflicting keys — that's tuned's own behavior (its sysctl plugin re-applies `sysctl --system` and defers to it, verified in `/var/log/tuned/tuned.log`); `tuned-adm verify` reports diffs on those keys **by design**. Opt out: `WITH_TUNED=0` / `WITH_IRQBALANCE=0` / `WITH_EARLYOOM=0` / `NOATIME=0` / `SWAP_GB=0` / `SETRA=0`. Backups under `/root/optimize-backup-*`; re-running is a no-op; `--verify` passes. Left by design: fstrim (disk detected hdd — `FORCE_FSTRIM=1` if SSD-backed VirtIO), service pruning (targets not installed). Requires root only — pure bash.
+- **`scripts/ops/optimize.sh` — the host tuner** — fully automatic, **zero prompts** (every choice auto-detected or env-overridable). sysctl (BBR, buffers, dirty ratios, swappiness, `kernel.nmi_watchdog=0`, `sched_autogroup_enabled=0`, `vm.min_free_kbytes` = 1% of RAM computed live, `kernel.core_pattern=/dev/null`, THP=madvise incl. `defrag` via `/etc/tmpfiles.d/99-optimize.conf`), limits (nofile 65535 + `DefaultTasksMax=infinity`), journald caps, apt speed, **swap auto = RAM/3 rounded up, recreated only when the live size differs**, `noatime,nodiratime` auto on `/`, apt autoremove/clean + docker prune (make-cleanup style, no backup pruning), and **`tuned` (profile via `tuned-adm recommend`) + `irqbalance` + `earlyoom`** (the only packages the script installs — performance helpers; service software is never installed). **SSD/HDD auto-detect** (nvme name → ssd; `rotational=0` → ssd; discard support → ssd; else hdd): SSD gets fstrim, HDD gets SETRA readahead (256 kB via `/etc/udev/rules.d/99-readahead.rules`), fstrim off. **tuned/sysctl cooperation**: tuned applies first, then `/etc/sysctl.d` overrides conflicting keys — that's tuned's own behavior (its sysctl plugin re-applies `sysctl --system` and defers to it, verified in `/var/log/tuned/tuned.log`); `tuned-adm verify` reports diffs on those keys **by design**. Opt out: `WITH_TUNED=0` / `WITH_IRQBALANCE=0` / `WITH_EARLYOOM=0` / `NOATIME=0` / `SWAP_GB=0` / `SETRA=0`. Backups under `/root/optimize-backup-*`; re-running is a no-op; `--verify` proves the convergence. Left by design: fstrim (disk detected hdd — `FORCE_FSTRIM=1` if SSD-backed VirtIO), service pruning (targets not installed). Requires root only — pure bash.
 - **Two `$DOMAIN` containers (one named `<id>_$DOMAIN`) = a force-recreate that died mid-swap** — compose v5.5.0 creates the replacement under `<old-container-short-id>_$DOMAIN` and only frees the canonical name afterwards; if the run is interrupted between "create new" and "remove old" (e.g. Ctrl-C during the slow xcaddy rebuild), the next `up` starts both → two host-network Caddys on :80/:443 via SO_REUSEPORT sharing one cert store. Fix: `docker rm -f` the stale one, `docker rename` the survivor to `$DOMAIN`, then `make dok-recreate-caddy` + `make smoke`.
 - **The container roster is derived, and a multi-file project is one invocation** — `CONTAINERS` and `MODULES` in the `Makefile` are built with `awk` from `config/modules.conf` (module rows: `<module> <dir> <host-label> <containers...>`), so a container added to a module's row gains `dok-recreate/restart/stop/logs-<ctn>` automatically and nothing hardcodes the roster; only `caddy` is added by hand (the edge is not a module). Per-container compose files come from the same catalog (every container of a module → that module dir's file), and the nextcloud row is special-cased: any action on `nextcloud`/`postgresql`/`talk-hpb`/`talk-relay`/`notify-push` runs `-f docker-compose.db.yml -f docker-compose.yml` in one invocation, so no target can orphan-delete the other half. The `dok-*-all` loops glob `modules/*/docker-compose*.yml` per directory and group a directory's files into one `docker compose -f a -f b` call for the same reason. `make dok-recreate-nextcloud-stack` is an alias for `dok-recreate-nextcloud`.
 - **`make dok-recreate-caddy` (or `make dok-recreate-all`) takes ~3 minutes on a fresh machine and prints zero progress** — `docker compose up --build` runs `docker build` in a streaming-tty mode that buffers until the step finishes. The build chain is `golang:1.25-bookworm` → `go install xcaddy` → `xcaddy build --with caddy-dns/cloudflare@a8737d0 v2.11.4` → `FROM caddy:2.11.4` + `COPY --from=builder`. `docker build --progress=plain` shows the steps.
@@ -274,14 +661,14 @@ The command list is rendered by `scripts/info/help.sh` (the same source as `make
 - **`make smoke` can fail a check whose curl works by hand (debug hell 2026-10-19)** — `scripts/stack/smoke-vhosts.sh` runs `set -o pipefail`, and `curl … | grep -q …` makes `grep` exit at the first match, so curl dies with SIGPIPE (23) and the pipeline status becomes curl's — the `if` takes the FAIL branch even though the pattern matched. Grep-able tell: `bash -x` shows the curl, the manually run identical curl prints the match, the check still FAILs. Fix: capture the body in a variable and `grep -q` on a here-string, never pipe curl into `grep -q` in that script.
 - **A rendered single-file bind mount keeps the OLD inode (lesson 2026-10-19)** — `make render` used `rsync` (temp file + rename), so `roundcube` kept reading the previous `roundcube-tls.inc.php` (host file 1434 bytes/new, container 942 bytes/old — `stat` shows different inodes) until the container was restarted. `render-all.sh` now rsyncs the mail platform tree with `--inplace`; the same trap applies to any compose file that mounts a single rendered file rather than a directory.
 - **Recreating `mailu-imap`, `mailu-front` or `roundcube` breaks every active webmail session** — roundcube sessions are DB-backed (the UI keeps rendering "logged in") but the IMAP connection dies with the container, so users hit "Connection to IMAP server failed" until they log in again. Warn the operator before recreating them; the fix is a re-login, never a config change.
-- **The edge guardrail** — app vhosts (cloud/vault/kuma/mail) must serve their real app: the pre-commit hook (installed by the installer on every run; `make install-hooks` to re-run it manually) refuses any commit whose identity is not the logged-in GitHub account, blocks a bare `respond "ok"` in them (www and tail are exempt by design — www serves the operator's static pages, tail serves the tailnet home; a vhost another project installs is guarded by the pre-push smoke instead), runs `caddy validate` on staged `modules/caddy/` changes; the prepare-commit-msg hook auto-splits a staged change spanning more than one unit (one folder + at most one subfolder, rule 26 — see "Commit hygiene" above); the pre-push hook refuses a pushed range with a non-GitHub identity, auto-splits/fills revert recipes over the pushed range (rules 26/10), and runs `make smoke`. `EDGE_OVERRIDE=1` (pre-commit only) is the sole operator-approved override; the pre-push smoke has NO bypass — it runs only on a finished install (`wizard.state` `finished=true`). After any `docker restart caddy` / `make dok-recreate-caddy`, run `make smoke`.
+- **The edge guardrail** — app vhosts (cloud/vault/kuma/mail) must serve their real app: the pre-commit hook (installed by the installer on every run; `make install-hooks` to re-run it manually) refuses any commit whose identity is not the logged-in GitHub account, blocks a bare `respond "ok"` in them (www and tail are exempt by design — www serves the operator's static pages, tail serves the tailnet home; a vhost another project installs is guarded by the pre-push smoke instead), runs `caddy validate` on staged `modules/caddy/` changes; the prepare-commit-msg hook auto-splits a staged change spanning more than one unit (one folder + at most one subfolder, rule 26 — see "GitHub workflow" above); the pre-push hook refuses a pushed range with a non-GitHub identity, auto-splits/fills revert recipes over the pushed range (rules 26/10), and runs `make smoke`. `EDGE_OVERRIDE=1` (pre-commit only) is the sole operator-approved override; the pre-push smoke has NO bypass — it runs only on a finished install (`wizard.state` `finished=true`). After any `docker restart caddy` / `make dok-recreate-caddy`, run `make smoke`.
 
 - **The data tree lives INSIDE the repo checkout — never `chown -R` the whole tree (lesson 2026-09-22)** — `$DATA_DIR` is `$REPO_DIR/data`, so a blanket `chown -R root:root $REPO_DIR` also seizes the container-owned data dirs (33 www-data, 70 postgres, 201 caddy, 999/1000 the mail cache, 33 roundcube). Symptoms: Nextcloud answers 404 and `docker exec -u www-data nextcloud php occ` returns *"Could not open input file: occ"* (php-fpm cannot traverse its own document root); postfix answers `421 4.3.2 All server ports are busy` while its log shows `warning: cannot connect to service private/smtpd: Permission denied` (`/var/spool/postfix/private` lost its `postfix` ownership). Fix: chown only at the repo's TOP level, excluding `data/`, then restart the affected containers — Mailu re-owns its spool and `/data` on start, so recreating the mail containers clears the postfix symptom. Ownership per data dir is enforced by the installer's `prep_dirs` (Nextcloud `33`, vault `1000`, `mailserver/data` `100:1000`, the rest of `mailserver/` `0`, `mailserver/redis` `999`, roundcube `33`, `pages/www` `0` — the web root is `data/pages/www`, there is no `data/www`).
-- **Repo paths and instance paths never share a name (2026-10-27)** — `config/` is a skeleton that must be rendered before it is used; `data/` is instance state that is never edited as config. The places that blurred it are now explicit: web pages live only as instance data in `$DATA_DIR/pages/<vhost>/` (never in the repo, and not `data/www/`), the goose env is `$DATA_DIR/goose/.env` (was `/etc/goose/goose.env`, and would have been `config/goose/.env`), and the uninstall log is `$LOG_DIR/uninstall.log` (was next to `scripts/install/uninstall.sh`).
+- **Repo paths and instance paths never share a name** — `config/` is a skeleton that must be rendered before it is used; `data/` is instance state that is never edited as config. Web pages live only as instance data in `$DATA_DIR/pages/<vhost>/` (never in the repo), the goose env is `$DATA_DIR/goose/.env`, and the uninstall log is `$LOG_DIR/uninstall.log`.
 - **`config/dnsmasq/10-tailnet.conf` carries a PLACEHOLDER address, never the live one (lesson 2026-09-22)** — the tracked file says `listen-address=100.64.0.1` (a CGNAT address that is nobody's node); `make install-config` / `make install-dnsmasq-conf` rewrite that literal to the live Tailscale IPv4 at deploy time. Never copy the tracked file verbatim to `/etc/dnsmasq.d/`: dnsmasq then fail-loops with `failed to create listening socket for 100.64.0.1: Cannot assign requested address` and takes tailnet DNS — and with it `ttyd.$DOMAIN`/`vault.$DOMAIN`/`mail.$DOMAIN` — down. The placeholder is a fixed literal on purpose (it used to come from a `TAILNET_SUBNET` instance value, which meant the tracked file contained a real address).
 - **A module brought down with `docker compose down` still counts as installed, so smoke must not read it as a fault (2026-10-29)** — `docker compose down` REMOVES a module's containers (unlike a crash, which leaves an exited one), and `wizard.state` still lists the module. `make smoke`'s cloud section therefore skips its service checks — loudly, one `ok` line — only when no `nextcloud` container exists at all; an exited container still fails, so a crash is never mistaken for the operator's shutdown. The stack keeps its door at `nextcloud.$DOMAIN` (tailnet-only) and all data.
 - **A module that is not installed has no route — never report it as "tailnet-only" (lesson 2026-09-22)** — `vault.$DOMAIN` answered 502 and the closing report called the vhost "tailnet-only"; the truth was that the `vault` module simply was not in `enabled_modules` in `wizard.state`. Grep-able symptom: a 502 with no container. Fix the report, not the system: `make fetch` (`vault (not installed)`), `make fetch-more` (`routes` + `!dead` rows) and `make smoke` (buffered into the end "Not installed / ignored" section) all carry the right words now. See "Module state vs route exposure".
-- **The web roots are INSTANCE DATA and must NOT be mounted inside the rendered config mount (2026-09-22; corrected 2026-09-25; repathed 2026-10-27)** — `modules/caddy/docker-compose.yml` mounts `${DATA_DIR}/pages:/srv/pages:ro` (a plain sibling path) alongside `${DATA_DIR}/rendered/caddy:/etc/caddy:ro`. It used to be nested at `/etc/caddy/www`, which is a hard failure on current Docker/runc: mounting the parent read-only first makes runc `mkdir` the nested mountpoint *inside* that read-only filesystem and the container dies at create time —
+- **The web roots are INSTANCE DATA and must NOT be mounted inside the rendered config mount** — `modules/caddy/docker-compose.yml` mounts `${DATA_DIR}/pages:/srv/pages:ro` (a plain sibling path) alongside `${DATA_DIR}/rendered/caddy:/etc/caddy:ro`. Nesting it under `/etc/caddy` is a hard failure on current Docker/runc: mounting the parent read-only first makes runc `mkdir` the nested mountpoint *inside* that read-only filesystem and the container dies at create time —
   `error mounting ".../data/pages" to rootfs at "/etc/caddy/pages": ... mkdirat .../merged/etc/caddy/pages: read-only file system`
   so Caddy stays `Created`, never listens, and every ACME cert stays unissued (one bug, seven error tags on the 2026-09-25 fresh install). Pre-creating the dir in the image does not help — only de-nesting does. Symptom if the mount is missing entirely: every static page falls through to the `respond "ok"` stub.
 - **An uninstalled module's own state is invisible to the edge (2026-09-22)** — `stack-up.sh` derives its unit list from the live containers, and the tail catalogue only lists routes that exist, so a module removed from `enabled_modules` neither starts nor appears anywhere. That is the designed behaviour; the only visible trace is the dead vhost line `make fetch-more` prints.
@@ -290,7 +677,7 @@ The command list is rendered by `scripts/info/help.sh` (the same source as `make
 - **A push is blocked until the install is `finished` (2026-10-15)** — `make smoke` refuses to run unless `data/wizard.state` records `finished=true`, and the pre-push hook (installed by the installer, or `make install-hooks` on any other clone) runs `make smoke` with NO bypass. Grep-able symptom: `pre-push: vhost smoke test FAILED` while the edge is actually serving, or `smoke: wizard.state is not finished ('absent')`. Cause: a host that never completed an install (or a fresh clone) has no `finished` checkpoint, and nothing but the installer may write it. Takeaway: finish an install before pushing from a host that has the hook installed; installing the hook on a dev host that is not a finished install makes every push fail by design. The pre-commit side keeps its operator override `EDGE_OVERRIDE=1`; the pre-push side has none.
 - **A hook must read its stdin before it runs anything else (2026-10-28)** — the pre-push hook ran the vhost smoke first, and the smoke's `openssl s_client -connect 127.0.0.1:993 -quiet` drains stdin (it forwards it to the connection). Git feeds a hook a PIPE, so the ref list was gone: `read` hit EOF, the per-ref loop never ran, and every pre-push guard (identity scan, history audit, rewrite warning) was skipped while the hook still exited 0 — a push could publish a bundle and print no pre-push line at all. Testing it with `< refs.txt` hid the bug, because reopening `/dev/stdin` on a regular file restarts at offset 0 while a pipe stays drained. Takeaway: `refs=$(cat)` first, then `done <<< "$refs"`, and run the smoke with `</dev/null`.
 - **The edge must mount the RENDERED tree, not the tracked one (lesson 2026-09-22)** — `modules/caddy/docker-compose.yml` mounts `${DATA_DIR}/rendered/caddy`. Point it at `./` (the tracked dir) and Caddy does not error: the skeleton's site blocks literally say `https://www.{{DOMAIN}}`, so Caddy starts, binds 80/443, passes its `caddy version` healthcheck and serves **nothing** — every probe returns `000`, `curl -sk` gives no reply and `docker logs caddy` is empty. Symptom to grep for: edge healthy + every vhost `000`. Fix: `make render` then `make dok-recreate-caddy`; `scripts/stack/stack-up.sh` renders first in every mode and `--validate` catches a config that will not load.
-- **Every log the project writes lives in `$LOG_DIR` (`$DATA_DIR/logs`, repo-relative — no `$GITHUB_USER` namespace), one logrotate rule, nothing chronicle-style (2026-09-22)** — `wizard.log`, `uninstall.log` and any module log share the directory; the installer state is `$DATA_DIR/wizard.state` (mode 0600). Docker logging is capped in `config/docker/daemon.json` (json-file, 10m x3); the systemd dirs contain only `kefo-stack.service` and `tmux-main.service`. `uninstall.log` used to sit next to `scripts/install/uninstall.sh` (a repo directory); it moved into `$LOG_DIR` on 2026-10-27, and because a full teardown deletes `data/` mid-run `wipe_data()` copies the log to `/var/tmp/uninstall-<stamp>.log` and continues logging there — the record survives the teardown it describes. The pre-2026-09-22 paths (`/var/log/kefoCloud-install.log`, `/var/log/homelab-install.log`) are relocated by the installer on first run — never deleted.
+- **Every log the project writes lives in `$LOG_DIR` (`$DATA_DIR/logs`, repo-relative — no `$GITHUB_USER` namespace), one logrotate rule, nothing chronicle-style (2026-09-22)** — `wizard.log`, `uninstall.log` and any module log share the directory. Because a full teardown deletes `data/` mid-run, `wipe_data()` copies `uninstall.log` to `/var/tmp/uninstall-<stamp>.log` and continues logging there — the record survives the teardown it describes; the installer relocates any legacy log path into `$LOG_DIR` on first run and never deletes it.
 - **`talk-hpb` needs `init: true` (2026-09-22)** — `strukturag/nextcloud-spreed-signaling` spawns short-lived `timeout` children and never reaps them: 81 zombies in ~40 minutes of uptime, which is PID-table exhaustion over weeks. `init: true` (tini as PID 1) fixed it; the count is 0. A `diagnose` pass that shows `N zombies` in `make fetch-more` is how it surfaced.
 - **A setup failure must be HEALED, not probed (lesson 2026-10-15)** — `nextcloud_setup` failed with `nextcloud not installed/ready after 30 min` on a Nextcloud that was `installed: true` and answered HTTPS in under a second, and the tag could never clear. Two causes: (a) the readiness probe's `occ status` raced the `containers_up` force-recreate (`make dok-recreate-nextcloud` restarts nextcloud + redis; occ fails on a cold cache for the first ~10-30 s, so the FIRST probe ran inside a 0.48 s window on a warm box and never mattered until the recreate moved it) — the readiness loop waits 30 min and the occ-wiring checks are short (12x1 s each) and re-applied in-run before any tag is raised, and the occ-wiring step no longer raises a tag at all — it re-applies the idempotent wiring a few times and logs, never failing (a wiring race is TIME, not a fault); (b) `recheck nextcloud_setup` can only inspect occ config, and that config is written by `nextcloud_setup` itself, so with `MOD_MAIL=true` the arm answered false forever. `resolve_errors` now re-runs the idempotent setup step for `nextcloud_setup` / `vaultwarden_setup` / `dkim_setup` before rechecking. Grep-able tell: an "Unexpected errors" tag that survives a re-check while the service underneath is demonstrably healthy. Also fixed the same tag's `mail.$DOMAIN` check, which used the wrong `MOD_MAIL` fallback.
 - **A crashed installer reports stale error tags, and a missing `$LOG_DIR` fakes a `render` failure (2026-09-25)** — a run died in `prep_dirs` with `ROOT: unbound variable` (the installer named the checkout root `$REPO` while its own `$ROOT/data/...` paths kept the repo-wide `$ROOT`; `set -u` then exits, and the `trap summary EXIT` re-prints the persisted `ERR_TAGS` from `$DATA_DIR/wizard.state` — so tags from earlier in the run appear as if current). The `render` tag next to it was false: `write_instance_conf` logs and renders into `$LOG` **before** `phase_host` created `$LOG_DIR`, so the `>>"$LOG"` redirection failed, the renderer never ran, `|| fail render` fired and two log lines vanished. Tell: when a tagged error looks unrelated, grep `wizard.log` for the output the step should have produced (and for its first lines) — the step's output being *absent* is the evidence, not its presence. `ensure_runtime_dirs()` now creates `$LOG_DIR` and tightens `$DATA` (0600 state) before anything redirects into them.

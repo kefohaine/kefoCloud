@@ -26,9 +26,8 @@ The wizard asks for five things up front (SSH key, Tailscale key, Cloudflare tok
 
 ## Read next
 
-- **[WHAT.md](WHAT.md)** — what the machine actually is: request flow, access model, why each piece is what it is.
-- **[docs/MANUAL.md](docs/MANUAL.md)** — how to install, operate, back up, upgrade and fix it.
-- **[docs/DEBUG.md](docs/DEBUG.md)** — how to triage a failure, read-only first. **[docs/MIGRATE.md](docs/MIGRATE.md)** — moving to a new machine.
+- **[docs/MANUAL.md](docs/MANUAL.md)** — everything: what the machine is and why, install/repair/uninstall, migration, backup, the service reference, the diagnostic runbook and the operational gotchas.
+- **[docs/AGENTS.md](docs/AGENTS.md)** — the rules an agent follows in this repo.
 
 ## License
 
