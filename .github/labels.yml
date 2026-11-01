@@ -43,7 +43,7 @@
 
 - name: "priority: high"
   color: "d93f0b"
-  description: "Breaks a documented workflow or degrades a live service; planned for the current cycle."
+  description: "Breaks a documented workflow or degrades a live service."
 
 - name: "priority: low"
   color: "ffb08a"
