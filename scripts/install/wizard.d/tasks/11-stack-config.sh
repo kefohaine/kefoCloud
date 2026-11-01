@@ -24,6 +24,9 @@ prep_dirs() {
                $ROOT/data/kopia/config \
                $ROOT/data/ocis/data \
                $ROOT/data/ocis/config \
+               $ROOT/data/photos/library \
+               $ROOT/data/photos/pgdata \
+               $ROOT/data/blog/data \
                $ROOT/data/download \
                $ROOT/data/pages/www
   # The web root is INSTANCE DATA (the repo ships no pages): pages live only in
@@ -75,7 +78,7 @@ prep_dirs() {
   # instance web roots (read-only from the edge container).
   # Each PostgreSQL data dir stays root-owned — the postgres entrypoint chowns
   # it to its own uid on first boot.
-  for d in kopia download; do
+  for d in kopia download photos blog; do
     need_chown "$ROOT/data/$d" 0 && chown_tree "$ROOT/data/$d" root:root
   done
   # The web root is data/pages/www (one tree per vhost, created above), NOT
@@ -103,6 +106,7 @@ prep_dirs_verify() {
               "ocis/data 1000" "ocis/config 1000" \
               "mailserver/data 100" "mailserver/mail 0" "mailserver/dkim 0" \
               "mailserver/redis 999" "mailserver/roundcube 33" \
+              "photos 0" "blog 0" \
               "pages/www 0"; do
     set -- $spec; d="$DATA/$1"; want="$2"
     got=$(stat -c '%u' "$d" 2>/dev/null || echo "")
