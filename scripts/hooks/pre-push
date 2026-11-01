@@ -107,6 +107,16 @@ while read -r lref lsha rref rsha; do
     fi
   fi
 
+  # Comments and user-facing strings describe the current configuration only
+  # (AGENTS rule 31). Whole tree, read-only; override: PROSE_AUDIT_OVERRIDE=1.
+  if [ -f "$repo/scripts/info/prose-audit.sh" ] \
+     && ! bash "$repo/scripts/info/prose-audit.sh" >/dev/null 2>&1; then
+    echo "pre-push: REFUSED — the tree breaks the prose rules (AGENTS rule 31)."
+    bash "$repo/scripts/info/prose-audit.sh" | sed 's/^/  /'
+    echo "  fix the findings above (make prose-audit) or push with PROSE_AUDIT_OVERRIDE=1."
+    exit 1
+  fi
+
   # Remote-landed commits (GitHub web editor, another host) ran no local hook,
   # so the pushed range above never sees them. Audit whatever the remote has
   # that this checkout does not (`$lsha..$rsha`) and REPORT it: those commits
