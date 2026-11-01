@@ -75,12 +75,12 @@ for f in "${files[@]}"; do
   n=0
   while IFS= read -r line; do
     n=$((n + 1))
-    # The one line whose job is to print a doc: `make migrate`.
+    # The one line whose job is to print a section of a doc: `make migrate`.
     case "$f:$line" in
-      Makefile:*'cat $(REPO)/docs/MIGRATE.md'*) continue ;;
+      Makefile:*"/^## Migration/{f=1}"*) continue ;;
     esac
 
-    if [[ $line =~ docs/(MANUAL|DEBUG|MIGRATE|SKELETON|AGENTS)\.md ]]; then
+    if [[ $line =~ docs/(MANUAL|AGENTS)\.md ]]; then
       finding DOCPOINTER "$f" "$n" "names a docs/ path"; fails=$((fails + 1))
     fi
 
