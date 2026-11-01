@@ -305,7 +305,7 @@ cmd_list() {
 # one label list): a `type:` label is mandatory and `status: triage` is applied
 # when no other status is named, exactly what the issue templates do. An issue
 # whose title already exists (open or closed) is left alone, so re-running cannot
-# duplicate one — the same idempotency scripts/ops/import-issues.sh has.
+# duplicate one.
 manifest_labels() {
   sed -n 's/^- name: "\(.*\)"$/\1/p' "$REPO/.github/labels.yml"
   printf 'good first issue\nhelp wanted\n'
