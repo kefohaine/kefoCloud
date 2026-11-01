@@ -3,9 +3,7 @@
 prep_dirs() {
   # All external (untracked) state lives under $DATA = $REPO/data, matching
   # the compose bind mounts; the repo tree itself stays clean (.gitignore has /data/).
-  mkdir -p $ROOT/data/cloud/html \
-               $ROOT/data/cloud/users \
-               $ROOT/data/vault/data \
+  mkdir -p $ROOT/data/vault/data \
                $ROOT/data/kuma/data \
                $ROOT/data/homarr/appdata \
                $ROOT/data/mailserver/data \
@@ -19,11 +17,13 @@ prep_dirs() {
                $ROOT/data/mailserver/overrides/postfix \
                $ROOT/data/mailserver/overrides/rspamd \
                $ROOT/data/mailserver/roundcube \
-               $ROOT/data/pgdata \
+               $ROOT/data/matrix/synapse \
+               $ROOT/data/matrix/element \
+               $ROOT/data/matrix/pgdata \
+               $ROOT/data/kopia/repository \
+               $ROOT/data/kopia/config \
                $ROOT/data/ocis/data \
                $ROOT/data/ocis/config \
-               $ROOT/data/snikket/acme \
-               $ROOT/data/talk \
                $ROOT/data/download \
                $ROOT/data/pages/www
   # The web root is INSTANCE DATA (the repo ships no pages): pages live only in
@@ -41,18 +41,16 @@ prep_dirs() {
   # ownership problem is surfaced by the verification at the end of this
   # function, which fails the task.
   chown_tree() { sudo chown -R "$2" "$1" >>"$LOG" 2>&1; }
-  need_chown $ROOT/data/cloud/html 33        && chown_tree $ROOT/data/cloud/html 33:33
-  need_chown $ROOT/data/cloud/users 33       && chown_tree $ROOT/data/cloud/users 33:33
   need_chown $ROOT/data/vault/data 1000      && chown_tree $ROOT/data/vault/data 1000:1000
+  # Synapse runs as uid 991 inside its image and writes the media store, the
+  # signing key and its own state there; the Element config is read-only for
+  # the edge and stays root-owned.
+  need_chown $ROOT/data/matrix/synapse 991   && chown_tree $ROOT/data/matrix/synapse 991:991
   # oCIS runs as uid 1000 (the compose file's `user:`), and its tree is the
-  # largest thing on the box after the cloud datadir: the guard is per
-  # top-level dir, so a converged install never walks it.
+  # largest thing on the box: the guard is per top-level dir, so a converged
+  # install never walks it.
   need_chown $ROOT/data/ocis/data 1000       && chown_tree $ROOT/data/ocis/data 1000:1000
   need_chown $ROOT/data/ocis/config 1000     && chown_tree $ROOT/data/ocis/config 1000:1000
-  # Snikket manages its own ownership inside /snikket (prosody, coturn and the
-  # cert manager all write there as their own uids); only the ACME webroot the
-  # proxy container serves is pre-owned, exactly as the image expects.
-  need_chown $ROOT/data/snikket/acme 1000    && chown_tree $ROOT/data/snikket/acme 1000:1000
   # Mailu's front/postfix/dovecot/rspamd run as root, so mail/filter/dkim/
   # certs/overrides stay root-owned. mailserver/data is NOT one of them: that
   # mount is the SQLite config store mailu-admin opens AS uid 100:1000
@@ -64,20 +62,20 @@ prep_dirs() {
   # mailserver/redis is the EXCEPTION and must NOT be root-owned: redis:alpine
   # re-execs redis-server as its `redis` user (uid 999/gid 1000) via su-exec, so
   # a root:root 0700 mount makes every BGSAVE fail ("Failed opening the temp RDB
-  # file ... Permission denied"). Redis then enters MISCONF, stop-writes-on-
-  # bgsave-error rejects every write and — because the mail cache used to share
-  # the `redis` DNS name with the Nextcloud cache — Nextcloud's session writes
-  # retried forever and php-fpm hung (2026-10-19: smoke FAIL cloud HTTP 000).
+  # file ... Permission denied"). Redis then enters MISCONF and
+  # stop-writes-on-bgsave-error rejects every write, which surfaces as every
+  # mail login failing.
   for d in mail filter dkim certs overrides; do
     need_chown "$ROOT/data/mailserver/$d" 0 && chown_tree "$ROOT/data/mailserver/$d" root:root
   done
   need_chown "$ROOT/data/mailserver/data" 100 && chown_tree "$ROOT/data/mailserver/data" 100:1000
   need_chown "$ROOT/data/mailserver/redis" 999 && chown_tree "$ROOT/data/mailserver/redis" 999:1000
   need_chown $ROOT/data/mailserver/roundcube 33 && chown_tree $ROOT/data/mailserver/roundcube 33:33
-  # root-owned: talk configs (talk-gen), the public drop folder and the
+  # root-owned: the kopia repository/config, the public drop folder and the
   # instance web roots (read-only from the edge container).
-  # pgdata stays root-owned — the postgres entrypoint chowns it on first boot.
-  for d in talk download; do
+  # Each PostgreSQL data dir stays root-owned — the postgres entrypoint chowns
+  # it to its own uid on first boot.
+  for d in kopia download; do
     need_chown "$ROOT/data/$d" 0 && chown_tree "$ROOT/data/$d" root:root
   done
   # The web root is data/pages/www (one tree per vhost, created above), NOT
@@ -91,8 +89,8 @@ prep_dirs() {
   # mount is the compose user. A `chown` to an id that does not exist, or an
   # image that changed its runtime user, leaves a mount the app cannot write —
   # which surfaces much later as an opaque app error (Vaultwarden "unable to
-  # open database file", Nextcloud "Data directory is invalid") on a stack whose
-  # containers all report healthy.
+  # open database file", Synapse failing to write its media store) on a stack
+  # whose containers all report healthy.
   prep_dirs_verify || fail prep_dirs "$PREP_DIR_ERR"
 }
 
@@ -101,8 +99,8 @@ prep_dirs() {
 # the question without re-walking the trees.
 prep_dirs_verify() {
   local d want got
-  for spec in "cloud/html 33" "cloud/users 33" "vault/data 1000" \
-              "ocis/data 1000" "ocis/config 1000" "snikket/acme 1000" \
+  for spec in "vault/data 1000" "matrix/synapse 991" \
+              "ocis/data 1000" "ocis/config 1000" \
               "mailserver/data 100" "mailserver/mail 0" "mailserver/dkim 0" \
               "mailserver/redis 999" "mailserver/roundcube 33" \
               "pages/www 0"; do
@@ -136,10 +134,6 @@ write_instance_conf() {
     printf 'REPO_DIR=%s\n' "$REPO"
     printf 'DATA_DIR=%s\n' "$DATA"
     printf 'LOG_DIR=%s\n' "$LOG_DIR"
-    # Cloud module optional services: rendered as {{IF VIDEO_CALLING}} /
-    # {{IF CLIENT_PUSH}} blocks (talk vhost, cloud /push route).
-    printf 'VIDEO_CALLING=%s\n' "${VIDEO_CALLING:-true}"
-    printf 'CLIENT_PUSH=%s\n' "${CLIENT_PUSH:-false}"
     [ -n "$keep" ] && printf '%s\n' "$keep"
   } > "$f"
   chmod 600 "$f"
@@ -156,44 +150,16 @@ seed_stack() {
   # that module is on: a module the operator turned off gets no admin creds, no
   # SMTP sender and no stack secrets minted for it (the goose secret, which the
   # host service always needs, is core).
-  if mod_on cloud; then
-    # Admin creds live in the SAME file talk-gen fills with the stack secrets, so
-    # this is per-key and never "write the file only if it is absent": `make
-    # render` creates modules/nextcloud/.env first (instance values block), the
-    # existence guard therefore never fired, compose interpolated BOTH vars as
-    # empty and the image entrypoint refused to install — its fallback is
-    # "Next step: Access your instance to finish the web-based installation!"
-    # and `occ` then only ever answers "Set an admin Login." Nextcloud stayed
-    # uninstalled and the whole occ wiring below was skipped (2026-09-25).
-    # PER KEY, never "the file exists so it must be seeded": `make render` creates
-    # the file first, and a file-existence guard is what let compose interpolate
-    # the admin creds as EMPTY (2026-09-25). A key that is present but has no
-    # value is just as broken — empty means the entrypoint refuses to install — so
-    # a blank line is treated as unseeded and repaired with one canonical append.
-    local ncen=modules/nextcloud/.env
-    [ -f "$ncen" ] || { umask 077; : >"$ncen"; }
-    chmod 600 "$ncen"
-    ncseed() {
-      local key="$1" val="$2"
-      if grep -q "^$key=" "$ncen"; then
-        grep -q "^$key=." "$ncen" || sed -i "s|^$key=$|$key=$val|" "$ncen"
-      else
-        echo "$key=$val" >>"$ncen"
-      fi
-    }
-    ncseed NEXTCLOUD_ADMIN_USER admin
-    if ! grep -q '^NEXTCLOUD_ADMIN_PASSWORD=.' "$ncen"; then
-      ncseed NEXTCLOUD_ADMIN_PASSWORD "$(openssl rand -base64 18 | tr -d '/+=' | head -c 20)"
-    fi
-    # Read the creds back so the summary prints the password actually in use
-    # (older installs may already have them, and this run must not print a
-    # freshly generated value that was never written).
-    NEXTCLOUD_ADMIN_USER=$(sed -n 's/^NEXTCLOUD_ADMIN_USER=//p' "$ncen" | tail -1)
-    NEXTCLOUD_ADMIN_PASSWORD=$(sed -n 's/^NEXTCLOUD_ADMIN_PASSWORD=//p' "$ncen" | tail -1)
-    # Stack secrets (PostgreSQL, Redis, signaling, TURN, SMTP mailbox) +
-    # Talk service configs — idempotent, appends only missing keys.
-    detail "  nextcloud stack secrets via talk-gen"
-    make talk-gen >>"$LOG" 2>&1 || fail talk_gen
+  if mod_on chat; then
+    # Secrets + Synapse's homeserver.yaml + Element's runtime config. The
+    # script seeds per key and never rewrites an existing file, so a re-run
+    # leaves a working deployment alone.
+    detail "  matrix secrets + configs via matrix-gen"
+    make matrix-gen >>"$LOG" 2>&1 || fail matrix_gen
+  fi
+  if mod_on kopia; then
+    detail "  kopia secrets via kopia-gen"
+    make kopia-gen >>"$LOG" 2>&1 || fail kopia_gen
   fi
   if mod_on mail; then
     # Mailu configuration (gitignored modules/mailserver/.env, read as env_file
@@ -258,36 +224,6 @@ seed_stack() {
       oseed IDM_ADMIN_PASSWORD "$(openssl rand -base64 18 | tr -d '/+=' | head -c 20)"
     fi
     detail "  ownCloud (oCIS) settings seeded in $oenv"
-  fi
-  if mod_on xmpp; then
-    # Snikket's whole configuration IS this env file: the domain it serves, the
-    # web ports it moves off 80/443 (Caddy keeps those) and its TURN range.
-    # SNIKKET_DOMAIN is the name the web door and every XMPP address use —
-    # chat.$DOMAIN, the same host vhosts/chat.caddy serves.
-    local senv=modules/snikket/.env
-    [ -f "$senv" ] || { umask 077; : >"$senv"; }
-    chmod 600 "$senv"
-    sseed() {
-      local key="$1" val="$2"
-      if grep -q "^$key=" "$senv"; then
-        grep -q "^$key=." "$senv" || sed -i "s|^$key=$|$key=$val|" "$senv"
-      else
-        echo "$key=$val" >>"$senv"
-      fi
-    }
-    sseed SNIKKET_DOMAIN "chat.$DOMAIN"
-    sseed SNIKKET_ADMIN_EMAIL "${EMAIL:-admin@$DOMAIN}"
-    sseed SNIKKET_SITE_NAME "$DOMAIN xmpp"
-    sseed SNIKKET_TWEAK_HTTP_PORT 5080
-    sseed SNIKKET_TWEAK_HTTPS_PORT 5443
-    # TURN on, on a range no other coturn on this host claims: talk-relay
-    # publishes 3478/5349 + 49160-49200, Snikket relays 49201-65535.
-    sseed SNIKKET_TWEAK_TURNSERVER 1
-    sseed SNIKKET_TWEAK_TURNSERVER_PORT 3478
-    sseed SNIKKET_TWEAK_TURNSERVER_MIN_PORT 49201
-    sseed SNIKKET_TWEAK_TURNSERVER_MAX_PORT 65535
-    sseed SNIKKET_TWEAK_EXTRA_CONFIG /etc/snikket/prosody-extra.cfg.lua
-    detail "  Snikket settings seeded in $senv (domain chat.$DOMAIN)"
   fi
   # The goose server secret lives in the INSTANCE tree (root:root 0600) and is
   # read by the unit through EnvironmentFile= — never a tracked file, and never
@@ -354,9 +290,9 @@ seed_stack() {
     VAULTWARDEN_ADMIN_PASSWORD=$(sed -n 's/^VAULTWARDEN_ADMIN_PASSWORD=//p' "$vwenv" | tail -1)
   fi
   if mod_on photos; then
-    # Immich brings its OWN PostgreSQL (pgvecto-rs/vectorchord) — it must never
-    # share the Nextcloud one. Credentials are minted once and reused; compose
-    # interpolates them from this file.
+    # Immich brings its OWN PostgreSQL (pgvecto-rs/vectorchord) — it never
+    # shares a database with another module. Credentials are minted once and
+    # reused; compose interpolates them from this file.
     local penv=modules/immich/.env
     [ -f "$penv" ] || { umask 077; : >"$penv"; }
     chmod 600 "$penv"

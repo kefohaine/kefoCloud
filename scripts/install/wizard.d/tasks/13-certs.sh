@@ -38,9 +38,10 @@ issue_certs() {
   local hosts="" h iss pending=()
   TAIL_TLS_FALLBACK=false
   hosts="www"
-  mod_on cloud   && hosts="$hosts cloud"
-  mod_on cloud   && hosts="$hosts nextcloud"
-  mod_on cloud && [ "${VIDEO_CALLING:-true}" != "false" ] && hosts="$hosts talk"
+  mod_on ocis    && hosts="$hosts cloud"
+  mod_on chat    && hosts="$hosts chat"
+  mod_on chat    && hosts="$hosts matrix"
+  mod_on kopia   && hosts="$hosts kopia"
   mod_on vault   && hosts="$hosts vault"
   mod_on monitor && hosts="$hosts kuma"
   mod_on home    && hosts="$hosts home"

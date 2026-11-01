@@ -32,22 +32,6 @@ _ask_boolean_raw() {
 # ONE prompt for the whole module set, space-separated (multiple spaces / commas
 # tolerated, any order). Every name not listed becomes false. On a resume, when
 # all four answers are already saved, the prompt is skipped.
-ask_cloud_options() {
-  # Cloud-only optional services, asked only when the cloud module is on and
-  # BEFORE the Nextcloud apps plan (the plan reflects these choices). Each is a
-  # plain yes/no, persisted so a resume reuses it.
-  [ "${MOD_CLOUD:-}" = "true" ] || return 0
-  if [ -z "${VIDEO_CALLING:-}" ]; then
-    ask_boolean "Enable Nextcloud Talk video calling (spreed + signaling + TURN)?" VIDEO_CALLING \
-      || VIDEO_CALLING=false
-    save_state
-  fi
-  if [ -z "${CLIENT_PUSH:-}" ]; then
-    ask_boolean "Enable Nextcloud client push notifications (notify_push)?" CLIENT_PUSH \
-      || CLIENT_PUSH=false
-    save_state
-  fi
-}
 ask_modules() {
   local k name all=1 ans ok mods
   # The offer list IS config/modules.conf (via _state_modules) — a module added
@@ -291,10 +275,7 @@ ask_inputs() {
   [[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]] || { echo "Invalid domain: $DOMAIN"; exit 1; }
   save_state
 
-  # 7 — modules (one space-separated prompt), then the cloud-only options that
-  #      shape the Nextcloud apps plan (video calling / client push).
+  # 7 — modules (one space-separated prompt).
   ask_modules
-  save_state
-  ask_cloud_options
   save_state
 }

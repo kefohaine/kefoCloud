@@ -181,18 +181,14 @@ unset _a
 
 # The stack scope, used by BOTH the removal and the verification so a check can
 # never disagree with what was removed.
-STACK_MODULES="cloud vault mail monitor"
+STACK_MODULES="ocis chat kopia vault mail monitor"
 
 # data/ goes as ONE directory — no granular folder picks. The stack owns every
 # path under it (module dirs, caddy_data, rendered/, pages/, logs, wizard.state),
 # so "stack gone" means data/ itself is gone. The installer recreates the
 # directory and its fresh log right after this exits. Guard: anything still
-# mounted under data/ (the Nextcloud NFS datadirectory) is unmounted first —
-# an rm -rf through a live mount would propagate INTO the storage export.
-# Before the wipe, the remote datadirectory export (make nc-datadir-nfs
-# export, recorded in data/.nc-import-source) is un-exported on the remote
-# machine — that one datadirectory line, no other exports — and (full mode
-# only) the remote datadirectory files are deleted. Granular mode leaves the
+# mounted under data/ is unmounted first — an rm -rf through a live mount
+# would propagate INTO the mounted storage.
 # remote files in place.
 remove_remote_export() {
   local marker="$PROJECT_DIR/data/.nc-import-source" tgt mnt
@@ -244,7 +240,7 @@ wipe_data() {
 # instead of passing as done. Read-only: it inspects, it never deletes.
 verify_stack_gone() {
   local t=""
-  local ctn="caddy nextcloud postgresql vaultwarden uptimekuma mailu-front mailu-imap mailu-smtp mailu-antispam mailu-admin mailu-redis roundcube talk-hpb talk-relay notify-push"
+  local ctn="caddy matrix-synapse matrix-element matrix-db kopia vaultwarden uptimekuma mailu-front mailu-imap mailu-smtp mailu-antispam mailu-admin mailu-redis roundcube"
   local c d
 
   for c in $ctn; do
@@ -376,7 +372,8 @@ ctn_list() { docker ps -a --format '{{.Names}}' 2>/dev/null; }
 
 compose_file_of() { # module -> its compose file (repo layout)
   case "$1" in
-    cloud)   echo "$REPO/modules/nextcloud/docker-compose.yml";;
+    chat)    echo "$REPO/modules/matrix/docker-compose.yml";;
+    kopia)   echo "$REPO/modules/kopia/docker-compose.yml";;
     vault)   echo "$REPO/modules/vaultwarden/docker-compose.yml";;
     mail)    echo "$REPO/modules/mailserver/docker-compose.yml";;
     monitor) echo "$REPO/modules/uptimekuma/docker-compose.yml";;
@@ -387,7 +384,8 @@ ctn_of_module() { grep -E '^\s*container_name:' "$1" 2>/dev/null | awk '{print $
 
 module_data_dirs() { # module -> its host data dirs (never the storage export)
   case "$1" in
-    cloud)   echo "$PROJECT_DIR/cloud $PROJECT_DIR/talk $PROJECT_DIR/pgdata";;
+    chat)    echo "$PROJECT_DIR/matrix";;
+    kopia)   echo "$PROJECT_DIR/kopia";;
     vault)   echo "$PROJECT_DIR/vault";;
     mail)    echo "$PROJECT_DIR/mailserver";;
     monitor) echo "$PROJECT_DIR/kuma";;
@@ -506,7 +504,6 @@ remove_host() {
   rm -f /etc/systemd/system/dnsmasq.service.d/override.conf
   rmdir /etc/systemd/system/dnsmasq.service.d 2>/dev/null || true
   rm -f /etc/sysctl.d/99-kefo.conf
-  rm -f /etc/cron.d/nextcloud
   rm -f /etc/fail2ban/jail.d/sshd.conf
   # the binaries the installer dropped into /usr/local/bin
   rm -f /usr/local/bin/ttyd /usr/local/bin/goose
@@ -823,11 +820,8 @@ granular_stack_only() {
     mod_on "$k" && continue
     echo "   teardown   $k (disabled in wizard.state)"
     RM_MOD_DATA=true remove_module "$k"
-    # cloud's database stack is its own compose project — down it too
-    [ "$k" = cloud ] && [ -f "$REPO/modules/nextcloud/docker-compose.db.yml" ] && \
-      docker compose -f "$REPO/modules/nextcloud/docker-compose.db.yml" down --remove-orphans >>"$LOG" 2>&1 || true
     case "$k" in   # drop the stale service hashes so a later re-enable re-applies
-      cloud)   svc=nextcloud;;
+      chat)    svc=matrix;;
       vault)   svc=vaultwarden;;
       mail)    svc=mailserver;;
       monitor) svc=uptimekuma;;
@@ -853,10 +847,10 @@ granular_stack_only() {
       "https://api.cloudflare.com/client/v4/zones/$zid/dns_records/$rid" >>"$LOG" 2>&1 || true
     log "  A record removed: $fqdn (disabled in wizard.state)"
   }
-  mod_on cloud   || cf_a_del cloud
+  mod_on ocis    || cf_a_del cloud
+  mod_on chat    || { cf_a_del chat; cf_a_del matrix; }
   mod_on vault   || cf_a_del vault
   mod_on monitor || cf_a_del kuma
-  mod_on cloud && [ "${VIDEO_CALLING:-true}" = "false" ] && cf_a_del talk
   mod_on mail    || cf_a_del mail
   return 0
 }
