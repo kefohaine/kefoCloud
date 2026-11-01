@@ -26,7 +26,6 @@ services:
       retries: 3
 
     volumes:
-      - ${DATA_DIR}/cloud/html:/nextcloud:ro
       # homelab/download — the www.${DOMAIN}/download file browser's root
       # (drop files here; Caddy serves them read-only).
       - ${DATA_DIR}/download:/download:ro

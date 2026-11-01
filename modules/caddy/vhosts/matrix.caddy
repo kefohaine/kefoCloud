@@ -1,0 +1,51 @@
+# matrix.{{DOMAIN}} — Synapse, the Matrix homeserver (module: chat).
+#
+# The client-server API, the federation API and Synapse's own /_synapse/admin
+# routes all live here; Element on chat.{{DOMAIN}} points at it through the
+# runtime config, and .well-known/matrix/{client,server} on the apex vhost
+# delegate discovery to this name.
+#
+# DNS-ONLY (grey cloud) at Cloudflare: federation and media transfers are long
+# lived and large, which the CF proxy does not carry well, and the origin holds
+# a LE cert issued by DNS-01 anyway.
+#
+# TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
+
+https://matrix.{{DOMAIN}} {
+    tls {
+        # Fallback issuer chain: Let's Encrypt first, then Buypass Go SSL and
+        # ZeroSSL — free providers tried in order, so a per-issuer rate limit
+        # (5 orders/name/week on LE) never leaves a vhost without a cert.
+        issuer acme https://acme-v02.api.letsencrypt.org/directory {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+        issuer acme https://api.buypass.com/acme/directory {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+        issuer acme https://acme.zerossl.com/v2/DV90 {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+    }
+    import compress
+    header {
+        import security_headers
+    }
+    # Media uploads are the traffic here; the ceiling matches the homeserver's
+    # own max_upload_size so the edge is never the first thing to refuse a file.
+    request_body {
+        max_size 100m
+    }
+    reverse_proxy 172.22.0.28:8008 {
+        header_up Host {host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        # Long-poll and federation requests outlive the default timeouts.
+        transport http {
+            read_timeout 300s
+            write_timeout 300s
+        }
+    }
+}
