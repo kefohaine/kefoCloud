@@ -47,6 +47,10 @@ https://{{DOMAIN}} {
     # answered it and every client failed with "expected value at line 1
     # column 1". `route` runs the directives in written order, so discovery is
     # answered here and the redirect only sees everything else.
+    # A redirect rule in front of the origin (Cloudflare's zone rule in most
+    # cases) must exempt /.well-known/matrix/* as well: this handler is the
+    # only place that answers discovery, and the apex is the only name a client
+    # queries for it.
     route {
         @wk_client path /.well-known/matrix/client
         handle @wk_client {
@@ -83,21 +87,6 @@ https://www.{{DOMAIN}} {
     import compress
     header {
         import security_headers
-    }
-    # Matrix discovery for a client that arrives through the apex redirect
-    # (Cloudflare's zone rule sends /.well-known/matrix/* to www, path intact):
-    # the same JSON the apex answers must be here too, or the redirect chain
-    # ends on the "ok" stub and the client reports "expected value at line 1
-    # column 1". Keep the two blocks identical.
-    @wk_client path /.well-known/matrix/client
-    handle @wk_client {
-        header Content-Type application/json
-        respond `{"m.homeserver":{"base_url":"https://matrix.{{DOMAIN}}"}}` 200
-    }
-    @wk_server path /.well-known/matrix/server
-    handle @wk_server {
-        header Content-Type application/json
-        respond `{"m.server":"matrix.{{DOMAIN}}:443"}` 200
     }
     handle_path /download {
         root * /download
