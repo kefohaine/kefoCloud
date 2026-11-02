@@ -69,6 +69,14 @@ success_block() {
   # door) and the machine's own addresses are always part of the stack.
   mod_on chat && printf '  %sElement%s      https://chat.%s      admin %s@%s:%s %s(password: modules/matrix/.env)%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${SYNAPSE_ADMIN_USER:-mkadmin}" "$DOMAIN" "$C_RST" "$C_GREY" "$C_RST"
+  mod_on ocis && printf '  %sownCloud%s     https://cloud.%s     %sadmin / %s%s\n' \
+    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "IDM_ADMIN_PASSWORD in modules/ocis/.env" "$C_RST"
+  mod_on home && printf '  %sHomarr%s       https://home.%s      %s(first account created in the UI owns the board)%s\n' \
+    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
+  mod_on blog && printf '  %sWriteFreely%s  https://blog.%s      %s(create the admin: make writefreely-add-user USER=<name> PASS=<password> ADMIN=1)%s\n' \
+    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
+  mod_on photos && printf '  %sImmich%s       https://photos.%s    %s(first account created in the UI becomes the admin)%s\n' \
+    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
   mod_on kopia && printf '  %sKopia%s        https://kopia.%s     %s%s / modules/kopia/.env%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${KOPIA_SERVER_USERNAME:-kopia}" "$C_RST"
   mod_on vault && printf '  %sVaultwarden%s  https://vault.%s    %s%s / %s%s\n' \
