@@ -141,7 +141,7 @@ Follow these on every edit to any `.md` file in this repo.
 7. **Keep it short.** Every line should answer "would an agent miss this without help?" If not, cut it. No filler, no restating the obvious, no generic advice.
 8. **Verify before writing.** Don't describe a path, port, or behaviour you haven't checked in the actual file. Stale docs are worse than missing docs.
 9. **Preserve verified useful guidance.** When editing an existing `.md`, keep what's accurate and high-signal; only delete fluff, duplicates, stale claims, and volatile state. Don't rewrite blindly.
-10. **The Issues tab is the tracker — never a markdown archive.** An open problem is an issue (the template applies `type:` + `status: triage`); a fix is a short-lived branch whose PR carries `Closes #<n>`, so GitHub links the pair and closes the issue on merge. Never add a resolved-items list to a `.md` file — the issue keeps the record, and the git history keeps the detail.
+10. **The Issues tab is the tracker — never a markdown archive.** An open problem is an issue (the template applies the tracker's label); a fix is a short-lived branch whose PR carries `Closes #<n>`, so GitHub links the pair and closes the issue on merge. Never add a resolved-items list to a `.md` file — the issue keeps the record, and the git history keeps the detail.
 11. **Don't re-type what's in the repo.** If a fact can be confirmed by reading the config, the build file, the application source, or the task runner, point at the file — don't paraphrase it. Anything that drifts the moment a file is edited is more harm than help. This applies to image tags, env vars, log caps, healthcheck commands, route tables, schema columns, and file contents in particular.
 12. **README = real and verified, never planned or unsure.** Anything you can't point at in the running system today doesn't belong in the front page. If it's planned, drop it; if it's speculative, drop it. The Issues tab is the right home for "we should add X" / "consider switching to Y" — even before approval, as long as it's framed as a candidate.
 13. **Never write volatile, operator-editable state** (safety rule 13): statistics, users, mailbox contents, monitor definitions, website-editable config values. Docs describe the setup, not the usage.
@@ -153,12 +153,12 @@ Open problems are GitHub issues (Issues tab), labelled by the project's prefixed
 
 When you pick one up:
 
-1. Label it `status: in-progress` and work on a short-lived branch (the project's branch recipe).
+1. Work on a short-lived branch (the project's branch recipe).
 2. Verify the fix.
 3. Commit through the installed hooks (the project's commit recipe), then open the pull request (the project's PR recipe) — it audits the range, pushes the branch, and prints a PR body whose `Closes #<n>` links the issue. It opens the PR itself when the GitHub CLI is authenticated (the installer installs it; `gh auth login` once is the operator's) or a token is exported in the environment; otherwise open the printed compare URL.
 4. Stop and wait. A human reviews and merges the PR (rebase-and-merge); the issue closes on merge. An agent never merges, approves, or pushes `main`.
 5. A behaviour that looks like a bug but is deliberate gets its rationale documented in the relevant section of the operator manual — never as an issue to "fix".
 
-New problems are filed with the project's bug-report template (applies `type: bug` + `status: triage`) or its feature-request one (`type: feature` + `status: triage`); the body carries the problem and the concrete fix, and a `priority:`/`area:` label is added during triage, not by the reporter. The project's issue recipe files one from the command line (labels validated against the project's taxonomy, `status: triage` added, an existing title left alone, the URL printed when the CLI is absent), so an agent files through it or the Issues tab — never in a file.
+New problems are filed with the project's bug-report template (applies `bug`) or its feature-request one (applies `enhancement`); the body carries the problem and the concrete fix, and a `priority:`/`area:` label is added during triage, not by the reporter. The project's issue recipe files one from the command line (labels validated against the tracker's own set, an existing title left alone, the URL printed when the CLI is absent), so an agent files through it or the Issues tab — never in a file.
 
 Project-specific overrides live in the operator manual, never in these rules.

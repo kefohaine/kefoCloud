@@ -21,4 +21,4 @@ The same checks run for everyone: `.github/workflows/validate.yml` runs `bash -n
 
 Either `Closes #<n>` for the issue it fixes, or a description of how the new behaviour works, its benefits and its risks — the pull request template asks for exactly that. A human reviews and merges (rebase); contributors and agents stop after opening it.
 
-Problems and ideas are GitHub issues, where the templates apply `type:` and `status: triage`; from a checkout, `make git-issue TITLE="…" LABEL="type: bug" BODY=<file>` files one without leaving the terminal.
+Problems and ideas are GitHub issues, where the templates apply the tracker's own labels; from a checkout, `make git-issue TITLE="…" LABEL="bug" BODY=<file>` files one without leaving the terminal.
