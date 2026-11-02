@@ -254,7 +254,7 @@ systemd-action:
 .PHONY: kuma-import kuma-list-users kuma-add-user kuma-passwd kuma-del-user
 .PHONY: vaultwarden-list-users vaultwarden-add-user vaultwarden-del-user
 .PHONY: writefreely-users writefreely-add-user writefreely-passwd writefreely-del-user
-.PHONY: immich-users immich-admin-pass immich-grant-admin dns-sync
+.PHONY: immich-users immich-admin-pass immich-grant-admin ocis-status ocis-admin-pass ocis-logs dns-sync
 .PHONY: deploy backup
 
 # The web terminal is ONE page and ONE shell: ttyd.$DOMAIN (the shell IS the
@@ -695,6 +695,22 @@ immich-admin-pass:
 immich-grant-admin:
 >@[ -n "$(EMAIL)" ] || { scripts/lib/mklog error "usage: make immich-grant-admin EMAIL=<addr>"; exit 1; }
 >@docker exec immich-server immich-admin grant-admin "$(EMAIL)"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cloud accounts (oCIS) — the `ocis` CLI inside the container. The IDM password
+# has no web-UI equivalent, so a reset is an interactive `ocis idm resetpassword`
+# (it reads the new password from the terminal, never from argv).
+# ─────────────────────────────────────────────────────────────────────────────
+ocis-status:
+>@docker ps -a --filter name='^ocis$$' --format '  {{.Names}}\t{{.Status}}'
+>@printf '  capabilities: '; docker exec ocis curl -fsS -m 5 -o /dev/null -w '%{http_code}\n' http://127.0.0.1:9200/ocs/v1.php/cloud/capabilities || echo unreachable
+
+# USER is the IDM account name (default admin); prompts twice for the password.
+ocis-admin-pass:
+>@docker exec -it -u 1000:1000 ocis ocis idm resetpassword -u $(or $(USER),admin)
+
+ocis-logs:
+>@docker logs ocis --tail $(or $(N),50) -f
 
 # Converge the Cloudflare zone from data/wizard.state: the ONE rule set the
 # installer uses (wizard.d/lib/cloudflare.sh cf_dns). Run it after enabling a
