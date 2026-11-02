@@ -1027,8 +1027,8 @@ migrate:
 # File an issue in the GitHub tracker BEFORE the branch that fixes it — the
 # issue is the record, and `make git-pr ISSUE=<n>` links the pull request to it
 # with `Closes #<n>`. TITLE is required. LABEL is a comma-separated list from
-# .github/labels.yml: a `type:` is required and `status: triage` is added when no
-# other status is named. BODY is a file holding the problem, then '**Fix:**' —
+# the tracker's live label set: at least one label is required. BODY is a file
+# holding the problem, then '**Fix:**' —
 # without one the body is read from stdin. An existing title is left alone.
 git-issue:
 >@bash scripts/ops/git-pr.sh issue $(if $(TITLE),--title "$(TITLE)",) $(if $(LABEL),--labels "$(LABEL)",) $(if $(BODY),--body-file "$(BODY)",)
