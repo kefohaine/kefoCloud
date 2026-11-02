@@ -32,12 +32,32 @@ matrix_setup() {
 
   # The admin bot: created once. register_new_matrix_user refuses an existing
   # account, which is exactly the idempotence this step needs.
-  if docker exec matrix-synapse register_new_matrix_user \
-       -u "$SYNAPSE_ADMIN_USER" -p "$SYNAPSE_ADMIN_PASSWORD" -a \
-       -c /data/homeserver.yaml http://127.0.0.1:8008 >/dev/null 2>&1; then
-    log "  created the admin account @${SYNAPSE_ADMIN_USER}:${DOMAIN}"
+  docker exec matrix-synapse register_new_matrix_user \
+    -u "$SYNAPSE_ADMIN_USER" -p "$SYNAPSE_ADMIN_PASSWORD" -a \
+    -c /data/homeserver.yaml http://127.0.0.1:8008 >/dev/null 2>&1 \
+    || detail "  admin account create refused (already exists, or the homeserver was not ready)"
+
+  # A refused create and a successful one are the same exit code, so "already
+  # exists" was reported for an account that was never created — and every
+  # `make matrix-*` recipe then died with a bare admin-login 403. A login is the
+  # only proof the bot is usable: fail the module's row when it is not.
+  if docker exec -i -e MX_USER="$SYNAPSE_ADMIN_USER" -e MX_PASS="$SYNAPSE_ADMIN_PASSWORD" \
+      matrix-synapse python3 -c '
+import json, os, sys, urllib.request
+body = json.dumps({"type": "m.login.password",
+                   "identifier": {"type": "m.id.user", "user": os.environ["MX_USER"]},
+                   "password": os.environ["MX_PASS"]}).encode()
+req = urllib.request.Request("http://127.0.0.1:8008/_matrix/client/v3/login", data=body,
+                             headers={"Content-Type": "application/json"})
+try:
+    sys.exit(0 if "access_token" in json.loads(urllib.request.urlopen(req, timeout=30).read()) else 1)
+except Exception:
+    sys.exit(1)
+' >/dev/null 2>&1; then
+    log "  the admin account @${SYNAPSE_ADMIN_USER}:${DOMAIN} can log in"
   else
-    detail "  admin account @${SYNAPSE_ADMIN_USER}:${DOMAIN} already exists"
+    fail matrix_setup "the admin account @${SYNAPSE_ADMIN_USER}:${DOMAIN} cannot log in — see: make matrix-users, make matrix-logs"
+    return
   fi
 
   # Element is a static app: a 200 with an HTML body is the whole contract.
