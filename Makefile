@@ -250,7 +250,7 @@ systemd-action:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: fetch fetch-more render smoke gh-web-health install-hooks update apt-upgrade install-config help matrix-gen matrix-admin matrix-users matrix-add matrix-passwd matrix-admin-flag matrix-del matrix-status matrix-logs kopia-gen kopia-status kopia-password kopia-username kopia-snapshot kopia-snapshots kopia-logs
+.PHONY: fetch fetch-more render smoke gh-web-health install-hooks update apt-upgrade install-config help matrix-gen matrix-add-admin matrix-users matrix-add matrix-passwd matrix-admin-flag matrix-del matrix-status matrix-logs kopia-gen kopia-status kopia-password kopia-username kopia-snapshot kopia-snapshots kopia-logs
 .PHONY: kuma-import kuma-list-users kuma-add-user kuma-passwd kuma-del-user
 .PHONY: vaultwarden-list-users vaultwarden-add-user vaultwarden-del-user
 .PHONY: writefreely-users writefreely-add-user writefreely-passwd writefreely-del-user
@@ -739,7 +739,7 @@ kopia-gen:
 MATRIX_ADMIN := $(REPO)/scripts/modules/matrix-admin.sh
 
 # Creates the account WITH the server-admin flag; matrix-add creates a plain one.
-matrix-admin:
+matrix-add-admin:
 >@bash $(MATRIX_ADMIN) add "$(USER)" "$(PASS)" admin
 
 # PASS is generated and printed once when omitted.
