@@ -233,11 +233,11 @@ for f in "$ROOT/data/pages/www"/*.html; do
   check "www-$pg" "www.$DOMAIN" "/$pg" "200 301 302 307 308" html "$pg page"
 done
 check_tls "www.$DOMAIN"
-# Matrix discovery: the apex answers it before its redirect to www, and www
-# answers the same JSON because the zone redirect lands clients there — both
-# must carry the homeserver URL, never the "ok" stub (see the chat section).
-check_json matrix-wk-apex "$DOMAIN"     "/.well-known/matrix/client" '"m.homeserver"' "matrix discovery JSON on the apex"
-check_json matrix-wk-www  "www.$DOMAIN" "/.well-known/matrix/client" '"m.homeserver"' "matrix discovery JSON on www"
+# Matrix discovery: the apex answers it before its redirect to www, so the
+# response carries the homeserver URL and never the "ok" stub. www answers it
+# too only if the operator's automatic redirect rule (Cloudflare in most cases)
+# exempts the path — the origin cannot decide that, so it is not asserted here.
+check_json matrix-wk-apex "$DOMAIN" "/.well-known/matrix/client" '"m.homeserver"' "matrix discovery JSON on the apex"
 # chat.$DOMAIN and matrix.$DOMAIN belong to the chat module and are asserted in
 # its own section below.
 
