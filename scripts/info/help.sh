@@ -244,6 +244,7 @@ EOF
   rows <<'EOF'
 make kopia-status|container state, repository status and the latest snapshots
 make kopia-password|rotate the web UI password and recreate the container — PASS=<new> (generated and printed once when omitted)
+make kopia-username|rotate the web UI username and recreate the container — USER=<name> (generated and printed once when omitted)
 make kopia-snapshots|list snapshots (kopia-snapshot takes one)
 make kopia-logs|tail the kopia container (N=<lines>, default 50)
 EOF
