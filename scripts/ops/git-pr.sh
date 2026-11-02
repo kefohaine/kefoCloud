@@ -27,9 +27,10 @@
 #                                   file an issue in the GitHub tracker BEFORE the
 #                                   branch that fixes it: the body (the problem, then
 #                                   `**Fix:**`) comes from <path> or stdin, labels are
-#                                   checked against .github/labels.yml (`type:` is
-#                                   required, `status: triage` is added), and a title
-#                                   that already exists is left alone
+#                                   checked against the labels the tracker really has
+#                                   (queried from GitHub — the tracker is the only
+#                                   label list; at least one label is required), and a
+#                                   title that already exists is left alone
 #   git-pr.sh status [--dry-run]    where this checkout stands (branch, commits, base)
 #   git-pr.sh submit [--dry-run] [--issue N] [--base <branch>]
 #                                   audit + push the branch + open the PR into <base>
@@ -301,25 +302,21 @@ cmd_list() {
 # ─────────────────────────────── issue ────────────────────────────────────
 # File an issue in the GitHub tracker, BEFORE the branch that fixes it. The body
 # is required — the house shape is the problem, then `**Fix:**` — read from
-# --body-file/BODY or stdin. Labels are validated against .github/labels.yml (the
-# one label list): a `type:` label is mandatory and `status: triage` is applied
-# when no other status is named, exactly what the issue templates do. An issue
-# whose title already exists (open or closed) is left alone, so re-running cannot
-# duplicate one.
+# --body-file/BODY or stdin. Labels are validated against the labels the tracker
+# actually carries: GitHub owns the label set, so it is queried, never a file in
+# this repo (a manifest shipped here drifts the moment a label is renamed or
+# deleted in the UI). At least one label is required. An issue whose title already
+# exists (open or closed) is left alone, so re-running cannot duplicate one.
 manifest_labels() {
-  sed -n 's/^- name: "\(.*\)"$/\1/p' "$REPO/.github/labels.yml"
-  printf 'good first issue\nhelp wanted\n'
-}
-
-# has_label_prefix <prefix> <label>... — true when one label starts with <prefix>
-# (a `type:`/`status:` present check, without a pipeline that pipefail can trip).
-has_label_prefix() {
-  local p="$1" x
-  shift
-  for x in "$@"; do
-    case "$x" in "$p"*) return 0 ;; esac
-  done
-  return 1
+  if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    gh label list -R "$(owner_repo)" --limit 100 --json name -q '.[].name' 2>/dev/null && return 0
+  fi
+  local tok="${GITHUB_TOKEN:-${GH_TOKEN:-}}" slug
+  [ -n "$tok" ] || return 0
+  slug="$(owner_repo)" || return 0
+  curl -fsS -H "Authorization: Bearer $tok" -H 'Accept: application/vnd.github+json' \
+    "https://api.github.com/repos/$slug/labels?per_page=100" 2>/dev/null \
+    | sed -n 's/.*"name": "\([^"]*\)".*/\1/p' | head -100
 }
 
 cmd_issue() {
@@ -327,7 +324,7 @@ cmd_issue() {
   local -a labels=()
   title="${TITLE_ARG:-${POS[*]:-}}"
   if [ -z "${title// /}" ]; then
-    error "no title — make git-issue TITLE=\"<what is wrong>\" LABEL=\"type: bug,…\" BODY=<file>"
+    error "no title — make git-issue TITLE=\"<what is wrong>\" LABEL=\"bug,…\" BODY=<file>"
     return 1
   fi
   if [ -n "$BODY_FILE" ]; then
@@ -345,19 +342,16 @@ cmd_issue() {
   known="$(manifest_labels)"
   while IFS= read -r l; do
     [ -n "$l" ] || continue
-    if ! grep -Fxq -- "$l" <<< "$known"; then
-      error "unknown label '$l' — .github/labels.yml is the only label list"
+    if [ -n "$known" ] && ! grep -Fxq -- "$l" <<< "$known"; then
+      error "unknown label '$l' — the tracker's own labels are the only list - gh label list prints them"
       return 1
     fi
     labels+=("$l")
   done <<< "$(printf '%s' "$LABEL_ARG" | tr ',' '\n' \
                | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e '/^$/d')"
-  if ! has_label_prefix 'type: ' "${labels[@]}"; then
-    error "no type: label — the templates apply one (type: bug | feature | refactor | docs)"
+  if [ "${#labels[@]}" -eq 0 ]; then
+    error "no label — name at least one the tracker carries (bug, enhancement, refactor, documentation, priority: …, area: …)"
     return 1
-  fi
-  if ! has_label_prefix 'status: ' "${labels[@]}"; then
-    labels+=("status: triage")
   fi
   or="$(owner_repo)" || { error "cannot read the origin URL"; return 1; }
 
