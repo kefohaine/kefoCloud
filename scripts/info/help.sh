@@ -232,7 +232,7 @@ EOF
   rows <<'EOF'
 make matrix-users|list every account (@name:$DOMAIN)
 make matrix-admin|the admin bot shortcut — same as matrix-add with the server-admin flag
-make matrix-add|create an account — USER=<name> [PASS=…] (PASS generated and printed once when omitted)
+make matrix-add|create a plain account — USER=<name> [PASS=…] (PASS generated and printed once when omitted)
 make matrix-passwd|reset a password and end its sessions — USER=<name> [PASS=…]
 make matrix-admin-flag|grant or revoke server admin — USER=<name> ADMIN=<true|false>
 make matrix-del|deactivate an account — USER=<name>
