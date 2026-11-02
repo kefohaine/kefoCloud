@@ -42,17 +42,24 @@ https://{{DOMAIN}} {
     }
     # Matrix discovery: Element and federation find the homeserver through the
     # SERVER NAME's well-known, so these live on the apex, not on matrix.
-    @wk_client path /.well-known/matrix/client
-    handle @wk_client {
-        header Content-Type application/json
-        respond `{"m.homeserver":{"base_url":"https://matrix.{{DOMAIN}}"}}` 200
+    # INSIDE `route`: Caddy orders `redir` ABOVE `handle`, so a site-level
+    # redirect sent /.well-known/matrix/* to www first, where the "ok" stub
+    # answered it and every client failed with "expected value at line 1
+    # column 1". `route` runs the directives in written order, so discovery is
+    # answered here and the redirect only sees everything else.
+    route {
+        @wk_client path /.well-known/matrix/client
+        handle @wk_client {
+            header Content-Type application/json
+            respond `{"m.homeserver":{"base_url":"https://matrix.{{DOMAIN}}"}}` 200
+        }
+        @wk_server path /.well-known/matrix/server
+        handle @wk_server {
+            header Content-Type application/json
+            respond `{"m.server":"matrix.{{DOMAIN}}:443"}` 200
+        }
+        redir https://www.{{DOMAIN}}{uri} permanent
     }
-    @wk_server path /.well-known/matrix/server
-    handle @wk_server {
-        header Content-Type application/json
-        respond `{"m.server":"matrix.{{DOMAIN}}:443"}` 200
-    }
-    redir https://www.{{DOMAIN}}{uri} permanent
 }
 
 https://www.{{DOMAIN}} {
@@ -76,6 +83,21 @@ https://www.{{DOMAIN}} {
     import compress
     header {
         import security_headers
+    }
+    # Matrix discovery for a client that arrives through the apex redirect
+    # (Cloudflare's zone rule sends /.well-known/matrix/* to www, path intact):
+    # the same JSON the apex answers must be here too, or the redirect chain
+    # ends on the "ok" stub and the client reports "expected value at line 1
+    # column 1". Keep the two blocks identical.
+    @wk_client path /.well-known/matrix/client
+    handle @wk_client {
+        header Content-Type application/json
+        respond `{"m.homeserver":{"base_url":"https://matrix.{{DOMAIN}}"}}` 200
+    }
+    @wk_server path /.well-known/matrix/server
+    handle @wk_server {
+        header Content-Type application/json
+        respond `{"m.server":"matrix.{{DOMAIN}}:443"}` 200
     }
     handle_path /download {
         root * /download
