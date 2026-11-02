@@ -738,8 +738,9 @@ kopia-gen:
 
 MATRIX_ADMIN := $(REPO)/scripts/modules/matrix-admin.sh
 
+# Creates the account WITH the server-admin flag; matrix-add creates a plain one.
 matrix-admin:
->@bash $(MATRIX_ADMIN) add "$(USER)" "$(PASS)"
+>@bash $(MATRIX_ADMIN) add "$(USER)" "$(PASS)" admin
 
 # PASS is generated and printed once when omitted.
 matrix-users:
