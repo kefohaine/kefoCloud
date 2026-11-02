@@ -234,7 +234,7 @@ make matrix-users|list every account (@name:$DOMAIN)
 make matrix-add-admin|create an account with the server-admin flag — USER=<name> [PASS=…] (the admin bot's own account uses this)
 make matrix-add|create a plain account — USER=<name> [PASS=…] (PASS generated and printed once when omitted)
 make matrix-passwd|reset a password and end its sessions — USER=<name> [PASS=…]
-make matrix-admin-flag|grant or revoke server admin — USER=<name> ADMIN=<true|false>
+make matrix-flag-admin|grant or revoke server admin — USER=<name> ADMIN=<true|false>
 make matrix-del|deactivate an account — USER=<name>
 make matrix-status|the three containers and the homeserver's /health
 make matrix-logs|tail the Synapse container (N=<lines>, default 50)
