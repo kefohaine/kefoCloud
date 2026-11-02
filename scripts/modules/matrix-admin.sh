@@ -113,7 +113,7 @@ case "${1:-status}" in
     pass=${3:-$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)}
     # A plain account by default: `-a` makes every new user a SERVER ADMIN, and
     # the admin flag is then only ever taken away. Only the fourth argument
-    # (`make matrix-admin`) asks for one.
+    # (`make matrix-add-admin`) asks for one.
     opts=(-u "$user" -p "$pass")
     [ "${4:-}" = admin ] && opts+=(-a)
     docker exec matrix-synapse register_new_matrix_user "${opts[@]}" \
