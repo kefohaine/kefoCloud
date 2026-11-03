@@ -128,6 +128,7 @@ check() {
   fi
 }
 
+
 # check_tn <name> <host> <path> <want-codes> [html] [desc] — same probe, but
 # sourced from the host's Tailscale address, so it arrives on tailnet-only
 # routes (the @not_tailnet guard sees 100.64.0.0/10). Used for vault.$DOMAIN,

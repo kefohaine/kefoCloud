@@ -11,6 +11,7 @@
 #
 #   matrix-admin.sh users                     list every account
 #   matrix-admin.sh add <user> [<pass>]       create an account (pass printed once)
+#   matrix-admin.sh add <user> [<pass>] admin create it with the server-admin flag
 #   matrix-admin.sh passwd <user> [<pass>]    reset a password (sessions out)
 #   matrix-admin.sh admin <user> <true|false> grant / revoke server admin
 #   matrix-admin.sh del <user>                deactivate an account
@@ -72,7 +73,7 @@ def token():
         "password": PASS,
     })
     if code != 200 or "access_token" not in out:
-        sys.exit("matrix-admin: admin login failed (%s) — is %s an admin account?" % (code, USER))
+        sys.exit("matrix-admin: admin login failed (%s) — the admin account in modules/matrix/.env is missing or its password is stale; `make matrix-users` lists what exists" % code)
     return out["access_token"]
 
 
@@ -108,10 +109,15 @@ case "${1:-status}" in
       | awk -F'|' '{printf "%-32s %-5s %-11s %s\n", $1, $2, $3, $4}'
     ;;
   add)
-    user=${2:-}; [ -n "$user" ] || die "usage: matrix-admin.sh add <user> [<pass>]"
+    user=${2:-}; [ -n "$user" ] || die "usage: matrix-admin.sh add <user> [<pass>] [admin]"
     pass=${3:-$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)}
-    docker exec matrix-synapse register_new_matrix_user \
-      -u "$user" -p "$pass" -a -c /data/homeserver.yaml http://127.0.0.1:8008 >/dev/null 2>&1 \
+    # A plain account by default: `-a` makes every new user a SERVER ADMIN, and
+    # the admin flag is then only ever taken away. Only the fourth argument
+    # (`make matrix-add-admin`) asks for one.
+    opts=(-u "$user" -p "$pass")
+    [ "${4:-}" = admin ] && opts+=(-a)
+    docker exec matrix-synapse register_new_matrix_user "${opts[@]}" \
+      -c /data/homeserver.yaml http://127.0.0.1:8008 >/dev/null 2>&1 \
       || die "cannot create $user (does the account already exist?)"
     printf 'created %s\npassword: %s\n' "$(full_id "$user")" "$pass"
     ;;

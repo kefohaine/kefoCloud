@@ -40,18 +40,6 @@ https://{{DOMAIN}} {
     header {
         import security_headers
     }
-    # Matrix discovery: Element and federation find the homeserver through the
-    # SERVER NAME's well-known, so these live on the apex, not on matrix.
-    @wk_client path /.well-known/matrix/client
-    handle @wk_client {
-        header Content-Type application/json
-        respond `{"m.homeserver":{"base_url":"https://matrix.{{DOMAIN}}"}}` 200
-    }
-    @wk_server path /.well-known/matrix/server
-    handle @wk_server {
-        header Content-Type application/json
-        respond `{"m.server":"matrix.{{DOMAIN}}:443"}` 200
-    }
     redir https://www.{{DOMAIN}}{uri} permanent
 }
 

@@ -250,7 +250,7 @@ systemd-action:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: fetch fetch-more render smoke gh-web-health install-hooks update apt-upgrade install-config help matrix-gen matrix-admin matrix-users matrix-add matrix-passwd matrix-admin-flag matrix-del matrix-status matrix-logs kopia-gen kopia-status kopia-password kopia-snapshot kopia-snapshots kopia-logs
+.PHONY: fetch fetch-more render smoke gh-web-health install-hooks update apt-upgrade install-config help matrix-gen matrix-add-admin matrix-users matrix-add matrix-passwd matrix-flag-admin matrix-del matrix-status matrix-logs kopia-gen kopia-status kopia-password kopia-username kopia-snapshot kopia-snapshots kopia-logs
 .PHONY: kuma-import kuma-list-users kuma-add-user kuma-passwd kuma-del-user
 .PHONY: vaultwarden-list-users vaultwarden-add-user vaultwarden-del-user
 .PHONY: writefreely-users writefreely-add-user writefreely-passwd writefreely-del-user
@@ -738,8 +738,9 @@ kopia-gen:
 
 MATRIX_ADMIN := $(REPO)/scripts/modules/matrix-admin.sh
 
-matrix-admin:
->@bash $(MATRIX_ADMIN) add "$(USER)" "$(PASS)"
+# Creates the account WITH the server-admin flag; matrix-add creates a plain one.
+matrix-add-admin:
+>@bash $(MATRIX_ADMIN) add "$(USER)" "$(PASS)" admin
 
 # PASS is generated and printed once when omitted.
 matrix-users:
@@ -752,7 +753,7 @@ matrix-passwd:
 >@bash $(MATRIX_ADMIN) passwd "$(USER)" "$(PASS)"
 
 # ADMIN=true|false grants or revokes the server-admin flag on the account.
-matrix-admin-flag:
+matrix-flag-admin:
 >@bash $(MATRIX_ADMIN) admin "$(USER)" "$(ADMIN)"
 
 # Deactivates the account (a Matrix account is never deleted outright).
@@ -778,6 +779,10 @@ kopia-status:
 # PASS is generated and printed once when omitted; the container is recreated.
 kopia-password:
 >@bash $(KOPIA_ADMIN) password "$(PASS)"
+
+# USER is generated and printed once when omitted; the container is recreated.
+kopia-username:
+>@bash $(KOPIA_ADMIN) username "$(USER)"
 
 kopia-snapshot:
 >@bash $(KOPIA_ADMIN) snapshot "$(SOURCE)"

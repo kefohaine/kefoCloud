@@ -231,10 +231,10 @@ EOF
   sec "matrix accounts (module: chat — Synapse + Element)"
   rows <<'EOF'
 make matrix-users|list every account (@name:$DOMAIN)
-make matrix-admin|the admin bot shortcut — same as matrix-add with the server-admin flag
-make matrix-add|create an account — USER=<name> [PASS=…] (PASS generated and printed once when omitted)
+make matrix-add-admin|create an account with the server-admin flag — USER=<name> [PASS=…] (the admin bot's own account uses this)
+make matrix-add|create a plain account — USER=<name> [PASS=…] (PASS generated and printed once when omitted)
 make matrix-passwd|reset a password and end its sessions — USER=<name> [PASS=…]
-make matrix-admin-flag|grant or revoke server admin — USER=<name> ADMIN=<true|false>
+make matrix-flag-admin|grant or revoke server admin — USER=<name> ADMIN=<true|false>
 make matrix-del|deactivate an account — USER=<name>
 make matrix-status|the three containers and the homeserver's /health
 make matrix-logs|tail the Synapse container (N=<lines>, default 50)
@@ -244,6 +244,7 @@ EOF
   rows <<'EOF'
 make kopia-status|container state, repository status and the latest snapshots
 make kopia-password|rotate the web UI password and recreate the container — PASS=<new> (generated and printed once when omitted)
+make kopia-username|rotate the web UI username and recreate the container — USER=<name> (generated and printed once when omitted)
 make kopia-snapshots|list snapshots (kopia-snapshot takes one)
 make kopia-logs|tail the kopia container (N=<lines>, default 50)
 EOF
