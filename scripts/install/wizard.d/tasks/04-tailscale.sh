@@ -4,12 +4,22 @@
 task_tailscale() {
   task_start
   if ! command -v tailscale >/dev/null 2>&1; then
-    # Output goes to the LOG, never the console: tailscale's installer runs with
-    # `set -x` and calls apt, so piping it to the tty dumps a trace + apt chatter
-    # straight into the live checklist. Those lines are external to the animator's
-    # relative-cursor accounting (_TAIL only counts what _note prints), so the
-    # block drifted, rows scattered out of order and text overlapped (2026-10-16).
-    curl -fsSL https://tailscale.com/install.sh | sh >>"$LOG" 2>&1 || fail tailscale
+    # The vendor's apt repository, not `curl … | sh`: the script is fetched and
+    # executed unseen, which is supply-chain exposure with root on this host,
+    # while the repo gives a signed keyring, a sources file and a normal apt
+    # install. Output goes to the LOG, never the console (apt chatter would
+    # scatter the live checklist — 2026-10-16).
+    local codename
+    codename="$(. /etc/os-release && printf '%s' "${VERSION_CODENAME:-stable}")"
+    install -d -m 0755 /usr/share/keyrings
+    curl -fsSL -o /usr/share/keyrings/tailscale-archive-keyring.gpg \
+      "https://pkgs.tailscale.com/stable/debian/${codename}.noarmor.gpg" >>"$LOG" 2>&1 \
+      || fail tailscale
+    curl -fsSL -o /etc/apt/sources.list.d/tailscale.list \
+      "https://pkgs.tailscale.com/stable/debian/${codename}.tailscale-keyring.list" >>"$LOG" 2>&1 \
+      || fail tailscale
+    DEBIAN_FRONTEND=noninteractive apt-get update >>"$LOG" 2>&1 || fail tailscale
+    DEBIAN_FRONTEND=noninteractive apt-get install -y tailscale >>"$LOG" 2>&1 || fail tailscale
   fi
   # Encrypt the tailscaled state file at rest. On Linux the flag NEEDS a TPM
   # (/dev/tpmrm0): on a box without one, forcing `--encrypt-state` makes
