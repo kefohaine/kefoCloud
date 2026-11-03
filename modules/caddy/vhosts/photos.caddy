@@ -6,6 +6,12 @@
 # needs only the TXT record).
 
 https://photos.{{DOMAIN}} {
+    import ratelimit photos_rl
+    # Access log for the fail2ban web-login jail (config/fail2ban): one file
+    # per app so a jail bans on ITS login endpoint, not the whole edge.
+    log {
+        output file /var/log/caddy/immich.log
+    }
     tls {
         issuer acme https://acme-v02.api.letsencrypt.org/directory {
             email admin@{{DOMAIN}}

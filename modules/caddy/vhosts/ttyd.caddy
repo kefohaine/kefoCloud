@@ -25,6 +25,7 @@
 # exposes the door over Tailscale HTTPS instead (a different web address:
 # https://<machine>.<tailnet>.ts.net).
 https://ttyd.{{DOMAIN}} {
+    import ratelimit ttyd_rl
     tls {
         # Fallback issuer chain: Let's Encrypt first, then Buypass Go SSL and
         # ZeroSSL — free providers tried in order, so a per-issuer rate limit

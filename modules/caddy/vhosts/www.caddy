@@ -19,6 +19,7 @@
 # There is one canonical homepage (www.{{DOMAIN}}), so the apex answers with a
 # permanent redirect rather than a second copy of the site.
 https://{{DOMAIN}} {
+    import ratelimit www_rl
     tls {
         # Fallback issuer chain: Let's Encrypt first, then Buypass Go SSL and
         # ZeroSSL — free providers tried in order, so a per-issuer rate limit

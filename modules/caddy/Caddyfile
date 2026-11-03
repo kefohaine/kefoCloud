@@ -26,6 +26,22 @@
 # ends up deleted (delete wins) — so app vhosts strip the upstream's own copies
 # with `header_down` at the proxy (cloud/vault/kuma/roundcube/ttyd/hpb)
 # and this snippet only ever SETS. Never add `-<Field>` delete lines here.
+# Per-client request rate. Caddy ships no limiter of its own: this needs the
+# caddy-ratelimit plugin baked in by modules/caddy/Dockerfile — add it to the
+# build and every vhost importing this snippet gets the guard, remove it and
+# Caddy refuses to start on an unknown directive. 429 is the symptom of a
+# client that exceeded it. The zone name is per site (a shared name would pool
+# every vhost's counters).
+(ratelimit) {
+    rate_limit {
+        zone {args[0]} {
+            key {remote_host}
+            events 240
+            window 1m
+        }
+    }
+}
+
 (security_headers) {
     Strict-Transport-Security "max-age=31536000"
     X-Content-Type-Options "nosniff"
