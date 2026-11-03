@@ -2,8 +2,9 @@
 #
 # The client-server API, the federation API and Synapse's own /_synapse/admin
 # routes all live here; Element on chat.{{DOMAIN}} points at it through the
-# runtime config, and .well-known/matrix/{client,server} on the apex vhost
-# delegate discovery to this name.
+# runtime config, and this name IS the homeserver a client is given: there is no
+# .well-known/matrix delegation anywhere, so a client enters matrix.{{DOMAIN}},
+# never the bare domain (which redirects to www and serves no Matrix route).
 #
 # DNS-ONLY (grey cloud) at Cloudflare: federation and media transfers are long
 # lived and large, which the CF proxy does not carry well, and the origin holds

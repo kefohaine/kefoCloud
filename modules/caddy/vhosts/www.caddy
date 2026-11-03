@@ -40,30 +40,7 @@ https://{{DOMAIN}} {
     header {
         import security_headers
     }
-    # Matrix discovery: Element and federation find the homeserver through the
-    # SERVER NAME's well-known, so these live on the apex, not on matrix.
-    # INSIDE `route`: Caddy orders `redir` ABOVE `handle`, so a site-level
-    # redirect sent /.well-known/matrix/* to www first, where the "ok" stub
-    # answered it and every client failed with "expected value at line 1
-    # column 1". `route` runs the directives in written order, so discovery is
-    # answered here and the redirect only sees everything else.
-    # A redirect rule in front of the origin (Cloudflare's zone rule in most
-    # cases) must exempt /.well-known/matrix/* as well: this handler is the
-    # only place that answers discovery, and the apex is the only name a client
-    # queries for it.
-    route {
-        @wk_client path /.well-known/matrix/client
-        handle @wk_client {
-            header Content-Type application/json
-            respond `{"m.homeserver":{"base_url":"https://matrix.{{DOMAIN}}"}}` 200
-        }
-        @wk_server path /.well-known/matrix/server
-        handle @wk_server {
-            header Content-Type application/json
-            respond `{"m.server":"matrix.{{DOMAIN}}:443"}` 200
-        }
-        redir https://www.{{DOMAIN}}{uri} permanent
-    }
+    redir https://www.{{DOMAIN}}{uri} permanent
 }
 
 https://www.{{DOMAIN}} {
