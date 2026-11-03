@@ -117,7 +117,7 @@ hint() {
     goose)          echo "install bzip2 first (the release is a .tar.bz2: apt-get install -y bzip2), then: curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | CONFIGURE=false GOOSE_BIN_DIR=/usr/local/bin bash, then re-check" ;;
     user)           echo "run: adduser --disabled-password --gecos '' root && usermod -aG sudo,docker root, then re-check" ;;
     ssh_keys)       echo "paste your device's public key into /root/.ssh/authorized_keys (or re-run the installer), then re-check" ;;
-    tailscale)      echo "run: curl -fsSL https://tailscale.com/install.sh | sh, then re-check" ;;
+    tailscale)      echo "run: add the signed tailscale apt repo (pkgs.tailscale.com/stable/debian) and apt-get install tailscale, then re-check" ;;
     tailscale_up)   echo "check the auth key (admin console -> Settings -> Keys) and run: tailscale up --authkey=<key>, then re-check" ;;
     ts_ip)          echo "wait a few seconds, then run: tailscale ip -4, then re-check" ;;
     install_config) echo "run: make install-config in $REPO, then re-check" ;;
