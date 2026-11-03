@@ -844,6 +844,9 @@ sudo cp $(RENDER_DIR)/config/bash/banner.sh /etc/kefo-banner.sh
 sudo chmod 0644 /etc/kefo-banner.sh
 @grep -qxF '. /etc/kefo-banner.sh' "$$HOME/.bashrc" || printf '%s\n' '. /etc/kefo-banner.sh' >> "$$HOME/.bashrc"
 sudo cp $(RENDER_DIR)/config/fail2ban/jail.d/sshd.conf /etc/fail2ban/jail.d/sshd.conf
+>@sudo install -d -m 0755 /etc/fail2ban/filter.d /etc/fail2ban/jail.d
+>@sudo cp $(RENDER_DIR)/config/fail2ban/filter.d/*.conf /etc/fail2ban/filter.d/
+>@sudo cp $(RENDER_DIR)/config/fail2ban/jail.d/web-*.conf /etc/fail2ban/jail.d/
 # Logging: ONE namespace ({{LOG_DIR}}) for every log this project writes,
 # bounded by ONE logrotate rule. Docker output is capped globally in
 # config/docker/daemon.json (10m x3); no journald drop-in exists —
