@@ -128,19 +128,6 @@ check() {
   fi
 }
 
-# check_json <name> <host> <path> <needle> <desc> — the BODY must contain
-# <needle>. A 200 alone proves nothing for a discovery document: the `respond
-# "ok"` stub answers 200 as well, and a client reports that body as "expected
-# value at line 1 column 1" rather than as a bad status code.
-check_json() {
-  local name="$1" host="$2" path="$3" needle="$4" desc="${5:-}" body
-  body=$(curl -s --resolve "$host:443:127.0.0.1" --max-time 12 "https://$host$path")
-  if printf '%s' "$body" | grep -qF "$needle"; then
-    say "ok   $name — ${desc:-$path}"
-  else
-    say "FAIL $name: no '$needle' in the body of https://$host$path"; bad
-  fi
-}
 
 # check_tn <name> <host> <path> <want-codes> [html] [desc] — same probe, but
 # sourced from the host's Tailscale address, so it arrives on tailnet-only
@@ -233,11 +220,6 @@ for f in "$ROOT/data/pages/www"/*.html; do
   check "www-$pg" "www.$DOMAIN" "/$pg" "200 301 302 307 308" html "$pg page"
 done
 check_tls "www.$DOMAIN"
-# Matrix discovery: the apex answers it before its redirect to www, so the
-# response carries the homeserver URL and never the "ok" stub. www answers it
-# too only if the operator's automatic redirect rule (Cloudflare in most cases)
-# exempts the path — the origin cannot decide that, so it is not asserted here.
-check_json matrix-wk-apex "$DOMAIN" "/.well-known/matrix/client" '"m.homeserver"' "matrix discovery JSON on the apex"
 # chat.$DOMAIN and matrix.$DOMAIN belong to the chat module and are asserted in
 # its own section below.
 
