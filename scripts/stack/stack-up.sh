@@ -20,12 +20,14 @@
 # Rules honoured:
 #   - the unit list is derived from the live system (docker ps -a + compose
 #     metadata), never a hardcoded roster (AGENTS rule 12)
-#   - only DEPLOYED units are touched, so an uninstalled module is never
-#     started and never gets empty data dirs created under it
+#   - a unit is touched when its containers exist OR the installer recorded
+#     the module as enabled (`wizard.state`), so a wiped module comes back and
+#     an uninstalled one is never started or given empty data dirs
 #   - --check/--boot never recreate a healthy container (up -d is a no-op)
 #
 
 . "$(dirname "$(readlink -f "$0")")/../lib/instance.sh" 2>/dev/null || true
+. "$(dirname "$(readlink -f "$0")")/../lib/modules.sh" 2>/dev/null || true
 set -uo pipefail
 
 REPO=$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)
@@ -139,7 +141,20 @@ for d in "$REPO"/modules/*/; do
   [ "$(basename "$d")" = "$EDGE" ] && continue
   for f in "$d"docker-compose*.yml; do
     [ -f "$f" ] || continue
-    deployed "$f" || { info "skip (not deployed): ${f#$REPO/}"; continue; }
+    if ! deployed "$f"; then
+      # Container existence is NOT the deployment record: an image prune, a
+      # `compose down` or a wiped docker store removes the containers of a
+      # module the installer DID deploy, and the old gate then logged
+      # "skip (not deployed)" while reporting the stack healthy — the module
+      # silently vanished for good. wizard.state's enabled_modules is the
+      # source of truth, so a module it lists is recreated.
+      m="$(basename "$(dirname "$f")")"
+      if mod_installed "$m"; then
+        info "recreate (containers gone, module installed): ${f#$REPO/}"
+      else
+        info "skip (not deployed): ${f#$REPO/}"; continue
+      fi
+    fi
     bring_up "$f" || { err "unit failed: ${f#$REPO/}"; FAILURE+=("${f#$REPO/}"); }
   done
 done
