@@ -558,7 +558,7 @@ bash scripts/info/gh-web-health.sh                      # after any history rewr
 - JS/static-client triage: diff the *served* page against the pristine upstream copy before assuming the server is broken; a single SyntaxError in the only inline script black-screens with no server-side error.
 
 ### Report template
-What changed · what was tested · did the tests pass · remaining issues · security/operational notes. Cite the probe output, not an assumption.
+What changed · what was tested · did the tests pass · remaining issues · security/operational notes. Cite the probe output, not an assumption. A closed issue gets its own `Closes #<n>` line — one per line, never several numbers on one.
 
 ## Operational gotchas
 - A deliberate `systemctl stop dnsmasq` takes all tailnet-side `*.$DOMAIN` resolution down. Restart with `make systemd-restart-dnsmasq`.
