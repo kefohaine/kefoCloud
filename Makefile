@@ -1143,13 +1143,18 @@ git-force-push:
 # technical recipes; each points at the other.
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: goose-tokens
+.PHONY: goose-secret goose-tokens
 
 # Token policy → the live goose settings store (config/goose/token-policy.yaml
 # → ~/.config/goose/config.yaml). Idempotent, no restart needed: goose reads
 # the store when a session starts, so running sessions are untouched.
 goose-tokens:
 >@bash $(REPO)/scripts/info/goose-tokens.sh
+
+# Rotate the goose server secret (the .env is root:root 0600; the unit reads
+# it through EnvironmentFile=, so a restart is part of the rotation).
+goose-secret:
+>@sudo $(REPO)/scripts/ops/goose-secret.sh
 
 .DEFAULT_GOAL := help
 .PHONY: help help-more
