@@ -29,6 +29,7 @@ RUN go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
 # even though the token works against the CF API directly.
 RUN xcaddy build \
     --with github.com/caddy-dns/cloudflare@a8737d095ad5a48ca031cea6ab704057dbc2d250 \
+    --with github.com/mholt/caddy-ratelimit \
     --output /usr/bin/caddy \
     v2.11.4
 

@@ -9,6 +9,12 @@
 # TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
 
 https://cloud.{{DOMAIN}} {
+    import ratelimit cloud_rl
+    # Access log for the fail2ban web-login jail (config/fail2ban): one file
+    # per app so a jail bans on ITS login endpoint, not the whole edge.
+    log {
+        output file /var/log/caddy/ocis.log
+    }
     tls {
         # Fallback issuer chain: Let's Encrypt first, then Buypass Go SSL and
         # ZeroSSL — free providers tried in order, so a per-issuer rate limit
