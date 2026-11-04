@@ -46,9 +46,9 @@ TAILDROP ?= $(TAILDROP_HOST)
 # `dok-` prefix marks container (docker) actions so they don't collide
 # visually with host systemd actions (systemd-restart/systemd-log below).
 # One set of rules, expanded across $(CONTAINERS); append -<ctn> for one
-# container, -all for every container. Every container of a module shares that
-# module's compose file (mailserver + roundcube, matrix + element-admin, …), so
-# a compose-unit action on one affects all of them.
+# container, -all for every container. mailserver and roundcube share one
+# compose file (modules/mailserver/docker-compose.yml), so a compose-unit
+# action on either affects both.
 # ─────────────────────────────────────────────────────────────────────────────
 
 .PHONY: $(addprefix dok-recreate-,$(CONTAINERS)) dok-recreate-all dok-recreate
@@ -250,7 +250,7 @@ systemd-action:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: fetch fetch-more render smoke gh-web-health install-hooks update apt-upgrade install-config help matrix-gen matrix-add-admin matrix-users matrix-add matrix-passwd matrix-flag-admin matrix-del matrix-status matrix-logs matrix-reset kopia-gen kopia-status kopia-password kopia-username kopia-snapshot kopia-snapshots kopia-logs
+.PHONY: fetch fetch-more render smoke gh-web-health install-hooks update apt-upgrade install-config help matrix-gen matrix-add-admin matrix-users matrix-add matrix-passwd matrix-flag-admin matrix-del matrix-status matrix-logs kopia-gen kopia-status kopia-password kopia-username kopia-snapshot kopia-snapshots kopia-logs
 .PHONY: kuma-import kuma-list-users kuma-add-user kuma-passwd kuma-del-user
 .PHONY: vaultwarden-list-users vaultwarden-add-user vaultwarden-del-user
 .PHONY: writefreely-users writefreely-add-user writefreely-passwd writefreely-del-user
@@ -321,8 +321,8 @@ gh-web-health:
 >@bash scripts/info/gh-web-health.sh
 
 # Install the repo's git hooks (pre-commit: identity + Caddy validate + app-vhost
-# stub guard; prepare-commit-msg: auto-split a change wider than ten files
-# (rule 26) into one commit per chunk;
+# stub guard; prepare-commit-msg: auto-split a change that spans more than one
+# unit (one folder + at most one subfolder, rule 26) into one commit per unit;
 # pre-push: live vhost smoke test + history-rewrite warning +
 # auto-split/fill-revert over the pushed range). The installer runs this
 # automatically; re-run manually after cloning or after editing a hook.
@@ -330,7 +330,7 @@ install-hooks:
 >@mkdir -p .git/hooks
 >@cp scripts/hooks/pre-commit scripts/hooks/prepare-commit-msg scripts/hooks/pre-push .git/hooks/
 >@chmod +x .git/hooks/pre-commit .git/hooks/prepare-commit-msg .git/hooks/pre-push
->@scripts/lib/mklog info "installed git hooks: pre-commit (identity + Caddy validate + app-vhost stub guard), prepare-commit-msg (auto-split over the ten-file limit), pre-push (refuses main + live vhost smoke + history-rewrite warning + auto-split)"
+>@scripts/lib/mklog info "installed git hooks: pre-commit (identity + Caddy validate + app-vhost stub guard), prepare-commit-msg (auto-split per unit: one folder + one subfolder), pre-push (refuses main + live vhost smoke + history-rewrite warning + auto-split/revert)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Mailboxes (Mailu `flask mailu` CLI — see `make help-more` > mail server).
@@ -454,7 +454,7 @@ mail-status:
     printf '  %-18s %-10s %s\n' "$$c" "$$st" "$$he"; \
   done
 >@echo ""
->@scripts/lib/mklog info "image $$(docker inspect -f '{{.Config.Image}}' mailu-admin 2>/dev/null || echo '?') — admin https://admin.mail.$(DOMAIN)/admin/ · webmail https://mail.$(DOMAIN)"
+>@scripts/lib/mklog info "image $$(docker inspect -f '{{.Config.Image}}' mailu-admin 2>/dev/null || echo '?') — admin https://mailu.$(DOMAIN)/admin/ · webmail https://mail.$(DOMAIN)"
 
 # The 2026-10-19 outage in one command: /data was root:root 700, gunicorn runs
 # as uid 100, so every DB route 500'd ("unable to open database file") while the
@@ -468,13 +468,13 @@ mail-doctor:
   if docker exec -u 100:1000 mailu-admin python3 -c 'import sqlite3;c=sqlite3.connect("file:/data/main.db?mode=ro",uri=True);print("  db ok —",c.execute("select count(*) from user").fetchone()[0],"mailboxes")' 2>/dev/null; then :; \
   else scripts/lib/mklog error "admin cannot open /data/main.db as uid 100:1000 — every DB route returns 500; fix with: make mail-fix-perms"; fail=1; fi; \
   echo "== admin http"; \
-  code=$$(curl -s -o /dev/null -w '%{http_code}' --interface "$$(tailscale ip -4 | head -1)" --resolve "admin.mail.$(DOMAIN):443:$$(tailscale ip -4 | head -1)" "https://admin.mail.$(DOMAIN)/sso/login" 2>/dev/null || true); \
+  code=$$(curl -s -o /dev/null -w '%{http_code}' --interface "$$(tailscale ip -4 | head -1)" --resolve "mailu.$(DOMAIN):443:$$(tailscale ip -4 | head -1)" "https://mailu.$(DOMAIN)/sso/login" 2>/dev/null || true); \
   if [ "$$code" = 200 ]; then echo "  sso/login 200"; \
   else scripts/lib/mklog error "sso/login returned $${code:-no answer} (500 = database, 404 = wrong route — the login page lives at /sso/login, not /admin/login)"; fail=1; fi; \
   echo "== tls"; \
-  end=$$(timeout 8 openssl s_client -connect "127.0.0.1:443" -servername "admin.mail.$(DOMAIN)" </dev/null 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null || true); \
-  if [ -n "$$end" ]; then echo "  admin.mail.$(DOMAIN):443 $$end"; \
-  else scripts/lib/mklog error "no TLS answer for admin.mail.$(DOMAIN)"; fail=1; fi; \
+  end=$$(timeout 8 openssl s_client -connect "127.0.0.1:443" -servername "mailu.$(DOMAIN)" </dev/null 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null || true); \
+  if [ -n "$$end" ]; then echo "  mailu.$(DOMAIN):443 $$end"; \
+  else scripts/lib/mklog error "no TLS answer for mailu.$(DOMAIN)"; fail=1; fi; \
   echo "== containers"; \
   for c in $(MAIL_CONTAINERS); do \
     st=$$(docker inspect -f '{{.State.Status}}' $$c 2>/dev/null || echo missing); \
@@ -730,8 +730,7 @@ kopia-gen:
 >@bash scripts/modules/kopia-gen.sh
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Matrix accounts — module `chat` (modules/matrix/, ESS CE: Synapse + Element +
-# Matrix Authentication Service).
+# Matrix accounts — module `chat` (modules/matrix/, Synapse + Element).
 # An account is a Matrix user id (@name:$DOMAIN). Every recipe delegates to
 # scripts/modules/matrix-admin.sh, which talks to Synapse's own admin API as
 # the admin bot created at install.
@@ -766,12 +765,6 @@ matrix-status:
 
 matrix-logs:
 >@bash $(MATRIX_ADMIN) logs "$(or $(N),50)"
-
-# DESTRUCTIVE: drop the Synapse + MAS databases, delete the signing key and
-# re-create ONLY the admin account. The only supported way to change the
-# homeserver name (user ids are @name:<name>, so a rename is a wipe).
-matrix-reset:
->@CONFIRM=$(CONFIRM) bash $(REPO)/scripts/modules/matrix-identity.sh
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Kopia backups — module `kopia` (modules/kopia/). The web UI is
@@ -1073,13 +1066,12 @@ git-del:
 git-branches:
 >@bash scripts/ops/git-pr.sh list
 
-# Audit (rule 26) the branch, push it, then open the pull request with an
+# Audit (rule 26 + 10) the branch, push it, then open the pull request with an
 # authenticated gh (or print the compare URL and a PR body). ISSUE=<n> writes
 # `Closes #<n>`, linking the issue to the PR; without one, the body uses the
 # new-feature form (how it works / benefits / risks). BASE=<branch> opens the PR
-# into that branch instead of main (a stacked change). The body ends with the
-# PR's one `## Revert` recipe (rule 10). A human reviews and merges — nothing
-# here merges.
+# into that branch instead of main (a stacked change). A human reviews and
+# merges — nothing here merges.
 git-pr:
 >@bash scripts/ops/git-pr.sh submit $(if $(ISSUE),--issue $(ISSUE),) $(if $(BASE),--base $(BASE),)
 
@@ -1093,8 +1085,11 @@ git-pull:
 >cd $(REPO) && git pull --ff-only
 
 # Commit-hygiene monitor (scripts/info/git-audit.sh). Walks a revision range and
-# reports the rule a commit cannot check about itself: rule 26 (at most ten
-# files per commit, the same limit the pre-commit hook splits on). Default range: what a push would publish; RANGE=<a..b> audits anything (RANGE=origin/main
+# reports the two rules a commit cannot check about itself: rule 26 (one change
+# per commit — one folder plus at most one subfolder, the same unit the
+# pre-commit hook splits on) and
+# rule 10 (a `Revert:` line in the message of every significant commit). Default
+# range: what a push would publish; RANGE=<a..b> audits anything (RANGE=origin/main
 # = the whole published history). The pre-push hook runs it over every pushed
 # range and refuses on a violation — that is the only way to catch a commit made
 # in the GitHub web editor, which runs no local hook.
@@ -1110,8 +1105,9 @@ prose-audit:
 >@bash scripts/info/prose-audit.sh
 
 # The rewriter behind the two hooks (scripts/info/git-split.sh). It performs the
-# fix `git-audit` only reports: split an oversized commit into one commit per
-# chunk of ten files (rule 26) — a replay/rebase over the given range. Refuses to
+# fix `git-audit` only reports: split a bundle commit into one commit per unit
+# (rule 26) and fill in the `Revert:` line of every significant commit with its
+# real parent SHA (rule 10) — a replay/rebase over the given range. Refuses to
 # rewrite any published commit, and needs a clean worktree. RANGE defaults to what
 # a push would publish (`make git-split RANGE=<a..b>`); `ARGS=--dry-run` reports
 # only. The prepare-commit-msg hook calls it with --staged; the pre-push hook
