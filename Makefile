@@ -250,7 +250,7 @@ systemd-action:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: fetch fetch-more render smoke gh-web-health install-hooks update apt-upgrade install-config help matrix-gen matrix-add-admin matrix-users matrix-add matrix-passwd matrix-flag-admin matrix-del matrix-status matrix-logs kopia-gen kopia-status kopia-password kopia-username kopia-snapshot kopia-snapshots kopia-logs
+.PHONY: fetch fetch-more render smoke gh-web-health install-hooks update apt-upgrade install-config help matrix-gen matrix-add-admin matrix-users matrix-add matrix-passwd matrix-flag-admin matrix-del matrix-status matrix-logs matrix-reset kopia-gen kopia-status kopia-password kopia-username kopia-snapshot kopia-snapshots kopia-logs
 .PHONY: kuma-import kuma-list-users kuma-add-user kuma-passwd kuma-del-user
 .PHONY: vaultwarden-list-users vaultwarden-add-user vaultwarden-del-user
 .PHONY: writefreely-users writefreely-add-user writefreely-passwd writefreely-del-user
@@ -730,7 +730,8 @@ kopia-gen:
 >@bash scripts/modules/kopia-gen.sh
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Matrix accounts — module `chat` (modules/matrix/, Synapse + Element).
+# Matrix accounts — module `chat` (modules/matrix/, ESS CE: Synapse + Element +
+# Matrix Authentication Service).
 # An account is a Matrix user id (@name:$DOMAIN). Every recipe delegates to
 # scripts/modules/matrix-admin.sh, which talks to Synapse's own admin API as
 # the admin bot created at install.
@@ -765,6 +766,12 @@ matrix-status:
 
 matrix-logs:
 >@bash $(MATRIX_ADMIN) logs "$(or $(N),50)"
+
+# DESTRUCTIVE: drop the Synapse + MAS databases, delete the signing key and
+# re-create ONLY the admin account. The only supported way to change the
+# homeserver name (user ids are @name:<name>, so a rename is a wipe).
+matrix-reset:
+>@CONFIRM=$(CONFIRM) bash $(REPO)/scripts/modules/matrix-identity.sh
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Kopia backups — module `kopia` (modules/kopia/). The web UI is
