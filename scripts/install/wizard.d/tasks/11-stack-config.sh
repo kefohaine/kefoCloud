@@ -31,6 +31,7 @@ prep_dirs() {
                $ROOT/data/photos/pgdata \
                $ROOT/data/blog/data \
                $ROOT/data/download \
+               $ROOT/data/logs/caddy \
                $ROOT/data/pages/www
   # The web root is INSTANCE DATA (the repo ships no pages): pages live only in
   # $ROOT/data/pages/www, edited in place by the operator; `make render` never
