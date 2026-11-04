@@ -50,7 +50,7 @@ issue_certs() {
   mod_on blog    && hosts="$hosts blog"
   mod_on photos  && hosts="$hosts photos"
   mod_on mail    && hosts="$hosts mail"
-  mod_on mail    && hosts="$hosts mailu"
+  mod_on mail    && hosts="$hosts admin.mail"
   # ttyd.$DOMAIN joins the attempt like every other vhost. DNS-01 does not
   # need a public A record (Caddy answers the TXT challenge directly), and NO
   # DNS record is created for ttyd.$DOMAIN by design — it stays tailnet-only.
