@@ -501,12 +501,14 @@ cmd_submit() {
 # link (the preferred form) is taken from an explicit issue number or a
 # 'Closes #N' mention in the commits; without one, the body states the new
 # feature, how it works, its benefits and its risks, which is the other
-# accepted form.
+# accepted form. The last section is always the pull request's one revert
+# recipe: the base branch's SHA before the PR, so `git reset --hard` undoes the
+# squash-merged result in one command (AGENTS rule 10).
 submit_body() {
-  local range="$1" explicit="${2:-}" n
+  local range="$1" explicit="${2:-}" n base_sha body
   n="${explicit:-$(G log --format='%s%n%b' "$range" | grep -oE '(Closes|Fix(es|ed)?|Resolves) #[0-9]+|#[0-9]+' | grep -oE '[0-9]+' | head -1)}"
   if [ -n "$n" ]; then
-    cat <<EOF
+    body=$(cat <<EOF
 Closes #$n
 
 ## What changed
@@ -518,8 +520,9 @@ $(G log --format='- %s' "$range")
 ## How it was verified
 <the commands you ran and their verdict>
 EOF
+)
   else
-    cat <<EOF
+    body=$(cat <<EOF
 ## What changed
 $(G log --format='- %s' "$range")
 
@@ -530,12 +533,16 @@ $(G log --format='- %s' "$range")
 <what this makes possible or safer>
 
 ## Risks
-<what can break, and how to revert it>
+<what can break and its blast radius>
 
 ## How it was verified
 <the commands you ran and their verdict>
 EOF
+)
   fi
+  base_sha=$(G rev-parse "$REMOTE/$BASE")
+  printf '%s\n\n## Revert\n\n`git reset --hard %s` — undo the whole pull request on `%s` in one command.\n' \
+    "$body" "$base_sha" "$BASE"
 }
 
 # ──────────────────────────────── land ────────────────────────────────────
