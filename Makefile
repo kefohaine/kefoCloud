@@ -844,9 +844,24 @@ sudo cp $(RENDER_DIR)/config/bash/banner.sh /etc/kefo-banner.sh
 sudo chmod 0644 /etc/kefo-banner.sh
 @grep -qxF '. /etc/kefo-banner.sh' "$$HOME/.bashrc" || printf '%s\n' '. /etc/kefo-banner.sh' >> "$$HOME/.bashrc"
 sudo cp $(RENDER_DIR)/config/fail2ban/jail.d/sshd.conf /etc/fail2ban/jail.d/sshd.conf
->@sudo install -d -m 0755 /etc/fail2ban/filter.d /etc/fail2ban/jail.d
+>@sudo install -d -m 0755 /etc/fail2ban/filter.d /etc/fail2ban/jail.d $(DATA_DIR)/logs/caddy
 >@sudo cp $(RENDER_DIR)/config/fail2ban/filter.d/*.conf /etc/fail2ban/filter.d/
->@sudo cp $(RENDER_DIR)/config/fail2ban/jail.d/web-*.conf /etc/fail2ban/jail.d/
+# A web-*.conf jail whose logpath does not exist kills the whole fail2ban
+# service on start (it enables the jail, cannot open the file, exits 255) —
+# taking the sshd jail down with it. Install only jails whose Caddy log the
+# edge has actually created; remove a stale copy left by an earlier run.
+>@for f in $(RENDER_DIR)/config/fail2ban/jail.d/web-*.conf; do \
+    [ -f "$$f" ] || continue; \
+    name=$$(basename "$$f"); \
+    logpath=$$(sed -n 's/^logpath[[:space:]]*=[[:space:]]*//p' "$$f" | head -1); \
+    if [ -n "$$logpath" ] && [ -e "$$logpath" ]; then \
+      sudo cp "$$f" /etc/fail2ban/jail.d/; \
+      scripts/lib/mklog info "fail2ban jail $$name installed ($$logpath present)"; \
+    else \
+      sudo rm -f "/etc/fail2ban/jail.d/$$name"; \
+      scripts/lib/mklog warn "fail2ban jail $$name skipped: log source $${logpath:-<unset>} is absent"; \
+    fi; \
+  done
 # Logging: ONE namespace ({{LOG_DIR}}) for every log this project writes,
 # bounded by ONE logrotate rule. Docker output is capped globally in
 # config/docker/daemon.json (10m x3); no journald drop-in exists —
