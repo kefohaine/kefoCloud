@@ -247,7 +247,7 @@ end_sec
 # Element (a static browser app), matrix.$DOMAIN serves the homeserver's
 # client-server API. Both are public: Element is proxied, Synapse is DNS-only.
 # ─────────────────────────────────────────────────────────────────────────────
-hdr chat "Chat — ESS CE (module: chat) · chat.$DOMAIN + matrix.$DOMAIN + auth.$DOMAIN"
+hdr chat "Chat — ESS CE (module: chat) · chat.$DOMAIN + matrix.$DOMAIN + auth.matrix.$DOMAIN"
 check chat "chat.$DOMAIN" "/" "200 301 302 307 308" html "Element answers"
 check_sec_headers chat "chat.$DOMAIN" "/" "one of each"
 check_tls "chat.$DOMAIN"
@@ -259,11 +259,11 @@ check_tls "matrix.$DOMAIN"
 # Client discovery names the homeserver URL AND the MAS issuer: a client that
 # cannot read m.authentication cannot log in at all.
 check matrix-wk "matrix.$DOMAIN" "/.well-known/matrix/client" "200" "" "client discovery answers"
-# auth.$DOMAIN is the identity provider (MAS); every token Synapse accepts is
+# auth.matrix.$DOMAIN is the identity provider (MAS); every token Synapse accepts is
 # minted here, so a 200 on its discovery document is the real health signal.
-check mas-discovery "auth.$DOMAIN" "/.well-known/openid-configuration" "200" "" "MAS discovery answers"
-check_sec_headers auth "auth.$DOMAIN" "/.well-known/openid-configuration" "one of each"
-check_tls "auth.$DOMAIN"
+check mas-discovery "auth.matrix.$DOMAIN" "/.well-known/openid-configuration" "200" "" "MAS discovery answers"
+check_sec_headers auth "auth.matrix.$DOMAIN" "/.well-known/openid-configuration" "one of each"
+check_tls "auth.matrix.$DOMAIN"
 check_ctns chat matrix-synapse matrix-element matrix-db matrix-mas matrix-mas-db
 end_sec
 
@@ -368,9 +368,9 @@ end_sec
 # ─────────────────────────────────────────────────────────────────────────────
 hdr mail "Mail — Mailu platform + Roundcube webmail (module: mail)"
 # mail.$DOMAIN is the PUBLIC mail door (Roundcube's web UI, and the name
-# mailu-front publishes 25/465/587/993 on); mailu.$DOMAIN is the platform door
-# and TAILNET-ONLY (same model as vault): no public A record, and the vhost 403s
-# every source outside 100.64.0.0/10. Both halves are asserted, so a
+# mailu-front publishes 25/465/587/993 on). admin.mail.$DOMAIN is the platform
+# door and TAILNET-ONLY (same model as vault): no public A record, and the vhost
+# 403s every source outside 100.64.0.0/10. Both halves are asserted, so a
 # half-applied change fails here instead of passing.
 check mail "mail.$DOMAIN" "/" "200 301 302 307 308" html "Roundcube webmail"
 check_sec_headers mail "mail.$DOMAIN" "/" "one of each"
@@ -378,11 +378,11 @@ check_tls "mail.$DOMAIN"
 if [ -z "$TS_IP" ]; then
   say "FAIL mailu: no Tailscale IPv4 — cannot probe a tailnet-only door"; bad
 else
-  check_tn mailu "mailu.$DOMAIN" "/" "200 301 302 307 308" html "Mailu platform door answers on the tailnet"
+  check_tn mailu "admin.mail.$DOMAIN" "/" "200 301 302 307 308" html "Mailu platform door answers on the tailnet"
 fi
-check mailu-public "mailu.$DOMAIN" "/" "403" "" "public sources are refused"
-check_sec_headers mailu "mailu.$DOMAIN" "/" "one of each"
-check_tls "mailu.$DOMAIN"
+check mailu-public "admin.mail.$DOMAIN" "/" "403" "" "public sources are refused"
+check_sec_headers mailu "admin.mail.$DOMAIN" "/" "one of each"
+check_tls "admin.mail.$DOMAIN"
 
 # SMTP 25/587 + IMAPS 993 must answer.
 for port in 25 587; do
