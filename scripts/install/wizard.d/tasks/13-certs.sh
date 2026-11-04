@@ -41,7 +41,10 @@ issue_certs() {
   mod_on ocis    && hosts="$hosts cloud"
   mod_on chat    && hosts="$hosts chat"
   mod_on chat    && hosts="$hosts matrix"
-  mod_on chat    && hosts="$hosts auth"
+  # The identity provider's door is a two-label name (auth.matrix.$DOMAIN), not
+  # the bare auth.$DOMAIN the pre-MAS layout used: asking for the old name
+  # ordered a cert no vhost serves, so the check could never pass.
+  mod_on chat    && hosts="$hosts auth.matrix"
   mod_on admin   && hosts="$hosts admin.chat"
   mod_on kopia   && hosts="$hosts kopia"
   mod_on vault   && hosts="$hosts vault"
