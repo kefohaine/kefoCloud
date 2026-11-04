@@ -321,8 +321,8 @@ gh-web-health:
 >@bash scripts/info/gh-web-health.sh
 
 # Install the repo's git hooks (pre-commit: identity + Caddy validate + app-vhost
-# stub guard; prepare-commit-msg: auto-split a change that spans more than one
-# unit (one folder + at most one subfolder, rule 26) into one commit per unit;
+# stub guard; prepare-commit-msg: auto-split a change wider than ten files
+# (rule 26) into one commit per chunk;
 # pre-push: live vhost smoke test + history-rewrite warning +
 # auto-split/fill-revert over the pushed range). The installer runs this
 # automatically; re-run manually after cloning or after editing a hook.
@@ -330,7 +330,7 @@ install-hooks:
 >@mkdir -p .git/hooks
 >@cp scripts/hooks/pre-commit scripts/hooks/prepare-commit-msg scripts/hooks/pre-push .git/hooks/
 >@chmod +x .git/hooks/pre-commit .git/hooks/prepare-commit-msg .git/hooks/pre-push
->@scripts/lib/mklog info "installed git hooks: pre-commit (identity + Caddy validate + app-vhost stub guard), prepare-commit-msg (auto-split per unit: one folder + one subfolder), pre-push (refuses main + live vhost smoke + history-rewrite warning + auto-split/revert)"
+>@scripts/lib/mklog info "installed git hooks: pre-commit (identity + Caddy validate + app-vhost stub guard), prepare-commit-msg (auto-split over the ten-file limit), pre-push (refuses main + live vhost smoke + history-rewrite warning + auto-split)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Mailboxes (Mailu `flask mailu` CLI — see `make help-more` > mail server).
@@ -1081,12 +1081,13 @@ git-del:
 git-branches:
 >@bash scripts/ops/git-pr.sh list
 
-# Audit (rule 26 + 10) the branch, push it, then open the pull request with an
+# Audit (rule 26) the branch, push it, then open the pull request with an
 # authenticated gh (or print the compare URL and a PR body). ISSUE=<n> writes
 # `Closes #<n>`, linking the issue to the PR; without one, the body uses the
 # new-feature form (how it works / benefits / risks). BASE=<branch> opens the PR
-# into that branch instead of main (a stacked change). A human reviews and
-# merges — nothing here merges.
+# into that branch instead of main (a stacked change). The body ends with the
+# PR's one `## Revert` recipe (rule 10). A human reviews and merges — nothing
+# here merges.
 git-pr:
 >@bash scripts/ops/git-pr.sh submit $(if $(ISSUE),--issue $(ISSUE),) $(if $(BASE),--base $(BASE),)
 
@@ -1100,11 +1101,8 @@ git-pull:
 >cd $(REPO) && git pull --ff-only
 
 # Commit-hygiene monitor (scripts/info/git-audit.sh). Walks a revision range and
-# reports the two rules a commit cannot check about itself: rule 26 (one change
-# per commit — one folder plus at most one subfolder, the same unit the
-# pre-commit hook splits on) and
-# rule 10 (a `Revert:` line in the message of every significant commit). Default
-# range: what a push would publish; RANGE=<a..b> audits anything (RANGE=origin/main
+# reports the rule a commit cannot check about itself: rule 26 (at most ten
+# files per commit, the same limit the pre-commit hook splits on). Default range: what a push would publish; RANGE=<a..b> audits anything (RANGE=origin/main
 # = the whole published history). The pre-push hook runs it over every pushed
 # range and refuses on a violation — that is the only way to catch a commit made
 # in the GitHub web editor, which runs no local hook.
@@ -1120,9 +1118,8 @@ prose-audit:
 >@bash scripts/info/prose-audit.sh
 
 # The rewriter behind the two hooks (scripts/info/git-split.sh). It performs the
-# fix `git-audit` only reports: split a bundle commit into one commit per unit
-# (rule 26) and fill in the `Revert:` line of every significant commit with its
-# real parent SHA (rule 10) — a replay/rebase over the given range. Refuses to
+# fix `git-audit` only reports: split an oversized commit into one commit per
+# chunk of ten files (rule 26) — a replay/rebase over the given range. Refuses to
 # rewrite any published commit, and needs a clean worktree. RANGE defaults to what
 # a push would publish (`make git-split RANGE=<a..b>`); `ARGS=--dry-run` reports
 # only. The prepare-commit-msg hook calls it with --staged; the pre-push hook
