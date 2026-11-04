@@ -68,7 +68,7 @@ mod_finished() {
   local f; f="$(_mod_read finished)"
   printf '%s' "${f:-absent}"
 }
-exposure()     { case "$1" in ttyd|ttyd.*|vault|vault.*|kopia|kopia.*|mailu|mailu.*) printf 'tailnet-only' ;; *) printf 'public' ;; esac; }
+exposure()     { case "$1" in ttyd|ttyd.*|vault|vault.*|kopia|kopia.*|mailu|mailu.*|admin.chat|admin.chat.*) printf 'tailnet-only' ;; *) printf 'public' ;; esac; }
 
 # mod_roster — every container the REPO declares, in declaration order: the
 # Caddy edge (always present) then each declared module's containers. It is a
