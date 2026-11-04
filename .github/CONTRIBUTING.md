@@ -6,7 +6,7 @@ Anyone can contribute, with or without write access here. Work on a branch — i
 
 1. Fork on GitHub and clone the fork.
 2. Branch off `main` — any name you like (`git switch -c fix/the-thing`).
-3. Keep each commit within ten files (the hooks auto-split a wider change), authored as your GitHub identity (`<id>+<login>@users.noreply.github.com`; set `git config user.useConfigOnly true` so git never invents one).
+3. Commit one logical change per commit, authored as your GitHub identity (`<id>+<login>@users.noreply.github.com`; set `git config user.useConfigOnly true` so git never invents one).
 4. Push the branch to your fork and open the pull request against `kefohaine/kefoCloud:main`.
 
 ## From this clone

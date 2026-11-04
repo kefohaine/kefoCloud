@@ -37,13 +37,11 @@ reviews and merges it.
 <!-- what this makes possible or safer -->
 
 ### Risks
-<!-- what can break and its blast radius -->
+<!-- what can break, the blast radius, and the revert recipe -->
 
 ## Verification
 <!-- the commands you ran and their verdict: make smoke, make git-audit, bash -n, a dry run -->
 
-- [ ] commits within the ten-file limit (`make git-audit` is clean)
+- [ ] one change per commit (`make git-audit` is clean)
+- [ ] every commit touching more than 3 files carries its `Revert:` line (docs-only commits need none)
 - [ ] docs updated to match (WHAT / MANUAL / README as applicable)
-
-## Revert
-<!-- one recipe for the whole pull request, appended by `make git-pr` -->

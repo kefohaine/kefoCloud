@@ -4,7 +4,7 @@ x-mailu-env: &mailu-env
     # Mailu's hostname is mail.${DOMAIN}: the name Caddy serves the public
     # mail door on (Roundcube, container `roundcube`) and the one whose cert
     # signs SMTP/IMAP (TLS_FLAVOR=mail below). The platform/admin UI is the
-    # tailnet-only admin.mail.${DOMAIN} door.
+    # tailnet-only mailu.${DOMAIN} door.
     HOSTNAMES: "mail.${DOMAIN}"
     # The mail cache is `mailu-redis`, NOT `redis`: both compose files join the
     # same external `net` bridge, so a service named `redis` would publish a
@@ -31,10 +31,10 @@ services:
   # `webmail` is deliberately NOT started: Roundcube stays the webmail and is
   # served by Caddy at mail.${DOMAIN} (container `roundcube` below), the same
   # name this front's cert is issued for. The platform UI (admin at /admin,
-  # SSO) is served at admin.mail.${DOMAIN} — TAILNET-ONLY (no public A
-  # record, @not_tailnet 403 in modules/caddy/vhosts/admin.mail.caddy). The
-  # listeners below are published on the host under mail.${DOMAIN}, which stays
-  # in public DNS (DNS-only) so SMTP/IMAP keep answering.
+  # SSO) is proxied at mailu.${DOMAIN} — TAILNET-ONLY (no public A record,
+  # @not_tailnet 403 in modules/caddy/vhosts/mailu.caddy). The listeners below
+  # are published on the host under mail.${DOMAIN}, which stays in public DNS
+  # (DNS-only) so SMTP/IMAP keep answering.
   #
   # TLS_FLAVOR=mail: no HTTP listener in front (Caddy owns 80/443 on the host);
   # SMTP/IMAP use the per-vhost LE cert for mail.${DOMAIN} from caddy_data,

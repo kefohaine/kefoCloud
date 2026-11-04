@@ -68,14 +68,14 @@ make git-branch [NAME=<b>]|same as git-start, or create + switch to NAME (BASE=<
 make git-switch BRANCH=<b>|switch to an existing branch — local, or origin's (tracked on the way in)
 make git-del BRANCH=<b> [FORCE=1]|delete a local branch — never main, never the current one; FORCE=1 drops unmerged commits
 make git-branches|every branch with its distance from origin/main, plus the next free temp-<N>
-make git-pr [ISSUE=<n>] [BASE=<b>]|audit the branch, push it, open the PR into main (or BASE) with gh or GITHUB_TOKEN/GH_TOKEN; ISSUE=<n> links it with Closes #<n>; ends the body with the PR's one Revert recipe — a human merges on GitHub
+make git-pr [ISSUE=<n>] [BASE=<b>]|audit the branch, push it, open the PR into main (or BASE) with gh or GITHUB_TOKEN/GH_TOKEN; ISSUE=<n> links it with Closes #<n> — a human merges on GitHub
 make git-land [BASE=<b>]|after the PR is merged: fast-forward main (or BASE) onto origin and delete the local branch
 make git-pull|pull remote changes
 make git-add|stage every change
 make git-com MSG=<sentence>|commit staged changes — single-sentence MSG only
-make git-audit RANGE=<a..b>|monitor the commit-hygiene rule (26: ten files per commit) — default: what a push would publish; the pre-push hook enforces it
+make git-audit RANGE=<a..b>|monitor the commit-hygiene rules (26 one change per commit, 10 revert recipe) — default: what a push would publish; the pre-push hook enforces it
 make prose-audit|monitor the prose rules (31 docs path, size, timing, foreign host, plan; an open task in a doc, which belongs to the Issues tab) — the pre-push hook and make git-pr enforce it
-make git-split RANGE=<a..b>|rewrite a local range to satisfy that rule — auto-split into chunks of ten files; ARGS=--dry-run to preview; refuses published commits — the hooks run it for you
+make git-split RANGE=<a..b>|rewrite a local range to satisfy those rules — auto-split bundles per unit (one folder + one subfolder), auto-SHA the Revert: lines; ARGS=--dry-run to preview; refuses published commits — the hooks run it for you
 make git-push|push the current temp branch to the remote (main is refused by the pre-push hook)
 make git-force-push BRANCH=<b>|force-push a rewritten branch (--force-with-lease only; BRANCH required — never clobbers another's commits)
 EOF
@@ -123,7 +123,7 @@ make install-dnsmasq-override|dnsmasq drop-in override → /etc/systemd/system/d
 make install-docker|daemon.json → /etc/docker (docker daemon restart needed to apply)
 make install-sysctl|99-kefo.conf → /etc/sysctl.d
 make install-cron|no host cron job is needed by any module (nothing to install)
-make install-hooks|git hooks — pre-commit (GitHub-identity + edge guard), prepare-commit-msg (auto-split over the ten-file limit), pre-push (smoke + history-rewrite warning + auto-split)
+make install-hooks|git hooks — pre-commit (GitHub-identity + edge guard), prepare-commit-msg (auto-split per unit: one folder + one subfolder), pre-push (smoke + history-rewrite warning + auto-split/revert)
 EOF
 
 
@@ -229,9 +229,9 @@ EOF
 make dok-recreate-homarr|the whole app lifecycle — dok-restart-homarr / dok-stop-homarr / dok-logs-homarr (board and integrations are UI data)
 EOF
 
-  sec "matrix accounts (module: chat — ESS CE: Synapse + Element + MAS)"
+  sec "matrix accounts (module: chat — Synapse + Element)"
   rows <<'EOF'
-make matrix-users|list every account (@name:matrix.$DOMAIN)
+make matrix-users|list every account (@name:$DOMAIN)
 make matrix-add-admin|create an account with the server-admin flag — USER=<name> [PASS=…] (the admin bot's own account uses this)
 make matrix-add|create a plain account — USER=<name> [PASS=…] (PASS generated and printed once when omitted)
 make matrix-passwd|reset a password and end its sessions — USER=<name> [PASS=…]

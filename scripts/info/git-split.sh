@@ -1,20 +1,24 @@
 #!/usr/bin/env bash
 #
-# scripts/info/git-split.sh — satisfy the commit-hygiene rule (AGENTS rule 26)
-# by REWRITING history: split an oversized commit into consecutive chunks of at
-# most COMMIT_MAX_FILES files (auto rebase).
+# scripts/info/git-split.sh — satisfy the two commit-hygiene rules (AGENTS
+# rule 26 "one change per commit", rule 10 "a revert recipe on every
+# significant commit") by REWRITING history: split a bundle commit into one
+# commit per unit and fill in the `Revert:` line of every significant commit
+# with its real parent SHA (auto rebase + auto SHA). A unit is one top-level
+# folder plus at most one subfolder inside it; docs ride with a change.
 #
 # It is the automation behind the two hooks:
 #   * prepare-commit-msg calls it with --staged — the staged change is committed
-#     as one commit per chunk, then the outer `git commit` is aborted (the work is
+#     as one commit per unit, then the outer `git commit` is aborted (the work is
 #     already committed). It is prepare-commit-msg, not pre-commit, because
 #     pre-commit runs before git composes the message.
-#   * pre-push calls it over the range a push would publish — oversized commits are split
-#     (a replay/rebase), then the hook aborts so the operator re-runs `git push`
-#     on the rewrapped history.
+#   * pre-push calls it over the range a push would publish — bundles are split
+#     and missing revert recipes are inserted (a replay/rebase), then the hook
+#     aborts so the operator re-runs `git push` on the rewrapped history.
 #
-# SCOPE comes from scripts/lib/commit-areas.sh — the same definition
-# git-audit.sh checks against, so the splitter and the auditor never drift.
+# SCOPE / SIGNIFICANT come from scripts/lib/commit-areas.sh — the same
+# definitions git-audit.sh checks against, so the splitter and the auditor
+# never drift.
 #
 # SAFETY (AGENTS rule 17): rewriting PUBLISHED history is an operator decision,
 # so this refuses to touch any commit already reachable from a remote-tracking
@@ -23,7 +27,7 @@
 #
 # Usage:
 #   git-split.sh [<base>..<head>]   replay+split a range (default @{upstream}..HEAD)
-#   git-split.sh --staged           split the index into per-chunk commits
+#   git-split.sh --staged           split the index into per-unit commits
 #   git-split.sh --dry-run ...      report what would change, rewrite nothing
 #
 # The message for --staged comes from $GIT_SPLIT_MESSAGE, else the commit
@@ -43,39 +47,61 @@ AUTHOR="$(G log -1 --format='%an <%ae>' 2>/dev/null || true)"
 
 die() { printf 'git-split: %s\n' "$*" >&2; exit 1; }
 
+# commit_is_significant comes from scripts/lib/commit-areas.sh: a commit that
+# changes more than SIGNIFICANT_FILE_THRESHOLD non-doc files (rule 10). Docs
+# never count, so a documentation-only commit never gets a recipe.
+
 # split_from_status <subject> <body> — stdin is `git diff-tree --name-status`
 # lines. HEAD is at the parent; `git reset` has not run yet. Stages one commit
-# per chunk of at most COMMIT_MAX_FILES files (rule 26). Returns 3 when there is
-# nothing to split.
+# per unit (rule 26: one folder, at most one subfolder inside it; docs ride with
+# the largest unit) and gives each significant one a Revert: line naming its
+# real parent. Returns 3 when there is nothing to split.
 split_from_status() {
   local subject="$1" body="$2"
+  body=$(printf '%s\n' "$body" | strip_revert)          # the recipe is re-added fresh
   local lines; lines=$(cat)
   local map; map=$(printf '%s\n' "$lines" | cut -f2 | commit_unit_map)
-  local units; units=$(printf '%s\n' "$map" | cut -f1 | sort -un)
+  local units; units=$(printf '%s\n' "$map" | cut -f1 | sort -u)
   local n; n=$(printf '%s\n' "$units" | grep -c .)
   [ "${n:-0}" -le 1 ] && return 3
 
-  # path -> chunk, so one pass over the status lines serves files AND sig.
+  # primary = the unit with the most changed files; docs attach to it.
+  local u c primary='' best=0
+  for u in $units; do
+    c=$(printf '%s\n' "$map" | awk -F'\t' -v u="$u" '$1 == u' | grep -c .)
+    if [ "${c:-0}" -gt "$best" ]; then best=$c; primary=$u; fi
+  done
+
+  # path -> unit, so one pass over the status lines serves files AND sig.
   local -A unitof=()
   while IFS=$'\t' read -r u p; do [ -n "$p" ] && unitof["$p"]="$u"; done <<< "$map"
 
   G reset -q || return 1
 
-  local u st p files subj msg
+  local st p pu files rev sig subj msg label
   for u in $units; do
-    files=()
+    files=() sig=0
     while IFS=$'\t' read -r st p; do
       [ -z "$p" ] && continue
-      [ "${unitof[$p]:-}" = "$u" ] || continue
+      pu=${unitof[$p]:-}
+      if [ -n "$pu" ]; then
+        [ "$pu" = "$u" ] || continue
+      else
+        [ "$u" = "$primary" ] || continue              # a doc: rides the biggest unit
+      fi
       files+=("$p")
+      commit_folder "$p" >/dev/null && sig=$((sig + 1)) || true
     done <<< "$lines"
     [ "${#files[@]}" -eq 0 ] && continue
 
     G add -A -- "${files[@]}" >/dev/null 2>&1 || return 1
 
-    subj="$subject"; [ "$n" -gt 1 ] && subj="$subject (part $u/$n)"
+    rev=''; [ "${sig:-0}" -gt "$SIGNIFICANT_FILE_THRESHOLD" ] && rev=$(G rev-parse HEAD)
+    label="$u"; [ "$u" = "." ] && label=root
+    subj="$subject"; [ "$n" -gt 1 ] && subj="$subject ($label)"
     msg="$subj"
     [ -n "$body" ] && msg="${msg}"$'\n\n'"${body}"
+    [ -n "$rev" ] && msg="${msg}"$'\n\n'"Revert: git reset --hard ${rev}"
     printf '%s\n' "$msg" | G commit -q --no-verify --author="$AUTHOR" -F - || return 1
   done
   return 0
@@ -98,14 +124,14 @@ split_staged() {
 
   local n; n=$(printf '%s\n' "$ns" | cut -f2 | commit_units | grep -c .)
   if [ "${n:-0}" -le 1 ]; then
-    echo "git-split: staged change fits in one commit ($COMMIT_MAX_FILES files) — nothing to split"
+    echo "git-split: staged change is a single unit — nothing to split"
     return 0
   fi
 
   local rc
   printf '%s\n' "$ns" | split_from_status "$subject" "$body"; rc=$?
   [ "$rc" = 0 ] || die "split failed"
-  echo "git-split: staged change split into $n commits (at most $COMMIT_MAX_FILES files each)"
+  echo "git-split: staged change split into $n commits (one per unit)"
 }
 
 # ── range: replay + split local history ──────────────────────────────────────
@@ -131,10 +157,13 @@ replay_range() {
   local need=0 n
   for c in $commits; do
     n=$(commit_units_for "$c" | grep -c .)
-    [ "$n" -gt 1 ] && need=1
+    if [ "$n" -gt 1 ]; then need=1; continue; fi
+    if commit_is_significant "$c"; then
+      commit_revert_ok "$c" || need=1
+    fi
   done
   if [ "$need" = 0 ]; then
-    echo "git-split: range '$range' already satisfies rule 26 ($COMMIT_MAX_FILES files per commit) — nothing to do"
+    echo "git-split: range '$range' already satisfies rules 26/10 — nothing to do"
     return 0
   fi
 
@@ -143,7 +172,8 @@ replay_range() {
     for c in $commits; do
       n=$(commit_units_for "$c" | grep -c .)
       printf '  %s  %s%s\n' "${c:0:9}" "$(G log -1 --format=%s "$c")" \
-        "$([ "$n" -gt 1 ] && echo "  [too big: $(G diff-tree -r --name-only --no-commit-id --root "$c" | grep -c .) files]")"
+        "$([ "$n" -gt 1 ] && echo "  [bundle: $(commit_units_for "$c" | paste -sd, -)]" \
+           || { commit_is_significant "$c" && ! commit_revert_ok "$c" && echo "  [revert recipe]"; })"
     done
     return 0
   fi
@@ -173,6 +203,16 @@ replay_range() {
       G cherry-pick --no-commit "$c" >/dev/null 2>&1 || { restore; die "conflict splitting ${c:0:9} — resolve manually"; }
       printf '%s\n' "$ns" | split_from_status "$subject" "$body"; rc=$?
       if [ "$rc" != 0 ] && [ "$rc" != 3 ]; then restore; die "split of ${c:0:9} failed"; fi
+    elif commit_is_significant "$c"; then
+      # auto-SHA: replay with the recipe recomputed for the NEW parent — the
+      # old line (kept from the original message) may name a rewritten-away SHA.
+      G cherry-pick --no-commit "$c" >/dev/null 2>&1 || { restore; die "conflict on ${c:0:9} — resolve manually"; }
+      local rev msg
+      rev=$(G rev-parse HEAD)
+      body=$(printf '%s\n' "$body" | strip_revert)
+      msg="$subject"; [ -n "$body" ] && msg="${msg}"$'\n\n'"${body}"
+      msg="${msg}"$'\n\n'"Revert: git reset --hard ${rev}"
+      printf '%s\n' "$msg" | G commit -q --no-verify --author="$AUTHOR" -F - || { restore; die "commit failed on ${c:0:9}"; }
     else
       G cherry-pick "$c" >/dev/null 2>&1 || { restore; die "conflict replaying ${c:0:9} — resolve manually"; }
     fi

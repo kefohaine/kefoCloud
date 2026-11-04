@@ -19,10 +19,7 @@ prep_dirs() {
                $ROOT/data/mailserver/roundcube \
                $ROOT/data/matrix/synapse \
                $ROOT/data/matrix/element \
-               $ROOT/data/matrix/mas \
-               $ROOT/data/matrix/mas/keys \
                $ROOT/data/matrix/pgdata \
-               $ROOT/data/matrix/mas-pgdata \
                $ROOT/data/kopia/repository \
                $ROOT/data/kopia/config \
                $ROOT/data/ocis/data \

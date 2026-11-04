@@ -2,9 +2,9 @@
 #
 # The client-server API, the federation API and Synapse's own /_synapse/admin
 # routes all live here; Element on chat.{{DOMAIN}} points at it through the
-# runtime config, and this name IS the homeserver a client is given: the apex
-# serves no Matrix route (it redirects to www), so a client enters
-# matrix.{{DOMAIN}}, never the bare domain.
+# runtime config, and this name IS the homeserver a client is given: there is no
+# .well-known/matrix delegation anywhere, so a client enters matrix.{{DOMAIN}},
+# never the bare domain (which redirects to www and serves no Matrix route).
 #
 # DNS-ONLY (grey cloud) at Cloudflare: federation and media transfers are long
 # lived and large, which the CF proxy does not carry well, and the origin holds
@@ -32,67 +32,22 @@ https://matrix.{{DOMAIN}} {
         }
     }
     import compress
-    route {
-        header {
-            import security_headers
-        }
-        # Media uploads are the traffic here; the ceiling matches the
-        # homeserver's own max_upload_size so the edge is never the first thing
-        # to refuse a file.
-        request_body {
-            max_size 100m
-        }
-        # Client discovery. Element (and every other client) reads this before
-        # it talks to the homeserver: m.authentication names the MAS issuer, and
-        # without it the delegated login flow cannot start. Served from the edge
-        # because Synapse does not answer .well-known itself.
-        @wk_client path /.well-known/matrix/client
-        handle @wk_client {
-            header Content-Type application/json
-            # A browser app on ANOTHER origin reads this document — the Element
-            # Admin panel on admin.chat.{{DOMAIN}} — so the response needs CORS
-            # or the browser discards it however correct the body is (the panel
-            # then reports "Failed to load the server's well-known document").
-            # Synapse answers its own routes with the same ACAO; this edge-served
-            # file is the one place it does not.
-            header Access-Control-Allow-Origin "*"
-            respond <<JSON
-{"m.homeserver":{"base_url":"https://matrix.{{DOMAIN}}"},"m.authentication":{"issuer":"https://auth.matrix.{{DOMAIN}}/"}}
-JSON
-        }
-        # Server discovery for remote homeservers: the name IS the API host, so
-        # this only steers federation onto the TLS port (8448 is not published).
-        @wk_server path /.well-known/matrix/server
-        handle @wk_server {
-            header Content-Type application/json
-            respond <<JSON
-{"m.server":"matrix.{{DOMAIN}}:443"}
-JSON
-        }
-        # MAS's compatibility layer. Delegated auth takes /login, /logout and
-        # /refresh off Synapse entirely (they answer 404 M_UNRECOGNIZED), so a
-        # client that only knows the homeserver URL — anything too old to read
-        # auth metadata and use OIDC — gets these three from MAS instead, which
-        # is where the accounts and the password check actually live.
-        @mas_compat path_regexp ^/_matrix/client/(.*)/(login|logout|refresh)$
-        handle @mas_compat {
-            reverse_proxy 172.22.0.34:8080 {
-                header_up Host {host}
-                header_up X-Forwarded-For {remote_host}
-                header_up X-Forwarded-Proto {scheme}
-            }
-        }
-        handle {
-            reverse_proxy 172.22.0.28:8008 {
-                header_up Host {host}
-                header_up X-Forwarded-For {remote_host}
-                header_up X-Forwarded-Proto {scheme}
-                # Long-poll and federation requests outlive the default timeouts.
-                transport http {
-                    read_timeout 300s
-                    write_timeout 300s
-                }
-            }
+    header {
+        import security_headers
+    }
+    # Media uploads are the traffic here; the ceiling matches the homeserver's
+    # own max_upload_size so the edge is never the first thing to refuse a file.
+    request_body {
+        max_size 100m
+    }
+    reverse_proxy 172.22.0.28:8008 {
+        header_up Host {host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        # Long-poll and federation requests outlive the default timeouts.
+        transport http {
+            read_timeout 300s
+            write_timeout 300s
         }
     }
 }

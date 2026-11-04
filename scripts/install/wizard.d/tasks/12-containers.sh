@@ -34,8 +34,7 @@ containers_up() {
   # order inside it). Caddy's DNS-01 issuance runs at startup, so the
   # mail/matrix certs are on disk by the time those containers start.
   if mod_on chat; then
-    # One compose invocation brings up the whole unit, the panel included.
-    if svc_skip_repair matrix matrix -- matrix-synapse matrix-element matrix-db matrix-mas matrix-mas-db element-admin; then
+    if svc_skip_repair matrix matrix -- matrix-synapse matrix-element matrix-db; then
       detail "  matrix stack already up, inputs unchanged — skipped"
     else
       log "  recreate: matrix stack"
