@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
 #
-# scripts/info/git-split.sh — satisfy the commit-hygiene rule (AGENTS rule 26
-# "one change per commit") by REWRITING history: split a bundle commit into one
-# commit per unit (auto rebase). A unit is one top-level folder plus at most one
-# subfolder inside it; docs ride with a change.
+# scripts/info/git-split.sh — satisfy the commit-hygiene rule (AGENTS rule 26)
+# by REWRITING history: split an oversized commit into consecutive chunks of at
+# most COMMIT_MAX_FILES files (auto rebase).
 #
 # It is the automation behind the two hooks:
 #   * prepare-commit-msg calls it with --staged — the staged change is committed
-#     as one commit per unit, then the outer `git commit` is aborted (the work is
+#     as one commit per chunk, then the outer `git commit` is aborted (the work is
 #     already committed). It is prepare-commit-msg, not pre-commit, because
 #     pre-commit runs before git composes the message.
-#   * pre-push calls it over the range a push would publish — bundles are split
+#   * pre-push calls it over the range a push would publish — oversized commits are split
 #     (a replay/rebase), then the hook aborts so the operator re-runs `git push`
 #     on the rewrapped history.
 #
@@ -24,7 +23,7 @@
 #
 # Usage:
 #   git-split.sh [<base>..<head>]   replay+split a range (default @{upstream}..HEAD)
-#   git-split.sh --staged           split the index into per-unit commits
+#   git-split.sh --staged           split the index into per-chunk commits
 #   git-split.sh --dry-run ...      report what would change, rewrite nothing
 #
 # The message for --staged comes from $GIT_SPLIT_MESSAGE, else the commit
@@ -46,48 +45,35 @@ die() { printf 'git-split: %s\n' "$*" >&2; exit 1; }
 
 # split_from_status <subject> <body> — stdin is `git diff-tree --name-status`
 # lines. HEAD is at the parent; `git reset` has not run yet. Stages one commit
-# per unit (rule 26: one folder, at most one subfolder inside it; docs ride with
-# the largest unit). Returns 3 when there is nothing to split.
+# per chunk of at most COMMIT_MAX_FILES files (rule 26). Returns 3 when there is
+# nothing to split.
 split_from_status() {
   local subject="$1" body="$2"
   local lines; lines=$(cat)
   local map; map=$(printf '%s\n' "$lines" | cut -f2 | commit_unit_map)
-  local units; units=$(printf '%s\n' "$map" | cut -f1 | sort -u)
+  local units; units=$(printf '%s\n' "$map" | cut -f1 | sort -un)
   local n; n=$(printf '%s\n' "$units" | grep -c .)
   [ "${n:-0}" -le 1 ] && return 3
 
-  # primary = the unit with the most changed files; docs attach to it.
-  local u c primary='' best=0
-  for u in $units; do
-    c=$(printf '%s\n' "$map" | awk -F'\t' -v u="$u" '$1 == u' | grep -c .)
-    if [ "${c:-0}" -gt "$best" ]; then best=$c; primary=$u; fi
-  done
-
-  # path -> unit, so one pass over the status lines serves files AND sig.
+  # path -> chunk, so one pass over the status lines serves files AND sig.
   local -A unitof=()
   while IFS=$'\t' read -r u p; do [ -n "$p" ] && unitof["$p"]="$u"; done <<< "$map"
 
   G reset -q || return 1
 
-  local st p pu files subj msg label
+  local u st p files subj msg
   for u in $units; do
     files=()
     while IFS=$'\t' read -r st p; do
       [ -z "$p" ] && continue
-      pu=${unitof[$p]:-}
-      if [ -n "$pu" ]; then
-        [ "$pu" = "$u" ] || continue
-      else
-        [ "$u" = "$primary" ] || continue              # a doc: rides the biggest unit
-      fi
+      [ "${unitof[$p]:-}" = "$u" ] || continue
       files+=("$p")
     done <<< "$lines"
     [ "${#files[@]}" -eq 0 ] && continue
 
     G add -A -- "${files[@]}" >/dev/null 2>&1 || return 1
 
-    label="$u"; [ "$u" = "." ] && label=root
-    subj="$subject"; [ "$n" -gt 1 ] && subj="$subject ($label)"
+    subj="$subject"; [ "$n" -gt 1 ] && subj="$subject (part $u/$n)"
     msg="$subj"
     [ -n "$body" ] && msg="${msg}"$'\n\n'"${body}"
     printf '%s\n' "$msg" | G commit -q --no-verify --author="$AUTHOR" -F - || return 1
@@ -112,14 +98,14 @@ split_staged() {
 
   local n; n=$(printf '%s\n' "$ns" | cut -f2 | commit_units | grep -c .)
   if [ "${n:-0}" -le 1 ]; then
-    echo "git-split: staged change is a single unit — nothing to split"
+    echo "git-split: staged change fits in one commit ($COMMIT_MAX_FILES files) — nothing to split"
     return 0
   fi
 
   local rc
   printf '%s\n' "$ns" | split_from_status "$subject" "$body"; rc=$?
   [ "$rc" = 0 ] || die "split failed"
-  echo "git-split: staged change split into $n commits (one per unit)"
+  echo "git-split: staged change split into $n commits (at most $COMMIT_MAX_FILES files each)"
 }
 
 # ── range: replay + split local history ──────────────────────────────────────
@@ -148,7 +134,7 @@ replay_range() {
     [ "$n" -gt 1 ] && need=1
   done
   if [ "$need" = 0 ]; then
-    echo "git-split: range '$range' already satisfies rule 26 — nothing to do"
+    echo "git-split: range '$range' already satisfies rule 26 ($COMMIT_MAX_FILES files per commit) — nothing to do"
     return 0
   fi
 
@@ -157,7 +143,7 @@ replay_range() {
     for c in $commits; do
       n=$(commit_units_for "$c" | grep -c .)
       printf '  %s  %s%s\n' "${c:0:9}" "$(G log -1 --format=%s "$c")" \
-        "$([ "$n" -gt 1 ] && echo "  [bundle: $(commit_units_for "$c" | paste -sd, -)]")"
+        "$([ "$n" -gt 1 ] && echo "  [too big: $(G diff-tree -r --name-only --no-commit-id --root "$c" | grep -c .) files]")"
     done
     return 0
   fi

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# prepare-commit-msg hook — AUTO-SPLIT a staged change that spans more than one
-# unit into one commit per unit (AGENTS rule 26: one folder, at most one
-# subfolder inside it; the units come from scripts/lib/commit-areas.sh).
+# prepare-commit-msg hook — AUTO-SPLIT a staged change wider than one commit may
+# be into one commit per chunk of at most COMMIT_MAX_FILES files (AGENTS rule
+# 26; the limit comes from scripts/lib/commit-areas.sh).
 # Installed via `make install-hooks`.
 #
 # Why THIS hook and not pre-commit: pre-commit runs BEFORE git composes the
@@ -10,7 +10,7 @@
 # is the earliest hook that has BOTH the staged index AND the message file, so
 # the pieces get the message the operator actually typed.
 #
-# It runs scripts/info/git-split.sh --staged (which commits one commit per unit),
+# It runs scripts/info/git-split.sh --staged (which commits one commit per chunk),
 # then aborts the outer commit — the work is ALREADY committed, split.
 # The abort is forced by git, not by us: `git commit` snapshots the HEAD it
 # expects and errors `cannot lock ref 'HEAD': is at X but expected Y` if a hook
@@ -18,8 +18,7 @@
 # option either (the index is then empty → "nothing to commit").
 #
 # Args: $1 = the message file, $2 = source (message|template|merge|squash|commit).
-# Skipped for merge/squash (a merge message is not a change message) and when
-# ONE_CHANGE_OVERRIDE=1.
+# Skipped for merge/squash (a merge message is not a change message).
 
 [ "${GIT_SPLIT_INTERNAL:-}" = 1 ] && exit 0   # a git-split replay: our own commits, stand down
 repo=$(git rev-parse --show-toplevel)
@@ -28,26 +27,25 @@ set -uo pipefail
 
 
 case "${2:-}" in merge|squash) exit 0 ;; esac
-[ "${ONE_CHANGE_OVERRIDE:-}" = "1" ] && exit 0
 [ "${GIT_SPLIT_DISABLE:-}" = "1" ] && exit 0
 
 staged=$(git diff --cached --name-only)
 [ -z "$staged" ] && exit 0
 
+nfiles=$(printf '%s\n' "$staged" | grep -c . || true)
+[ "${nfiles:-0}" -gt "$COMMIT_MAX_FILES" ] || exit 0
 units=$(printf '%s\n' "$staged" | commit_units)
 nunits=$(printf '%s\n' "$units" | grep -c . || true)
-[ "${nunits:-0}" -gt 1 ] || exit 0
 
 splitter="$repo/scripts/info/git-split.sh"
 [ -f "$splitter" ] || exit 0
 
-echo "prepare-commit-msg: staged change spans $nunits units (rule 26: one folder, one subfolder) — splitting into one commit per unit:"
-printf '  %s\n' $units
+echo "prepare-commit-msg: staged change edits $nfiles files (rule 26: max $COMMIT_MAX_FILES) — splitting into $nunits commits:"
 if GIT_SPLIT_MESSAGE_FILE="$1" bash "$splitter" --staged; then
   echo "prepare-commit-msg: done — the work is committed, in $nunits commits, each with"
   echo "  your message. Nothing to re-run; git reports this commit as aborted only"
   echo "  because it has nothing left to commit. (GIT_SPLIT_DISABLE=1 to only refuse.)"
   exit 1
 fi
-echo "prepare-commit-msg: auto-split failed — refusing the bundle."
+echo "prepare-commit-msg: auto-split failed — refusing the commit."
 exit 1

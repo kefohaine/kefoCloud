@@ -1,25 +1,21 @@
 #!/usr/bin/env bash
 #
 # scripts/info/git-audit.sh — monitor the git history for the commit-hygiene
-# rule a commit cannot check about itself: AGENTS rule 26 (one change per
-# commit: one folder, at most one subfolder inside it). READ-ONLY: it reports,
-# it never rewrites history.
+# rule a commit cannot check about itself: AGENTS rule 26 (a commit edits at
+# most ten files). READ-ONLY: it reports, it never rewrites history.
 #
 # Why it exists: the pre-commit hook only sees ONE staged change, and a commit
 # made in the GitHub web editor runs no hook at all. This walks a finished
-# revision range — the pre-push hook runs it over every pushed range — so a
-# bundle is caught on the way OUT as well as in.
+# revision range — the pre-push hook runs it over every pushed range — so an
+# oversized commit is caught on the way OUT as well as in.
 #
 # Range: `git-audit.sh <range>` or RANGE=<range> (default: what a push would
 # publish, i.e. `@{upstream}..HEAD`, falling back to `origin/main..HEAD`).
 # Audit the whole published history with RANGE=origin/main.
 #
 # Checks (exit 1 when any is found, so a hook can gate on it):
-#   BUNDLE  the diff spans more than one unit (rule 26) — the unit the
-#           pre-commit hook splits on: the top-level folder, or `folder/subdir`
-#           when that folder has several subfolders involved, ignoring `*.md`
-#           and docs/ (the docs that describe a change ride with it). Order
-#           changes so each stands alone.
+#   TOO BIG  the commit edits more than COMMIT_MAX_FILES files (rule 26) —
+#            the limit the prepare-commit-msg hook splits on.
 #
 # HISTORY_AUDIT_OVERRIDE=1 reports and exits 0.
 
@@ -43,7 +39,7 @@ if [ -z "$range" ]; then
   exit 2
 fi
 
-# SCOPE (rule 26) comes from scripts/lib/commit-areas.sh — the same definition
+# SCOPE (rule 26) comes from scripts/lib/commit-areas.sh — the same limit
 # git-split.sh rewrites against, so the two never drift.
 
 commits=$(G rev-list --reverse "$range" 2>/dev/null || true)
@@ -59,9 +55,9 @@ else
   B='' D='' R='' Y='' C='' N=''
 fi
 
-echo "${B}git-audit${N}: ${C}$range${N} ${D}($n commits)${N}"
+echo "${B}git-audit${N}: ${C}$range${N} ${D}($n commits, max $COMMIT_MAX_FILES files each)${N}"
 
-bundles=0
+oversize=0
 for c in $commits; do
   short=${c:0:9}
   subject=$(G log -1 --format='%s' "$c")
@@ -69,31 +65,23 @@ for c in $commits; do
   ns=$(G diff-tree -r --name-status --no-commit-id -M --root "$c" 2>/dev/null)
   [ -z "$ns" ] && continue
 
-  paths=''
-  while IFS= read -r line; do
-    [ -z "$line" ] && continue
-    p=${line#*$'\t'}; p=${p##*$'\t'}                  # R100\told\tnew -> new
-    paths="$paths$p"$'\n'
-  done <<< "$ns"
-
-  units=$(printf '%s' "$paths" | commit_units | paste -sd, -)
-  nunits=$(printf '%s' "$units" | tr ',' '\n' | grep -c . || true)
-  if [ "${nunits:-0}" -gt 1 ]; then
-    bundles=$((bundles + 1))
-    printf '  %sBUNDLE%s %s  %s\n' "$Y" "$N" "$short" "$subject"
-    printf '         %sunits:%s %s\n' "$D" "${units}" "$N"
-    printf '         %ssplit it: git rebase -i %s^  →  one change per commit (rule 26)%s\n' "$D" "$c" "$N"
+  nfiles=$(printf '%s\n' "$ns" | grep -c . || true)
+  if [ "${nfiles:-0}" -gt "$COMMIT_MAX_FILES" ]; then
+    oversize=$((oversize + 1))
+    printf '  %sTOO BIG%s %s  %s\n' "$Y" "$N" "$short" "$subject"
+    printf '         %s%d files (max %d)%s\n' "$D" "$nfiles" "$COMMIT_MAX_FILES" "$N"
+    printf '         %ssplit it: make git-split RANGE=%s^..%s%s\n' "$D" "$c" "$c" "$N"
   fi
 done
 
 if [ "${HISTORY_AUDIT_OVERRIDE:-}" = "1" ]; then
-  echo "${D}HISTORY_AUDIT_OVERRIDE=1 — ${bundles} bundle(s) reported, not enforced${N}"
+  echo "${D}HISTORY_AUDIT_OVERRIDE=1 — ${oversize} oversized commit(s) reported, not enforced${N}"
   exit 0
 fi
-if [ "$bundles" -ne 0 ]; then
+if [ "$oversize" -ne 0 ]; then
   echo ""
-  echo "${R}$bundles bundle(s)${N} — rule 26 wants one change per commit (one folder, at most one subfolder)."
+  echo "${R}$oversize oversized commit(s)${N} — rule 26 allows at most $COMMIT_MAX_FILES files per commit."
   exit 1
 fi
-echo "  ${B}clean${N} ${D}— every commit is one change${N}"
+echo "  ${B}clean${N} ${D}— every commit is within the file limit${N}"
 exit 0
