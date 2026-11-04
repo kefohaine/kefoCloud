@@ -31,22 +31,26 @@ https://mailu.{{DOMAIN}} {
         }
     }
     import compress
-    # Tailnet-only: everything outside 100.64.0.0/10 is refused here, before
-    # the proxy (the name is not in public DNS either).
-    @not_tailnet not remote_ip 100.64.0.0/10
-    respond @not_tailnet 403
     request_body {
         max_size 25m
     }
     header {
         import security_headers
     }
-    reverse_proxy 172.22.0.9:80 {
-        # strip Mailu front's own security headers so the site-level set
-        # yields one value per field
-		header_down -X-Frame-Options
-		header_down -X-Content-Type-Options
-		header_down -Referrer-Policy
-		header_down -Strict-Transport-Security
+    # Tailnet-only: everything outside 100.64.0.0/10 is refused here, before
+    # the proxy (the name is not in public DNS either). The gate sits ahead of
+    # the limiter so a refused flood cannot consume the shared zone window.
+    route {
+        @not_tailnet not remote_ip 100.64.0.0/10
+        respond @not_tailnet 403
+        import ratelimit admin_mail_rl
+        reverse_proxy 172.22.0.9:80 {
+            # strip Mailu front's own security headers so the site-level set
+            # yields one value per field
+            header_down -X-Frame-Options
+            header_down -X-Content-Type-Options
+            header_down -Referrer-Policy
+            header_down -Strict-Transport-Security
+        }
     }
 }

@@ -2,7 +2,7 @@
 #!/bin/bash
 # This script performs the reverse of the installer:
 # • Stops and removes all Docker containers started by the installer
-# • Deletes generated data directories (data/, rendered/, cloud/recovery/)
+# • Deletes generated data directories (data/, rendered/)
 # • Removes Cloudflare DNS records (A, CNAME, TXT for domain and services)
 # • Revokes Let's Encrypt certificates via certbot cleanup
 # • Clears instance state and logs
@@ -30,9 +30,6 @@
 # box — auto-detected from the live system (compose files, systemctl, dpkg
 # — no hardcoded rosters) — and NEVER deletes operator data without an
 # explicit per-category prompt (no defaults — only an explicit yes removes):
-#   - the external machine's datadirectory — EXTERMINATED in full mode
-#     (NFS export line removed from /etc/exports, remote files rm -rf'd;
-#     only the reserved granular mode leaves the remote files in place)
 #   - data/ — removed WHOLE (no granular folder picks; removed modules' data
 #     dirs always go with them). There are NO partial teardowns: removing any
 #     module removes ALL of them, and data/ dies with them.
@@ -147,9 +144,7 @@ confirm_consequences() {
   echo ""
   echo " ── CONFIRMATION 1/3 — what dies ─────────────────────────────────────────"
   echo "    ALL module containers and their config are removed; data/ is wiped"
-  echo "    WHOLE (no granular folder picks); the remote machine's NFS export"
-  echo "    line for the datadirectory is removed from its /etc/exports"
-  echo "    (remote files stay)."
+  echo "    WHOLE (no granular folder picks)."
   read -rp "    Understand and want to proceed? (yes/no): " a || return 1
   [ "${a,,}" = yes ] || return 1
   echo " ── CONFIRMATION 2/3 — no way back ───────────────────────────────────────"
@@ -200,30 +195,7 @@ svc_group_of() { case "$1" in chat) echo matrix;; vault) echo vaultwarden;; mail
 # directory and its fresh log right after this exits. Guard: anything still
 # mounted under data/ is unmounted first — an rm -rf through a live mount
 # would propagate INTO the mounted storage.
-# remote files in place.
-remove_remote_export() {
-  local marker="$PROJECT_DIR/data/.nc-import-source" tgt mnt
-  [ -f "$marker" ] || return 0
-  tgt="$(sed -n '1p' "$marker")"
-  mnt="$(sed -n '2p' "$marker")"
-  [ -n "$tgt" ] && [ -n "$mnt" ] || return 0
-  log "  un-exporting the remote datadirectory on $tgt ($mnt)"
-  ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "$tgt" \
-    "sed -i '\#^$mnt #d' /etc/exports && exportfs -ra" >>"$LOG" 2>&1 \
-    || fail data "remote export on $tgt not removed (run: ssh $tgt \"sed -i '\\#$mnt #d' /etc/exports && exportfs -ra\")"
-  # Every teardown except the reserved granular mode removes the remote
-  # datadirectory: the NFS export line is removed above AND the directory
-  # itself is exterminated on the remote machine (2026-10-19 — 'kept' wording
-  # was wrong for a full teardown).
-  if [ "${UNINSTALL_MODE:-full}" != granular ]; then
-    log "  exterminating the remote datadirectory on $tgt ($mnt)"
-    ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "$tgt" \
-      "rm -rf -- '$mnt'" >>"$LOG" 2>&1 \
-      || fail data "remote datadirectory $mnt on $tgt not removed (run: ssh $tgt \"rm -rf -- '$mnt'\")"
-  fi
-}
 wipe_data() {
-  remove_remote_export
   local m
   # positional DIR arg lists submounts UNDER data/ only; --target would also
   # return the mount containing data/ itself (i.e. /), unmounting the root fs
@@ -356,8 +328,7 @@ ask_inputs() {
   # operator account root is never deleted (sole entry point) — no prompt
   [ "${RM_TAILNET:-false}" = true ] || ask RM_TAILNET "Remove this host from the tailnet (last step)?"
   # data: no granular picks, and NO partial teardowns — removing any module
-  # removes all of them, and data/ is wiped whole by wipe_data. Full mode
-  # exterminates the remote datadirectory too (export line + remote files).
+  # removes all of them, and data/ is wiped whole by wipe_data.
   RM_MOD_DATA=true
   ask RM_REPO     "Delete the repo clone at $REPO (scheduled after this script exits)?"
   local ml=""
@@ -420,37 +391,10 @@ remove_module() { # $1=module
       docker rm -f "$c" >>"$LOG" 2>&1 || fail "rmmod_$m" "container $c not removed"
     fi
   done
-  case "$m" in
-    cloud)
-      # the live datadirectory is the NFS mount of the external machine export:
-      # unmount locally and drop the fstab line — the export itself is
-      # NEVER touched (user files live there)
-      if findmnt -n "$PROJECT_DIR/cloud/users" >/dev/null 2>&1; then
-        umount "$PROJECT_DIR/cloud/users" >>"$LOG" 2>&1 \
-          || fail "rmmod_cloud" "NFS datadirectory still mounted — unmount failed"
-        sed -i "\#^[^#]*[[:space:]]$PROJECT_DIR/cloud/users[[:space:]]#d" /etc/fstab
-        systemctl daemon-reload
-        log "  NFS datadirectory unmounted (fstab entry removed; the storage export is untouched)"
-      fi
-      if [ -d "$PROJECT_DIR/cloud/users.local-backup" ]; then
-        rm -rf "$PROJECT_DIR/cloud/users.local-backup" >>"$LOG" 2>&1 \
-          || fail "rmmod_cloud" "local rollback copy not deleted"
-      fi
-      # stop the NC cron + off-host DB dump cron the installer set up
-      rm -f /etc/cron.d/nc-storage
-      ;;
-  esac
   if [ "${RM_MOD_DATA:-false}" = true ]; then
     local d
     for d in $(module_data_dirs "$m"); do
       [ -d "$d" ] || continue
-      # cloud/users may be the NFS mountpoint: if the unmount above failed,
-      # an rm -rf here would propagate INTO the live storage export —
-      # refuse rather than risk deleting user files on the machine
-      if [ "$d" = "$PROJECT_DIR/cloud" ] && findmnt -n "$d/users" >/dev/null 2>&1; then
-        fail "rmmod_$m" "data dir $d still holds the mounted datadirectory — not deleting"
-        continue
-      fi
       rm -rf "$d" >>"$LOG" 2>&1 || fail "rmmod_$m" "data dir $d not deleted"
     done
   fi
@@ -709,9 +653,6 @@ success_block() {
   [ "${RM_PKGS:-false}"   = true ] && echo "   removed    packages (docker, dnsmasq, fail2ban, …)"
   # user root is never removed
   [ "${RM_TAILNET:-false}" = true ] && echo "   removed    tailnet membership"
-  echo ""
-  echo " Removed (always, no exceptions):"
-  echo "   - the remote datadirectory (NFS export line + remote files)"
   echo ""
   echo " Kept:"
   echo "   - sshd hardening (removing it would re-enable password auth)"

@@ -69,8 +69,8 @@ save_state() {
     # legacy single SSH_PUBKEY is kept pointing at the first key for back-compat.
     printf 'SSH_PUBKEY=%q\n'         "${SSH_PUBKEY:-}"
     printf 'SSH_PUBKEYS=%q\n'        "${SSH_PUBKEYS:-}"
-    # The raw module ANSWERS, so a resume reuses the choice (empty once a module
-    # has not been asked yet — ask_modules re-asks only the empty ones).
+    # The raw module ANSWERS, so the record explains the run; ask_modules asks
+    # on every run (the saved set is never treated as a reason to skip).
     local _mk _mv
     for _mk in $(_state_modules); do
       _mv="MOD_${_mk^^}"
