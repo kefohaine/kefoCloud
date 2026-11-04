@@ -41,11 +41,6 @@ issue_certs() {
   mod_on ocis    && hosts="$hosts cloud"
   mod_on chat    && hosts="$hosts chat"
   mod_on chat    && hosts="$hosts matrix"
-  # The identity provider's door is a two-label name (auth.matrix.$DOMAIN), not
-  # the bare auth.$DOMAIN the pre-MAS layout used: asking for the old name
-  # ordered a cert no vhost serves, so the check could never pass.
-  mod_on chat    && hosts="$hosts auth.matrix"
-  mod_on chat    && hosts="$hosts admin.chat"
   mod_on kopia   && hosts="$hosts kopia"
   mod_on vault   && hosts="$hosts vault"
   mod_on monitor && hosts="$hosts kuma"
@@ -53,7 +48,7 @@ issue_certs() {
   mod_on blog    && hosts="$hosts blog"
   mod_on photos  && hosts="$hosts photos"
   mod_on mail    && hosts="$hosts mail"
-  mod_on mail    && hosts="$hosts admin.mail"
+  mod_on mail    && hosts="$hosts mailu"
   # ttyd.$DOMAIN joins the attempt like every other vhost. DNS-01 does not
   # need a public A record (Caddy answers the TXT challenge directly), and NO
   # DNS record is created for ttyd.$DOMAIN by design — it stays tailnet-only.

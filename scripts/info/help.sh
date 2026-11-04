@@ -229,9 +229,9 @@ EOF
 make dok-recreate-homarr|the whole app lifecycle — dok-restart-homarr / dok-stop-homarr / dok-logs-homarr (board and integrations are UI data)
 EOF
 
-  sec "matrix accounts (module: chat — ESS CE: Synapse + Element + MAS)"
+  sec "matrix accounts (module: chat — Synapse + Element)"
   rows <<'EOF'
-make matrix-users|list every account (@name:matrix.$DOMAIN)
+make matrix-users|list every account (@name:$DOMAIN)
 make matrix-add-admin|create an account with the server-admin flag — USER=<name> [PASS=…] (the admin bot's own account uses this)
 make matrix-add|create a plain account — USER=<name> [PASS=…] (PASS generated and printed once when omitted)
 make matrix-passwd|reset a password and end its sessions — USER=<name> [PASS=…]
