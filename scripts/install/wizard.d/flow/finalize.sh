@@ -67,8 +67,10 @@ success_block() {
   # Only the enabled modules' sites are listed — a site the operator chose not
   # to install (and so will not answer) must not appear. Shell (the tailnet
   # door) and the machine's own addresses are always part of the stack.
-  mod_on chat && printf '  %sElement%s      https://chat.%s      admin %s@%s:%s %s(password: modules/matrix/.env)%s\n' \
-    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${SYNAPSE_ADMIN_USER:-mkadmin}" "$DOMAIN" "$C_RST" "$C_GREY" "$C_RST"
+  mod_on chat && printf '  %sElement%s      https://chat.%s      admin %s@%s:matrix.%s %s(password: modules/matrix/.env)%s\n' \
+    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${SYNAPSE_ADMIN_USER:-mkadmin}" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
+  mod_on admin && printf '  %sElement Admin%s https://admin.chat.%s  %s(tailnet only; same admin account)%s\n' \
+    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
   mod_on ocis && printf '  %sownCloud%s     https://cloud.%s     %sadmin / %s%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "IDM_ADMIN_PASSWORD in modules/ocis/.env" "$C_RST"
   mod_on home && printf '  %sHomarr%s       https://home.%s      %s(first account created in the UI owns the board)%s\n' \
