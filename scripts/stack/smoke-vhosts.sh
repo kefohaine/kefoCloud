@@ -170,6 +170,24 @@ check_sec_headers() {
   fi
 }
 
+# check_cors <name> <host> <path> <origin> [desc] — a browser app served from
+# ANOTHER origin reads this path (the Element Admin panel on
+# admin.chat.$DOMAIN reads matrix.$DOMAIN's discovery document), so the
+# response must say so with Access-Control-Allow-Origin or the browser throws
+# it away however correct the body is.
+check_cors() {
+  local name="$1" host="$2" path="$3" origin="$4" desc="${5:-}"
+  local acao
+  acao=$(curl -s -o /dev/null -D - --max-time 12 \
+    --resolve "$host:443:127.0.0.1" -H "Origin: $origin" \
+    "https://$host$path" | grep -ic '^access-control-allow-origin:')
+  if [ "$acao" -lt 1 ]; then
+    say "FAIL $name cors: no Access-Control-Allow-Origin — $origin cannot read https://$host$path"; bad
+  else
+    say "ok   $name cors${desc:+ — }$desc"
+  fi
+}
+
 # check_tls <host> — the per-vhost DNS-01 ACME chain must keep issuing certs.
 # The vhost tls blocks carry a fallback issuer chain (Let's Encrypt -> Buypass
 # Go SSL -> ZeroSSL), so any non-empty issuer is success; a rate-limited LE
@@ -259,6 +277,7 @@ check_tls "matrix.$DOMAIN"
 # Client discovery names the homeserver URL AND the MAS issuer: a client that
 # cannot read m.authentication cannot log in at all.
 check matrix-wk "matrix.$DOMAIN" "/.well-known/matrix/client" "200" "" "client discovery answers"
+check_cors matrix-wk "matrix.$DOMAIN" "/.well-known/matrix/client" "https://admin.chat.$DOMAIN" "discovery readable cross-origin"
 # auth.matrix.$DOMAIN is the identity provider (MAS); every token Synapse accepts is
 # minted here, so a 200 on its discovery document is the real health signal.
 check mas-discovery "auth.matrix.$DOMAIN" "/.well-known/openid-configuration" "200" "" "MAS discovery answers"
