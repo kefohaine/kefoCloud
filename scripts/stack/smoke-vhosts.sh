@@ -247,7 +247,7 @@ end_sec
 # Element (a static browser app), matrix.$DOMAIN serves the homeserver's
 # client-server API. Both are public: Element is proxied, Synapse is DNS-only.
 # ─────────────────────────────────────────────────────────────────────────────
-hdr chat "Chat — Matrix (module: chat) · chat.$DOMAIN + matrix.$DOMAIN"
+hdr chat "Chat — ESS CE (module: chat) · chat.$DOMAIN + matrix.$DOMAIN + auth.$DOMAIN"
 check chat "chat.$DOMAIN" "/" "200 301 302 307 308" html "Element answers"
 check_sec_headers chat "chat.$DOMAIN" "/" "one of each"
 check_tls "chat.$DOMAIN"
@@ -256,7 +256,31 @@ check_tls "chat.$DOMAIN"
 check matrix-api "matrix.$DOMAIN" "/_matrix/client/versions" "200" "" "Synapse client API answers"
 check_sec_headers matrix "matrix.$DOMAIN" "/_matrix/client/versions" "one of each"
 check_tls "matrix.$DOMAIN"
-check_ctns chat matrix-synapse matrix-element matrix-db
+# Client discovery names the homeserver URL AND the MAS issuer: a client that
+# cannot read m.authentication cannot log in at all.
+check matrix-wk "matrix.$DOMAIN" "/.well-known/matrix/client" "200" "" "client discovery answers"
+# auth.$DOMAIN is the identity provider (MAS); every token Synapse accepts is
+# minted here, so a 200 on its discovery document is the real health signal.
+check mas-discovery "auth.$DOMAIN" "/.well-known/openid-configuration" "200" "" "MAS discovery answers"
+check_sec_headers auth "auth.$DOMAIN" "/.well-known/openid-configuration" "one of each"
+check_tls "auth.$DOMAIN"
+check_ctns chat matrix-synapse matrix-element matrix-db matrix-mas matrix-mas-db
+end_sec
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Module: admin — Element Admin (ESS CE panel). admin.chat.$DOMAIN is
+# TAILNET-ONLY: the panel can read every account, room and session, so both
+# halves are asserted (public source 403, tailnet source the app).
+# ─────────────────────────────────────────────────────────────────────────────
+hdr admin "Admin — Element Admin (module: admin) · admin.chat.$DOMAIN (tailnet-only)"
+if [ -z "$TS_IP" ]; then
+  say "FAIL admin: no Tailscale IPv4 — cannot probe the tailnet-only door"; bad
+else
+  check_tn admin "admin.chat.$DOMAIN" "/" "200 301 302 307 308" html "Element Admin answers on the tailnet"
+fi
+check admin-public "admin.chat.$DOMAIN" "/" "403" "" "public sources are refused"
+check_tls "admin.chat.$DOMAIN"
+check_ctns admin element-admin
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
