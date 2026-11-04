@@ -274,11 +274,13 @@ check_ctns ocis ocis
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Module: chat — Matrix (Synapse + Element + PostgreSQL). chat.$DOMAIN serves
-# Element (a static browser app), matrix.$DOMAIN serves the homeserver's
-# client-server API. Both are public: Element is proxied, Synapse is DNS-only.
+# Module: chat — Matrix (Synapse + Element + MAS + the Element Admin panel).
+# chat.$DOMAIN serves Element (a static browser app), matrix.$DOMAIN the
+# homeserver's client-server API, auth.matrix.$DOMAIN the identity provider and
+# admin.chat.$DOMAIN the tailnet-only panel. Chat/Matrix are public (Element
+# proxied, Synapse DNS-only); admin.chat is never in the public zone.
 # ─────────────────────────────────────────────────────────────────────────────
-hdr chat "Chat — ESS CE (module: chat) · chat.$DOMAIN + matrix.$DOMAIN + auth.matrix.$DOMAIN"
+hdr chat "Chat — ESS CE (module: chat) · chat.$DOMAIN + matrix.$DOMAIN + auth.matrix.$DOMAIN + admin.chat.$DOMAIN"
 check chat "chat.$DOMAIN" "/" "200 301 302 307 308" html "Element answers"
 check_sec_headers chat "chat.$DOMAIN" "/" "one of each"
 check_tls "chat.$DOMAIN"
@@ -306,15 +308,9 @@ check_body matrix-login "matrix.$DOMAIN" "/_matrix/client/v3/login" "\"flows\"" 
 check mas-discovery "auth.matrix.$DOMAIN" "/.well-known/openid-configuration" "200" "" "MAS discovery answers"
 check_sec_headers auth "auth.matrix.$DOMAIN" "/.well-known/openid-configuration" "one of each"
 check_tls "auth.matrix.$DOMAIN"
-check_ctns chat matrix-synapse matrix-element matrix-db matrix-mas matrix-mas-db
-end_sec
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Module: admin — Element Admin (ESS CE panel). admin.chat.$DOMAIN is
-# TAILNET-ONLY: the panel can read every account, room and session, so both
-# halves are asserted (public source 403, tailnet source the app).
-# ─────────────────────────────────────────────────────────────────────────────
-hdr admin "Admin — Element Admin (module: admin) · admin.chat.$DOMAIN (tailnet-only)"
+# admin.chat.$DOMAIN is the Element Admin panel, TAILNET-ONLY: it can read
+# every account, room and session, so both halves are asserted (a public source
+# gets 403, a tailnet source gets the app).
 if [ -z "$TS_IP" ]; then
   say "FAIL admin: no Tailscale IPv4 — cannot probe the tailnet-only door"; bad
 else
@@ -322,7 +318,7 @@ else
 fi
 check admin-public "admin.chat.$DOMAIN" "/" "403" "" "public sources are refused"
 check_tls "admin.chat.$DOMAIN"
-check_ctns admin element-admin
+check_ctns chat matrix-synapse matrix-element matrix-db matrix-mas matrix-mas-db element-admin
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
