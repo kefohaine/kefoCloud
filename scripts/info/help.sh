@@ -73,9 +73,9 @@ make git-land [BASE=<b>]|after the PR is merged: fast-forward main (or BASE) ont
 make git-pull|pull remote changes
 make git-add|stage every change
 make git-com MSG=<sentence>|commit staged changes — single-sentence MSG only
-make git-audit RANGE=<a..b>|monitor the commit-hygiene rule (26 one change per commit) — default: what a push would publish; the pre-push hook enforces it
+make git-audit RANGE=<a..b>|monitor the commit-hygiene rule (26: ten files per commit) — default: what a push would publish; the pre-push hook enforces it
 make prose-audit|monitor the prose rules (31 docs path, size, timing, foreign host, plan; an open task in a doc, which belongs to the Issues tab) — the pre-push hook and make git-pr enforce it
-make git-split RANGE=<a..b>|rewrite a local range to satisfy that rule — auto-split bundles per unit (one folder + one subfolder); ARGS=--dry-run to preview; refuses published commits — the hooks run it for you
+make git-split RANGE=<a..b>|rewrite a local range to satisfy that rule — auto-split into chunks of ten files; ARGS=--dry-run to preview; refuses published commits — the hooks run it for you
 make git-push|push the current temp branch to the remote (main is refused by the pre-push hook)
 make git-force-push BRANCH=<b>|force-push a rewritten branch (--force-with-lease only; BRANCH required — never clobbers another's commits)
 EOF
@@ -123,7 +123,7 @@ make install-dnsmasq-override|dnsmasq drop-in override → /etc/systemd/system/d
 make install-docker|daemon.json → /etc/docker (docker daemon restart needed to apply)
 make install-sysctl|99-kefo.conf → /etc/sysctl.d
 make install-cron|no host cron job is needed by any module (nothing to install)
-make install-hooks|git hooks — pre-commit (GitHub-identity + edge guard), prepare-commit-msg (auto-split per unit: one folder + one subfolder), pre-push (smoke + history-rewrite warning + auto-split)
+make install-hooks|git hooks — pre-commit (GitHub-identity + edge guard), prepare-commit-msg (auto-split over the ten-file limit), pre-push (smoke + history-rewrite warning + auto-split)
 EOF
 
 
