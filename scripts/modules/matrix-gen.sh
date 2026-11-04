@@ -42,12 +42,12 @@ _seed SYNAPSE_ADMIN_PASSWORD              "$(openssl rand -hex 24)"
 # Matrix Authentication Service (ESS CE auth): its own database password, the
 # secret that encrypts stored upstream data, the OAuth client secret Synapse
 # authenticates with, the shared secret for MAS -> Synapse token introspection,
-# and the static token the `make matrix-*` recipes use for /_synapse/admin.
+# and the shared secret that also authenticates MAS (and the `make matrix-*`
+# recipes) to Synapse's admin API.
 _seed MAS_DB_PASSWORD                     "$(openssl rand -hex 32)"
 _seed MAS_ENCRYPTION_SECRET               "$(openssl rand -hex 32)"
 _seed MAS_CLIENT_SECRET                   "$(openssl rand -hex 32)"
 _seed MAS_SYNAPSE_SECRET                  "$(openssl rand -hex 32)"
-_seed SYNAPSE_ADMIN_TOKEN                 "$(openssl rand -hex 32)"
 
 # shellcheck disable=SC1090
 . "$ENV"
@@ -110,10 +110,12 @@ experimental_features:
     client_id: "0000000000000000000SYNAPSE"
     client_auth_method: client_secret_basic
     client_secret: "$MAS_CLIENT_SECRET"
-    # Static token for /_synapse/admin: the `make matrix-*` recipes and the
+    # Static token for /_synapse/admin: the make matrix-* recipes and the
     # installer's readiness probe carry it instead of logging in with a
     # password, which no longer exists once auth is delegated.
-    admin_token: "$SYNAPSE_ADMIN_TOKEN"
+    # The SAME shared secret MAS authenticates its admin calls with: one value,
+    # both directions (Synapse -> MAS introspection, MAS -> /_synapse/admin).
+    admin_token: "$MAS_SYNAPSE_SECRET"
 
 matrix_authentication_service:
   enabled: true
