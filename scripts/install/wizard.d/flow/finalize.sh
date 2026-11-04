@@ -86,8 +86,8 @@ success_block() {
   mod_on monitor && printf '  %sUptime Kuma%s  https://kuma.%s    %sadmin / %s%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${KUMA_PASS:-(already set — rotate with: make kuma-passwd USER=admin PASS=…)}" "$C_RST"
   # mail.$DOMAIN is the public mail door (Roundcube + the SMTP/IMAP cert);
-  # Mailu's platform door is the tailnet-only mailu.$DOMAIN.
-  mod_on mail && printf '  %sMailu admin%s  https://mailu.%s/admin   %s(tailnet-only — mailboxes via make mail-gen)%s\n' \
+  # Mailu's platform door is the tailnet-only admin.mail.$DOMAIN.
+  mod_on mail && printf '  %sMailu admin%s  https://admin.mail.%s/admin   %s(tailnet-only — mailboxes via make mail-gen)%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
   mod_on mail && printf '  %sWebmail%s      https://mail.%s   %s(roundcube)%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"

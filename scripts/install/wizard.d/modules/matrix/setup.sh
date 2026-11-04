@@ -34,14 +34,14 @@ matrix_setup() {
   # minted there, so the row is only green once its discovery document answers.
   local j=0
   while [ $j -lt 120 ]; do
-    curl -sk --max-time 5 "https://auth.$DOMAIN/.well-known/openid-configuration" \
+    curl -sk --max-time 5 "https://auth.matrix.$DOMAIN/.well-known/openid-configuration" \
       | grep -q '"issuer"' && break
     sleep 2; j=$((j+2))
   done
-  if curl -sk --max-time 10 "https://auth.$DOMAIN/.well-known/openid-configuration" | grep -q '"issuer"'; then
-    detail "  MAS answers discovery on auth.$DOMAIN"
+  if curl -sk --max-time 10 "https://auth.matrix.$DOMAIN/.well-known/openid-configuration" | grep -q '"issuer"'; then
+    detail "  MAS answers discovery on auth.matrix.$DOMAIN"
   else
-    fail matrix_setup "MAS did not answer https://auth.$DOMAIN/.well-known/openid-configuration — see: docker logs matrix-mas"
+    fail matrix_setup "MAS did not answer https://auth.matrix.$DOMAIN/.well-known/openid-configuration — see: docker logs matrix-mas"
     return
   fi
 
