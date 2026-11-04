@@ -10,6 +10,10 @@
 # finished=true, and this hook never writes state (the installer is its sole
 # writer). A host without a finished install therefore cannot push — accepted.
 #
+# It also refuses a branch that would land as an empty merge or arrive
+# CONFLICTING at a renamed path (scripts/info/pr-guard.sh), and refuses to run
+# at all when the installed hooks are stale copies of the tracked ones.
+#
 # MAIN IS UNREACHABLE. This hook refuses any push whose destination is
 # refs/heads/main (or master), and any non-branch ref at all: every change
 # lands on a `temp-<N>` branch and reaches main only through a human-reviewed
@@ -25,6 +29,15 @@ repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 # reads the same file.
 . "$repo/scripts/lib/commit-areas.sh" 2>/dev/null || true
 COMMIT_MAX_FILES="${COMMIT_MAX_FILES:-10}"
+
+# A hook copied by `make install-hooks` runs the WORKTREE's libraries, so once a
+# commit reshapes one the installed copy calls what no longer exists and fails
+# with the function's name instead of the cause (lesson 2026-11-05).
+. "$repo/scripts/lib/hooks-fresh.sh" 2>/dev/null || true
+if command -v hooks_fresh >/dev/null 2>&1 && ! hooks_fresh "$repo"; then
+  echo "pre-push: REFUSED — the installed hooks are stale."
+  exit 1
+fi
 
 # The ref list arrives on STDIN — read it before anything else can eat it. The
 # smoke test below runs `openssl s_client`, which drains whatever is on stdin
@@ -52,6 +65,24 @@ while read -r _lref _lsha rref _rsha; do
       exit 1 ;;
   esac
 done <<< "$refs"
+
+# Pull-request shape (scripts/info/pr-guard.sh), checked before the smoke scan:
+# a branch whose tree equals the base lands as an empty merge, and one that
+# renames a path the base changed arrives CONFLICTING with the base's work left
+# behind (lesson 2026-11-05). Cheap, read-only, and it names the file.
+if [ -f "$repo/scripts/info/pr-guard.sh" ] && git -C "$repo" rev-parse --verify -q origin/main >/dev/null 2>&1; then
+  while read -r _lref lsha rref _rsha; do
+    case "$rref" in refs/heads/*) ;; *) continue ;; esac
+    [ "$lsha" = "0000000000000000000000000000000000000000" ] && continue
+    if ! out=$(bash "$repo/scripts/info/pr-guard.sh" "origin/main..$lsha" 2>&1); then
+      echo "pre-push: REFUSED — $rref is not submittable as it stands:"
+      printf '%s\n' "$out" | sed 's/^/  /'
+      echo "  Fix it (rebase onto origin/main, or carry the base's version of the renamed file)."
+      echo "  OPERATOR ESCAPE: PR_GUARD_OVERRIDE=1 — report only, never a way to merge a branch that lands nothing."
+      exit 1
+    fi
+  done <<< "$refs"
+fi
 
 smoke="$repo/scripts/stack/smoke-vhosts.sh"
 [ -x "$smoke" ] || [ -f "$smoke" ] || exit 0
