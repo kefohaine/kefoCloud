@@ -6,9 +6,10 @@
 # admin API, never by editing the database directly.
 #
 # Auth: homeserver authentication is delegated to MAS (ESS CE), so Synapse has
-# no password login to take. The admin API calls carry the static
-# SYNAPSE_ADMIN_TOKEN from modules/matrix/.env, and account creation, passwords
-# and locking go through `mas-cli manage` inside the MAS container. Usage:
+# no password login to take. The admin API calls carry MAS_SYNAPSE_SECRET from
+# modules/matrix/.env — the shared secret MAS itself uses for /_synapse/admin —
+# and account creation, passwords and locking go through `mas-cli manage`
+# inside the MAS container. Usage:
 #
 #   matrix-admin.sh users                     list every account
 #   matrix-admin.sh add <user> [<pass>]       create an account (pass printed once)
@@ -47,7 +48,7 @@ _api() {
   docker exec -i \
     -e MX_USER="$SYNAPSE_ADMIN_USER" \
     -e MX_PASS="$SYNAPSE_ADMIN_PASSWORD" \
-    -e MX_TOKEN="${SYNAPSE_ADMIN_TOKEN:-}" \
+    -e MX_TOKEN="${MAS_SYNAPSE_SECRET:-}" \
     -e MX_ARGS="$*" \
     matrix-synapse python3 - <<'PY'
 import json, os, sys, urllib.error, urllib.request
