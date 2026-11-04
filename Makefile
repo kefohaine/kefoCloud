@@ -46,9 +46,9 @@ TAILDROP ?= $(TAILDROP_HOST)
 # `dok-` prefix marks container (docker) actions so they don't collide
 # visually with host systemd actions (systemd-restart/systemd-log below).
 # One set of rules, expanded across $(CONTAINERS); append -<ctn> for one
-# container, -all for every container. mailserver and roundcube share one
-# compose file (modules/mailserver/docker-compose.yml), so a compose-unit
-# action on either affects both.
+# container, -all for every container. Every container of a module shares that
+# module's compose file (mailserver + roundcube, matrix + element-admin, …), so
+# a compose-unit action on one affects all of them.
 # ─────────────────────────────────────────────────────────────────────────────
 
 .PHONY: $(addprefix dok-recreate-,$(CONTAINERS)) dok-recreate-all dok-recreate
