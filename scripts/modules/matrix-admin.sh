@@ -2,14 +2,12 @@
 # scripts/modules/matrix-admin.sh — accounts and health for the Matrix module.
 #
 # The web UI is a client (Element); an account is a Matrix user id
-# (@name:matrix.$DOMAIN). Reads and writes go through Synapse's own PSQL store and its
+# (@name:$DOMAIN). Reads and writes go through Synapse's own PSQL store and its
 # admin API, never by editing the database directly.
 #
-# Auth: homeserver authentication is delegated to MAS (ESS CE), so Synapse has
-# no password login to take. The admin API calls carry MAS_SYNAPSE_SECRET from
-# modules/matrix/.env — the shared secret MAS itself uses for /_synapse/admin —
-# and account creation, passwords and locking go through `mas-cli manage`
-# inside the MAS container. Usage:
+# Auth: the admin bot created at install (SYNAPSE_ADMIN_USER / its password in
+# modules/matrix/.env) logs in to the local client API and the admin API calls
+# carry that access token. Usage:
 #
 #   matrix-admin.sh users                     list every account
 #   matrix-admin.sh add <user> [<pass>]       create an account (pass printed once)
@@ -27,18 +25,14 @@ ENV="$REPO_DIR/modules/matrix/.env"
 # shellcheck disable=SC1090
 . "$ENV"
 
-# The homeserver NAME (user-id suffix) — not the public domain: since the
-# homeserver answers on matrix.$DOMAIN, that hostname IS the identity domain.
-SERVER_NAME="matrix.$DOMAIN"
-
 die() { printf 'matrix-admin: %s\n' "$*" >&2; exit 1; }
 
 # full_id <user> — accept both `name` and `@name:domain`.
 full_id() {
   case "$1" in
     @*:*) printf '%s' "$1" ;;
-    @*)   printf '%s:%s' "$1" "$SERVER_NAME" ;;
-    *)    printf '@%s:%s' "$1" "$SERVER_NAME" ;;
+    @*)   printf '%s:%s' "$1" "$DOMAIN" ;;
+    *)    printf '@%s:%s' "$1" "$DOMAIN" ;;
   esac
 }
 
@@ -48,7 +42,6 @@ _api() {
   docker exec -i \
     -e MX_USER="$SYNAPSE_ADMIN_USER" \
     -e MX_PASS="$SYNAPSE_ADMIN_PASSWORD" \
-    -e MX_TOKEN="${MAS_SYNAPSE_SECRET:-}" \
     -e MX_ARGS="$*" \
     matrix-synapse python3 - <<'PY'
 import json, os, sys, urllib.error, urllib.request
@@ -74,12 +67,6 @@ def call(method, path, body=None, token=None):
 
 
 def token():
-    # The static admin token (homeserver.yaml matrix_authentication_service.secret) is the whole
-    # credential once auth is delegated; the password login below is only the
-    # pre-MAS fallback.
-    static = os.environ.get("MX_TOKEN") or ""
-    if static:
-        return static
     code, out = call("POST", "/_matrix/client/v3/login", {
         "type": "m.login.password",
         "identifier": {"type": "m.id.user", "user": USER},
@@ -127,21 +114,18 @@ case "${1:-status}" in
     # A plain account by default: `-a` makes every new user a SERVER ADMIN, and
     # the admin flag is then only ever taken away. Only the fourth argument
     # (`make matrix-add-admin`) asks for one.
-    # Users are MAS's: Synapse's own registration endpoint is gone once auth is
-    # delegated. -a makes the account a MAS admin (Element Admin needs that) as
-    # well as a Synapse server admin.
-    opts=(--yes -p "$pass")
+    opts=(-u "$user" -p "$pass")
     [ "${4:-}" = admin ] && opts+=(-a)
-    docker exec matrix-mas mas-cli manage -c /data/config.yaml register-user "${opts[@]}" "$user" >/dev/null 2>&1 \
+    docker exec matrix-synapse register_new_matrix_user "${opts[@]}" \
+      -c /data/homeserver.yaml http://127.0.0.1:8008 >/dev/null 2>&1 \
       || die "cannot create $user (does the account already exist?)"
-    [ "${4:-}" = admin ] && _api admin "$(full_id "$user")" true >/dev/null 2>&1 || true
     printf 'created %s\npassword: %s\n' "$(full_id "$user")" "$pass"
     ;;
   passwd)
     user=${2:-}; [ -n "$user" ] || die "usage: matrix-admin.sh passwd <user> [<pass>]"
     pass=${3:-$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)}
-    docker exec matrix-mas mas-cli manage -c /data/config.yaml set-password "$user" "$pass" >/dev/null 2>&1 \
-      || die "password reset failed for $(full_id "$user")"
+    _api reset_password "$(full_id "$user")" "$pass" >/dev/null \
+      || die "password reset failed for $(full_id "$user") — is the admin bot an admin?"
     printf 'reset %s\npassword: %s\n' "$(full_id "$user")" "$pass"
     ;;
   admin)
@@ -152,9 +136,7 @@ case "${1:-status}" in
     ;;
   del)
     user=${2:-}; [ -n "$user" ] || die "usage: matrix-admin.sh del <user>"
-    docker exec matrix-mas mas-cli manage -c /data/config.yaml lock-user "$user" >/dev/null 2>&1 \
-      || die "lock failed for $(full_id "$user")"
-    _api deactivate "$(full_id "$user")" >/dev/null 2>&1 || true
+    _api deactivate "$(full_id "$user")" >/dev/null || die "deactivation failed"
     echo "deactivated $(full_id "$user")"
     ;;
   status)
