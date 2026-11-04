@@ -21,10 +21,6 @@ set -uo pipefail
 
 
 repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
-# The commit-size limit (rule 26) lives in one place; the splitter it quotes
-# reads the same file.
-. "$repo/scripts/lib/commit-areas.sh" 2>/dev/null || true
-COMMIT_MAX_FILES="${COMMIT_MAX_FILES:-10}"
 
 # The ref list arrives on STDIN — read it before anything else can eat it. The
 # smoke test below runs `openssl s_client`, which drains whatever is on stdin
@@ -89,18 +85,17 @@ while read -r lref lsha rref rsha; do
   fi
   [ "$rsha" = "0000000000000000000000000000000000000000" ] && continue  # new branch: no rewrite warning
 
-  # Commit hygiene over the pushed range (AGENTS rule 26: at most
-  # COMMIT_MAX_FILES files per commit) — AUTOMATED. This is the only place a bad
-  # commit can be caught when it did NOT come from this checkout: a
-  # GitHub-web-editor commit runs no local hook at all. When the range breaks
-  # the rule the hook runs scripts/info/git-split.sh (replay/rebase —
-  # auto-split into chunks), then aborts so the operator re-runs `git push` on
-  # the rewrapped history. git-split itself refuses to touch published commits,
-  # so only local commits are ever rewritten.
+  # Commit hygiene over the pushed range (AGENTS rules 26 + 10) — AUTOMATED.
+  # This is the only place a bad commit can be caught when it did NOT come from
+  # this checkout: a GitHub-web-editor commit runs no local hook at all. When the
+  # range breaks the rules the hook runs scripts/info/git-split.sh (replay/rebase
+  # — auto-split bundles per unit, auto-SHA the Revert: lines), then aborts so the
+  # operator re-runs `git push` on the rewrapped history. git-split itself refuses
+  # to touch published commits, so only local commits are ever rewritten.
   # Set GIT_SPLIT_DISABLE=1 to only refuse. Operator override: HISTORY_AUDIT_OVERRIDE=1.
   if [ "${HISTORY_AUDIT_OVERRIDE:-}" != "1" ] && [ -f "$repo/scripts/info/git-audit.sh" ]; then
     if ! bash "$repo/scripts/info/git-audit.sh" "$range" >/dev/null 2>&1; then
-      echo "pre-push: $range breaks the commit-hygiene rule (max $COMMIT_MAX_FILES files) — auto-splitting."
+      echo "pre-push: $range breaks the commit-hygiene rules — auto-splitting (rule 26) and filling revert recipes (rule 10)."
       if [ "${GIT_SPLIT_DISABLE:-}" != "1" ] && [ -f "$repo/scripts/info/git-split.sh" ] \
          && bash "$repo/scripts/info/git-split.sh" "$range"; then
         echo "pre-push: history rewritten — re-run 'git push' to publish the split commits."
@@ -131,7 +126,7 @@ while read -r lref lsha rref rsha; do
   if [ -n "$(git rev-list "$remote_only" 2>/dev/null | head -1)" ] \
      && [ -f "$repo/scripts/info/git-audit.sh" ]; then
     if ! bash "$repo/scripts/info/git-audit.sh" "$remote_only" >/dev/null 2>&1; then
-      echo "pre-push: WARNING — published commits on the remote also break the commit-hygiene rule:"
+      echo "pre-push: WARNING — published commits on the remote also break the commit-hygiene rules:"
       bash "$repo/scripts/info/git-audit.sh" "$remote_only" | sed 's/^/  /'
       echo "  They are already published: git-split refuses them (rule 17), so rewriting needs an explicit decision."
     fi
