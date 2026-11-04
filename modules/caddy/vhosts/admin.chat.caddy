@@ -1,5 +1,5 @@
 # admin.chat.{{DOMAIN}} — Element Admin, the ESS CE administration panel
-# (module: admin, container element-admin).
+# (part of the chat module, container element-admin).
 #
 # TAILNET-ONLY, like vault/kopia/mailu: the panel can read every account, room
 # and session on the homeserver, so the name has no public A record — dnsmasq
