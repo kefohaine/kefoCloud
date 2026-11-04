@@ -74,7 +74,7 @@ def call(method, path, body=None, token=None):
 
 
 def token():
-    # The static admin token (homeserver.yaml msc3861.admin_token) is the whole
+    # The static admin token (homeserver.yaml matrix_authentication_service.secret) is the whole
     # credential once auth is delegated; the password login below is only the
     # pre-MAS fallback.
     static = os.environ.get("MX_TOKEN") or ""
