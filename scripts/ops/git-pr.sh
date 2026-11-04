@@ -37,6 +37,12 @@
 #                                   (default main) with an authenticated gh, or print
 #                                   the compare URL and PR body. --issue N writes
 #                                   `Closes #N`, linking the issue to the PR.
+#                                   Refused before anything is pushed when the
+#                                   branch would land as an empty merge, renames a
+#                                   path the base changed, already landed as a pull
+#                                   request, or would be a second open pull request
+#                                   from another branch (`STACK_OK=1` / `MULTI_PR_OK=1`
+#                                   make the last two deliberate).
 #   git-pr.sh land   [--dry-run] [--base <branch>]
 #                                   after the PR is merged: <base> fast-forward,
 #                                   delete the local branch
@@ -186,8 +192,38 @@ sys.exit(1)
 PY
 }
 
-# ─────────────────────────────── start ────────────────────────────────────
-# Create + switch to a branch off a freshly pulled base. Bare `start` picks the
+# One open pull request per branch and per author (the hardening that keeps a
+# change from being re-delivered while an earlier delivery is still open), and
+# no re-delivery from a branch that already landed: ask the tracker before
+# opening anything. A host without an authenticated gh cannot answer, so it
+# warns instead of guessing.
+pr_tracker_guard() {
+  local b="$1" open_same other merged
+  if ! command -v gh >/dev/null 2>&1 || ! (cd "$REPO" && gh auth status >/dev/null 2>&1); then
+    warn "no authenticated gh — the one-open-pull-request rule cannot be checked from here"
+    return 0
+  fi
+  merged=$(cd "$REPO" && gh pr list --head "$b" --state merged --limit 1 --json number --jq '.[0].number' 2>/dev/null)
+  if [ -n "$merged" ]; then
+    error "branch $b already landed as pull request #$merged — a re-delivery starts on a FRESH branch off $BASE"
+    return 1
+  fi
+  open_same=$(cd "$REPO" && gh pr list --head "$b" --state open --limit 1 --json number --jq '.[0].number' 2>/dev/null)
+  [ -n "$open_same" ] && info "a pull request is already open for $b (#$open_same) — this push updates it"
+  if [ "${MULTI_PR_OK:-}" != "1" ]; then
+    other=$(cd "$REPO" && gh pr list --author @me --state open --limit 100 --json number,headRefName \
+              --jq ".[] | select(.headRefName != \"$b\") | \"#\(.number) \(.headRefName)\"" 2>/dev/null)
+    if [ -n "$other" ]; then
+      error "you already have an open pull request from another branch:"
+      printf '%s\n' "$other" | sed 's/^/  /'
+      error "one open pull request per author — land or close it first (MULTI_PR_OK=1 for a deliberate second)"
+      return 1
+    fi
+  fi
+  return 0
+}
+
+# ─────────────────────────────── start ────────────────────────────────────# Create + switch to a branch off a freshly pulled base. Bare `start` picks the
 # next free temp-<N>; --name picks an explicit branch (same verb, so `make
 # git-start` and `make git-branch NAME=…` share one implementation).
 cmd_start() {
@@ -446,6 +482,20 @@ cmd_submit() {
     error "the tree breaks the prose rules (AGENTS rule 31) — make prose-audit"
     return 1
   fi
+  # The shapes that make a pull request land nothing or arrive CONFLICTING are
+  # refused here, not at review time (scripts/info/pr-guard.sh).
+  if ! bash "$REPO/scripts/info/pr-guard.sh" "$range"; then
+    error "the pull request shape is refused — fix it before submitting (make pr-guard RANGE=$range)"
+    return 1
+  fi
+  # A stack's base can never be retargeted, and a squash merge of the parent
+  # leaves the child reverting what landed after it (lesson 2026-11-04), so a
+  # base other than $TEMP_BASE_BRANCH is an explicit decision.
+  if [ "$BASE" != "$TEMP_BASE_BRANCH" ] && [ "${STACK_OK:-}" != "1" ]; then
+    error "BASE=$BASE makes this a stacked pull request — STACK_OK=1 to submit one deliberately"
+    return 1
+  fi
+  pr_tracker_guard "$b" || return 1
   or="$(owner_repo)" || { error "cannot read the origin URL"; return 1; }
   url="https://github.com/$or/compare/$BASE...$b?expand=1"
 
