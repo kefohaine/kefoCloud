@@ -34,23 +34,14 @@ containers_up() {
   # order inside it). Caddy's DNS-01 issuance runs at startup, so the
   # mail/matrix certs are on disk by the time those containers start.
   if mod_on chat; then
-    if svc_skip_repair matrix matrix -- matrix-synapse matrix-element matrix-db; then
+    # One compose invocation brings up the whole unit, the panel included.
+    if svc_skip_repair matrix matrix -- matrix-synapse matrix-element matrix-db matrix-mas matrix-mas-db element-admin; then
       detail "  matrix stack already up, inputs unchanged — skipped"
     else
       log "  recreate: matrix stack"
       make dok-recreate-matrix-synapse >>"$LOG" 2>&1 || fail matrix
     fi
     svc_note_applied matrix matrix --
-  fi
-  # Element Admin: a static panel, no database — it only needs the edge up so
-  # the tailnet door answers.
-  if mod_on admin; then
-    if svc_skip_repair admin element-admin -- element-admin; then
-      detail "  element-admin already up, inputs unchanged — skipped"
-    else
-      log "  recreate: element-admin"; make dok-recreate-element-admin >>"$LOG" 2>&1 || fail admin
-    fi
-    svc_note_applied admin element-admin --
   fi
   if mod_on ocis; then
     if svc_skip_repair ocis ocis -- ocis; then
