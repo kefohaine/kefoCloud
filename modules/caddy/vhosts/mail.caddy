@@ -7,7 +7,7 @@
 # Roundcube is a web client only: it reaches the platform over STARTTLS at
 # tls://mail.{{DOMAIN}}:143/:587 (modules/mailserver/roundcube-tls.inc.php),
 # i.e. mailu-front, whose cert is this same mail.{{DOMAIN}} pair. The Mailu
-# platform/admin UI lives one label over, tailnet-only (./mailu.caddy).
+# platform/admin UI has its own tailnet-only name (./admin.mail.caddy).
 # TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
 
 https://mail.{{DOMAIN}} {

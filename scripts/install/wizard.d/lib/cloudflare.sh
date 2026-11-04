@@ -152,6 +152,16 @@ cf_mail_dns() {
   # transfers are long lived and large, and the origin holds its own LE cert
   # via DNS-01. Element reaches it directly, so the name must resolve publicly.
   mod_on chat && cf_record matrix false || cf_a_del matrix
+  # auth.matrix.$DOMAIN is the Matrix Authentication Service (ESS CE): a browser
+  # is redirected here mid-login, so the name must resolve publicly. DNS-ONLY
+  # (grey cloud): Cloudflare's universal SSL covers `fxmq.net` and one label
+  # under it, so a two-label name has no edge certificate and a proxied record
+  # fails the TLS handshake — the origin serves its own LE cert instead.
+  mod_on chat && cf_record auth.matrix false || cf_a_del auth.matrix
+  # admin.chat.$DOMAIN is Element Admin and is TAILNET-ONLY (same model as
+  # vault): dnsmasq answers it for tailnet clients, the vhost 403s everything
+  # else, and the public zone must hold NO record (DNS-01 only needs the TXT).
+  cf_a_del admin.chat
   # kopia.$DOMAIN is the backup server and is TAILNET-ONLY: dnsmasq answers it
   # for tailnet clients and the vhost 403s every other source.
   cf_a_del kopia
@@ -166,11 +176,11 @@ cf_mail_dns() {
   # no SMTP/IMAP, so a proxied record would leave every mail client talking to
   # Cloudflare instead of the origin. Caddy still gets its LE cert via DNS-01.
   mod_on mail && cf_record mail false || cf_a_del mail
-  # mailu.$DOMAIN is Mailu's platform door (admin UI + SSO) and is TAILNET-ONLY
+  # admin.mail.$DOMAIN is Mailu's platform door (admin UI + SSO) and is TAILNET-ONLY
   # (same model as vault): the name is answered by the machine dnsmasq and gated
   # by @not_tailnet in the vhost, so the public zone must hold NO record for it
   # (DNS-01 only needs the TXT record for the certificate).
-  cf_a_del mailu
+  cf_a_del admin.mail
   mod_on mail && cf_mail_dns
   curl -s -X PATCH -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
     "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/settings/ssl" -d '{"value":"full"}' >>"$LOG" 2>&1 || true

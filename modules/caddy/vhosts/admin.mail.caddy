@@ -1,18 +1,17 @@
-# mailu.{{DOMAIN}} — Mailu's platform door (admin UI at /admin + the platform as
-# served by mailu-front at 172.22.0.9:80). TAILNET-ONLY (same model as
-# vault.$DOMAIN): the name has NO public A record — tailnet clients resolve it
-# through the machine dnsmasq (config/dnsmasq/10-tailnet.conf) and every other
-# source is refused before the proxy runs (@not_tailnet). DNS-01 still needs only
-# the TXT record, so the mailu.$DOMAIN certificate keeps issuing.
+# admin.mail.{{DOMAIN}} — Mailu's platform door (admin UI at /admin + the
+# platform as served by mailu-front at 172.22.0.9:80). TAILNET-ONLY (same model
+# as vault.{{DOMAIN}}): the name has NO public A record — tailnet clients
+# resolve it through the machine dnsmasq (config/dnsmasq/10-tailnet.conf) and
+# every other source is refused before the proxy runs (@not_tailnet). DNS-01
+# needs only the TXT record, so the certificate keeps issuing.
 #
-# The mail FRONT is still named mail.{{DOMAIN}} (compose HOSTNAMES): that is the
-# name SMTP/IMAP present and the one its /certs pair is issued for, and it is the
-# public webmail door too (./mail.caddy). The platform UI simply moved one label
-# over so the public name could carry both the webmail and the protocol ports.
+# The FRONT keeps the name mail.{{DOMAIN}} (compose HOSTNAMES): that is the name
+# SMTP/IMAP present and the one its /certs pair is issued for, and it is the
+# public webmail door too (./mail.caddy).
 # TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
 
-https://mailu.{{DOMAIN}} {
-    import ratelimit mailu_rl
+https://admin.mail.{{DOMAIN}} {
+    import ratelimit admin_mail_rl
     tls {
         # Fallback issuer chain: Let's Encrypt first, then Buypass Go SSL and
         # ZeroSSL — free providers tried in order, so a per-issuer rate limit

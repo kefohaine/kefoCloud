@@ -170,6 +170,37 @@ check_sec_headers() {
   fi
 }
 
+# check_body <name> <host> <path> <needle> [desc] — the body must carry
+# <needle>. A 200 with the wrong document is the failure mode worth catching
+# here (an edge stub, or a metadata document with no issuer in it).
+check_body() {
+  local name="$1" host="$2" path="$3" needle="$4" desc="${5:-}" body
+  body=$(curl -s --max-time 12 --resolve "$host:443:127.0.0.1" "https://$host$path")
+  if [[ "$body" != *"$needle"* ]]; then
+    say "FAIL $name: body lacks '$needle' — https://$host$path"; bad
+  else
+    say "ok   $name${desc:+ — }$desc"
+  fi
+}
+
+# check_cors <name> <host> <path> <origin> [desc] — a browser app served from
+# ANOTHER origin reads this path (the Element Admin panel on
+# admin.chat.$DOMAIN reads matrix.$DOMAIN's discovery document), so the
+# response must say so with Access-Control-Allow-Origin or the browser throws
+# it away however correct the body is.
+check_cors() {
+  local name="$1" host="$2" path="$3" origin="$4" desc="${5:-}"
+  local acao
+  acao=$(curl -s -o /dev/null -D - --max-time 12 \
+    --resolve "$host:443:127.0.0.1" -H "Origin: $origin" \
+    "https://$host$path" | grep -ic '^access-control-allow-origin:')
+  if [ "$acao" -lt 1 ]; then
+    say "FAIL $name cors: no Access-Control-Allow-Origin — $origin cannot read https://$host$path"; bad
+  else
+    say "ok   $name cors${desc:+ — }$desc"
+  fi
+}
+
 # check_tls <host> — the per-vhost DNS-01 ACME chain must keep issuing certs.
 # The vhost tls blocks carry a fallback issuer chain (Let's Encrypt -> Buypass
 # Go SSL -> ZeroSSL), so any non-empty issuer is success; a rate-limited LE
@@ -243,11 +274,13 @@ check_ctns ocis ocis
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Module: chat — Matrix (Synapse + Element + PostgreSQL). chat.$DOMAIN serves
-# Element (a static browser app), matrix.$DOMAIN serves the homeserver's
-# client-server API. Both are public: Element is proxied, Synapse is DNS-only.
+# Module: chat — Matrix (Synapse + Element + MAS + the Element Admin panel).
+# chat.$DOMAIN serves Element (a static browser app), matrix.$DOMAIN the
+# homeserver's client-server API, auth.matrix.$DOMAIN the identity provider and
+# admin.chat.$DOMAIN the tailnet-only panel. Chat/Matrix are public (Element
+# proxied, Synapse DNS-only); admin.chat is never in the public zone.
 # ─────────────────────────────────────────────────────────────────────────────
-hdr chat "Chat — Matrix (module: chat) · chat.$DOMAIN + matrix.$DOMAIN"
+hdr chat "Chat — ESS CE (module: chat) · chat.$DOMAIN + matrix.$DOMAIN + auth.matrix.$DOMAIN + admin.chat.$DOMAIN"
 check chat "chat.$DOMAIN" "/" "200 301 302 307 308" html "Element answers"
 check_sec_headers chat "chat.$DOMAIN" "/" "one of each"
 check_tls "chat.$DOMAIN"
@@ -256,7 +289,36 @@ check_tls "chat.$DOMAIN"
 check matrix-api "matrix.$DOMAIN" "/_matrix/client/versions" "200" "" "Synapse client API answers"
 check_sec_headers matrix "matrix.$DOMAIN" "/_matrix/client/versions" "one of each"
 check_tls "matrix.$DOMAIN"
-check_ctns chat matrix-synapse matrix-element matrix-db
+# Client discovery names the homeserver URL AND the MAS issuer: a client that
+# cannot read m.authentication cannot log in at all.
+check matrix-wk "matrix.$DOMAIN" "/.well-known/matrix/client" "200" "" "client discovery answers"
+check_cors matrix-wk "matrix.$DOMAIN" "/.well-known/matrix/client" "https://admin.chat.$DOMAIN" "discovery readable cross-origin"
+# auth.matrix.$DOMAIN is the identity provider (MAS); every token Synapse accepts is
+# minted here, so a 200 on its discovery document is the real health signal.
+# Where to authenticate. Synapse publishes MAS's metadata here; a client (or the
+# admin panel) that cannot read it falls back to posting a password to /login,
+# which delegated auth does not serve — the login page then reports a
+# communication problem and the register page cannot list flows.
+check matrix-authmd "matrix.$DOMAIN" "/_matrix/client/v1/auth_metadata" "200" "" "auth metadata answers"
+check_body matrix-authmd "matrix.$DOMAIN" "/_matrix/client/v1/auth_metadata" "auth.matrix.$DOMAIN" "auth metadata names the MAS issuer"
+# The compatibility layer, for clients that speak no OIDC: /login, /logout and
+# /refresh are proxied to MAS because Synapse answers M_UNRECOGNIZED for them.
+check matrix-login "matrix.$DOMAIN" "/_matrix/client/v3/login" "200" "" "legacy login is served by MAS"
+check_body matrix-login "matrix.$DOMAIN" "/_matrix/client/v3/login" "\"flows\"" "legacy login lists its flows"
+check mas-discovery "auth.matrix.$DOMAIN" "/.well-known/openid-configuration" "200" "" "MAS discovery answers"
+check_sec_headers auth "auth.matrix.$DOMAIN" "/.well-known/openid-configuration" "one of each"
+check_tls "auth.matrix.$DOMAIN"
+# admin.chat.$DOMAIN is the Element Admin panel, TAILNET-ONLY: it can read
+# every account, room and session, so both halves are asserted (a public source
+# gets 403, a tailnet source gets the app).
+if [ -z "$TS_IP" ]; then
+  say "FAIL admin: no Tailscale IPv4 — cannot probe the tailnet-only door"; bad
+else
+  check_tn admin "admin.chat.$DOMAIN" "/" "200 301 302 307 308" html "Element Admin answers on the tailnet"
+fi
+check admin-public "admin.chat.$DOMAIN" "/" "403" "" "public sources are refused"
+check_tls "admin.chat.$DOMAIN"
+check_ctns chat matrix-synapse matrix-element matrix-db matrix-mas matrix-mas-db element-admin
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -344,9 +406,9 @@ end_sec
 # ─────────────────────────────────────────────────────────────────────────────
 hdr mail "Mail — Mailu platform + Roundcube webmail (module: mail)"
 # mail.$DOMAIN is the PUBLIC mail door (Roundcube's web UI, and the name
-# mailu-front publishes 25/465/587/993 on); mailu.$DOMAIN is the platform door
-# and TAILNET-ONLY (same model as vault): no public A record, and the vhost 403s
-# every source outside 100.64.0.0/10. Both halves are asserted, so a
+# mailu-front publishes 25/465/587/993 on). admin.mail.$DOMAIN is the platform
+# door and TAILNET-ONLY (same model as vault): no public A record, and the vhost
+# 403s every source outside 100.64.0.0/10. Both halves are asserted, so a
 # half-applied change fails here instead of passing.
 check mail "mail.$DOMAIN" "/" "200 301 302 307 308" html "Roundcube webmail"
 check_sec_headers mail "mail.$DOMAIN" "/" "one of each"
@@ -354,11 +416,11 @@ check_tls "mail.$DOMAIN"
 if [ -z "$TS_IP" ]; then
   say "FAIL mailu: no Tailscale IPv4 — cannot probe a tailnet-only door"; bad
 else
-  check_tn mailu "mailu.$DOMAIN" "/" "200 301 302 307 308" html "Mailu platform door answers on the tailnet"
+  check_tn mailu "admin.mail.$DOMAIN" "/" "200 301 302 307 308" html "Mailu platform door answers on the tailnet"
 fi
-check mailu-public "mailu.$DOMAIN" "/" "403" "" "public sources are refused"
-check_sec_headers mailu "mailu.$DOMAIN" "/" "one of each"
-check_tls "mailu.$DOMAIN"
+check mailu-public "admin.mail.$DOMAIN" "/" "403" "" "public sources are refused"
+check_sec_headers mailu "admin.mail.$DOMAIN" "/" "one of each"
+check_tls "admin.mail.$DOMAIN"
 
 # SMTP 25/587 + IMAPS 993 must answer.
 for port in 25 587; do

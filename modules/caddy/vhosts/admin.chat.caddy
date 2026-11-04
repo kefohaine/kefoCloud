@@ -1,0 +1,46 @@
+# admin.chat.{{DOMAIN}} — Element Admin, the ESS CE administration panel
+# (part of the chat module, container element-admin).
+#
+# TAILNET-ONLY, like vault/kopia/mailu: the panel can read every account, room
+# and session on the homeserver, so the name has no public A record — dnsmasq
+# answers it for tailnet clients and every other source is refused before the
+# proxy runs. DNS-01 needs only the TXT record, so the certificate still issues.
+#
+# The app is a static SPA: it talks to matrix.{{DOMAIN}} (Synapse admin API) and
+# auth.matrix.{{DOMAIN}} (MAS admin API) directly from the browser, so this vhost
+# proxies nothing but the app itself.
+#
+# TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
+
+https://admin.chat.{{DOMAIN}} {
+    import ratelimit admin_rl
+    tls {
+        # Fallback issuer chain: Let's Encrypt first, then Buypass Go SSL and
+        # ZeroSSL — free providers tried in order, so a per-issuer rate limit
+        # (5 orders/name/week on LE) never leaves a vhost without a cert.
+        issuer acme https://acme-v02.api.letsencrypt.org/directory {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+        issuer acme https://api.buypass.com/acme/directory {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+        issuer acme https://acme.zerossl.com/v2/DV90 {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+    }
+    import compress
+    @not_tailnet not remote_ip 100.64.0.0/10
+    respond @not_tailnet 403
+    header {
+        import security_headers
+        # Nothing here may be cached: a stale panel would keep asserting a state
+        # the next request would not confirm.
+        Cache-Control "no-store"
+    }
+    reverse_proxy 172.22.0.32:8080 {
+        header_up Host {host}
+    }
+}

@@ -15,7 +15,7 @@ SELECT 1, 'local', 'socket', '/var/run/docker.sock'
 WHERE NOT EXISTS (SELECT 1 FROM docker_host WHERE name = 'local');
 
 -- ── HTTP monitors (public hostnames via Cloudflare → machine → Caddy) ────────
--- NOTE: no monitor uses https://mail.{{DOMAIN}} or https://mailu.{{DOMAIN}} —
+-- NOTE: no monitor uses https://mail.{{DOMAIN}} or https://admin.mail.{{DOMAIN}} —
 -- docker's embedded DNS resolves those names to the mailserver container
 -- (hostname: mail.{{DOMAIN}} → 172.22.0.9), which has no :443 (Caddy owns HTTPS
 -- on the host). Monitor roundcube on the bridge instead.
