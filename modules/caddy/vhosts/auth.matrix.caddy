@@ -1,0 +1,49 @@
+# auth.matrix.{{DOMAIN}} — Matrix Authentication Service (module: chat, container
+# matrix-mas).
+#
+# This is the homeserver's identity provider: login, registration, OAuth2 token
+# issuance and the admin API Element Admin drives all live here. Synapse keeps
+# rooms/media/users and validates every token against this service
+# (homeserver.yaml's matrix_authentication_service block), so the name MUST stay
+# publicly resolvable — a browser is redirected here during login, from any
+# network.
+#
+# PUBLIC and DNS-ONLY in the public zone: Cloudflare's universal SSL covers
+# `fxmq.net` and one label under it, so a two-label name has no edge certificate
+# and must be served by this origin's own LE cert (DNS-01 needs only the TXT).
+# TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
+
+https://auth.matrix.{{DOMAIN}} {
+    import ratelimit auth_rl
+    tls {
+        # Fallback issuer chain: Let's Encrypt first, then Buypass Go SSL and
+        # ZeroSSL — free providers tried in order, so a per-issuer rate limit
+        # (5 orders/name/week on LE) never leaves a vhost without a cert.
+        issuer acme https://acme-v02.api.letsencrypt.org/directory {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+        issuer acme https://api.buypass.com/acme/directory {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+        issuer acme https://acme.zerossl.com/v2/DV90 {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+    }
+    import compress
+    header {
+        import security_headers
+    }
+    request_body {
+        max_size 1m
+    }
+    # MAS sends its own CORS headers on /api/admin/v1 (Element Admin calls it
+    # cross-origin from admin.chat.{{DOMAIN}}); the flow endpoints are same-origin.
+    reverse_proxy 172.22.0.34:8080 {
+        header_up Host {host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}

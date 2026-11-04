@@ -37,7 +37,10 @@ services:
         ipv4_address: 172.22.0.30
 
   matrix-synapse:
-    image: matrixdotorg/synapse:v1.118.0
+    # The floor is set by MAS, not by taste: the service supports Synapse
+    # 1.136.0 or later, and /_matrix/client/v1/auth_metadata — the route a
+    # client and the admin panel read to find the issuer — arrived in 1.123.0.
+    image: matrixdotorg/synapse:v1.164.2
     container_name: matrix-synapse
     restart: unless-stopped
 
@@ -80,7 +83,7 @@ services:
         ipv4_address: 172.22.0.28
 
   matrix-element:
-    image: vectorim/element-web:v1.12.0
+    image: vectorim/element-web:v1.12.33
     container_name: matrix-element
     restart: unless-stopped
 
@@ -111,6 +114,129 @@ services:
     networks:
       net:
         ipv4_address: 172.22.0.29
+
+  matrix-mas-db:
+    image: postgres:17-alpine
+    container_name: matrix-mas-db
+    restart: unless-stopped
+
+    mem_limit: 256m
+    memswap_limit: 256m
+
+    environment:
+      POSTGRES_DB: mas
+      POSTGRES_USER: mas
+      POSTGRES_PASSWORD: ${MAS_DB_PASSWORD}
+      TZ: ${TIMEZONE}
+
+    volumes:
+      - ${DATA_DIR}/matrix/mas-pgdata:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mas -d mas"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      net:
+        ipv4_address: 172.22.0.33
+
+  matrix-mas:
+    image: ghcr.io/element-hq/matrix-authentication-service:0.14.1
+    container_name: matrix-mas
+    restart: unless-stopped
+
+    mem_limit: 384m
+    memswap_limit: 384m
+
+    environment:
+      TZ: ${TIMEZONE}
+
+    # The image is distroless: mas-cli IS the entrypoint, so the server runs as
+    # an argument. It applies pending database migrations on start.
+    command: ["server", "-c", "/data/config.yaml"]
+
+    volumes:
+      # config.yaml + the token-signing keys, generated once by `make matrix-gen`.
+      - ${DATA_DIR}/matrix/mas:/data:ro
+
+    depends_on:
+      matrix-mas-db:
+        condition: service_healthy
+
+    expose:
+      - "8080"
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      net:
+        ipv4_address: 172.22.0.34
+
+  # Element Admin — the ESS CE administration panel, part of this module by
+  # default. It is a static SPA that reads the homeserver name and then calls
+  # Synapse's and MAS's admin APIs from the browser, so it needs no config of
+  # its own beyond the server name. Only the edge's tailnet-gated door
+  # (modules/caddy/vhosts/admin.chat.caddy) exposes it.
+  element-admin:
+    image: oci.element.io/element-admin:0.1.18
+    container_name: element-admin
+    restart: unless-stopped
+
+    # Hard RAM cap (no container swap) — survives recreates, unlike `docker update`.
+    mem_limit: 64m
+    memswap_limit: 64m
+
+    environment:
+      TZ: ${TIMEZONE}
+      # The homeserver NAME (the user-id suffix), not the panel's own hostname:
+      # the app derives the Synapse and MAS endpoints from it.
+      SERVER_NAME: matrix.${DOMAIN}
+
+    expose:
+      - "8080"
+
+    # The image is a static nginx build: it only ever writes to /tmp. A
+    # read-only rootfs keeps a compromised panel from persisting anything.
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /var/run
+
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      net:
+        ipv4_address: 172.22.0.32
 
 networks:
   net:
