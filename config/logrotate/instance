@@ -20,3 +20,18 @@
     create 0640 root root
     su root root
 }
+
+# Caddy writes one access log per app here (bind-mounted into the container at
+# /var/log/caddy). Caddy keeps the file open, so rotate with copytruncate rather
+# than relying on a reopen signal that cannot reach the container.
+{{LOG_DIR}}/caddy/*.log {
+    weekly
+    rotate 8
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    create 0640 root root
+    su root root
+}
