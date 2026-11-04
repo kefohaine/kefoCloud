@@ -30,17 +30,17 @@ _ask_boolean_raw() {
 }
 
 # ONE prompt for the whole module set, space-separated (multiple spaces / commas
-# tolerated, any order). Every name not listed becomes false. On a resume, when
-# all four answers are already saved, the prompt is skipped.
+# tolerated, any order). Every name not listed becomes false. ALWAYS asked, even
+# on a repair: a saved MOD_* set is non-empty even when every answer is false, so
+# skipping on "all saved" left the operator unable to change the selection.
 ask_modules() {
-  local k name all=1 ans ok mods
+  local k name ans ok mods
   # The offer list IS config/modules.conf (via _state_modules) — a module added
-  # there is askable, recordable and detectable with no edit here.
-  mods="$(_state_modules)"
-  for k in $mods; do
-    name="MOD_${k^^}"; [ -n "${!name:-}" ] || all=
-  done
-  [ -n "$all" ] && return 0
+  # there is askable, recordable and detectable with no edit here. Normalize the
+  # newline-separated roster to ONE space-separated line: the case matcher below
+  # is ` $mods `, so a newline between names made every module except the first
+  # and last "unknown" and silently refused a valid selection.
+  mods="$(_state_modules | paste -sd' ' -)"
   while :; do
     printf '%s[INFO]%s Modules to install, separated by spaces (%s) — or 'all' for every one: ' \
       "$C_GREY" "$C_RST" "$(printf '%s' "$mods" | paste -sd' ' -)"
@@ -238,8 +238,8 @@ ask_inputs() {
   # each is persisted immediately (save_state) so an abort mid-run leaves the
   # answers for a resume. Order: locale country (sets local time first),
   # github-remote-access (+ identity), device-ssh, tailscale, cloudflare, domain,
-  # modules. The resume question precedes all of these (it decides whether saved
-  # answers are reused).
+  # modules. The repair question precedes all of these (it decides whether saved
+  # answers are reused); the module set is asked on every run.
 
   # 1 — locale country: resolved to a timezone and applied before any timestamp.
   ask_locale
