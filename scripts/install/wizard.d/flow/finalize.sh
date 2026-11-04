@@ -67,10 +67,8 @@ success_block() {
   # Only the enabled modules' sites are listed — a site the operator chose not
   # to install (and so will not answer) must not appear. Shell (the tailnet
   # door) and the machine's own addresses are always part of the stack.
-  mod_on chat && printf '  %sElement%s      https://chat.%s      admin %s@%s:matrix.%s %s(password: modules/matrix/.env)%s\n' \
-    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${SYNAPSE_ADMIN_USER:-mkadmin}" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
-  mod_on chat && printf '  %sElement Admin%s https://admin.chat.%s  %s(tailnet only; same admin account)%s\n' \
-    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
+  mod_on chat && printf '  %sElement%s      https://chat.%s      admin %s@%s:%s %s(password: modules/matrix/.env)%s\n' \
+    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${SYNAPSE_ADMIN_USER:-mkadmin}" "$DOMAIN" "$C_RST" "$C_GREY" "$C_RST"
   mod_on ocis && printf '  %sownCloud%s     https://cloud.%s     %sadmin / %s%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "IDM_ADMIN_PASSWORD in modules/ocis/.env" "$C_RST"
   mod_on home && printf '  %sHomarr%s       https://home.%s      %s(first account created in the UI owns the board)%s\n' \
@@ -86,8 +84,8 @@ success_block() {
   mod_on monitor && printf '  %sUptime Kuma%s  https://kuma.%s    %sadmin / %s%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${KUMA_PASS:-(already set — rotate with: make kuma-passwd USER=admin PASS=…)}" "$C_RST"
   # mail.$DOMAIN is the public mail door (Roundcube + the SMTP/IMAP cert);
-  # Mailu's platform door is the tailnet-only admin.mail.$DOMAIN.
-  mod_on mail && printf '  %sMailu admin%s  https://admin.mail.%s/admin   %s(tailnet-only — mailboxes via make mail-gen)%s\n' \
+  # Mailu's platform door is the tailnet-only mailu.$DOMAIN.
+  mod_on mail && printf '  %sMailu admin%s  https://mailu.%s/admin   %s(tailnet-only — mailboxes via make mail-gen)%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
   mod_on mail && printf '  %sWebmail%s      https://mail.%s   %s(roundcube)%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
