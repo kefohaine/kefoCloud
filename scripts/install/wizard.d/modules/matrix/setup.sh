@@ -30,33 +30,32 @@ matrix_setup() {
   fi
   detail "  homeserver answers /health"
 
-  # The admin bot: created once. register_new_matrix_user refuses an existing
-  # account, which is exactly the idempotence this step needs.
-  docker exec matrix-synapse register_new_matrix_user \
-    -u "$SYNAPSE_ADMIN_USER" -p "$SYNAPSE_ADMIN_PASSWORD" -a \
-    -c /data/homeserver.yaml http://127.0.0.1:8008 >/dev/null 2>&1 \
-    || detail "  admin account create refused (already exists, or the homeserver was not ready)"
-
-  # A refused create and a successful one are the same exit code, so "already
-  # exists" was reported for an account that was never created — and every
-  # `make matrix-*` recipe then died with a bare admin-login 403. A login is the
-  # only proof the bot is usable: fail the module's row when it is not.
-  if docker exec -i -e MX_USER="$SYNAPSE_ADMIN_USER" -e MX_PASS="$SYNAPSE_ADMIN_PASSWORD" \
-      matrix-synapse python3 -c '
-import json, os, sys, urllib.request
-body = json.dumps({"type": "m.login.password",
-                   "identifier": {"type": "m.id.user", "user": os.environ["MX_USER"]},
-                   "password": os.environ["MX_PASS"]}).encode()
-req = urllib.request.Request("http://127.0.0.1:8008/_matrix/client/v3/login", data=body,
-                             headers={"Content-Type": "application/json"})
-try:
-    sys.exit(0 if "access_token" in json.loads(urllib.request.urlopen(req, timeout=30).read()) else 1)
-except Exception:
-    sys.exit(1)
-' >/dev/null 2>&1; then
-    log "  the admin account @${SYNAPSE_ADMIN_USER}:${DOMAIN} can log in"
+  # MAS (ESS CE) is the identity provider now: every token Synapse accepts is
+  # minted there, so the row is only green once its discovery document answers.
+  local j=0
+  while [ $j -lt 120 ]; do
+    curl -sk --max-time 5 "https://auth.$DOMAIN/.well-known/openid-configuration" \
+      | grep -q '"issuer"' && break
+    sleep 2; j=$((j+2))
+  done
+  if curl -sk --max-time 10 "https://auth.$DOMAIN/.well-known/openid-configuration" | grep -q '"issuer"'; then
+    detail "  MAS answers discovery on auth.$DOMAIN"
   else
-    fail matrix_setup "the admin account @${SYNAPSE_ADMIN_USER}:${DOMAIN} cannot log in — see: make matrix-users, make matrix-logs"
+    fail matrix_setup "MAS did not answer https://auth.$DOMAIN/.well-known/openid-configuration — see: docker logs matrix-mas"
+    return
+  fi
+
+  # The admin account lives in MAS: it is registered once (a second register is
+  # refused), becomes a MAS admin (-a) so it may drive the admin API Element
+  # Admin calls, and is then flagged a Synapse server admin by `matrix-add`.
+  docker exec matrix-mas mas-cli manage -c /data/config.yaml register-user \
+    --yes -a -p "$SYNAPSE_ADMIN_PASSWORD" "$SYNAPSE_ADMIN_USER" >/dev/null 2>&1 || true
+  if docker exec matrix-mas-db psql -U mas -d mas -tAc \
+      "select username from users where username='$SYNAPSE_ADMIN_USER'" 2>/dev/null \
+      | grep -qx "$SYNAPSE_ADMIN_USER"; then
+    log "  the admin account @${SYNAPSE_ADMIN_USER}:matrix.${DOMAIN} exists in MAS"
+  else
+    fail matrix_setup "MAS has no @${SYNAPSE_ADMIN_USER} account — see: docker logs matrix-mas, make matrix-logs"
     return
   fi
 
@@ -67,5 +66,5 @@ except Exception:
     fail matrix_element "chat.$DOMAIN did not serve Element — see: docker logs matrix-element"
     return
   fi
-  detail "  accounts: @<name>:$DOMAIN — add one with: make matrix-add USER=<name>"
+  detail "  accounts: @<name>:matrix.$DOMAIN — add one with: make matrix-add USER=<name>"
 }
