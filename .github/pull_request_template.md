@@ -42,7 +42,7 @@ reviews and merges it.
 ## Verification
 <!-- the commands you ran and their verdict: make smoke, make git-audit, bash -n, a dry run -->
 
-- [ ] one change per commit (`make git-audit` is clean)
+- [ ] commits within the ten-file limit (`make git-audit` is clean)
 - [ ] docs updated to match (WHAT / MANUAL / README as applicable)
 
 ## Revert
