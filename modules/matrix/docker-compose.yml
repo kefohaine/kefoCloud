@@ -112,6 +112,76 @@ services:
       net:
         ipv4_address: 172.22.0.29
 
+  matrix-mas-db:
+    image: postgres:17-alpine
+    container_name: matrix-mas-db
+    restart: unless-stopped
+
+    mem_limit: 256m
+    memswap_limit: 256m
+
+    environment:
+      POSTGRES_DB: mas
+      POSTGRES_USER: mas
+      POSTGRES_PASSWORD: ${MAS_DB_PASSWORD}
+      TZ: ${TIMEZONE}
+
+    volumes:
+      - ${DATA_DIR}/matrix/mas-pgdata:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mas -d mas"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      net:
+        ipv4_address: 172.22.0.33
+
+  matrix-mas:
+    image: ghcr.io/element-hq/matrix-authentication-service:0.14.1
+    container_name: matrix-mas
+    restart: unless-stopped
+
+    mem_limit: 384m
+    memswap_limit: 384m
+
+    environment:
+      TZ: ${TIMEZONE}
+
+    # The image is distroless: mas-cli IS the entrypoint, so the server runs as
+    # an argument. It applies pending database migrations on start.
+    command: ["server", "-c", "/data/config.yaml"]
+
+    volumes:
+      # config.yaml + the token-signing keys, generated once by `make matrix-gen`.
+      - ${DATA_DIR}/matrix/mas:/data:ro
+
+    depends_on:
+      matrix-mas-db:
+        condition: service_healthy
+
+    expose:
+      - "8080"
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      net:
+        ipv4_address: 172.22.0.34
+
 networks:
   net:
     external: true
