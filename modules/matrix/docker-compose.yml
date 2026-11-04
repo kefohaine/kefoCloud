@@ -185,6 +185,59 @@ services:
       net:
         ipv4_address: 172.22.0.34
 
+  # Element Admin — the ESS CE administration panel, part of this module by
+  # default. It is a static SPA that reads the homeserver name and then calls
+  # Synapse's and MAS's admin APIs from the browser, so it needs no config of
+  # its own beyond the server name. Only the edge's tailnet-gated door
+  # (modules/caddy/vhosts/admin.chat.caddy) exposes it.
+  element-admin:
+    image: oci.element.io/element-admin:0.1.18
+    container_name: element-admin
+    restart: unless-stopped
+
+    # Hard RAM cap (no container swap) — survives recreates, unlike `docker update`.
+    mem_limit: 64m
+    memswap_limit: 64m
+
+    environment:
+      TZ: ${TIMEZONE}
+      # The homeserver NAME (the user-id suffix), not the panel's own hostname:
+      # the app derives the Synapse and MAS endpoints from it.
+      SERVER_NAME: matrix.${DOMAIN}
+
+    expose:
+      - "8080"
+
+    # The image is a static nginx build: it only ever writes to /tmp. A
+    # read-only rootfs keeps a compromised panel from persisting anything.
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /var/run
+
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      net:
+        ipv4_address: 172.22.0.32
+
 networks:
   net:
     external: true
