@@ -13,7 +13,7 @@ A single Debian machine serving the apps declared in `config/modules.conf`, each
 Docker Compose unit under `modules/`, behind one Caddy edge. This part describes the
 system — its parts, its traffic paths and why each choice was made.
 
-Each app is a module: `chat` (ESS CE — Synapse + Element + Matrix Authentication Service) and `admin` (Element Admin panel), `ocis` (ownCloud Infinite
+Each app is a module: `chat` (ESS CE — Synapse + Element + Matrix Authentication Service, with the Element Admin panel built in), `ocis` (ownCloud Infinite
 Scale), `kopia` (Kopia backups), `vault` (Vaultwarden), `mail` (Mailu + Roundcube),
 `monitor` (Uptime Kuma), `home` (Homarr), `blog` (WriteFreely) and `photos` (Immich). `config/modules.conf`
 is the one place a module is declared: it maps the module name to its directory, its
@@ -72,7 +72,7 @@ Beside the containers run host services: `ttyd` (web terminal on a single `tmux`
 | `chat.` | `chat` | proxied | anyone | Element web client |
 | `matrix.` | `chat` | DNS-only | anyone | Synapse homeserver (client-server + federation API) + `/.well-known/matrix/*` |
 | `auth.matrix.` | `chat` | DNS-only | anyone | Matrix Authentication Service (login, OAuth2, admin API) |
-| `admin.chat.` | `admin` | not in public DNS | tailnet only | Element Admin panel |
+| `admin.chat.` | `chat` | not in public DNS | tailnet only | Element Admin panel |
 | `vault.` | `vault` | not in public DNS | tailnet only | Vaultwarden |
 | `kuma.` | `monitor` | proxied | anyone | Uptime Kuma |
 | `www.` | — | proxied | anyone | instance pages in `$DATA_DIR/pages/www` (`/welcome`, …), `/download` drop folder |
@@ -412,10 +412,9 @@ The compose files are the source of truth. This table is the one-line reference 
 | Service | Compose | Container | Edit mounted config | After compose / image change |
 |---------|---------|-----------|---------------------|------------------------------|
 | caddy   | `modules/caddy/docker-compose.yml` | `caddy` | `make dok-restart-caddy` | `make dok-recreate-caddy` (rebuilds `caddy:local` from `modules/caddy/Dockerfile`) |
-| chat | `modules/matrix/docker-compose.yml` | `matrix-synapse` + `matrix-element` + `matrix-db` + `matrix-mas` + `matrix-mas-db` | `make dok-restart-matrix-synapse` | `make dok-recreate-matrix-synapse` (depends_on brings both databases up) |
+| chat | `modules/matrix/docker-compose.yml` | `matrix-synapse` + `matrix-element` + `matrix-db` + `matrix-mas` + `matrix-mas-db` + `element-admin` | `make dok-restart-matrix-synapse` | `make dok-recreate-matrix-synapse` (depends_on brings both databases up) |
 | kopia | `modules/kopia/docker-compose.yml` | `kopia` | `make dok-restart-kopia` | `make dok-recreate-kopia` |
 | ocis    | `modules/ocis/docker-compose.yml` | `ocis` | `make dok-restart-ocis` | `make dok-recreate-ocis` |
-| admin | `modules/element-admin/docker-compose.yml` | `element-admin` | `make dok-restart-element-admin` | `make dok-recreate-element-admin` |
 | vault   | `modules/vaultwarden/docker-compose.yml` | `vaultwarden` | `make dok-restart-vaultwarden` | `make dok-recreate-vaultwarden` |
 | kuma    | `modules/uptimekuma/docker-compose.yml` | `uptimekuma` | `make dok-restart-uptimekuma` | `make dok-recreate-uptimekuma` |
 | mail | `modules/mailserver/docker-compose.yml` | `mailu-front` + `mailu-imap` + `mailu-smtp` + `mailu-antispam` + `mailu-admin` + `mailu-redis` + `roundcube` | `make dok-restart-mailserver` | `make dok-recreate-mailserver` |
@@ -442,8 +441,7 @@ When you need to know "what does X do / where do I edit Y", read the file at the
 - **dnsmasq** — config: `config/dnsmasq/10-tailnet.conf` (live path: `/etc/dnsmasq.d/10-tailnet.conf`). systemd drop-in: `config/dnsmasq/dnsmasq.service.conf` (live path: `/etc/systemd/system/dnsmasq.service.d/override.conf`).
 - **goose** — unit: `config/goose/goose.service` (live path: `/etc/systemd/system/goose.service`); its server secret is not in the repo — the unit reads `EnvironmentFile={{DATA_DIR}}/goose/.env` (root:root 0600), created by the installer and rotated by `make goose-secret` (restarts the agent; every paired client must re-pair). The unit used to carry a `sed`-ed real key, so values remain in git history: purging them is an operator-only `filter-repo` rewrite plus force-push, never a script.
 - **goose token management** — every request bills input + cached input + output, so the policy is short context, short replies, cheap tier. `config/goose/token-policy.yaml` is the source of truth and `scripts/info/goose-tokens.sh` applies it.
-- **`chat`** — ESS CE (Element Server Suite Community Edition, assembled from its components): `modules/matrix/docker-compose.yml` — Synapse at 172.22.0.28:8008, Element at 172.22.0.29:80, the Synapse store at 172.22.0.30:5432, Matrix Authentication Service at 172.22.0.34:8080 with its own store at 172.22.0.33:5432. Secrets and all three configs are generated once by `scripts/modules/matrix-gen.sh` and then owned by the operator; accounts are managed by `scripts/modules/matrix-admin.sh` (MAS's CLI under the hood). Vhosts: `chat.caddy` (Element), `matrix.caddy` (Synapse + client discovery), `auth.matrix.caddy` (MAS).
-- **`admin`** — Element Admin, the ESS CE administration panel: `modules/element-admin/docker-compose.yml` (172.22.0.32:8080, `oci.element.io/element-admin`, read-only rootfs). Vhost `modules/caddy/vhosts/admin.chat.caddy`, TAILNET-ONLY — the panel reads every account, room and session. It is a static SPA that calls `matrix.$DOMAIN` (Synapse admin API) and `auth.matrix.$DOMAIN` (MAS admin API) from the browser; `SERVER_NAME` is the homeserver name, `matrix.$DOMAIN`.
+- **`chat`** — ESS CE (Element Server Suite Community Edition, assembled from its components): `modules/matrix/docker-compose.yml` — Synapse at 172.22.0.28:8008, Element at 172.22.0.29:80, the Synapse store at 172.22.0.30:5432, Matrix Authentication Service at 172.22.0.34:8080 with its own store at 172.22.0.33:5432. Secrets and all three configs are generated once by `scripts/modules/matrix-gen.sh` and then owned by the operator; accounts are managed by `scripts/modules/matrix-admin.sh` (MAS's CLI under the hood). The Element Admin panel is part of the same unit: `element-admin` (172.22.0.32:8080, `oci.element.io/element-admin`, read-only rootfs) is a static SPA that calls `matrix.$DOMAIN` (Synapse admin API) and `auth.matrix.$DOMAIN` (MAS admin API) from the browser, with `SERVER_NAME` set to the homeserver name (`matrix.$DOMAIN`). Vhosts: `chat.caddy` (Element), `matrix.caddy` (Synapse + client discovery), `auth.matrix.caddy` (MAS), `admin.chat.caddy` (the panel, TAILNET-ONLY — it reads every account, room and session).
 - **`kopia`** — `modules/matrix`'s sibling: `modules/kopia/docker-compose.yml` (172.22.0.31:51515). The container creates its filesystem repository on first start; `scripts/modules/kopia-gen.sh` seeds the repository password and the UI account, `scripts/modules/kopia-admin.sh` drives snapshots and both credential rotations. Vhost `modules/caddy/vhosts/kopia.caddy` (tailnet-only).
 - **mail** — Mailu 2.0 + Roundcube: `modules/mailserver/docker-compose.yml`. Every `make mail-*` recipe delegates to `scripts/modules/mail-gen.sh`/`mail-alias-gen.sh`.
   **Spoof-proofing**: Roundcube's `identities_level = 3` (`modules/mailserver/roundcube-tls.inc.php`) locks the identity address to the login mailbox, so the From dropdown only ever shows the user's own address.
