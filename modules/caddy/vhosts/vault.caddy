@@ -2,7 +2,6 @@
 # TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/cloud.{{DOMAIN}}.caddy).
 
 https://vault.{{DOMAIN}} {
-    import ratelimit vault_rl
     # Access log for the fail2ban web-login jail (config/fail2ban): one file
     # per app so a jail bans on ITS login endpoint, not the whole edge.
     log {
@@ -29,20 +28,27 @@ https://vault.{{DOMAIN}} {
     request_body {
         max_size 100m
     }
+    header {
+        import security_headers
+    }
     # Tailnet-only since 2026-10-28: the vault has no public DNS record, and any
     # source outside 100.64.0.0/10 is refused before the proxy runs. Tailnet
     # clients resolve vault.{{DOMAIN}} through the machine dnsmasq (the public
     # zone has no A record for it), so the door keeps its own name and its own
     # ACME certificate — DNS-01 needs only the TXT record.
-    @not_tailnet not remote_ip 100.64.0.0/10
-    respond @not_tailnet 403
-    header {
-        import security_headers
-    }
-    reverse_proxy 172.22.0.4:80 {
-        # strip VW's own security headers so the site-level set yields one value
-		header_down -X-Frame-Options
-		header_down -X-Content-Type-Options
-		header_down -Referrer-Policy
+    #
+    # `route` is the order: the gate must answer a refused source BEFORE the
+    # limiter, or off-tailnet traffic spends the zone's window (250 refused
+    # requests then 70x 429) and starves the smoke probe and real clients.
+    route {
+        @not_tailnet not remote_ip 100.64.0.0/10
+        respond @not_tailnet 403
+        import ratelimit vault_rl
+        reverse_proxy 172.22.0.4:80 {
+            # strip VW's own security headers so the site-level set yields one value
+            header_down -X-Frame-Options
+            header_down -X-Content-Type-Options
+            header_down -Referrer-Policy
+        }
     }
 }
