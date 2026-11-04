@@ -129,7 +129,7 @@ current_branch() { G rev-parse --abbrev-ref HEAD 2>/dev/null; }
 
 require_clean() {
   [ -z "$(G status --porcelain)" ] && return 0
-  error "the working tree has uncommitted changes — commit or stash them first (rule 26 wants one change per commit)"
+  error "the working tree has uncommitted changes — commit or stash them first (rule 26 works on committed history)"
   G status --short | sed 's/^/  /'
   return 1
 }
@@ -219,7 +219,7 @@ cmd_start() {
     return 1
   fi
   run G checkout -B "$branch" "$REMOTE/$BASE" || return 1
-  [ "$DRY" = 1 ] || info "on $branch — make your changes, commit with 'make git-com MSG=\"…\"' (one change per commit), then 'make git-pr'"
+  [ "$DRY" = 1 ] || info "on $branch — make your changes, commit with 'make git-com MSG=\"…\"' (a wider change is auto-split), then 'make git-pr'"
 }
 
 # ─────────────────────────────── switch ───────────────────────────────────
