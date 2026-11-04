@@ -25,7 +25,6 @@
 # exposes the door over Tailscale HTTPS instead (a different web address:
 # https://<machine>.<tailnet>.ts.net).
 https://ttyd.{{DOMAIN}} {
-    import ratelimit ttyd_rl
     tls {
         # Fallback issuer chain: Let's Encrypt first, then Buypass Go SSL and
         # ZeroSSL — free providers tried in order, so a per-issuer rate limit
@@ -57,6 +56,7 @@ https://ttyd.{{DOMAIN}} {
     route {
         @not_tailnet not remote_ip 100.64.0.0/10
         respond @not_tailnet 403
+        import ratelimit ttyd_rl
 
         # ttyd host terminal IS the homepage — proxied as-is (ttyd runs with no
         # base path, so the request path is already the app's own).

@@ -11,7 +11,6 @@
 # TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
 
 https://kopia.{{DOMAIN}} {
-    import ratelimit kopia_rl
     tls {
         # Fallback issuer chain: Let's Encrypt first, then Buypass Go SSL and
         # ZeroSSL — free providers tried in order, so a per-issuer rate limit
@@ -30,20 +29,25 @@ https://kopia.{{DOMAIN}} {
         }
     }
     import compress
-    @not_tailnet not remote_ip 100.64.0.0/10
-    respond @not_tailnet 403
     header {
         import security_headers
     }
     request_body {
         max_size 0
     }
-    reverse_proxy 172.22.0.31:51515 {
-        header_up Host {host}
-        # A restore streams whole directory trees; no proxy deadline.
-        transport http {
-            read_timeout 0
-            write_timeout 0
+    # Gate before limiter: an off-tailnet flood must get 403 without spending
+    # the zone window the legitimate tailnet clients share.
+    route {
+        @not_tailnet not remote_ip 100.64.0.0/10
+        respond @not_tailnet 403
+        import ratelimit kopia_rl
+        reverse_proxy 172.22.0.31:51515 {
+            header_up Host {host}
+            # A restore streams whole directory trees; no proxy deadline.
+            transport http {
+                read_timeout 0
+                write_timeout 0
+            }
         }
     }
 }
