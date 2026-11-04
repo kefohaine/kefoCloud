@@ -36,4 +36,16 @@ jobs:
 
       - name: Commit hygiene
         run: |
-          bash scripts/info/git-audit.sh origin/main..HEAD
+          # A range that only touches documentation needs no revert recipe:
+          # rule 10 counts non-doc files, and a docs-only pull request has none.
+          range="origin/main..HEAD"
+          docs_only=1
+          while IFS= read -r p; do
+            [ -z "$p" ] && continue
+            case "$p" in docs/*|*.md) ;; *) docs_only=0 ;; esac
+          done < <(git diff --name-only "$range")
+          if [ "$docs_only" = 1 ]; then
+            bash scripts/info/git-audit.sh "$range" --docs-only
+          else
+            bash scripts/info/git-audit.sh "$range"
+          fi
