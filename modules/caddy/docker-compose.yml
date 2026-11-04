@@ -50,6 +50,11 @@ services:
       # errors, one cause). Pre-creating the dir in the image does not help;
       # /srv/pages is a plain sibling path (the vhosts' `root *` uses it too).
       - ${DATA_DIR}/pages:/srv/pages:ro
+      # Per-app access logs. The vhosts write /var/log/caddy/<app>.log and the
+      # fail2ban web-login jails read them from the host — without this bind the
+      # files live only inside the container and disappear on recreate. The host
+      # directory is created by the installer (`make install-config`).
+      - ${DATA_DIR}/logs/caddy:/var/log/caddy
       # Persistent Caddy data: ACME certs, account keys, OCSP staples.
       # Bound at /data, which is the caddy:2.x default base directory —
       # the built-in ACME issuer writes under /data/caddy and renewal
