@@ -19,7 +19,6 @@
 # There is one canonical homepage (www.{{DOMAIN}}), so the apex answers with a
 # permanent redirect rather than a second copy of the site.
 https://{{DOMAIN}} {
-    import ratelimit www_rl
     tls {
         # Fallback issuer chain: Let's Encrypt first, then Buypass Go SSL and
         # ZeroSSL — free providers tried in order, so a per-issuer rate limit
@@ -41,10 +40,17 @@ https://{{DOMAIN}} {
     header {
         import security_headers
     }
-    redir https://www.{{DOMAIN}}{uri} permanent
+    # `route` makes the order literal: without it Caddy runs `redir` before the
+    # limiter, so a redirect flood is never counted. The limiter must answer
+    # first on the apex too.
+    route {
+        import ratelimit www_rl
+        redir https://www.{{DOMAIN}}{uri} permanent
+    }
 }
 
 https://www.{{DOMAIN}} {
+    import ratelimit www_rl
     tls {
         # Fallback issuer chain: Let's Encrypt first, then Buypass Go SSL and
         # ZeroSSL — free providers tried in order, so a per-issuer rate limit
