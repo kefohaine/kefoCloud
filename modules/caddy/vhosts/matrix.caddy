@@ -50,7 +50,7 @@ https://matrix.{{DOMAIN}} {
         handle @wk_client {
             header Content-Type application/json
             respond <<JSON
-{"m.homeserver":{"base_url":"https://matrix.{{DOMAIN}}"},"m.authentication":{"issuer":"https://auth.{{DOMAIN}}/"}}
+{"m.homeserver":{"base_url":"https://matrix.{{DOMAIN}}"},"m.authentication":{"issuer":"https://auth.matrix.{{DOMAIN}}/"}}
 JSON
         }
         # Server discovery for remote homeservers: the name IS the API host, so

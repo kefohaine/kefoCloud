@@ -7,7 +7,7 @@
 # proxy runs. DNS-01 needs only the TXT record, so the certificate still issues.
 #
 # The app is a static SPA: it talks to matrix.{{DOMAIN}} (Synapse admin API) and
-# auth.{{DOMAIN}} (MAS admin API) directly from the browser, so this vhost
+# auth.matrix.{{DOMAIN}} (MAS admin API) directly from the browser, so this vhost
 # proxies nothing but the app itself.
 #
 # TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
