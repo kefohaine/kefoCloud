@@ -32,22 +32,47 @@ https://matrix.{{DOMAIN}} {
         }
     }
     import compress
-    header {
-        import security_headers
-    }
-    # Media uploads are the traffic here; the ceiling matches the homeserver's
-    # own max_upload_size so the edge is never the first thing to refuse a file.
-    request_body {
-        max_size 100m
-    }
-    reverse_proxy 172.22.0.28:8008 {
-        header_up Host {host}
-        header_up X-Forwarded-For {remote_host}
-        header_up X-Forwarded-Proto {scheme}
-        # Long-poll and federation requests outlive the default timeouts.
-        transport http {
-            read_timeout 300s
-            write_timeout 300s
+    route {
+        header {
+            import security_headers
+        }
+        # Media uploads are the traffic here; the ceiling matches the
+        # homeserver's own max_upload_size so the edge is never the first thing
+        # to refuse a file.
+        request_body {
+            max_size 100m
+        }
+        # Client discovery. Element (and every other client) reads this before
+        # it talks to the homeserver: m.authentication names the MAS issuer, and
+        # without it the delegated login flow cannot start. Served from the edge
+        # because Synapse does not answer .well-known itself.
+        @wk_client path /.well-known/matrix/client
+        handle @wk_client {
+            header Content-Type application/json
+            respond <<JSON
+{"m.homeserver":{"base_url":"https://matrix.{{DOMAIN}}"},"m.authentication":{"issuer":"https://auth.{{DOMAIN}}/"}}
+JSON
+        }
+        # Server discovery for remote homeservers: the name IS the API host, so
+        # this only steers federation onto the TLS port (8448 is not published).
+        @wk_server path /.well-known/matrix/server
+        handle @wk_server {
+            header Content-Type application/json
+            respond <<JSON
+{"m.server":"matrix.{{DOMAIN}}:443"}
+JSON
+        }
+        handle {
+            reverse_proxy 172.22.0.28:8008 {
+                header_up Host {host}
+                header_up X-Forwarded-For {remote_host}
+                header_up X-Forwarded-Proto {scheme}
+                # Long-poll and federation requests outlive the default timeouts.
+                transport http {
+                    read_timeout 300s
+                    write_timeout 300s
+                }
+            }
         }
     }
 }
