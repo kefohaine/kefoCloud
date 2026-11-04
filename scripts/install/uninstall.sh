@@ -860,8 +860,8 @@ granular_stack_only() {
     [ -n "$h" ] && [ "$h" != "-" ] && cf_a_del "$h"
     # doors that live on a second hostname of the same module
     case "$k" in
-      chat) cf_a_del matrix ;;
-      mail) cf_a_del mailu ;;
+      chat) cf_a_del matrix; cf_a_del auth.matrix ;;
+      mail) cf_a_del admin.mail ;;
     esac
   done
   return 0
