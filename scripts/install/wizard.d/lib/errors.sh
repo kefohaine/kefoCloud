@@ -76,7 +76,7 @@ problem() {
     install_config) echo "host services are not up (make install-config failed)" ;;
     fail2ban)       echo "fail2ban is not running (sshd jail dead)" ;;
     caddy)          echo "caddy container is not running" ;;
-    matrix)         echo "the Matrix stack is not running (matrix-synapse / matrix-element / matrix-db)" ;;
+    matrix)         echo "the Matrix stack is not running (matrix-synapse / matrix-element / matrix-db / matrix-mas)" ;;
     matrix_element) echo "Element does not answer on chat.$DOMAIN" ;;
     vaultwarden)    echo "vaultwarden container is not running" ;;
     kuma)           echo "uptimekuma container is not running" ;;
@@ -174,7 +174,7 @@ recheck() {
     install_config) systemctl is-active --quiet ttyd dnsmasq goose ;;
     fail2ban) systemctl is-active --quiet fail2ban && fail2ban-client status sshd >/dev/null 2>&1 ;;
     caddy) docker ps --format '{{.Names}}' | grep -qx caddy ;;
-    matrix) docker ps --format '{{.Names}}' | grep -qx matrix-synapse && docker ps --format '{{.Names}}' | grep -qx matrix-element && docker ps --format '{{.Names}}' | grep -qx matrix-db ;;
+    matrix) docker ps --format '{{.Names}}' | grep -qx matrix-synapse && docker ps --format '{{.Names}}' | grep -qx matrix-element && docker ps --format '{{.Names}}' | grep -qx matrix-db && docker ps --format '{{.Names}}' | grep -qx matrix-mas ;;
     matrix_element) curl -sk --max-time 15 "https://chat.$DOMAIN/" | grep -qi '<title>' ;;
     kopia) docker ps --format '{{.Names}}' | grep -qx kopia ;;
     vaultwarden) docker ps --format '{{.Names}}' | grep -qx vaultwarden ;;

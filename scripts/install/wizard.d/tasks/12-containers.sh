@@ -42,6 +42,16 @@ containers_up() {
     fi
     svc_note_applied matrix matrix --
   fi
+  # Element Admin: a static panel, no database — it only needs the edge up so
+  # the tailnet door answers.
+  if mod_on admin; then
+    if svc_skip_repair admin element-admin -- element-admin; then
+      detail "  element-admin already up, inputs unchanged — skipped"
+    else
+      log "  recreate: element-admin"; make dok-recreate-element-admin >>"$LOG" 2>&1 || fail admin
+    fi
+    svc_note_applied admin element-admin --
+  fi
   if mod_on ocis; then
     if svc_skip_repair ocis ocis -- ocis; then
       detail "  ocis already up, inputs unchanged — skipped"
