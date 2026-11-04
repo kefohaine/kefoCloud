@@ -99,24 +99,21 @@ trusted_key_servers:
 
 # Authentication is delegated to Matrix Authentication Service (ESS CE): Synapse
 # keeps the data (users, rooms, media) and stops handling passwords and access
-# tokens itself. Everything a browser or a client does — login, registration,
-# token refresh — is served by auth.matrix.$DOMAIN; Synapse only answers the API calls
-# the tokens unlock. The two sides must agree on the same shared secret and the
-# same OAuth client id, or every request answers 401.
-experimental_features:
-  msc3861:
-    enabled: true
-    issuer: "https://auth.matrix.$DOMAIN/"
-    client_id: "0000000000000000000SYNAPSE"
-    client_auth_method: client_secret_basic
-    client_secret: "$MAS_CLIENT_SECRET"
-    # Static token for /_synapse/admin: the make matrix-* recipes and the
-    # installer's readiness probe carry it instead of logging in with a
-    # password, which no longer exists once auth is delegated.
-    # The SAME shared secret MAS authenticates its admin calls with: one value,
-    # both directions (Synapse -> MAS introspection, MAS -> /_synapse/admin).
-    admin_token: "$MAS_SYNAPSE_SECRET"
-
+# tokens itself. Every login, registration and token refresh is served by
+# auth.matrix.$DOMAIN; Synapse answers the API calls those tokens unlock and
+# publishes MAS's OAuth metadata on /_matrix/client/v1/auth_metadata, which is
+# how a client learns to send its user to the issuer instead of posting a
+# password here.
+#
+# This is the ONLY delegation block: the older experimental_features.msc3861
+# spelling is refused outright ("was removed. Use the
+# matrix_authentication_service configuration instead"), so a config carrying
+# both never starts.
+#
+# The shared secret is the only credential between the two: Synapse takes it as
+# the bearer token on /_synapse/admin — the make matrix-* recipes and the
+# installer's readiness probe present it instead of a password login, which no
+# longer exists — and MAS sends the same value when it calls the homeserver.
 matrix_authentication_service:
   enabled: true
   endpoint: "http://matrix-mas:8080/"
@@ -251,8 +248,8 @@ matrix:
   secret: "$MAS_SYNAPSE_SECRET"
   endpoint: "http://matrix-synapse:8008/"
 clients:
-  # The OAuth client Synapse synchronises against (client_id/client_secret in
-  # homeserver.yaml's msc3861 block). Element registers its own client.
+  # The OAuth client named after the homeserver. Element registers its own
+  # through the registration endpoint.
   - client_id: 0000000000000000000SYNAPSE
     client_auth_method: client_secret_basic
     client_secret: "$MAS_CLIENT_SECRET"
