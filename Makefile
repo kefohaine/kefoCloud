@@ -1045,7 +1045,7 @@ migrate:
 # Git
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: git-issue git-start git-branch git-switch git-del git-branches git-pr git-land git-pull git-add git-com git-push git-force-push git-audit prose-audit git-split
+.PHONY: git-issue git-start git-branch git-switch git-del git-branches git-pr git-land git-pull git-add git-com git-push git-force-push git-audit pr-guard prose-audit git-split
 
 # The branch + pull-request workflow (AGENTS rule 30). `main` is write-once: a
 # change is made on a branch named temp-<N> (temp-1, temp-2, … derived from the
@@ -1115,6 +1115,13 @@ git-pull:
 # in the GitHub web editor, which runs no local hook.
 git-audit:
 >@bash scripts/info/git-audit.sh $(RANGE)
+
+# Pull-request shape (scripts/info/pr-guard.sh). Refuses a branch whose tree
+# equals the base (the squash merge would change nothing) and one that renames
+# a path the base changed (GitHub reads delete/modify, and the base's work is
+# left behind). RANGE=<a..b> checks any pair; BASE=<ref> picks another target.
+pr-guard:
+>@bash scripts/info/pr-guard.sh $(RANGE)
 
 # Prose monitor (scripts/info/prose-audit.sh). Comments and user-facing strings
 # describe the CURRENT configuration only: no docs/ path, no size or duration

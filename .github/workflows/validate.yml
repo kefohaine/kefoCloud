@@ -1,7 +1,8 @@
 # Read-only validation on every branch push and every pull request: shell
 # syntax, the config audit (YAML parses, every token declared, no operator value
-# in a tracked file), the prose gate and the commit-hygiene audit. It never writes, merges
-# or pushes.
+# in a tracked file), the prose gate, the commit-hygiene audit and the
+# pull-request shape (a tree equal to main, or a rename over a path main
+# changed). It never writes, merges or pushes.
 
 name: validate
 
@@ -37,3 +38,9 @@ jobs:
       - name: Commit hygiene
         run: |
           bash scripts/info/git-audit.sh origin/main..HEAD
+
+      - name: Pull-request shape
+        env:
+          TIP: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          bash scripts/info/pr-guard.sh "origin/main..$TIP"

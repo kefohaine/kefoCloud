@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # pre-commit hook — guards the Caddy edge and the commit identity (installed via
 # `make install-hooks`). Guards:
+#  0a. The installed hooks must be the copies this checkout tracks — a stale
+#      one calls libraries the worktree no longer has (scripts/lib/hooks-fresh.sh).
 #  0. The commit identity must be the operator's GitHub account (no root, no
 #     invented address) — see below.
 #  1. If any file under modules/caddy/ is staged, the Caddyfile must
@@ -14,6 +16,15 @@
 
 [ "${GIT_SPLIT_INTERNAL:-}" = 1 ] && exit 0   # a git-split replay: our own commits, stand down
 repo=$(git rev-parse --show-toplevel)
+# 0a. A hook copied by `make install-hooks` runs the WORKTREE's libraries; once
+#     a commit reshapes one of them the installed copy calls what no longer
+#     exists, and the failure names the function, not the cause (lesson
+#     2026-11-05). Compare the copies before anything else runs.
+. "$repo/scripts/lib/hooks-fresh.sh" 2>/dev/null || true
+if command -v hooks_fresh >/dev/null 2>&1 && ! hooks_fresh "$repo"; then
+  echo "pre-commit: refusing to commit — the installed hooks are stale."
+  exit 1
+fi
 . "$repo/scripts/lib/instance.sh" 2>/dev/null || true
 . "$repo/scripts/lib/commit-areas.sh"
 set -uo pipefail
