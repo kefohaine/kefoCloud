@@ -170,6 +170,19 @@ check_sec_headers() {
   fi
 }
 
+# check_body <name> <host> <path> <needle> [desc] — the body must carry
+# <needle>. A 200 with the wrong document is the failure mode worth catching
+# here (an edge stub, or a metadata document with no issuer in it).
+check_body() {
+  local name="$1" host="$2" path="$3" needle="$4" desc="${5:-}" body
+  body=$(curl -s --max-time 12 --resolve "$host:443:127.0.0.1" "https://$host$path")
+  if [[ "$body" != *"$needle"* ]]; then
+    say "FAIL $name: body lacks '$needle' — https://$host$path"; bad
+  else
+    say "ok   $name${desc:+ — }$desc"
+  fi
+}
+
 # check_cors <name> <host> <path> <origin> [desc] — a browser app served from
 # ANOTHER origin reads this path (the Element Admin panel on
 # admin.chat.$DOMAIN reads matrix.$DOMAIN's discovery document), so the
@@ -280,6 +293,16 @@ check matrix-wk "matrix.$DOMAIN" "/.well-known/matrix/client" "200" "" "client d
 check_cors matrix-wk "matrix.$DOMAIN" "/.well-known/matrix/client" "https://admin.chat.$DOMAIN" "discovery readable cross-origin"
 # auth.matrix.$DOMAIN is the identity provider (MAS); every token Synapse accepts is
 # minted here, so a 200 on its discovery document is the real health signal.
+# Where to authenticate. Synapse publishes MAS's metadata here; a client (or the
+# admin panel) that cannot read it falls back to posting a password to /login,
+# which delegated auth does not serve — the login page then reports a
+# communication problem and the register page cannot list flows.
+check matrix-authmd "matrix.$DOMAIN" "/_matrix/client/v1/auth_metadata" "200" "" "auth metadata answers"
+check_body matrix-authmd "matrix.$DOMAIN" "/_matrix/client/v1/auth_metadata" "auth.matrix.$DOMAIN" "auth metadata names the MAS issuer"
+# The compatibility layer, for clients that speak no OIDC: /login, /logout and
+# /refresh are proxied to MAS because Synapse answers M_UNRECOGNIZED for them.
+check matrix-login "matrix.$DOMAIN" "/_matrix/client/v3/login" "200" "" "legacy login is served by MAS"
+check_body matrix-login "matrix.$DOMAIN" "/_matrix/client/v3/login" "\"flows\"" "legacy login lists its flows"
 check mas-discovery "auth.matrix.$DOMAIN" "/.well-known/openid-configuration" "200" "" "MAS discovery answers"
 check_sec_headers auth "auth.matrix.$DOMAIN" "/.well-known/openid-configuration" "one of each"
 check_tls "auth.matrix.$DOMAIN"
