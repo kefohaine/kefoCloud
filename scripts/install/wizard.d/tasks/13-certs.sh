@@ -41,6 +41,8 @@ issue_certs() {
   mod_on ocis    && hosts="$hosts cloud"
   mod_on chat    && hosts="$hosts chat"
   mod_on chat    && hosts="$hosts matrix"
+  mod_on chat    && hosts="$hosts auth"
+  mod_on admin   && hosts="$hosts admin.chat"
   mod_on kopia   && hosts="$hosts kopia"
   mod_on vault   && hosts="$hosts vault"
   mod_on monitor && hosts="$hosts kuma"

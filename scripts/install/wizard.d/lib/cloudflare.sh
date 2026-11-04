@@ -152,6 +152,13 @@ cf_mail_dns() {
   # transfers are long lived and large, and the origin holds its own LE cert
   # via DNS-01. Element reaches it directly, so the name must resolve publicly.
   mod_on chat && cf_record matrix false || cf_a_del matrix
+  # auth.$DOMAIN is the Matrix Authentication Service (ESS CE): a browser is
+  # redirected here mid-login, so the name is public and proxied like chat.
+  mod_on chat && cf_record auth true || cf_a_del auth
+  # admin.chat.$DOMAIN is Element Admin and is TAILNET-ONLY (same model as
+  # vault): dnsmasq answers it for tailnet clients, the vhost 403s everything
+  # else, and the public zone must hold NO record (DNS-01 only needs the TXT).
+  cf_a_del admin.chat
   # kopia.$DOMAIN is the backup server and is TAILNET-ONLY: dnsmasq answers it
   # for tailnet clients and the vhost 403s every other source.
   cf_a_del kopia
