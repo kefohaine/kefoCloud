@@ -26,7 +26,7 @@ The wizard asks for five things up front (SSH key, Tailscale key, Cloudflare tok
 
 ## What you can install
 
-`chat` (Matrix + Element) · `ocis` (ownCloud Infinite Scale) · `kopia` (backups) · `vault` (Vaultwarden) · `mail` (Mailu + Roundcube) · `monitor` (Uptime Kuma) · `home` (Homarr) · `blog` (WriteFreely) · `photos` (Immich) — pick any subset, or `all`.
+`chat` (ESS CE — Synapse + Element + MAS, with the Element Admin panel) · `ocis` (ownCloud Infinite Scale) · `kopia` (backups) · `vault` (Vaultwarden) · `mail` (Mailu + Roundcube) · `monitor` (Uptime Kuma) · `home` (Homarr) · `blog` (WriteFreely) · `photos` (Immich) — pick any subset, or `all`.
 
 ## Read next
 
