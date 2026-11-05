@@ -31,7 +31,8 @@ services:
         max-size: "10m"
         max-file: "3"
 
-    # Pin the bridge IP — the edge dials 172.22.0.30:5432 by address.
+    # Pin the bridge IP so the address is stable and never collides with
+    # another module — nothing dials it by address.
     networks:
       net:
         ipv4_address: 172.22.0.30

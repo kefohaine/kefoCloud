@@ -28,9 +28,8 @@ MAS="$DATA_DIR/matrix/mas"
 [ -f "$ENV" ] || { echo "matrix-identity: $ENV is missing — run 'make matrix-gen'" >&2; exit 1; }
 # shellcheck disable=SC1090
 . "$ENV"
-# shellcheck disable=SC1090
-. "$REPO_DIR/scripts/lib/instance.sh" 2>/dev/null || true
-[ -n "${DOMAIN:-}" ] || { echo "matrix-identity: DOMAIN is empty in $DATA_DIR/instance.conf" >&2; exit 1; }
+[ -n "${DOMAIN:-}" ] || { echo "matrix-identity: DOMAIN is empty in $ENV" >&2; exit 1; }
+[ -n "${DATA_DIR:-}" ] || { echo "matrix-identity: DATA_DIR is empty in $ENV" >&2; exit 1; }
 
 say() { printf 'matrix-identity: %s\n' "$*" >&2; }
 
@@ -55,8 +54,9 @@ docker exec matrix-mas-db psql -U mas -d postgres -v ON_ERROR_STOP=1 \
   -c "create database mas owner mas;" >/dev/null 2>&1 \
   || { echo "matrix-identity: could not reset the MAS database" >&2; exit 1; }
 
-say "removing the signing key, homeserver.yaml and Element's runtime config"
-rm -f "$SYN/homeserver.yaml" "$SYN"/*.signing.key "$DATA_DIR/matrix/element/config.json"
+say "removing the signing key, homeserver.yaml and the Element and MAS configs"
+rm -f "$SYN/homeserver.yaml" "$SYN"/*.signing.key \
+  "$DATA_DIR/matrix/element/config.json" "$DATA_DIR/matrix/mas/config.yaml"
 
 say "regenerating the configuration under server_name matrix.$DOMAIN"
 bash "$REPO_DIR/scripts/modules/matrix-gen.sh" || { echo "matrix-identity: matrix-gen failed" >&2; exit 1; }

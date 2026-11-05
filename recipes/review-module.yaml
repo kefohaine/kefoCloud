@@ -45,5 +45,5 @@ prompt: |
   End with:
   - blocking issues
   - non-blocking issues
-  - recommended tests (make smoke, make nc-check, docker logs, etc.)
+  - recommended tests (make smoke, make matrix-status, docker logs, etc.)
   - a deployment checklist

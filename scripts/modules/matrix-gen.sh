@@ -199,6 +199,8 @@ if [ -s "$ELM/config.json" ] && ! grep -q '"m.authentication"' "$ELM/config.json
     echo "matrix-gen: added the MAS issuer to $ELM/config.json" >&2
   else
     rm -f "$tmp"
+    echo "matrix-gen: cannot add the MAS issuer to $ELM/config.json — fix the JSON and re-run" >&2
+    exit 1
   fi
 fi
 
@@ -242,8 +244,10 @@ http:
         - host: 127.0.0.1
           port: 8081
   trusted_proxies:
-    - 172.22.0.0/24
-    - 127.0.0.1/8
+    # Caddy runs with network_mode: host, so MAS sees it as the bridge gateway
+    # — never trust the whole module bridge, where any container could spoof.
+    - 172.22.0.1/32
+    - 127.0.0.1/32
 database:
   uri: "postgresql://mas:$MAS_DB_PASSWORD@matrix-mas-db/mas"
 secrets:
