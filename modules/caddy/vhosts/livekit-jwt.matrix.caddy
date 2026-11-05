@@ -9,7 +9,7 @@
 #
 # TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
 
-https://livekit-jwt.{{DOMAIN}} {
+https://livekit-jwt.matrix.{{DOMAIN}} {
     log {
         output file /var/log/caddy/livekit-jwt.log
     }

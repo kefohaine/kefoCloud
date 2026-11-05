@@ -16,7 +16,7 @@
 #
 # TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
 
-https://call.{{DOMAIN}} {
+https://call.matrix.{{DOMAIN}} {
     log {
         output file /var/log/caddy/call.log
     }
