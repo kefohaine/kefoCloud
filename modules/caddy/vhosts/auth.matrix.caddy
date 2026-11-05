@@ -46,7 +46,7 @@ https://auth.matrix.{{DOMAIN}} {
         max_size 1m
     }
     # MAS sends its own CORS headers on /api/admin/v1 (Element Admin calls it
-    # cross-origin from admin.chat.{{DOMAIN}}); the flow endpoints are same-origin.
+    # cross-origin from admin.matrix.{{DOMAIN}}); the flow endpoints are same-origin.
     reverse_proxy 172.22.0.34:8080 {
         header_up Host {host}
         header_up X-Forwarded-For {remote_host}

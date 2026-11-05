@@ -30,7 +30,26 @@ task_firewall() {
       ufw --force delete allow "$p/tcp" >/dev/null 2>&1 || true
     fi
   done
-  # Default-deny incoming, set explicitly: some base images ship ufw's
+  local p
+  for p in 25 465 587 993; do
+    if [ "${MOD_MAIL:-false}" = "true" ]; then
+      ufw allow "$p/tcp" >/dev/null 2>&1
+    else
+      ufw --force delete allow "$p/tcp" >/dev/null 2>&1 || true
+    fi
+  done
+  # Element Call (module: chat): the LiveKit SFU's media path. UDP 7882 is the
+  # muxed media port every participant sends to, TCP 7881 the fallback for a
+  # network that drops UDP. Neither can go through the edge or Cloudflare, so
+  # they are the ONE thing here that is not behind 443 — close them and calls
+  # still connect, then carry no audio or video.
+  if [ "${MOD_CHAT:-false}" = "true" ]; then
+    ufw allow 7881/tcp >/dev/null 2>&1
+    ufw allow 7882/udp >/dev/null 2>&1
+  else
+    ufw --force delete allow 7881/tcp >/dev/null 2>&1 || true
+    ufw --force delete allow 7882/udp >/dev/null 2>&1 || true
+  fi
   # DEFAULT_INPUT_POLICY as "ACCEPT" (this one did), and with that `ufw enable`
   # plus the allow rules above restrict nothing — every port, 22 included, stays
   # world-open and the rules are cosmetic. The tailnet rule and the temporary

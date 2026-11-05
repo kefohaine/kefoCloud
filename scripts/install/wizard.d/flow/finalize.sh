@@ -69,7 +69,7 @@ success_block() {
   # door) and the machine's own addresses are always part of the stack.
   mod_on chat && printf '  %sElement%s      https://chat.%s      admin %s@%s:matrix.%s %s(password: modules/matrix/.env)%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${SYNAPSE_ADMIN_USER:-mkadmin}" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
-  mod_on chat && printf '  %sElement Admin%s https://admin.chat.%s  %s(tailnet only; same admin account)%s\n' \
+  mod_on chat && printf '  %sElement Admin%s https://admin.matrix.%s  %s(tailnet only; same admin account)%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
   mod_on ocis && printf '  %sownCloud%s     https://cloud.%s     %sadmin / %s%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "IDM_ADMIN_PASSWORD in modules/ocis/.env" "$C_RST"

@@ -1,0 +1,61 @@
+# call.{{DOMAIN}} — Element Call, the group-call app (module: chat).
+#
+# A static app served by the container's own nginx on 172.22.0.37:8080. It
+# reads the homeserver from /app/config.json ($DATA_DIR/call/element-call/
+# config.json) and the SFU from the homeserver's matrix_rtc transports, so this
+# vhost proxies nothing but the app itself.
+#
+# It is always an IFRAME inside Element on chat.{{DOMAIN}}: the frame policy is
+# therefore an allow-list for that origin (CSP frame-ancestors), never
+# X-Frame-Options SAMEORIGIN — that one header alone would make every call
+# button fail with a blank widget.
+#
+# COOP/COEP are what make the media encryption worker run: Element Call's
+# insertable-streams E2EE needs a cross-origin-isolated document, and without
+# these headers a call connects in the clear instead of refusing.
+#
+# TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
+
+https://call.matrix.{{DOMAIN}} {
+    log {
+        output file /var/log/caddy/call.log
+    }
+    import ratelimit call_rl
+    tls {
+        # Fallback issuer chain: Let's Encrypt first, then Buypass Go SSL and
+        # ZeroSSL — free providers tried in order, so a per-issuer rate limit
+        # (5 orders/name/week on LE) never leaves a vhost without a cert.
+        issuer acme https://acme-v02.api.letsencrypt.org/directory {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+        issuer acme https://api.buypass.com/acme/directory {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+        issuer acme https://acme.zerossl.com/v2/DV90 {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+    }
+    import compress
+    header {
+        import security_headers
+        # An allow-list, not SAMEORIGIN: the app is embedded by the Element on
+        # chat.{{DOMAIN}} and by nothing else.
+        Content-Security-Policy "frame-ancestors https://chat.{{DOMAIN}}"
+        Cross-Origin-Opener-Policy "same-origin"
+        Cross-Origin-Embedder-Policy "require-corp"
+    }
+    reverse_proxy 172.22.0.37:8080 {
+        header_up Host {host}
+        # nginx ships its own copies; strip them so the site-level set above is
+        # the only one (Caddy appends, it does not replace).
+        header_down -X-Frame-Options
+        header_down -X-Content-Type-Options
+        header_down -Referrer-Policy
+        header_down -Cross-Origin-Opener-Policy
+        header_down -Cross-Origin-Embedder-Policy
+        header_down -Content-Security-Policy
+    }
+}

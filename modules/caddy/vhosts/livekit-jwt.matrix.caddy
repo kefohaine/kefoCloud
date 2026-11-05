@@ -1,0 +1,38 @@
+# livekit-jwt.{{DOMAIN}} — the SFU's token service (module: chat).
+#
+# Element Call trades a Matrix OpenID token for a short-lived LiveKit token
+# here (GET /sfu/get), which is the only thing that keeps an outsider out of the
+# SFU. Reached from the browser app on call.{{DOMAIN}}, so it is a CROSS-ORIGIN
+# JSON call: the service answers its own CORS headers and this vhost does not
+# add a second copy (two Access-Control-Allow-Origin values make a browser
+# refuse the response).
+#
+# TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
+
+https://livekit-jwt.matrix.{{DOMAIN}} {
+    log {
+        output file /var/log/caddy/livekit-jwt.log
+    }
+    import ratelimit livekit_jwt_rl
+    tls {
+        # Fallback issuer chain: Let's Encrypt first, then Buypass Go SSL and
+        # ZeroSSL — free providers tried in order, so a per-issuer rate limit
+        # (5 orders/name/week on LE) never leaves a vhost without a cert.
+        issuer acme https://acme-v02.api.letsencrypt.org/directory {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+        issuer acme https://api.buypass.com/acme/directory {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+        issuer acme https://acme.zerossl.com/v2/DV90 {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+    }
+    import compress
+    reverse_proxy 172.22.0.36:8080 {
+        header_up Host {host}
+    }
+}

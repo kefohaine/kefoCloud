@@ -654,8 +654,8 @@ EOF
 )
   fi
   base_sha=$(G rev-parse "$REMOTE/$BASE")
-  printf '%s\n\n## Revert\n\n`git reset --hard %s` — undo the whole pull request on `%s` in one command.\n' \
-    "$body" "$base_sha" "$BASE"
+  printf '%s\n\n## Revert\n\nOne command undoes the whole pull request on `%s` after its squash merge:\n\n```bash\ngit reset --hard %s\n```\n' \
+    "$body" "$BASE" "$base_sha"
 }
 
 # ──────────────────────────────── land ────────────────────────────────────

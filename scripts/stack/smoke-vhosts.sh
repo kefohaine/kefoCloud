@@ -185,7 +185,7 @@ check_body() {
 
 # check_cors <name> <host> <path> <origin> [desc] — a browser app served from
 # ANOTHER origin reads this path (the Element Admin panel on
-# admin.chat.$DOMAIN reads matrix.$DOMAIN's discovery document), so the
+# admin.matrix.$DOMAIN reads matrix.$DOMAIN's discovery document), so the
 # response must say so with Access-Control-Allow-Origin or the browser throws
 # it away however correct the body is.
 check_cors() {
@@ -277,10 +277,10 @@ end_sec
 # Module: chat — Matrix (Synapse + Element + MAS + the Element Admin panel).
 # chat.$DOMAIN serves Element (a static browser app), matrix.$DOMAIN the
 # homeserver's client-server API, auth.matrix.$DOMAIN the identity provider and
-# admin.chat.$DOMAIN the tailnet-only panel. Chat/Matrix are public (Element
-# proxied, Synapse DNS-only); admin.chat is never in the public zone.
+# admin.matrix.$DOMAIN the tailnet-only panel. Chat/Matrix are public (Element
+# proxied, Synapse DNS-only); admin.matrix is never in the public zone.
 # ─────────────────────────────────────────────────────────────────────────────
-hdr chat "Chat — ESS CE (module: chat) · chat.$DOMAIN + matrix.$DOMAIN + auth.matrix.$DOMAIN + admin.chat.$DOMAIN"
+hdr chat "Chat — ESS CE (module: chat) · chat.$DOMAIN + matrix.$DOMAIN + auth.matrix.$DOMAIN + admin.matrix.$DOMAIN + call.matrix.$DOMAIN"
 check chat "chat.$DOMAIN" "/" "200 301 302 307 308" html "Element answers"
 check_sec_headers chat "chat.$DOMAIN" "/" "one of each"
 check_tls "chat.$DOMAIN"
@@ -292,7 +292,7 @@ check_tls "matrix.$DOMAIN"
 # Client discovery names the homeserver URL AND the MAS issuer: a client that
 # cannot read m.authentication cannot log in at all.
 check matrix-wk "matrix.$DOMAIN" "/.well-known/matrix/client" "200" "" "client discovery answers"
-check_cors matrix-wk "matrix.$DOMAIN" "/.well-known/matrix/client" "https://admin.chat.$DOMAIN" "discovery readable cross-origin"
+check_cors matrix-wk "matrix.$DOMAIN" "/.well-known/matrix/client" "https://admin.matrix.$DOMAIN" "discovery readable cross-origin"
 # auth.matrix.$DOMAIN is the identity provider (MAS); every token Synapse accepts is
 # minted here, so a 200 on its discovery document is the real health signal.
 # Where to authenticate. Synapse publishes MAS's metadata here; a client (or the
@@ -308,17 +308,30 @@ check_body matrix-login "matrix.$DOMAIN" "/_matrix/client/v3/login" "\"flows\"" 
 check mas-discovery "auth.matrix.$DOMAIN" "/.well-known/openid-configuration" "200" "" "MAS discovery answers"
 check_sec_headers auth "auth.matrix.$DOMAIN" "/.well-known/openid-configuration" "one of each"
 check_tls "auth.matrix.$DOMAIN"
-# admin.chat.$DOMAIN is the Element Admin panel, TAILNET-ONLY: it can read
+# admin.matrix.$DOMAIN is the Element Admin panel, TAILNET-ONLY: it can read
 # every account, room and session, so both halves are asserted (a public source
 # gets 403, a tailnet source gets the app).
 if [ -z "$TS_IP" ]; then
   say "FAIL admin: no Tailscale IPv4 — cannot probe the tailnet-only door"; bad
 else
-  check_tn admin "admin.chat.$DOMAIN" "/" "200 301 302 307 308" html "Element Admin answers on the tailnet"
+  check_tn admin "admin.matrix.$DOMAIN" "/" "200 301 302 307 308" html "Element Admin answers on the tailnet"
 fi
-check admin-public "admin.chat.$DOMAIN" "/" "403" "" "public sources are refused"
-check_tls "admin.chat.$DOMAIN"
-check_ctns chat matrix-synapse matrix-element matrix-db matrix-mas matrix-mas-db element-admin
+check admin-public "admin.matrix.$DOMAIN" "/" "403" "" "public sources are refused"
+check_tls "admin.matrix.$DOMAIN"
+# The call stack. call.matrix.$DOMAIN is the Element Call app (an iframe inside
+# Element), livekit.matrix.$DOMAIN the SFU's signalling door and
+# livekit-jwt.matrix.$DOMAIN the
+# token service. The RTC transport route is asserted on its own: it needs a
+# token, so 401 is the healthy answer and 404 is exactly the MISSING_MATRIX_RTC_
+# TRANSPORT failure a browser shows — invisible to every other check here.
+check call "call.matrix.$DOMAIN" "/" "200" html "Element Call answers"
+check_tls "call.matrix.$DOMAIN"
+check livekit "livekit.matrix.$DOMAIN" "/" "200" "" "LiveKit signalling answers"
+check_tls "livekit.matrix.$DOMAIN"
+check livekit-jwt "livekit-jwt.matrix.$DOMAIN" "/sfu/get" "405" "" "SFU token service answers (POST only)"
+check_tls "livekit-jwt.matrix.$DOMAIN"
+check rtc "matrix.$DOMAIN" "/_matrix/client/unstable/org.matrix.msc4143/rtc/transports" "401" "" "MatrixRTC transport route is served"
+check_ctns chat matrix-synapse matrix-element matrix-db matrix-mas matrix-mas-db element-admin livekit livekit-jwt element-call
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────

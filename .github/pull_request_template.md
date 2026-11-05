@@ -46,4 +46,5 @@ reviews and merges it.
 - [ ] docs updated to match (WHAT / MANUAL / README as applicable)
 
 ## Revert
-<!-- one recipe for the whole pull request, appended by `make git-pr` -->
+<!-- one recipe for the whole pull request, appended by `make git-pr` as a
+     fenced ```bash block so the tracker renders a copy button beside it -->

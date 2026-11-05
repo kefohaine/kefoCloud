@@ -205,7 +205,7 @@ services:
   # default. It is a static SPA that reads the homeserver name and then calls
   # Synapse's and MAS's admin APIs from the browser, so it needs no config of
   # its own beyond the server name. Only the edge's tailnet-gated door
-  # (modules/caddy/vhosts/admin.chat.caddy) exposes it.
+  # (modules/caddy/vhosts/admin.matrix.caddy) exposes it.
   element-admin:
     image: oci.element.io/element-admin:0.1.18
     container_name: element-admin
@@ -253,6 +253,137 @@ services:
     networks:
       net:
         ipv4_address: 172.22.0.32
+
+  # ── Element Call (MatrixRTC / MSC4143) ──────────────────────────────────
+  # The call stack: a LiveKit SFU for the media, the SFU's JWT service (it
+  # trades a Matrix OpenID token for a LiveKit token, which is how a remote
+  # user is kept out), and Element Call itself as a static app. Element Web
+  # embeds call.matrix.$DOMAIN in an iframe; Element Call reads the SFU from
+  # homeserver.yaml's `matrix_rtc.transports`, so neither app carries the
+  # LiveKit address itself.
+  livekit:
+    # Pinned by digest: this repo publishes no semver tag, and `latest` is a
+    # nightly. The label names the version the digest was cut from.
+    image: livekit/livekit-server:v1.13.11@sha256:25cd902de7cacbd5f1f779f6a6ac1eae20ba8f56b0935934ce6b0ab80d1e3d20
+    container_name: livekit
+    restart: unless-stopped
+
+    # Hard RAM cap (no container swap) — survives recreates, unlike `docker update`.
+    mem_limit: 512m
+    memswap_limit: 512m
+
+    command: ["--config", "/etc/livekit.yaml"]
+    volumes:
+      # API key/secret and the RTC port map. 0600 on the host: the key is the
+      # only thing standing between a stranger and the SFU.
+      - ${DATA_DIR}/call/livekit.yaml:/etc/livekit.yaml:ro
+
+    # WebRTC media, not web traffic: it cannot go through Caddy, and Cloudflare
+    # is not in the path. UDP 7882 is the single muxed media port; TCP 7881 is
+    # the fallback for networks that drop UDP. Both are opened by the
+    # installer's firewall task and are what makes a call work off-tailnet.
+    ports:
+      - "7881:7881/tcp"
+      - "7882:7882/udp"
+
+    healthcheck:
+      test: ["CMD", "/livekit-server", "--version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      net:
+        ipv4_address: 172.22.0.35
+
+  livekit-jwt:
+    image: ghcr.io/element-hq/lk-jwt-service@sha256:d210fd778ba38b7e42e6fc64e8a24a7d66ccc3b938fb20d73bd713224af2dfea
+    container_name: livekit-jwt
+    restart: unless-stopped
+
+    mem_limit: 64m
+    memswap_limit: 64m
+
+    environment:
+      TZ: ${TIMEZONE}
+      # The address a browser dials for signalling, and the SFU credentials
+      # used to sign the short-lived token it hands back.
+      LIVEKIT_URL: wss://livekit.${DOMAIN}
+      LIVEKIT_KEY: ${LIVEKIT_KEY}
+      LIVEKIT_SECRET: ${LIVEKIT_SECRET}
+      # The only homeserver whose users may mint an SFU token.
+      LIVEKIT_FULL_ACCESS_HOMESERVERS: matrix.${DOMAIN}
+
+    expose:
+      - "8080"
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      net:
+        ipv4_address: 172.22.0.36
+
+  element-call:
+    # Same pinning story as livekit: no semver tag in the registry, so the
+    # digest is the pin and the label names the release (v0.28.1).
+    image: ghcr.io/element-hq/element-call@sha256:a6118b789b39130ec29227e8c9e7b68d192213d9131c1cc30d9f9ab2609864a4
+    container_name: element-call
+    restart: unless-stopped
+
+    mem_limit: 64m
+    memswap_limit: 64m
+
+    environment:
+      TZ: ${TIMEZONE}
+
+    volumes:
+      # Only the homeserver config: the SFU comes from the homeserver's
+      # matrix_rtc block, so this file never names LiveKit.
+      - ${DATA_DIR}/call/element-call/config.json:/app/config.json:ro
+
+    expose:
+      - "8080"
+
+    # Static nginx: it only ever writes to /tmp and its caches. A read-only
+    # rootfs keeps a compromised call page from persisting anything.
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /var/run
+
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      net:
+        ipv4_address: 172.22.0.37
 
 networks:
   net:

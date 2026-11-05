@@ -1,0 +1,40 @@
+# livekit.{{DOMAIN}} — the LiveKit SFU's signalling door (module: chat).
+#
+# Only the WebSocket signalling and the HTTP config the LiveKit client fetches
+# live here, on the SFU's HTTP port 7880. The MEDIA never passes through this
+# vhost: it is UDP 7882 (and TCP 7881 as a fallback), published by the compose
+# file straight off the host — Cloudflare is not in that path, which is why the
+# record for this name is proxied but calls still work off-tailnet.
+#
+# Proxied at Cloudflare: a websocket is exactly what the CF proxy carries well.
+# TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
+
+https://livekit.matrix.{{DOMAIN}} {
+    log {
+        output file /var/log/caddy/livekit.log
+    }
+    import ratelimit livekit_rl
+    tls {
+        # Fallback issuer chain: Let's Encrypt first, then Buypass Go SSL and
+        # ZeroSSL — free providers tried in order, so a per-issuer rate limit
+        # (5 orders/name/week on LE) never leaves a vhost without a cert.
+        issuer acme https://acme-v02.api.letsencrypt.org/directory {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+        issuer acme https://api.buypass.com/acme/directory {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+        issuer acme https://acme.zerossl.com/v2/DV90 {
+            email admin@{{DOMAIN}}
+            dns cloudflare {env.CF_API_TOKEN}
+        }
+    }
+    # A call keeps this websocket open for its whole length; Caddy's reverse
+    # proxy applies no read timeout by default, which is what the signalling
+    # socket needs.
+    reverse_proxy 172.22.0.35:7880 {
+        header_up Host {host}
+    }
+}
