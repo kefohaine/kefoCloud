@@ -150,7 +150,10 @@ services:
         ipv4_address: 172.22.0.33
 
   matrix-mas:
-    image: ghcr.io/element-hq/matrix-authentication-service:0.14.1
+    # The floor is set by the delegated-auth contract: Synapse sends its shared
+    # secret as a Bearer token to /oauth2/introspect, which MAS only accepts
+    # from 0.20.0 — on 0.14.x every MAS-minted token answers 503 at Synapse.
+    image: ghcr.io/element-hq/matrix-authentication-service:1.28.0
     container_name: matrix-mas
     restart: unless-stopped
 
