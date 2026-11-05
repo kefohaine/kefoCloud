@@ -45,7 +45,7 @@ issue_certs() {
   # the bare auth.$DOMAIN the pre-MAS layout used: asking for the old name
   # ordered a cert no vhost serves, so the check could never pass.
   mod_on chat    && hosts="$hosts auth.matrix"
-  mod_on chat    && hosts="$hosts admin.chat"
+  mod_on chat    && hosts="$hosts admin.matrix call.matrix livekit.matrix livekit-jwt.matrix"
   mod_on kopia   && hosts="$hosts kopia"
   mod_on vault   && hosts="$hosts vault"
   mod_on monitor && hosts="$hosts kuma"

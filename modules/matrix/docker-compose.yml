@@ -205,7 +205,7 @@ services:
   # default. It is a static SPA that reads the homeserver name and then calls
   # Synapse's and MAS's admin APIs from the browser, so it needs no config of
   # its own beyond the server name. Only the edge's tailnet-gated door
-  # (modules/caddy/vhosts/admin.chat.caddy) exposes it.
+  # (modules/caddy/vhosts/admin.matrix.caddy) exposes it.
   element-admin:
     image: oci.element.io/element-admin:0.1.18
     container_name: element-admin
@@ -258,7 +258,7 @@ services:
   # The call stack: a LiveKit SFU for the media, the SFU's JWT service (it
   # trades a Matrix OpenID token for a LiveKit token, which is how a remote
   # user is kept out), and Element Call itself as a static app. Element Web
-  # embeds call.$DOMAIN in an iframe; Element Call reads the SFU from
+  # embeds call.matrix.$DOMAIN in an iframe; Element Call reads the SFU from
   # homeserver.yaml's `matrix_rtc.transports`, so neither app carries the
   # LiveKit address itself.
   livekit:

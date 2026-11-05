@@ -159,18 +159,21 @@ cf_mail_dns() {
   # fails the TLS handshake — the origin serves its own LE cert instead.
   mod_on chat && cf_record auth.matrix false || cf_a_del auth.matrix
   mod_on chat && cf_record auth.matrix false || cf_a_del auth.matrix
-  # The call stack (module: chat). call.$DOMAIN is the Element Call app, an
-  # iframe inside Element: proxied like chat. livekit.$DOMAIN carries the
-  # WebSocket signalling (proxied — a websocket is what the CF proxy does
-  # well); its MEDIA is UDP 7882/TCP 7881 straight off the host, so the record's
-  # proxied flag never touches the call itself. livekit-jwt.$DOMAIN is the token
-  # service the browser calls cross-origin, so it is proxied too.
-  mod_on chat && cf_record call true || cf_a_del call
-  mod_on chat && cf_record livekit true || cf_a_del livekit
-  mod_on chat && cf_record livekit-jwt true || cf_a_del livekit-jwt
+  # The call stack (module: chat): call.matrix, livekit.matrix and
+  # livekit-jwt.matrix are all TWO-LABEL names, so they are DNS-ONLY like
+  # auth.matrix — Cloudflare's universal certificate covers the apex and one
+  # label only, and a proxied record on a deeper name fails the edge handshake.
+  # call.matrix.$DOMAIN is the Element Call app (an iframe inside Element),
+  # livekit.matrix.$DOMAIN the SFU's WebSocket signalling, livekit-jwt.matrix
+  # the token service the browser calls cross-origin. The SFU's MEDIA is UDP
+  # 7882 / TCP 7881 straight off the host, so no record's proxied flag ever
+  # touches the audio and video itself.
+  mod_on chat && cf_record call.matrix false || cf_a_del call.matrix
+  mod_on chat && cf_record livekit.matrix false || cf_a_del livekit.matrix
+  mod_on chat && cf_record livekit-jwt.matrix false || cf_a_del livekit-jwt.matrix
   # vault): dnsmasq answers it for tailnet clients, the vhost 403s everything
   # else, and the public zone must hold NO record (DNS-01 only needs the TXT).
-  cf_a_del admin.chat
+  cf_a_del admin.matrix
   # kopia.$DOMAIN is the backup server and is TAILNET-ONLY: dnsmasq answers it
   # for tailnet clients and the vhost 403s every other source.
   cf_a_del kopia

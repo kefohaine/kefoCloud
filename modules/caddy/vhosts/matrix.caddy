@@ -55,7 +55,7 @@ https://matrix.{{DOMAIN}} {
         handle @wk_client {
             header Content-Type application/json
             # A browser app on ANOTHER origin reads this document — the Element
-            # Admin panel on admin.chat.{{DOMAIN}} — so the response needs CORS
+            # Admin panel on admin.matrix.{{DOMAIN}} — so the response needs CORS
             # or the browser discards it however correct the body is (the panel
             # then reports "Failed to load the server's well-known document").
             # Synapse answers its own routes with the same ACAO; this edge-served

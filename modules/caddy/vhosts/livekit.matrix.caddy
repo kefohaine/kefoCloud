@@ -9,7 +9,7 @@
 # Proxied at Cloudflare: a websocket is exactly what the CF proxy carries well.
 # TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
 
-https://livekit.{{DOMAIN}} {
+https://livekit.matrix.{{DOMAIN}} {
     log {
         output file /var/log/caddy/livekit.log
     }

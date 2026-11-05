@@ -143,8 +143,8 @@ experimental_features:
 matrix_rtc:
   transports:
     - type: livekit
-      url: "wss://livekit.$DOMAIN"
-      livekit_service_url: "https://livekit-jwt.$DOMAIN"
+      url: "wss://livekit.matrix.$DOMAIN"
+      livekit_service_url: "https://livekit-jwt.matrix.$DOMAIN"
 
 # No URL previews: fetching arbitrary third-party pages from this box is an
 # outbound request the operator did not ask for.
@@ -207,7 +207,7 @@ if [ ! -s "$ELM/config.json" ]; then
     "servers": ["matrix.$DOMAIN"]
   },
   "element_call": {
-    "url": "https://call.$DOMAIN",
+    "url": "https://call.matrix.$DOMAIN",
     "use_exclusively": false
   },
   "features": {
@@ -229,7 +229,7 @@ fi
 # the deleted copy).
 if [ -s "$ELM/config.json" ]; then
   tmp=$(mktemp)
-  if jq --arg url "https://call.$DOMAIN" '
+  if jq --arg url "https://call.matrix.$DOMAIN" '
         .features //= {}
       | .element_call //= {}
       | (if .element_call | has("url") then . else .element_call.url = $url end)
@@ -268,7 +268,7 @@ if [ -s "$SYN/homeserver.yaml" ]; then
     fi
   fi
   if ! grep -qE '^matrix_rtc:' "$SYN/homeserver.yaml"; then
-    printf '\n# The SFU clients are told to use (the module livekit service).\nmatrix_rtc:\n  transports:\n    - type: livekit\n      url: "wss://livekit.%s"\n      livekit_service_url: "https://livekit-jwt.%s"\n' "$DOMAIN" "$DOMAIN" >>"$SYN/homeserver.yaml"
+    printf '\n# The SFU clients are told to use (the module livekit service).\nmatrix_rtc:\n  transports:\n    - type: livekit\n      url: "wss://livekit.matrix.%s"\n      livekit_service_url: "https://livekit-jwt.matrix.%s"\n' "$DOMAIN" "$DOMAIN" >>"$SYN/homeserver.yaml"
     echo "matrix-gen: added matrix_rtc transports to $SYN/homeserver.yaml — restart matrix-synapse to apply" >&2
   fi
 fi
