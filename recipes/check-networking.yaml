@@ -22,6 +22,11 @@ parameters:
     requirement: optional
     description: "Optional focus: dns, tls, mail, caddy, or all"
     default: "all"
+  - key: GITHUB_USER
+    input_type: string
+    requirement: optional
+    description: "GitHub account recorded as the recipe author contact"
+    default: ""
 prompt: |
   Review the ingress and mail stack, focus: {{ focus }}.
 

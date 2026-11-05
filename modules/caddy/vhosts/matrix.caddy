@@ -69,12 +69,13 @@ JSON
 {"m.server":"matrix.{{DOMAIN}}:443"}
 JSON
         }
-        # MAS's compatibility layer. Delegated auth takes /login, /logout and
-        # /refresh off Synapse entirely (they answer 404 M_UNRECOGNIZED), so a
-        # client that only knows the homeserver URL — anything too old to read
-        # auth metadata and use OIDC — gets these three from MAS instead, which
-        # is where the accounts and the password check actually live.
-        @mas_compat path_regexp ^/_matrix/client/(.*)/(login|logout|refresh)$
+        # MAS's compatibility layer. Delegated auth takes the whole auth
+        # surface off Synapse (it answers 404 M_UNRECOGNIZED), so a client that
+        # only knows the homeserver URL — anything too old to read auth
+        # metadata and use OIDC — gets MAS's compat endpoints instead: login,
+        # its SSO redirect/complete pair, logout (including /logout/all) and
+        # refresh. The accounts and the password check live in MAS.
+        @mas_compat path_regexp ^/_matrix/client/[^/]+/(login|logout|refresh)(/.*)?$
         handle @mas_compat {
             reverse_proxy 172.22.0.34:8080 {
                 header_up Host {host}

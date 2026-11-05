@@ -20,7 +20,12 @@ parameters:
   - key: module
     input_type: string
     requirement: required
-    description: "Module to review: chat (matrix+element), vault (vaultwarden), mail (mailserver+roundcube), monitor (uptimekuma), kopia, or edge (caddy/{{DOMAIN}})"
+    description: "Module to review: chat (matrix+element), vault (vaultwarden), mail (mailserver+roundcube), monitor (uptimekuma), kopia, or edge (caddy/$DOMAIN)"
+  - key: GITHUB_USER
+    input_type: string
+    requirement: optional
+    description: "GitHub account recorded as the recipe author contact"
+    default: ""
 prompt: |
   Review the {{ module }} module in this repository.
 
@@ -40,5 +45,5 @@ prompt: |
   End with:
   - blocking issues
   - non-blocking issues
-  - recommended tests (make smoke, make nc-check, docker logs, etc.)
+  - recommended tests (make smoke, make matrix-status, docker logs, etc.)
   - a deployment checklist

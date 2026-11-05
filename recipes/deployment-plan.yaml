@@ -20,6 +20,11 @@ parameters:
     input_type: string
     requirement: required
     description: "The change to plan (e.g. 'upgrade the Matrix image tag', 'migrate to a new machine', 'add a vhost', 'rotate the goose secret')"
+  - key: GITHUB_USER
+    input_type: string
+    requirement: optional
+    description: "GitHub account recorded as the recipe author contact"
+    default: ""
 prompt: |
   Produce a deployment/upgrade/migration plan for this change: {{ change }}.
 

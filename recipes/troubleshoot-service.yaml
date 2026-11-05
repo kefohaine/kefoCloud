@@ -21,6 +21,11 @@ parameters:
     input_type: string
     requirement: required
     description: "Service or symptom to diagnose (a hostname, a container name, or a failing make recipe)"
+  - key: GITHUB_USER
+    input_type: string
+    requirement: optional
+    description: "GitHub account recorded as the recipe author contact"
+    default: ""
 prompt: |
   Diagnose this failure: {{ service }}.
 

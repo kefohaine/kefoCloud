@@ -9,8 +9,9 @@
 # network.
 #
 # PUBLIC and DNS-ONLY in the public zone: Cloudflare's universal SSL covers
-# `fxmq.net` and one label under it, so a two-label name has no edge certificate
-# and must be served by this origin's own LE cert (DNS-01 needs only the TXT).
+# `{{DOMAIN}}` and one label under it, so a two-label name has no edge
+# certificate and must be served by this origin's own LE cert (DNS-01 needs
+# only the TXT).
 # TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
 
 https://auth.matrix.{{DOMAIN}} {

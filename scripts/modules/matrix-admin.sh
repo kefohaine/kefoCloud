@@ -92,9 +92,15 @@ def token():
 
 cmd = args[0] if args else "status"
 if cmd == "health":
-    code, _ = call("GET", "/health")
-    print("ok" if code == 200 else "unhealthy")
-    sys.exit(0 if code == 200 else 1)
+    # Synapse answers /health with the plain-text body "OK", so it cannot go
+    # through call(), which parses JSON on every response.
+    try:
+        with urllib.request.urlopen(BASE + "/health", timeout=10) as r:
+            ok = r.status == 200
+    except (urllib.error.URLError, OSError):
+        ok = False
+    print("ok" if ok else "unhealthy")
+    sys.exit(0 if ok else 1)
 
 tok = token()
 if cmd == "reset_password":

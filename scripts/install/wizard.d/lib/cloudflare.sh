@@ -154,7 +154,7 @@ cf_mail_dns() {
   mod_on chat && cf_record matrix false || cf_a_del matrix
   # auth.matrix.$DOMAIN is the Matrix Authentication Service (ESS CE): a browser
   # is redirected here mid-login, so the name must resolve publicly. DNS-ONLY
-  # (grey cloud): Cloudflare's universal SSL covers `fxmq.net` and one label
+  # (grey cloud): Cloudflare's universal SSL covers `$DOMAIN` and one label
   # under it, so a two-label name has no edge certificate and a proxied record
   # fails the TLS handshake — the origin serves its own LE cert instead.
   mod_on chat && cf_record auth.matrix false || cf_a_del auth.matrix

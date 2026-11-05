@@ -18,6 +18,9 @@ endif
 # That is what lets the checkout be renamed or moved without editing the
 # Makefile, and it is why every other path below hangs off $(REPO).
 REPO       := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
+# The recipe author contact is the checkout's GitHub identity, derived at run
+# time — never a literal in a tracked file (AGENTS.md rule 23).
+GITHUB_USER ?= $(shell git -C $(REPO) config user.name 2>/dev/null)
 # The single untracked source of instance values (see config/instance.defaults).
 CONF       := $(REPO)/data/instance.conf
 DOMAIN     := $(shell sed -n 's/^DOMAIN=//p' $(CONF) 2>/dev/null | head -1)
@@ -1229,28 +1232,28 @@ goose-recipes:
 >@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose recipe list
 
 goose-audit:
->@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe audit-server $(if $(FOCUS),--params focus_area=$(FOCUS),)
+>@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe audit-server $(if $(FOCUS),--params focus_area=$(FOCUS),) --params GITHUB_USER=$(GITHUB_USER)
 
 goose-review:
 >@[ -n "$(MODULE)" ] || { scripts/lib/mklog error "usage: make goose-review MODULE=<$(MODULES)>"; exit 1; }
->@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe review-module --params module=$(MODULE)
+>@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe review-module --params module=$(MODULE) --params GITHUB_USER=$(GITHUB_USER)
 
 goose-troubleshoot:
 >@[ -n "$(SERVICE)" ] || { scripts/lib/mklog error "usage: make goose-troubleshoot SERVICE=<hostname|container|recipe>"; exit 1; }
->@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe troubleshoot-service --params service=$(SERVICE)
+>@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe troubleshoot-service --params service=$(SERVICE) --params GITHUB_USER=$(GITHUB_USER)
 
 goose-check-backups:
->@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe check-backups $(if $(FOCUS),--params focus=$(FOCUS),)
+>@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe check-backups $(if $(FOCUS),--params focus=$(FOCUS),) --params GITHUB_USER=$(GITHUB_USER)
 
 goose-check-network:
->@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe check-networking $(if $(FOCUS),--params focus=$(FOCUS),)
+>@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe check-networking $(if $(FOCUS),--params focus=$(FOCUS),) --params GITHUB_USER=$(GITHUB_USER)
 
 goose-validate-installer:
->@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe validate-installer $(if $(TARGET),--params target=$(TARGET),)
+>@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe validate-installer $(if $(TARGET),--params target=$(TARGET),) --params GITHUB_USER=$(GITHUB_USER)
 
 goose-audit-docs:
->@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe audit-docs $(if $(SCOPE),--params scope=$(SCOPE),)
+>@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe audit-docs $(if $(SCOPE),--params scope=$(SCOPE),) --params GITHUB_USER=$(GITHUB_USER)
 
 goose-deploy-plan:
 >@[ -n "$(CHANGE)" ] || { scripts/lib/mklog error "usage: make goose-deploy-plan CHANGE='<what to change>'"; exit 1; }
->@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe deployment-plan --params change=$(CHANGE)
+>@GOOSE_RECIPE_PATH=$(GOOSE_RECIPE_PATH) goose run --recipe deployment-plan --params change=$(CHANGE) --params GITHUB_USER=$(GITHUB_USER)
