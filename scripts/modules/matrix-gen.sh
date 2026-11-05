@@ -166,6 +166,9 @@ if [ ! -s "$ELM/config.json" ]; then
     "m.homeserver": {
       "base_url": "https://matrix.$DOMAIN",
       "server_name": "matrix.$DOMAIN"
+    },
+    "m.authentication": {
+      "issuer": "https://auth.matrix.$DOMAIN/"
     }
   },
   "brand": "Element",
@@ -181,6 +184,22 @@ if [ ! -s "$ELM/config.json" ]; then
 JSON
   chmod 644 "$ELM/config.json"
   echo "matrix-gen: wrote $ELM/config.json" >&2
+fi
+
+# A config.json written before delegated auth carries no issuer, so Element
+# never reads the auth metadata and falls back to the endpoints MAS removed.
+# Add only that block; every other key stays the operator's.
+if [ -s "$ELM/config.json" ] && ! grep -q '"m.authentication"' "$ELM/config.json"; then
+  tmp=$(mktemp)
+  if jq --arg issuer "https://auth.matrix.$DOMAIN/" \
+      '.default_server_config["m.authentication"] = {issuer: $issuer}' \
+      "$ELM/config.json" >"$tmp"; then
+    mv "$tmp" "$ELM/config.json"
+    chmod 644 "$ELM/config.json"
+    echo "matrix-gen: added the MAS issuer to $ELM/config.json" >&2
+  else
+    rm -f "$tmp"
+  fi
 fi
 
 # ── Matrix Authentication Service (ESS CE) ──────────────────────────────────
