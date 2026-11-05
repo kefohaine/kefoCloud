@@ -1,4 +1,5 @@
-# Read-only validation on every branch push and every pull request: shell
+# Read-only validation on every branch push (except main, whose commits arrive
+# through a pull request already validated here) and every pull request: shell
 # syntax, the config audit (YAML parses, every token declared, no operator value
 # in a tracked file), the prose gate, the commit-hygiene audit and the
 # pull-request shape (a tree equal to main, or a rename over a path main
@@ -8,6 +9,8 @@ name: validate
 
 on:
   push:
+    branches-ignore:
+      - main
   pull_request:
 
 permissions:
