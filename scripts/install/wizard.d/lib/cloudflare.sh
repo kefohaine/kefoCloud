@@ -158,7 +158,16 @@ cf_mail_dns() {
   # under it, so a two-label name has no edge certificate and a proxied record
   # fails the TLS handshake — the origin serves its own LE cert instead.
   mod_on chat && cf_record auth.matrix false || cf_a_del auth.matrix
-  # admin.chat.$DOMAIN is Element Admin and is TAILNET-ONLY (same model as
+  mod_on chat && cf_record auth.matrix false || cf_a_del auth.matrix
+  # The call stack (module: chat). call.$DOMAIN is the Element Call app, an
+  # iframe inside Element: proxied like chat. livekit.$DOMAIN carries the
+  # WebSocket signalling (proxied — a websocket is what the CF proxy does
+  # well); its MEDIA is UDP 7882/TCP 7881 straight off the host, so the record's
+  # proxied flag never touches the call itself. livekit-jwt.$DOMAIN is the token
+  # service the browser calls cross-origin, so it is proxied too.
+  mod_on chat && cf_record call true || cf_a_del call
+  mod_on chat && cf_record livekit true || cf_a_del livekit
+  mod_on chat && cf_record livekit-jwt true || cf_a_del livekit-jwt
   # vault): dnsmasq answers it for tailnet clients, the vhost 403s everything
   # else, and the public zone must hold NO record (DNS-01 only needs the TXT).
   cf_a_del admin.chat

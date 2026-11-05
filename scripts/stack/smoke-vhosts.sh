@@ -280,7 +280,7 @@ end_sec
 # admin.chat.$DOMAIN the tailnet-only panel. Chat/Matrix are public (Element
 # proxied, Synapse DNS-only); admin.chat is never in the public zone.
 # ─────────────────────────────────────────────────────────────────────────────
-hdr chat "Chat — ESS CE (module: chat) · chat.$DOMAIN + matrix.$DOMAIN + auth.matrix.$DOMAIN + admin.chat.$DOMAIN"
+hdr chat "Chat — ESS CE (module: chat) · chat.$DOMAIN + matrix.$DOMAIN + auth.matrix.$DOMAIN + admin.chat.$DOMAIN + call.$DOMAIN"
 check chat "chat.$DOMAIN" "/" "200 301 302 307 308" html "Element answers"
 check_sec_headers chat "chat.$DOMAIN" "/" "one of each"
 check_tls "chat.$DOMAIN"
@@ -318,7 +318,19 @@ else
 fi
 check admin-public "admin.chat.$DOMAIN" "/" "403" "" "public sources are refused"
 check_tls "admin.chat.$DOMAIN"
-check_ctns chat matrix-synapse matrix-element matrix-db matrix-mas matrix-mas-db element-admin
+# The call stack. call.$DOMAIN is the Element Call app (an iframe inside
+# Element), livekit.$DOMAIN the SFU's signalling door, livekit-jwt.$DOMAIN the
+# token service. The RTC transport route is asserted on its own: it needs a
+# token, so 401 is the healthy answer and 404 is exactly the MISSING_MATRIX_RTC_
+# TRANSPORT failure a browser shows — invisible to every other check here.
+check call "call.$DOMAIN" "/" "200" html "Element Call answers"
+check_tls "call.$DOMAIN"
+check livekit "livekit.$DOMAIN" "/" "200" "" "LiveKit signalling answers"
+check_tls "livekit.$DOMAIN"
+check livekit-jwt "livekit-jwt.$DOMAIN" "/sfu/get" "405" "" "SFU token service answers (POST only)"
+check_tls "livekit-jwt.$DOMAIN"
+check rtc "matrix.$DOMAIN" "/_matrix/client/unstable/org.matrix.msc4143/rtc/transports" "401" "" "MatrixRTC transport route is served"
+check_ctns chat matrix-synapse matrix-element matrix-db matrix-mas matrix-mas-db element-admin livekit livekit-jwt element-call
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────

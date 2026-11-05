@@ -48,6 +48,10 @@ _seed MAS_DB_PASSWORD                     "$(openssl rand -hex 32)"
 _seed MAS_ENCRYPTION_SECRET               "$(openssl rand -hex 32)"
 _seed MAS_CLIENT_SECRET                   "$(openssl rand -hex 32)"
 _seed MAS_SYNAPSE_SECRET                  "$(openssl rand -hex 32)"
+# Element Call: the LiveKit API key/secret pair. The SFU signs its own tokens
+# with it and livekit-jwt signs the browser's — the same pair on both sides.
+_seed LIVEKIT_KEY                         "$(openssl rand -hex 8)"
+_seed LIVEKIT_SECRET                      "$(openssl rand -hex 32)"
 
 # shellcheck disable=SC1090
 . "$ENV"
@@ -123,8 +127,24 @@ matrix_authentication_service:
 # uses. Its login half is MAS's device-authorization grant, which is why
 # Synapse refuses the setting unless matrix_authentication_service is enabled —
 # and why the old MSC3882 login-via-existing-session is refused WITH it.
+#
+# MSC4143: the MatrixRTC signalling that Element Call reads before it can start
+# a call. Without it the client reports "The server is not configured to work
+# with Element Call" (MISSING_MATRIX_RTC_TRANSPORT) and never asks the SFU for
+# media — the call button opens the widget and the widget stops right there.
 experimental_features:
   msc4108_enabled: true
+  msc4143_enabled: true
+
+# The SFU a client is told to use. `url` is the LiveKit signalling endpoint the
+# browser dials; `livekit_service_url` is where it trades a Matrix OpenID token
+# for an SFU token (both are set because a client releases before the other
+# form was common, and each ignores the key it does not know).
+matrix_rtc:
+  transports:
+    - type: livekit
+      url: "wss://livekit.$DOMAIN"
+      livekit_service_url: "https://livekit-jwt.$DOMAIN"
 
 # No URL previews: fetching arbitrary third-party pages from this box is an
 # outbound request the operator did not ask for.
@@ -186,7 +206,12 @@ if [ ! -s "$ELM/config.json" ]; then
   "room_directory": {
     "servers": ["matrix.$DOMAIN"]
   },
+  "element_call": {
+    "url": "https://call.$DOMAIN",
+    "use_exclusively": false
+  },
   "features": {
+    "feature_group_calls": true,
     "feature_login_with_qr": true
   }
 }
@@ -195,33 +220,56 @@ JSON
   echo "matrix-gen: wrote $ELM/config.json" >&2
 fi
 
-# QR sign-in is a labs flag in this Element build and is off by default; the
-# element container mounts config.json as a single file, so the flag is written
-# through the existing inode (mv would leave the container on the old one).
-if [ -s "$ELM/config.json" ] && [ "$(jq -r '.features.feature_login_with_qr // false' "$ELM/config.json")" != "true" ]; then
+# Two client-side keys Element needs to reach this module's own services: the
+# QR sign-in labs flag (off by default in this build) and the Element Call
+# widget URL (unset means the public call.element.io, which then asks THIS
+# homeserver for an SFU it never had). Each key is added only when absent, so an
+# operator's own value survives; the file is written through the existing inode
+# because the element container bind-mounts it (mv would leave the container on
+# the deleted copy).
+if [ -s "$ELM/config.json" ]; then
   tmp=$(mktemp)
-  if jq '.features["feature_login_with_qr"] = true' "$ELM/config.json" >"$tmp"; then
-    cat "$tmp" >"$ELM/config.json"
+  if jq --arg url "https://call.$DOMAIN" '
+        .features //= {}
+      | .element_call //= {}
+      | (if .element_call | has("url") then . else .element_call.url = $url end)
+      | (if .element_call | has("use_exclusively") then . else .element_call.use_exclusively = false end)
+      | (if .features | has("feature_group_calls") then . else .features.feature_group_calls = true end)
+      | (if .features | has("feature_login_with_qr") then . else .features.feature_login_with_qr = true end)
+    ' "$ELM/config.json" >"$tmp"; then
+    if ! cmp -s "$ELM/config.json" "$tmp"; then
+      cat "$tmp" >"$ELM/config.json"
+      chmod 644 "$ELM/config.json"
+      echo "matrix-gen: set the Element Call widget + QR sign-in keys in $ELM/config.json" >&2
+    fi
     rm -f "$tmp"
-    chmod 644 "$ELM/config.json"
-    echo "matrix-gen: enabled feature_login_with_qr in $ELM/config.json" >&2
   else
     rm -f "$tmp"
-    echo "matrix-gen: cannot enable feature_login_with_qr in $ELM/config.json — fix the JSON and re-run" >&2
+    echo "matrix-gen: cannot patch $ELM/config.json — fix the JSON and re-run" >&2
     exit 1
   fi
 fi
 
-# An install older than the MSC4108 support carries no experimental_features
-# block in homeserver.yaml; append it (Synapse needs a restart to read it). An
-# operator's own block is never rewritten — it gets a warning instead, so a
-# second key is never planted beside theirs.
-if [ -s "$SYN/homeserver.yaml" ] && ! grep -qE '^[[:space:]]*msc4108_enabled:' "$SYN/homeserver.yaml"; then
-  if grep -qE '^experimental_features:' "$SYN/homeserver.yaml"; then
-    echo "matrix-gen: $SYN/homeserver.yaml has its own experimental_features block — add 'msc4108_enabled: true' there and restart matrix-synapse, or QR sign-in stays off" >&2
-  else
-    printf '\n# MSC4108 QR sign-in ("Link new device"): needs matrix_authentication_service.\nexperimental_features:\n  msc4108_enabled: true\n' >>"$SYN/homeserver.yaml"
-    echo "matrix-gen: enabled MSC4108 in $SYN/homeserver.yaml — restart matrix-synapse to apply" >&2
+# An install older than the QR/RTC support carries neither the experimental
+# features nor the SFU transport in homeserver.yaml; append what is missing
+# (Synapse needs a restart to read it). An operator's own blocks are never
+# rewritten — they get a warning instead, so a duplicate key is never planted
+# beside theirs (duplicate YAML keys make Synapse refuse to start).
+if [ -s "$SYN/homeserver.yaml" ]; then
+  _missing=""
+  grep -qE '^[[:space:]]*msc4108_enabled:' "$SYN/homeserver.yaml" || _missing="$_missing msc4108_enabled"
+  grep -qE '^[[:space:]]*msc4143_enabled:' "$SYN/homeserver.yaml" || _missing="$_missing msc4143_enabled"
+  if [ -n "$_missing" ]; then
+    if grep -qE '^experimental_features:' "$SYN/homeserver.yaml"; then
+      echo "matrix-gen: $SYN/homeserver.yaml has its own experimental_features block — add$_missing: true there and restart matrix-synapse, or QR sign-in / calls stay off" >&2
+    else
+      printf '\n# MSC4108 QR sign-in ("Link new device") + MSC4143 MatrixRTC (Element Call).\nexperimental_features:\n  msc4108_enabled: true\n  msc4143_enabled: true\n' >>"$SYN/homeserver.yaml"
+      echo "matrix-gen: enabled MSC4108 + MSC4143 in $SYN/homeserver.yaml — restart matrix-synapse to apply" >&2
+    fi
+  fi
+  if ! grep -qE '^matrix_rtc:' "$SYN/homeserver.yaml"; then
+    printf '\n# The SFU clients are told to use (the module livekit service).\nmatrix_rtc:\n  transports:\n    - type: livekit\n      url: "wss://livekit.%s"\n      livekit_service_url: "https://livekit-jwt.%s"\n' "$DOMAIN" "$DOMAIN" >>"$SYN/homeserver.yaml"
+    echo "matrix-gen: added matrix_rtc transports to $SYN/homeserver.yaml — restart matrix-synapse to apply" >&2
   fi
 fi
 
@@ -244,6 +292,59 @@ if [ -s "$ELM/config.json" ] && ! grep -q '"m.authentication"' "$ELM/config.json
     echo "matrix-gen: cannot add the MAS issuer to $ELM/config.json — fix the JSON and re-run" >&2
     exit 1
   fi
+fi
+
+# ── Element Call (LiveKit SFU + its JWT service) ────────────────────────────
+# The SFU config holds the API secret, so it is written once at 0600 beside the
+# other instance state and never re-rendered: a re-run must not rotate the key
+# a live call is using. Ports 7881/tcp + 7882/udp are published by the compose
+# file and opened by the installer's firewall task — they are the media path and
+# never go through the edge.
+CALL="$DATA_DIR/call"
+mkdir -p "$CALL/element-call"
+if [ ! -s "$CALL/livekit.yaml" ]; then
+  cat >"$CALL/livekit.yaml" <<YAML
+# Generated by scripts/modules/matrix-gen.sh — instance state, never committed.
+port: 7880
+bind_addresses:
+  - ""
+rtc:
+  tcp_port: 7881
+  udp_port: 7882
+  # The ICE candidate a remote browser is given: the public address STUN
+  # reports, not the container's bridge IP, which no browser can reach.
+  use_external_ip: true
+keys:
+  "$LIVEKIT_KEY": "$LIVEKIT_SECRET"
+room:
+  empty_timeout: 300
+logging:
+  level: info
+YAML
+  chmod 600 "$CALL/livekit.yaml"
+  echo "matrix-gen: wrote $CALL/livekit.yaml" >&2
+fi
+
+# Element Call is a separate static app with its own runtime config: it only
+# needs to know the homeserver, because the SFU is read from the homeserver's
+# matrix_rtc transports.
+if [ ! -s "$CALL/element-call/config.json" ]; then
+  cat >"$CALL/element-call/config.json" <<JSON
+{
+  "default_server_config": {
+    "m.homeserver": {
+      "base_url": "https://matrix.$DOMAIN",
+      "server_name": "matrix.$DOMAIN"
+    },
+    "m.authentication": {
+      "issuer": "https://auth.matrix.$DOMAIN/"
+    }
+  },
+  "brand": "Element Call"
+}
+JSON
+  chmod 644 "$CALL/element-call/config.json"
+  echo "matrix-gen: wrote $CALL/element-call/config.json" >&2
 fi
 
 # ── Matrix Authentication Service (ESS CE) ──────────────────────────────────
