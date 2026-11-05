@@ -61,6 +61,8 @@ services:
     depends_on:
       matrix-db:
         condition: service_healthy
+      matrix-mas:
+        condition: service_healthy
 
     expose:
       - "8008"
@@ -178,6 +180,16 @@ services:
 
     expose:
       - "8080"
+
+    healthcheck:
+      # Distroless: mas-cli is the only binary. `config check` validates the
+      # mounted config as uid 65532, which is what fails first on a key or
+      # ownership mistake; readiness is then the migration + listener.
+      test: ["CMD", "/usr/local/bin/mas-cli", "config", "check", "-c", "/data/config.yaml"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
 
     logging:
       driver: json-file

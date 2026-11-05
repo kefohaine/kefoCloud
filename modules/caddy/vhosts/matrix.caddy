@@ -13,6 +13,11 @@
 # TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
 
 https://matrix.{{DOMAIN}} {
+    # Access log for the fail2ban Matrix jail: password/login failures are
+    # banned per endpoint, never by the whole edge.
+    log {
+        output file /var/log/caddy/matrix.log
+    }
     import ratelimit matrix_rl
     tls {
         # Fallback issuer chain: Let's Encrypt first, then Buypass Go SSL and

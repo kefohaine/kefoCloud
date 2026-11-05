@@ -253,7 +253,7 @@ systemd-action:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: fetch fetch-more render smoke gh-web-health install-hooks update apt-upgrade install-config help matrix-gen matrix-add-admin matrix-users matrix-add matrix-passwd matrix-flag-admin matrix-del matrix-status matrix-logs matrix-reset kopia-gen kopia-status kopia-password kopia-username kopia-snapshot kopia-snapshots kopia-logs
+.PHONY: fetch fetch-more render smoke gh-web-health install-hooks update apt-upgrade install-config help matrix-gen matrix-update matrix-add-admin matrix-users matrix-add matrix-passwd matrix-flag-admin matrix-del matrix-status matrix-logs matrix-reset kopia-gen kopia-status kopia-password kopia-username kopia-snapshot kopia-snapshots kopia-logs
 .PHONY: kuma-import kuma-list-users kuma-add-user kuma-passwd kuma-del-user
 .PHONY: vaultwarden-list-users vaultwarden-add-user vaultwarden-del-user
 .PHONY: writefreely-users writefreely-add-user writefreely-passwd writefreely-del-user
@@ -727,6 +727,11 @@ dns-sync:
 # Re-running never rotates a key or rewrites an existing config.
 matrix-gen:
 >@bash scripts/modules/matrix-gen.sh
+
+# Recreate MAS after a version change with a dump-first safety net, then
+# Synapse. Requires CONFIRM=yes; see scripts/modules/matrix-update.sh.
+matrix-update:
+>@bash scripts/modules/matrix-update.sh
 
 # Generate the Kopia module's secrets (idempotent): modules/kopia/.env.
 kopia-gen:

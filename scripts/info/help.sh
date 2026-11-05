@@ -130,6 +130,7 @@ EOF
   sec "onboarding & stack tools"
   rows <<'EOF'
 make matrix-gen|generate Matrix secrets + Synapse/Element configs (idempotent)
+make matrix-update|dump the MAS database, then recreate MAS and Synapse (CONFIRM=yes)
 make kopia-gen|generate the kopia repository password + UI account (idempotent)
 make kopia-snapshot|take a snapshot now — SOURCE=<path in the container>, default /source
 make kuma-import|import an adapted Uptime Kuma db (KUMA_DB=<path>)
