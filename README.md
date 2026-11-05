@@ -1,39 +1,43 @@
-# kefoCloud - Own your data at the mercy of nobody.
+# kefoCloud - Protect your data like your life
 
-Self-hosted Apps Installer, Deployer & Manager
+AiO self-hosted installer for Debian with Docker.
 
 ![Banner](.github/images/banner.jpg)
 
-**One Debian server, one plug-and-play installer, dozens of strong apps.** kefoCloud bundles a suite of community-maintained self-hosted apps ready to be deployed in a matter of minutes -- all thanks to my advanced idempotent installation wizard. It configures the server from the ground up with high performance & security standards, for a seamless integration of your selected apps.
+**One Debian server, one plug-and-play installer, dozens of strong apps.** kefoCloud bundles a suite of community-maintained self-hosted apps ready to be deployed in a matter of minutes -- all thanks to my advanced idempotent installation wizard. It configures the server from the ground up with high performance & security standards, for a seamless integration of your selected pre-configured apps.
 
-## Install Command
+## Install
 
 ```bash
 git clone https://github.com/kefohaine/kefoCloud.git
 cd kefoCloud && sudo bash scripts/install/wizard.sh
 ```
 
-The wizard asks for five things up front (SSH key, Tailscale key, Cloudflare token, domain, which apps), then works unattended: DNS records, certificates, databases, mailboxes and admin accounts, ending with a live check of every door. Re-run it any time — it repairs instead of rebuilding.
+The wizard asks for five values up front, then works by itself: DNS records, certificates, databases, mailboxes and admin accounts, ending with a health scan for these services. Its repair mode lets you fix issues or change your stack anytime.
 
-## Why this one
+## Why this
 
-- **Private by default.** Your photos, files, mail and passwords live on hardware you own. Admin doors never enter public DNS at all: they answer only to devices on your Tailscale network.
-- **Secure where it counts.** Key-only SSH on the tailnet, deny-by-default firewall, per-vhost Let's Encrypt certificates, rate-limited mail with SPF/DKIM/DMARC, fail2ban, secrets generated at install and never committed, every image pinned to a version tag.
-- **Fast and frugal.** Every container carries a hard memory cap (the edge is capped at 128 MB), so one runaway process cannot take the box down; a single host tuner (`scripts/ops/optimize.sh`) trims sysctl, Docker and DNS overhead.
-- **Simple to run.** One bootstrap, one `make help`, no YAML archaeology: `make update` pulls and recreates what is actually deployed, `make smoke` proves every door still serves its app, `make fetch` prints the whole machine state in one screen.
-- **Compatible, not clever.** Stock upstream images (Synapse, Element, Mailu, Vaultwarden, Immich, Kopia, Uptime Kuma, Homarr, WriteFreely, oCIS), standard Docker Compose files you can read, and plain Debian underneath — migrate a machine, keep your data.
-- **Reversible.** `scripts/install/uninstall.sh` takes the same installation apart module by module, and `make backup` takes a Kopia snapshot of every module before you touch anything.
+- **Private by default.** Your photos, files, mail and passwords live on hardware you own.
+- **Secure where it counts.** Key-only tailnet SSH, deny-by-default firewall, LE certificates, fail2ban..
+- **Fast & frugal.** My custom host tuner (`scripts/ops/optimize.sh`) cuts most performance losses down.
+- **Simple to run.** One bootstrap, one Makefile, no YAML archaeology: `make help` will go a long way.
+- **Compatible & stable.** Stock upstream images, standard Docker Compose files, on plain Debian.
+- **Reversible.** `scripts/install/uninstall.sh` & `make backup` are all you need for worst-case scenarios.
 
-## What you can install
+## Supported Apps
 
-`chat` (ESS CE — Synapse + Element + MAS, with the Element Admin panel) · `ocis` (ownCloud Infinite Scale) · `kopia` (backups) · `vault` (Vaultwarden) · `mail` (Mailu + Roundcube) · `monitor` (Uptime Kuma) · `home` (Homarr) · `blog` (WriteFreely) · `photos` (Immich) — pick any subset, or `all`.
+`chat` (ESS CE — Synapse + Element Client/Call/Admin + MAS) · `ocis` (ownCloud Infinite Scale) · `kopia` (Kopia) · `vault` (Vaultwarden) · `mail` (Mailu + Roundcube) · `monitor` (Uptime Kuma) · `home` (Homarr) · `blog` (WriteFreely) · `photos` (Immich) · or `all` — pick to your needs.
 
 ## Read next
 
-- **[docs/MANUAL.md](docs/MANUAL.md)** — everything: what the machine is and why, install/repair/uninstall, migration, backup, the service reference, the diagnostic runbook and the operational gotchas.
-- **[docs/AGENTS.md](docs/AGENTS.md)** — the rules an agent follows in this repo.
-- **[Releases](https://github.com/kefohaine/kefoCloud/releases)** — the tagged milestones, `v0.1.0` through the current stable.
+- **[docs/MANUAL.md](docs/MANUAL.md)** — the knowledge base of the whole project.
+- **[docs/AGENTS.md](docs/AGENTS.md)** — the rules agentic workflows follow.
+- **[Project Releases](https://github.com/kefohaine/kefoCloud/releases)**
+- **[MIT License](https://github.com/kefohaine/kefoCloud/releases)**
 
-## License
+## Credits
 
-MIT — see `LICENSE`.
+Thanks to:
+- [Sunyy](https://github.com/rrm9mw6g6j-collab) for beta-testing privately with me
+- Mister R for providing with powerful personal hardware
+- [Cloudflare](https://cloudflare.com), [Porkbun](https://porkbun.com) & [Interserver](https://interserver.net) for their amazing services
