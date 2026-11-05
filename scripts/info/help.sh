@@ -175,8 +175,8 @@ make mail-gen-alias|disposable forwarding alias TO=<target> (random local part, 
 make mail-del-alias|remove one alias target (FROM=<addr> TO=<target>)
 make mail-admin-password|set the Mailu admin login (PWD empty = generated and printed once; warns when INITIAL_ADMIN_MODE=update will revert it)
 make mail-status|ps + per-container state and health + the running image tag
-make mail-doctor|one-shot triage — /data ownership, sqlite open as uid 100:1000, sso/login 200, TLS, every container running
-make mail-fix-perms|re-own data/mailserver/data as 100:1000 (the sqlite "unable to open database file" 500 — mail store untouched)
+make mail-doctor|one-shot triage — /data and /mail ownership, sqlite open as uid 100:1000, sso/login 200, TLS, every container running
+make mail-fix-perms|re-own data/mailserver/data as 100:1000 and data/mailserver/mail as 8:12 (the sqlite 500 and the empty-mailbox IMAP denial)
 make mail-tls|served certificates and expiry — https mail, imaps 993, smtps 465
 make mail-dkim|DKIM key per domain on disk + the TXT record to publish
 make mail-queue|list the postfix queue, per sender and recipient

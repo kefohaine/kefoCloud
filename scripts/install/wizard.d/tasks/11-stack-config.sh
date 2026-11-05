@@ -58,9 +58,14 @@ prep_dirs() {
   # install never walks it.
   need_chown $ROOT/data/ocis/data 1000       && chown_tree $ROOT/data/ocis/data 1000:1000
   need_chown $ROOT/data/ocis/config 1000     && chown_tree $ROOT/data/ocis/config 1000:1000
-  # Mailu's front/postfix/dovecot/rspamd run as root, so mail/filter/dkim/
-  # certs/overrides stay root-owned. mailserver/data is NOT one of them: that
-  # mount is the SQLite config store mailu-admin opens AS uid 100:1000
+  # Mailu's front/postfix/rspamd run as root, so filter/dkim/certs/overrides
+  # stay root-owned. The mail store is NOT one of them: dovecot.conf sets
+  # mail_uid/mail_gid = mail, so the imap/lmtp children run as uid 8 (gid 12)
+  # and a root:root 0700 /mail makes every folder LIST fail — "Permission
+  # denied (euid=8(mail) ... /mail, dir owned by 0:0 mode=0700)" — while login
+  # still succeeds and Roundcube renders an empty mailbox / 500.
+  # mailserver/data is NOT root-owned either: that mount is the SQLite
+  # config store mailu-admin opens AS uid 100:1000
   # (gunicorn runs as `mailu` after /start.py drops privileges). A root:root
   # 0700 there makes every DB route 500 ("unable to open database file") while
   # the container still reports healthy — 2026-10-19 and again 2026-10-29,
@@ -72,9 +77,10 @@ prep_dirs() {
   # file ... Permission denied"). Redis then enters MISCONF and
   # stop-writes-on-bgsave-error rejects every write, which surfaces as every
   # mail login failing.
-  for d in mail filter dkim certs overrides; do
+  for d in filter dkim certs overrides; do
     need_chown "$ROOT/data/mailserver/$d" 0 && chown_tree "$ROOT/data/mailserver/$d" root:root
   done
+  need_chown "$ROOT/data/mailserver/mail" 8 && chown_tree "$ROOT/data/mailserver/mail" 8:12
   need_chown "$ROOT/data/mailserver/data" 100 && chown_tree "$ROOT/data/mailserver/data" 100:1000
   need_chown "$ROOT/data/mailserver/redis" 999 && chown_tree "$ROOT/data/mailserver/redis" 999:1000
   need_chown $ROOT/data/mailserver/roundcube 33 && chown_tree $ROOT/data/mailserver/roundcube 33:33
@@ -108,7 +114,7 @@ prep_dirs_verify() {
   local d want got
   for spec in "vault/data 1000" "matrix/synapse 991" \
               "ocis/data 1000" "ocis/config 1000" \
-              "mailserver/data 100" "mailserver/mail 0" "mailserver/dkim 0" \
+              "mailserver/data 100" "mailserver/mail 8" "mailserver/dkim 0" \
               "mailserver/redis 999" "mailserver/roundcube 33" \
               "photos 0" "blog 0" \
               "pages/www 0"; do

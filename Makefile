@@ -470,6 +470,10 @@ mail-doctor:
   else scripts/lib/mklog error "$(MAIL_DATA) missing — check DATA_DIR in $(MAIL_ENV)"; fail=1; fi; \
   if docker exec -u 100:1000 mailu-admin python3 -c 'import sqlite3;c=sqlite3.connect("file:/data/main.db?mode=ro",uri=True);print("  db ok —",c.execute("select count(*) from user").fetchone()[0],"mailboxes")' 2>/dev/null; then :; \
   else scripts/lib/mklog error "admin cannot open /data/main.db as uid 100:1000 — every DB route returns 500; fix with: make mail-fix-perms"; fail=1; fi; \
+  echo "== /mail ownership (dovecot imap runs as uid 8:12)"; \
+  bad=$$(docker exec -u 8:12 mailu-imap sh -c 'find /mail -maxdepth 2 ! -user 8 -print -quit' 2>/dev/null || true); \
+  if [ -z "$$bad" ]; then echo "  mail store traversable as 8:12"; \
+  else scripts/lib/mklog error "$$bad is not owned by uid 8 — every IMAP folder LIST fails (login still succeeds, mailbox stays empty); fix with: make mail-fix-perms"; fail=1; fi; \
   echo "== admin http"; \
   code=$$(curl -s -o /dev/null -w '%{http_code}' --interface "$$(tailscale ip -4 | head -1)" --resolve "admin.mail.$(DOMAIN):443:$$(tailscale ip -4 | head -1)" "https://admin.mail.$(DOMAIN)/sso/login" 2>/dev/null || true); \
   if [ "$$code" = 200 ]; then echo "  sso/login 200"; \
@@ -486,9 +490,10 @@ mail-doctor:
   done; \
   exit $$fail
 
-# Re-own the bind mount as the app user. Targeted on purpose: a recursive chown
-# would also rewrite the dovecot mail store (/mail, a different uid) and break
-# IMAP delivery. main.db is the file sqlite needs write access to.
+# Re-own the bind mounts as the uids their containers actually run as:
+# /data is the sqlite config store mailu-admin opens as 100:1000, /mail is the
+# dovecot store whose imap children run as mail (8:12). main.db is the file
+# sqlite needs write access to.
 mail-fix-perms:
 >@d="$(MAIL_DATA)"; \
   [ -d "$$d" ] || { scripts/lib/mklog error "$$d missing — nothing to fix (check DATA_DIR in $(MAIL_ENV))"; exit 1; }; \
@@ -497,9 +502,17 @@ mail-fix-perms:
   for f in main.db roundcube.db main.db-journal main.db-wal; do \
     [ -e "$$d/$$f" ] && sudo chown 100:1000 "$$d/$$f"; \
   done; \
-  scripts/lib/mklog info "$$d: $$before → 100:1000 700 (mail store left untouched)"; \
+  scripts/lib/mklog info "$$d: $$before → 100:1000 700"; \
+  m="$(MAIL_DATA_ROOT)/mail"; \
+  if [ -d "$$m" ]; then \
+    mb=$$(stat -c '%u:%g %a' "$$m"); \
+    sudo chown -R 8:12 "$$m" && sudo chmod 700 "$$m"; \
+    scripts/lib/mklog info "$$m: $$mb → 8:12 700"; \
+  fi; \
   docker exec -u 100:1000 mailu-admin python3 -c 'import sqlite3;c=sqlite3.connect("file:/data/main.db?mode=ro",uri=True);print("info:  db readable again —",c.execute("select count(*) from user").fetchone()[0],"mailboxes")' \
-    || { scripts/lib/mklog error "still unreadable — container /data mount or ACLs, not ownership (see make mail-doctor)"; exit 1; }
+    || { scripts/lib/mklog error "still unreadable — container /data mount or ACLs, not ownership (see make mail-doctor)"; exit 1; }; \
+  docker exec -u 8:12 mailu-imap sh -c 'test -r /mail && test -x /mail' \
+    || { scripts/lib/mklog error "imap cannot traverse /mail as 8:12 — check the MAIL_DATA_ROOT path in $(MAIL_ENV)"; exit 1; }
 
 # Certificates the mail stack actually serves: 443 (Caddy/admin SSO), 993
 # (imaps), 465 (smtps). The mailu front reads $(MAIL_DATA_ROOT)/certs.
