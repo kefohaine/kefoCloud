@@ -46,15 +46,12 @@ full_id() {
 # container (python3 is always present there; curl is not).
 _api() {
   docker exec -i \
-    -e MX_USER="$SYNAPSE_ADMIN_USER" \
-    -e MX_PASS="$SYNAPSE_ADMIN_PASSWORD" \
     -e MX_TOKEN="${MAS_SYNAPSE_SECRET:-}" \
     -e MX_ARGS="$*" \
     matrix-synapse python3 - <<'PY'
 import json, os, sys, urllib.error, urllib.request
 
 BASE = "http://127.0.0.1:8008"
-USER, PASS = os.environ["MX_USER"], os.environ["MX_PASS"]
 args = os.environ["MX_ARGS"].split()
 
 
@@ -74,20 +71,13 @@ def call(method, path, body=None, token=None):
 
 
 def token():
-    # The static admin token (homeserver.yaml matrix_authentication_service.secret) is the whole
-    # credential once auth is delegated; the password login below is only the
-    # pre-MAS fallback.
+    # The shared secret (homeserver.yaml matrix_authentication_service.secret)
+    # is the whole credential once auth is delegated; there is no password
+    # login left to fall back to.
     static = os.environ.get("MX_TOKEN") or ""
-    if static:
-        return static
-    code, out = call("POST", "/_matrix/client/v3/login", {
-        "type": "m.login.password",
-        "identifier": {"type": "m.id.user", "user": USER},
-        "password": PASS,
-    })
-    if code != 200 or "access_token" not in out:
-        sys.exit("matrix-admin: admin login failed (%s) — the admin account in modules/matrix/.env is missing or its password is stale; `make matrix-users` lists what exists" % code)
-    return out["access_token"]
+    if not static:
+        sys.exit("matrix-admin: MAS_SYNAPSE_SECRET is missing from modules/matrix/.env — run 'make matrix-gen' and check the matrix_authentication_service block")
+    return static
 
 
 cmd = args[0] if args else "status"
@@ -140,7 +130,10 @@ case "${1:-status}" in
     [ "${4:-}" = admin ] && opts+=(-a)
     docker exec matrix-mas mas-cli manage -c /data/config.yaml register-user "${opts[@]}" "$user" >/dev/null 2>&1 \
       || die "cannot create $user (does the account already exist?)"
-    [ "${4:-}" = admin ] && _api admin "$(full_id "$user")" true >/dev/null 2>&1 || true
+    if [ "${4:-}" = admin ]; then
+      _api admin "$(full_id "$user")" true >/dev/null \
+        || die "created $user but the Synapse server-admin flag did not apply (is matrix-synapse healthy?)"
+    fi
     printf 'created %s\npassword: %s\n' "$(full_id "$user")" "$pass"
     ;;
   passwd)

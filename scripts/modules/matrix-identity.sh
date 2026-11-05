@@ -34,7 +34,7 @@ MAS="$DATA_DIR/matrix/mas"
 say() { printf 'matrix-identity: %s\n' "$*" >&2; }
 
 say "stopping the chat stack"
-docker compose -f "$COMPOSE" stop matrix-synapse matrix-mas >/dev/null 2>&1 || true
+docker compose -f "$COMPOSE" stop matrix-synapse matrix-mas matrix-element element-admin >/dev/null 2>&1 || true
 docker compose -f "$COMPOSE" up -d matrix-db matrix-mas-db >/dev/null 2>&1 || { echo "matrix-identity: the databases did not start" >&2; exit 1; }
 
 say "waiting for PostgreSQL"
