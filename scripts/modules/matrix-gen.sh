@@ -119,6 +119,13 @@ matrix_authentication_service:
   endpoint: "http://matrix-mas:8080/"
   secret: "$MAS_SYNAPSE_SECRET"
 
+# MSC4108: the rendezvous Element's "Link new device" / "Sign in with QR code"
+# uses. Its login half is MAS's device-authorization grant, which is why
+# Synapse refuses the setting unless matrix_authentication_service is enabled —
+# and why the old MSC3882 login-via-existing-session is refused WITH it.
+experimental_features:
+  msc4108_enabled: true
+
 # No URL previews: fetching arbitrary third-party pages from this box is an
 # outbound request the operator did not ask for.
 url_preview_enabled: false
@@ -179,11 +186,43 @@ if [ ! -s "$ELM/config.json" ]; then
   "room_directory": {
     "servers": ["matrix.$DOMAIN"]
   },
-  "features": {}
+  "features": {
+    "feature_login_with_qr": true
+  }
 }
 JSON
   chmod 644 "$ELM/config.json"
   echo "matrix-gen: wrote $ELM/config.json" >&2
+fi
+
+# QR sign-in is a labs flag in this Element build and is off by default; the
+# element container mounts config.json as a single file, so the flag is written
+# through the existing inode (mv would leave the container on the old one).
+if [ -s "$ELM/config.json" ] && [ "$(jq -r '.features.feature_login_with_qr // false' "$ELM/config.json")" != "true" ]; then
+  tmp=$(mktemp)
+  if jq '.features["feature_login_with_qr"] = true' "$ELM/config.json" >"$tmp"; then
+    cat "$tmp" >"$ELM/config.json"
+    rm -f "$tmp"
+    chmod 644 "$ELM/config.json"
+    echo "matrix-gen: enabled feature_login_with_qr in $ELM/config.json" >&2
+  else
+    rm -f "$tmp"
+    echo "matrix-gen: cannot enable feature_login_with_qr in $ELM/config.json — fix the JSON and re-run" >&2
+    exit 1
+  fi
+fi
+
+# An install older than the MSC4108 support carries no experimental_features
+# block in homeserver.yaml; append it (Synapse needs a restart to read it). An
+# operator's own block is never rewritten — it gets a warning instead, so a
+# second key is never planted beside theirs.
+if [ -s "$SYN/homeserver.yaml" ] && ! grep -qE '^[[:space:]]*msc4108_enabled:' "$SYN/homeserver.yaml"; then
+  if grep -qE '^experimental_features:' "$SYN/homeserver.yaml"; then
+    echo "matrix-gen: $SYN/homeserver.yaml has its own experimental_features block — add 'msc4108_enabled: true' there and restart matrix-synapse, or QR sign-in stays off" >&2
+  else
+    printf '\n# MSC4108 QR sign-in ("Link new device"): needs matrix_authentication_service.\nexperimental_features:\n  msc4108_enabled: true\n' >>"$SYN/homeserver.yaml"
+    echo "matrix-gen: enabled MSC4108 in $SYN/homeserver.yaml — restart matrix-synapse to apply" >&2
+  fi
 fi
 
 # A config.json written before delegated auth carries no issuer, so Element
@@ -194,7 +233,10 @@ if [ -s "$ELM/config.json" ] && ! grep -q '"m.authentication"' "$ELM/config.json
   if jq --arg issuer "https://auth.matrix.$DOMAIN/" \
       '.default_server_config["m.authentication"] = {issuer: $issuer}' \
       "$ELM/config.json" >"$tmp"; then
-    mv "$tmp" "$ELM/config.json"
+    # Through the existing inode: the element container bind-mounts this one
+    # file, and mv would leave it serving the replaced (deleted) copy.
+    cat "$tmp" >"$ELM/config.json"
+    rm -f "$tmp"
     chmod 644 "$ELM/config.json"
     echo "matrix-gen: added the MAS issuer to $ELM/config.json" >&2
   else
