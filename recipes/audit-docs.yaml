@@ -22,6 +22,11 @@ parameters:
     requirement: optional
     description: "Optional scope: all, or a single doc (WHAT, MANUAL, DEBUG, MIGRATE, SKELETON, README)"
     default: "all"
+  - key: GITHUB_USER
+    input_type: string
+    requirement: optional
+    description: "GitHub account recorded as the recipe author contact"
+    default: ""
 prompt: |
   Audit documentation for drift/stale/duplicate, scope: {{ scope }}.
 

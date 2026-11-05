@@ -26,6 +26,11 @@ parameters:
     requirement: optional
     description: "Optional focus: security, backups, mail, docker, networking, docs, or general"
     default: "general"
+  - key: GITHUB_USER
+    input_type: string
+    requirement: optional
+    description: "GitHub account recorded as the recipe author contact"
+    default: ""
 prompt: |
   Audit this self-hosted server repository, focus: {{ focus_area }}.
 

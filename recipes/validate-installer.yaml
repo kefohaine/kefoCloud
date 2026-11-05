@@ -22,6 +22,11 @@ parameters:
     requirement: optional
     description: "Script or area to validate (the installer, uninstall.sh, optimize.sh, datadir-nfs.sh, or 'all')"
     default: "all"
+  - key: GITHUB_USER
+    input_type: string
+    requirement: optional
+    description: "GitHub account recorded as the recipe author contact"
+    default: ""
 prompt: |
   Validate installer/script changes, target: {{ target }}.
 
