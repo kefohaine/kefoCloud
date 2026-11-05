@@ -46,14 +46,21 @@ matrix_setup() {
   fi
 
   # The admin account lives in MAS: it is registered once (a second register is
-  # refused), becomes a MAS admin (-a) so it may drive the admin API Element
-  # Admin calls, and is then flagged a Synapse server admin by `matrix-add`.
+  # refused) and becomes a MAS admin (-a) so it may drive the admin API Element
+  # Admin calls. The Synapse server-admin flag is a separate bit in Synapse's
+  # own store — set it through the admin API, never assumed.
   docker exec matrix-mas mas-cli manage -c /data/config.yaml register-user \
     --yes -a -p "$SYNAPSE_ADMIN_PASSWORD" "$SYNAPSE_ADMIN_USER" >/dev/null 2>&1 || true
   if docker exec matrix-mas-db psql -U mas -d mas -tAc \
       "select username from users where username='$SYNAPSE_ADMIN_USER'" 2>/dev/null \
       | grep -qx "$SYNAPSE_ADMIN_USER"; then
     log "  the admin account @${SYNAPSE_ADMIN_USER}:matrix.${DOMAIN} exists in MAS"
+    if bash "$REPO_DIR/scripts/modules/matrix-admin.sh" admin "$SYNAPSE_ADMIN_USER" true >/dev/null 2>&1; then
+      detail "  @${SYNAPSE_ADMIN_USER}:matrix.${DOMAIN} is a Synapse server admin"
+    else
+      fail matrix_setup "the admin account exists in MAS but the Synapse server-admin flag did not apply — see: make matrix-logs"
+      return
+    fi
   else
     fail matrix_setup "MAS has no @${SYNAPSE_ADMIN_USER} account — see: docker logs matrix-mas, make matrix-logs"
     return

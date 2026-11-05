@@ -30,8 +30,8 @@ set -euo pipefail
 # hardcoded — so the repo can live anywhere and be renamed
 # ($NODE_NAME -> kefoCloud) without editing any script.
 REPO="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
-KUMA_DATA=$ROOT/data/kuma/data
-IMPORT_DIR=$ROOT/data/kuma/import
+KUMA_DATA=$DATA_DIR/kuma/data
+IMPORT_DIR=$DATA_DIR/kuma/import
 SRC="${1:-$IMPORT_DIR/kuma.db}"
 STAMP=$(date +%Y%m%d-%H%M%S)
 

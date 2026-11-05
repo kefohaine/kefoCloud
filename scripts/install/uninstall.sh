@@ -223,8 +223,14 @@ wipe_data() {
 # instead of passing as done. Read-only: it inspects, it never deletes.
 verify_stack_gone() {
   local t=""
-  local ctn="caddy matrix-synapse matrix-element matrix-db kopia vaultwarden uptimekuma mailu-front mailu-imap mailu-smtp mailu-antispam mailu-admin mailu-redis roundcube"
-  local c d
+  # Derived from the same catalog the removal used: a hardcoded roster missed
+  # matrix-mas, element-admin, ocis, homarr, writefreely and immich, so a
+  # half-removed stack could still verify "gone".
+  local ctn c m d
+  ctn="caddy"
+  for m in $STACK_MODULES; do
+    ctn="$ctn $(ctn_of_module "$(compose_file_of "$m")" | tr '\n' ' ')"
+  done
 
   for c in $ctn; do
     if ctn_list | grep -qx "$c"; then
