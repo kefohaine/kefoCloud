@@ -62,8 +62,8 @@ EOF
 
   sec "git"
   rows <<'EOF'
-make git-issue TITLE=<s> LABEL=<l> [BODY=<file>]|file an issue in the tracker before the change — LABEL from the tracker's own set (bug, enhancement, priority: …, area: …; at least one), body from BODY or stdin; then make git-start and make git-pr ISSUE=<n>
-make git-start|create + switch to the next temp-<N> branch off a freshly pulled main — every change starts here (main is never pushed)
+make git-issue TITLE=<s> LABEL=<l> [BODY=<file>]|file an issue in the tracker before the change — LABEL from the tracker's own set (bug, enhancement, priority: …, area: …; at least one), body from BODY or stdin; then make git-start and make git-pr ISSUE=<n>; refused while a pull request is open (add to its branch)
+make git-start|create + switch to the next temp-<N> branch off a freshly pulled main — refused while a pull request is open (commit to its branch); main is never pushed
 make git-branch [NAME=<b>]|same as git-start, or create + switch to NAME (BASE=<b> bases it on another branch)
 make git-switch BRANCH=<b>|switch to an existing branch — local, or origin's (tracked on the way in)
 make git-del BRANCH=<b> [FORCE=1]|delete a local branch — never main, never the current one; FORCE=1 drops unmerged commits
