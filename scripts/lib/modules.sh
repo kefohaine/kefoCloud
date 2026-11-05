@@ -21,6 +21,7 @@
 # Functions:
 #   mod_all                 every declared module, one per line (declaration order)
 #   mod_dir <m>             module directory under modules/
+#   mod_by_dir <dir>        module name for a modules/<dir>/ ('' when undeclared)
 #   mod_host <m>            public host label ('' when the module has no vhost)
 #   mod_containers <m>      container names, space-separated
 #   mod_installed <m>       exit 0/1 (from wizard.state `enabled_modules`)
@@ -40,6 +41,7 @@ _mod_decl() {   # _mod_decl <m> -> "<dir> <host> <containers...>"
 
 mod_all()      { awk '$1 !~ /^#/ && NF { print $1 }' "$MODULES_CONF" 2>/dev/null; }
 mod_dir()      { _mod_decl "$1" | awk '{print $1}'; }
+mod_by_dir()   { local m; for m in $(mod_all); do [ "$(mod_dir "$m")" = "$1" ] && { printf '%s' "$m"; return 0; }; done; return 1; }
 mod_host()     { local h; h="$(_mod_decl "$1" | awk '{print $2}')"; [ "$h" = "-" ] && h=""; printf '%s' "$h"; }
 mod_containers() { _mod_decl "$1" | awk '{for(i=3;i<=NF;i++) printf "%s%s", $i, (i<NF?" ":"")}'; }
 

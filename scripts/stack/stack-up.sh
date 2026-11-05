@@ -148,7 +148,9 @@ for d in "$REPO"/modules/*/; do
       # "skip (not deployed)" while reporting the stack healthy — the module
       # silently vanished for good. wizard.state's enabled_modules is the
       # source of truth, so a module it lists is recreated.
-      m="$(basename "$(dirname "$f")")"
+      # The directory is not the module name (chat lives in modules/matrix,
+      # vault in modules/vaultwarden): resolve it through the catalog.
+      m="$(mod_by_dir "$(basename "$(dirname "$f")")")" || m="$(basename "$(dirname "$f")")"
       if mod_installed "$m"; then
         info "recreate (containers gone, module installed): ${f#$REPO/}"
       else
