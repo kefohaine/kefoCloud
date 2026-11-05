@@ -41,8 +41,8 @@
 #                                   branch would land as an empty merge, renames a
 #                                   path the base changed, already landed as a pull
 #                                   request, or would be a second open pull request
-#                                   from another branch (`STACK_OK=1` / `MULTI_PR_OK=1`
-#                                   make the last two deliberate).
+#                                   from another branch. There is no override for the
+#                                   last one: the change belongs on the open branch.
 #   git-pr.sh land   [--dry-run] [--base <branch>]
 #                                   after the PR is merged: <base> fast-forward,
 #                                   delete the local branch
@@ -121,6 +121,69 @@ owner_repo() {
     | sed -e 's#\.git$##' -e 's#/$##'
 }
 
+# open_prs_by_me — one "<number> <headRefName>" line per open pull request the
+# authenticated account authored. Returns 2 when the tracker cannot be asked, so
+# a caller fails closed rather than guessing. gh is preferred; a GITHUB_TOKEN
+# (the path for a host without gh) answers through the REST API.
+open_prs_by_me() {
+  local tok slug
+  if command -v gh >/dev/null 2>&1 && (cd "$REPO" && gh auth status >/dev/null 2>&1); then
+    (cd "$REPO" && gh pr list --author @me --state open --limit 100 \
+       --json number,headRefName --jq '.[] | "\(.number) \(.headRefName)"' 2>/dev/null)
+    return
+  fi
+  tok="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+  [ -n "$tok" ] || return 2
+  slug="$(owner_repo)" || return 2
+  TOKEN="$tok" SLUG="$slug" python3 - <<'PY' || return 2
+import json, os, sys, urllib.error, urllib.request
+
+token, slug = os.environ["TOKEN"], os.environ["SLUG"]
+api = "https://api.github.com"
+
+
+def call(path):
+    req = urllib.request.Request(api + path)
+    req.add_header("Authorization", "Bearer " + token)
+    req.add_header("Accept", "application/vnd.github+json")
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return json.loads(r.read() or b"{}")
+    except (urllib.error.HTTPError, OSError):
+        return None
+
+
+me = call("/user")
+if not me or not me.get("login"):
+    sys.exit(1)
+prs = call("/repos/%s/pulls?state=open&per_page=100" % slug)
+if prs is None:
+    sys.exit(1)
+for pr in prs:
+    if (pr.get("user") or {}).get("login") == me["login"]:
+        head = (pr.get("head") or {}).get("ref", "")
+        print("%s %s" % (pr.get("number"), head))
+PY
+}
+
+# one_open_pr_guard <branch> — refuse a second open pull request. A change made
+# while one is open belongs on its branch as another commit, so both `start`
+# (which would need a new PR) and `submit` (which would open one) call this.
+one_open_pr_guard() {
+  local b="$1" prs other first
+  prs="$(open_prs_by_me)" \
+    || { error "cannot reach the tracker — authenticate gh (or export GITHUB_TOKEN) so the one-open-pull-request rule can be enforced"; return 1; }
+  other="$(printf '%s\n' "$prs" | awk -v b="$b" 'NF && $2 != b')"
+  if [ -n "$other" ]; then
+    first="$(printf '%s\n' "$other" | awk 'NR == 1 { print $2 }')"
+    error "a pull request is already open for another branch:"
+    printf '%s\n' "$other" | sed 's/^/  #/'
+    error "add this change to $first instead: make git-switch BRANCH=$first, commit there, push — one open pull request at a time"
+    return 1
+  fi
+  return 0
+}
+
 # One line naming the fix when the PR/issue has to be opened by hand: gh is
 # installed everywhere the installer runs, but a login is the operator's to make.
 gh_hint() {
@@ -195,32 +258,19 @@ PY
 # One open pull request per branch and per author (the hardening that keeps a
 # change from being re-delivered while an earlier delivery is still open), and
 # no re-delivery from a branch that already landed: ask the tracker before
-# opening anything. A host without an authenticated gh cannot answer, so it
-# warns instead of guessing.
+# opening anything. A host that cannot answer fails closed (one_open_pr_guard).
 pr_tracker_guard() {
-  local b="$1" open_same other merged
-  if ! command -v gh >/dev/null 2>&1 || ! (cd "$REPO" && gh auth status >/dev/null 2>&1); then
-    warn "no authenticated gh — the one-open-pull-request rule cannot be checked from here"
-    return 0
-  fi
-  merged=$(cd "$REPO" && gh pr list --head "$b" --state merged --limit 1 --json number --jq '.[0].number' 2>/dev/null)
-  if [ -n "$merged" ]; then
-    error "branch $b already landed as pull request #$merged — a re-delivery starts on a FRESH branch off $BASE"
-    return 1
-  fi
-  open_same=$(cd "$REPO" && gh pr list --head "$b" --state open --limit 1 --json number --jq '.[0].number' 2>/dev/null)
-  [ -n "$open_same" ] && info "a pull request is already open for $b (#$open_same) — this push updates it"
-  if [ "${MULTI_PR_OK:-}" != "1" ]; then
-    other=$(cd "$REPO" && gh pr list --author @me --state open --limit 100 --json number,headRefName \
-              --jq ".[] | select(.headRefName != \"$b\") | \"#\(.number) \(.headRefName)\"" 2>/dev/null)
-    if [ -n "$other" ]; then
-      error "you already have an open pull request from another branch:"
-      printf '%s\n' "$other" | sed 's/^/  /'
-      error "one open pull request per author — land or close it first (MULTI_PR_OK=1 for a deliberate second)"
+  local b="$1" open_same merged
+  if command -v gh >/dev/null 2>&1 && (cd "$REPO" && gh auth status >/dev/null 2>&1); then
+    merged=$(cd "$REPO" && gh pr list --head "$b" --state merged --limit 1 --json number --jq '.[0].number' 2>/dev/null)
+    if [ -n "$merged" ]; then
+      error "branch $b already landed as pull request #$merged — a re-delivery starts on a FRESH branch off $BASE"
       return 1
     fi
+    open_same=$(cd "$REPO" && gh pr list --head "$b" --state open --limit 1 --json number --jq '.[0].number' 2>/dev/null)
+    [ -n "$open_same" ] && info "a pull request is already open for $b (#$open_same) — this push updates it"
   fi
-  return 0
+  one_open_pr_guard "$b"
 }
 
 # ─────────────────────────────── start ────────────────────────────────────# Create + switch to a branch off a freshly pulled base. Bare `start` picks the
@@ -234,6 +284,9 @@ cmd_start() {
     return 1
   fi
   require_clean || return 1
+  # A new branch can only become a new pull request, and one is already open:
+  # the change belongs on that branch. The empty branch matches every open PR.
+  one_open_pr_guard "" || return 1
   cur="$(current_branch)"
   ahead="$(G rev-list "$BASE..HEAD" 2>/dev/null)"
   if [ -n "$ahead" ] && [ -z "$NAME_ARG" ] && temp_branch_is_temp "$cur"; then
@@ -356,7 +409,7 @@ manifest_labels() {
 }
 
 cmd_issue() {
-  local title body or url enc n l known
+  local title body or url enc n l known prs first
   local -a labels=()
   title="${TITLE_ARG:-${POS[*]:-}}"
   if [ -z "${title// /}" ]; then
@@ -373,6 +426,16 @@ cmd_issue() {
   fi
   if [ -z "${body//[[:space:]]/}" ]; then
     error "no issue body — set BODY=<file> (or pipe it in): the problem, then '**Fix:**'"
+    return 1
+  fi
+  # A change made while a pull request is open goes onto that branch as another
+  # commit; the tracker must not grow an issue per change.
+  prs="$(open_prs_by_me)" \
+    || { error "cannot reach the tracker — authenticate gh (or export GITHUB_TOKEN) before filing an issue"; return 1; }
+  if [ -n "$prs" ]; then
+    first="$(printf '%s\n' "$prs" | awk 'NR == 1 { print $2 }')"
+    error "a pull request is already open ($first) — add the change to its branch instead: make git-switch BRANCH=$first, commit there, push"
+    error "file an issue only when no pull request is open"
     return 1
   fi
   known="$(manifest_labels)"

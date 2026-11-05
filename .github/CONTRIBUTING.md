@@ -11,7 +11,7 @@ Anyone can contribute, with or without write access here. Work on a branch — i
 
 ## From this clone
 
-`make git-start` creates the next `temp-<N>` branch off a freshly pulled `main`, `make git-com MSG="…"` commits, `make git-pr ISSUE=<n>` pushes and opens the pull request. The `temp-<N>` name is a convenience of these recipes — it means nothing in the history, and any branch name works just as well.
+`make git-start` creates the next `temp-<N>` branch off a freshly pulled `main`, `make git-com MSG="…"` commits, `make git-pr ISSUE=<n>` pushes and opens the pull request. The `temp-<N>` name is a convenience of these recipes — it means nothing in the history, and any branch name works just as well. While a pull request is open, commit a follow-up to its branch and push — `make git-start` and `make git-issue` refuse a second branch or issue.
 
 ## Before you open it
 
