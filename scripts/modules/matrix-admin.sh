@@ -43,13 +43,21 @@ full_id() {
 }
 
 # _api <command> [args...] — run one admin operation inside the Synapse
-# container (python3 is always present there; curl is not).
+# container (python3 is always present there; curl is not). Under delegated
+# auth Synapse has no admin_token: the credential is a MAS compatibility token
+# carrying the Synapse admin scope, minted for the admin account on each call.
 _api() {
+  local mx_token
+  mx_token=$(docker exec matrix-mas mas-cli manage -c /data/config.yaml \
+    issue-compatibility-token --yes-i-want-to-grant-synapse-admin-privileges \
+    "$SYNAPSE_ADMIN_USER" 2>&1 \
+    | sed -n 's/.*Compatibility token issued: \([^ ]*\).*/\1/p' | tail -1)
+  [ -n "$mx_token" ] || die "cannot mint an admin token for $SYNAPSE_ADMIN_USER — is it a MAS admin (make matrix-flag-admin)?"
   docker exec -i \
-    -e MX_TOKEN="${MAS_SYNAPSE_SECRET:-}" \
+    -e MX_TOKEN="$mx_token" \
     -e MX_ARGS="$*" \
     matrix-synapse python3 - <<'PY'
-import json, os, sys, urllib.error, urllib.request
+import json, os, sys, urllib.error, urllib.parse, urllib.request
 
 BASE = "http://127.0.0.1:8008"
 args = os.environ["MX_ARGS"].split()
@@ -71,12 +79,11 @@ def call(method, path, body=None, token=None):
 
 
 def token():
-    # The shared secret (homeserver.yaml matrix_authentication_service.secret)
-    # is the whole credential once auth is delegated; there is no password
-    # login left to fall back to.
+    # A MAS compatibility token with the Synapse admin scope (minted by the
+    # caller). Synapse has no admin_token under delegated auth.
     static = os.environ.get("MX_TOKEN") or ""
     if not static:
-        sys.exit("matrix-admin: MAS_SYNAPSE_SECRET is missing from modules/matrix/.env — run 'make matrix-gen' and check the matrix_authentication_service block")
+        sys.exit("matrix-admin: no admin token was supplied")
     return static
 
 
@@ -97,9 +104,9 @@ if cmd == "reset_password":
     code, out = call("POST", "/_synapse/admin/v1/reset_password/" + args[1],
                      {"new_password": args[2], "logout_devices": True}, tok)
 elif cmd == "deactivate":
-    code, out = call("POST", "/_synapse/admin/v1/deactivate/" + args[1], {"erase": False}, tok)
+    code, out = call("POST", "/_synapse/admin/v1/deactivate/" + urllib.parse.quote(args[1], safe=""), {"erase": False}, tok)
 elif cmd == "admin":
-    code, out = call("PUT", "/_synapse/admin/v1/users/" + args[1] + "/admin",
+    code, out = call("PUT", "/_synapse/admin/v2/users/" + urllib.parse.quote(args[1], safe=""),
                      {"admin": args[2] == "true"}, tok)
 else:
     sys.exit("matrix-admin: unknown api command " + cmd)
@@ -146,7 +153,7 @@ case "${1:-status}" in
   admin)
     user=${2:-}; flag=${3:-}
     case "$flag" in true|false) ;; *) die "usage: matrix-admin.sh admin <user> <true|false>" ;; esac
-    _api admin "$(full_id "$user")" "$flag" >/dev/null || die "admin flag change failed"
+    out=$(_api admin "$(full_id "$user")" "$flag" 2>&1) || die "admin flag change failed: $out"
     echo "$(full_id "$user") admin=$flag"
     ;;
   del)
