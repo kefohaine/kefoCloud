@@ -20,7 +20,7 @@ parameters:
   - key: scope
     input_type: string
     requirement: optional
-    description: "Optional scope: all, or a single doc (WHAT, MANUAL, DEBUG, MIGRATE, SKELETON, README)"
+    description: "Optional scope: all, or one file (README, AGENTS, MANUAL)"
     default: "all"
   - key: GITHUB_USER
     input_type: string
