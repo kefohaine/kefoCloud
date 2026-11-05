@@ -32,8 +32,6 @@ The wizard asks for five values up front, then works by itself: DNS records, cer
 
 - **[docs/MANUAL.md](docs/MANUAL.md)** — the knowledge base of the whole project.
 - **[docs/AGENTS.md](docs/AGENTS.md)** — the rules agentic workflows follow.
-- **[Project Releases](https://github.com/kefohaine/kefoCloud/releases)**
-- **[MIT License](https://github.com/kefohaine/kefoCloud/releases)**
 
 ## Credits
 
