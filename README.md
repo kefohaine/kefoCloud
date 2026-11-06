@@ -45,6 +45,6 @@ Pick to your needs:
 ## Credits
 
 Thanks to:
-- [Sunyy](https://github.com/rrm9mw6g6j-collab) for beta-testing privately with me
-- Mister R for providing with powerful personal hardware
+- [Sunyy](https://github.com/rrm9mw6g6j-collab) for beta-testing privately
+- Mister R for providing with hardware
 - [Cloudflare](https://cloudflare.com), [Porkbun](https://porkbun.com) & [Interserver](https://interserver.net) for their amazing services
