@@ -315,7 +315,7 @@ services:
       TZ: ${TIMEZONE}
       # The address a browser dials for signalling, and the SFU credentials
       # used to sign the short-lived token it hands back.
-      LIVEKIT_URL: wss://livekit.${DOMAIN}
+      LIVEKIT_URL: wss://livekit.matrix.${DOMAIN}
       LIVEKIT_KEY: ${LIVEKIT_KEY}
       LIVEKIT_SECRET: ${LIVEKIT_SECRET}
       # The only homeserver whose users may mint an SFU token.
