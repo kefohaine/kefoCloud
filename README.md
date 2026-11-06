@@ -1,6 +1,6 @@
-# kefoCloud - Protect your data like your life
+# Welcome to kefoCloud
 
-AiO self-hosted installer for Debian with Docker.
+Easy self-hosting for Debian with Docker.
 
 ![Banner](.github/images/banner.jpg)
 
@@ -26,7 +26,16 @@ The wizard asks for five values up front, then works by itself: DNS records, cer
 
 ## Supported Apps
 
-`chat` (ESS CE — Synapse + Element Client/Call/Admin + MAS) · `ocis` (ownCloud Infinite Scale) · `kopia` (Kopia) · `vault` (Vaultwarden) · `mail` (Mailu + Roundcube) · `monitor` (Uptime Kuma) · `home` (Homarr) · `blog` (WriteFreely) · `photos` (Immich) · or `all` — pick to your needs.
+Pick to your needs:
+- `chat` ESS CE (+ Synapse, MAS, Element Call/Admin)
+- `ocis` ownCloud Infinite Scale
+- `mail` Mailu & Roundcube
+- `vault` Vaultwarden
+- `kuma` Uptime Kuma
+- `blog` WriteFreely
+- `photos` Immich
+- `home` Homarr
+- `kopia` Kopia
 
 ## Read next
 
