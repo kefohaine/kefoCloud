@@ -27,7 +27,7 @@ The wizard asks for five values up front, then works by itself: DNS records, cer
 ## Supported Apps
 
 Pick to your needs:
-- `chat` ESS CE (+ Synapse, MAS, Element Call/Admin)
+- `chat` Element Server Suite CE
 - `ocis` ownCloud Infinite Scale
 - `mail` Mailu & Roundcube
 - `vault` Vaultwarden
