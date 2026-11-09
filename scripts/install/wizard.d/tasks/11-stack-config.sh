@@ -135,8 +135,7 @@ write_instance_conf() {
   [ -f "$f" ] && keep=$(grep -E '^(SERVER_IP|EMAIL|TIMEZONE)=' "$f" || true)
   {
     echo "# data/instance.conf — the values for THIS host (untracked, mode 0600)."
-    echo "# Written by the installer; see config/instance.defaults for what"
-    echo "# each token means. Edit by hand and run 'make render' to apply."
+    echo "# Written by the installer. Edit by hand and run 'make render' to apply."
     printf 'DOMAIN=%s\n' "$DOMAIN"
     printf 'HOSTNAME=%s\n' "${NODE_NAME:-$(hostname -s)}"
     printf 'OPERATOR=%s\n' "root"

@@ -2,8 +2,7 @@ version: 1.0.0
 title: "Review DNS, TLS, mail and reverse-proxy"
 description: "Read-only review of the public/tailnet ingress: Cloudflare records, Caddy vhosts, TLS, mail delivery, and the reverse-proxy."
 instructions: |
-  Read-only. Do not change DNS, firewall, TLS, or Caddy config (AGENTS safety
-  rule 10). Never print secrets (CF_API_TOKEN, cert keys, mail credentials).
+  Read-only. Do not change DNS, firewall, TLS, or Caddy config. Never print secrets (CF_API_TOKEN, cert keys, mail credentials).
   Verify with read-only probes only; report drift and fixes for operator review.
 author:
   contact: "{{GITHUB_USER}}"
@@ -15,7 +14,7 @@ activities:
   - "Check Caddy vhosts and the tailnet-only matcher"
   - "Check TLS issuer/dates per vhost from the host"
   - "Check mail SPF/DKIM/DMARC/PTR and postfix serving"
-  - "Report discrepancies with the operator manual's 'Access model'"
+  - "Report every door whose exposure differs from the access model"
 parameters:
   - key: focus
     input_type: string
@@ -30,8 +29,8 @@ parameters:
 prompt: |
   Review the ingress and mail stack, focus: {{ focus }}.
 
-  Cross-check the operator manual's "Access model" and the service-reference
-  table against the live config.
+  Cross-check which doors are public and which are tailnet-only against the
+  live config.
 
   Inspect:
   - modules/caddy/Caddyfile and modules/caddy/vhosts/*.caddy

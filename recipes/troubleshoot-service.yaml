@@ -1,8 +1,8 @@
 version: 1.0.0
 title: "Diagnose failed service"
-description: "Triage a failing container or host service using the operator manual's layer ladder, read-only."
+description: "Triage a failing container or host service layer by layer, read-only."
 instructions: |
-  Read-only first. Follow the operator manual's diagnostic runbook. One logical change at a time; do not
+  Read-only first: work one layer at a time. One logical change at a time; do not
   apply any fix without first reporting the root cause and the proposed change
   for operator approval. Do not restart or recreate containers or services.
   Never print secrets. No fabrication — cite the exact probe output you observed.
@@ -29,8 +29,8 @@ parameters:
 prompt: |
   Diagnose this failure: {{ service }}.
 
-  Follow the operator manual's diagnostic runbook step by step (layer ladder, standard scan,
-  repo-consistency probes).
+  Work the layer ladder step by step (process, container, network, edge, TLS, DNS),
+  then the standard scan and the repo-consistency probes.
 
   Gather read-only evidence:
   - make fetch (status dashboard) and make smoke (vhost/edge/host tests)
@@ -38,8 +38,8 @@ prompt: |
   - ss -tlnp, sudo ufw status verbose
   - curl and openssl s_client probes from the host for TLS/route issues
 
-  Consult docs/MANUAL.md "Operational gotchas" and the repository's Issues tab for known causes
-  before assuming anything novel.
+  Consult the repository's Issues tab for known causes before assuming anything
+  novel.
 
   Return:
   - the layer where it fails and why

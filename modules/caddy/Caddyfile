@@ -67,7 +67,7 @@ http:// {
 # ── vhosts ──────────────────────────────────────────────────────────────────
 # Each public vhost declares its own `tls { dns cloudflare { ... } }` block so
 # the ACME cert is scoped to that vhost's SNI (ttyd.{{DOMAIN}} included), so
-# no cert is shared across SNI names (see ./vhosts/cloud.caddy for the rationale).
+# no cert is shared across SNI names.
 
 # A glob, deliberately: a glob that matches nothing is NOT an error in
 # Caddy, so vhosts/ can be empty and the edge still starts. That is what

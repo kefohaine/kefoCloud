@@ -1,4 +1,4 @@
-# wizard.d/tasks/17-monitor.sh — `Monitoring Setup`: the monitor module’s step (see wizard.d/modules/uptimekuma/).
+# wizard.d/tasks/17-monitor.sh — `Monitoring Setup`: the monitor module’s step.
 
 task_monitor() {
   task_start

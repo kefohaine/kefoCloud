@@ -131,7 +131,7 @@ hint() {
     kopia_setup)    echo "run: make kopia-status (then make dok-logs-kopia), then re-check" ;;
     vaultwarden)    echo "run: make dok-recreate-vaultwarden, then re-check" ;;
     kuma)           echo "run: make dok-recreate-uptimekuma, then re-check" ;;
-    mailserver)     echo "run: make dok-recreate-mailserver, then re-check" ;;
+    mailserver)     echo "run: make dok-recreate TARGET=mailu-front, then re-check" ;;
     containers)     echo "inspect each one with: docker ps -a && make dok-logs TARGET=<container>; a container that keeps restarting is fixed by make dok-recreate TARGET=<container>, then re-check" ;;
     ocis)           echo "run: make dok-recreate-ocis (then make dok-logs-ocis), then re-check" ;;
     writefreely)    echo "run: make dok-recreate-writefreely (then make dok-logs-writefreely), then re-check" ;;

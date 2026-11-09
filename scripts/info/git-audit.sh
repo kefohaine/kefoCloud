@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # scripts/info/git-audit.sh — monitor the git history for the commit-hygiene
-# rule a commit cannot check about itself: AGENTS rule 26 (a commit edits at
+# rule a commit cannot check about itself: a commit edits at
 # most ten files). READ-ONLY: it reports, it never rewrites history.
 #
 # Why it exists: the pre-commit hook only sees ONE staged change, and a commit
@@ -14,7 +14,7 @@
 # Audit the whole published history with RANGE=origin/main.
 #
 # Checks (exit 1 when any is found, so a hook can gate on it):
-#   TOO BIG  the commit edits more than COMMIT_MAX_FILES files (rule 26) —
+#   TOO BIG  the commit edits more than COMMIT_MAX_FILES files —
 #            the limit the prepare-commit-msg hook splits on.
 #
 # HISTORY_AUDIT_OVERRIDE=1 reports and exits 0.
@@ -39,7 +39,7 @@ if [ -z "$range" ]; then
   exit 2
 fi
 
-# SCOPE (rule 26) comes from scripts/lib/commit-areas.sh — the same limit
+# SCOPE comes from scripts/lib/commit-areas.sh — the same limit
 # git-split.sh rewrites against, so the two never drift.
 
 commits=$(G rev-list --reverse "$range" 2>/dev/null || true)
@@ -80,7 +80,7 @@ if [ "${HISTORY_AUDIT_OVERRIDE:-}" = "1" ]; then
 fi
 if [ "$oversize" -ne 0 ]; then
   echo ""
-  echo "${R}$oversize oversized commit(s)${N} — rule 26 allows at most $COMMIT_MAX_FILES files per commit."
+  echo "${R}$oversize oversized commit(s)${N} — at most $COMMIT_MAX_FILES files per commit."
   exit 1
 fi
 echo "  ${B}clean${N} ${D}— every commit is within the file limit${N}"

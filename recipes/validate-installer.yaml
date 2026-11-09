@@ -3,8 +3,8 @@ title: "Validate installer and script changes"
 description: "Read-only lint and review of shell scripts and installer changes before they are applied or committed."
 instructions: |
   Do not run the installer or apply any change to the host. Lint and review
-  only (bash -n and read-only analysis). Never read or print secrets. Follow
-  docs/AGENTS.md. Return a go/no-go with findings; do not edit the scripts.
+  only (bash -n and read-only analysis). Never read or print secrets. Return a
+  go/no-go with findings; do not edit the scripts.
 author:
   contact: "{{GITHUB_USER}}"
 extensions:
@@ -30,8 +30,8 @@ parameters:
 prompt: |
   Validate installer/script changes, target: {{ target }}.
 
-  Read docs/MANUAL.md (house style, error framework) and docs/AGENTS.md rule 12
-  (stay global); a script's own neighbourhood is its house style.
+  Hold the change to the house style of the script's own neighbourhood, and keep
+  it global: nothing instance-specific hardcoded.
 
   For each script in scope:
   - bash -n <script> (syntax)

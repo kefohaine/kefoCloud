@@ -41,8 +41,7 @@ esac
 
 [ -f "$CONF" ] || {
   echo "render.sh: no $CONF" >&2
-  echo "  Create it (the installer writes it) with the values for THIS host:" >&2
-  echo "  see config/instance.defaults for the token list." >&2
+  echo "  Create it (the installer writes it) with the values for THIS host." >&2
   exit 1
 }
 [ "$MODE" = render ] || [ "$MODE" = tokens ] || [ "$MODE" = check ] || [ "$MODE" = reverse ] || exit 2

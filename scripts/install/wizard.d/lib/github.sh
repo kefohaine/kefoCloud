@@ -98,7 +98,7 @@ github_auth_ok() {
 # that may not write here, and that rejection is reported as an error. Runs
 # only in the installer's tail (after a green smoke), never as a pre-check.
 #
-# It pushes a TEMP BRANCH, never `main` (AGENTS rule 30). task_repo has already
+# It pushes a TEMP BRANCH, never `main`. task_repo has already
 # moved the checkout onto the next free `temp-<N>` (naming lives in
 # scripts/lib/temp-branch.sh); that branch is pushed, so the installer's commits
 # reach the operator as a pull request and `main` stays untouched on the remote.
@@ -106,7 +106,7 @@ github_auth_ok() {
 # STAYS on the branch: every later change in this clone is made there, one PR
 # per branch.
 #
-# NOTE (AGENTS rule 3): raw git is normally reserved for the make recipes — the
+# NOTE: raw git is normally reserved for the make recipes — the
 # one exception is right here, because the installer must push to a TEMPORARY
 # remote with --no-verify (the pre-push hook's live smoke cannot pass before the
 # stack exists, and the installer has already run smoke itself). The hook's
@@ -200,7 +200,7 @@ github_set_origin() {
 }
 
 # Write the collected operator identity into the checkout's REPO-LOCAL git
-# config. Nothing must ever commit or push as root (AGENTS rule 27): a fresh
+# config. Nothing must ever commit or push as root: a fresh
 # host has no global git identity, so without this a later `git commit` by the
 # operator or an agent silently falls back to `root@<host>`. The identity is
 # collected up front; a non-collaborator run has none, in which case the

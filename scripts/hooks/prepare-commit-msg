@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # prepare-commit-msg hook — AUTO-SPLIT a staged change wider than one commit may
-# be into one commit per chunk of at most COMMIT_MAX_FILES files (AGENTS rule
+# be into one commit per chunk of at most COMMIT_MAX_FILES files
 # 26; the limit comes from scripts/lib/commit-areas.sh).
 # Installed via `make install-hooks`.
 #
@@ -40,7 +40,7 @@ nunits=$(printf '%s\n' "$units" | grep -c . || true)
 splitter="$repo/scripts/info/git-split.sh"
 [ -f "$splitter" ] || exit 0
 
-echo "prepare-commit-msg: staged change edits $nfiles files (rule 26: max $COMMIT_MAX_FILES) — splitting into $nunits commits:"
+echo "prepare-commit-msg: staged change edits $nfiles files (max $COMMIT_MAX_FILES) — splitting into $nunits commits:"
 if GIT_SPLIT_MESSAGE_FILE="$1" bash "$splitter" --staged; then
   echo "prepare-commit-msg: done — the work is committed, in $nunits commits, each with"
   echo "  your message. Nothing to re-run; git reports this commit as aborted only"

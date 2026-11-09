@@ -13,7 +13,7 @@ set -uo pipefail
 
 fails=0
 
-# owner/repo derived from the live push remote — never hardcoded (rule 12).
+# owner/repo derived from the live push remote — never hardcoded.
 remote=$(git config --get "branch.$(git symbolic-ref --short HEAD 2>/dev/null).remote" 2>/dev/null || true)
 [ -z "$remote" ] && remote=$(git remote 2>/dev/null | head -1)
 if [ -z "$remote" ]; then echo "FAIL: no git remote — cannot derive the GitHub repo"; exit 1; fi

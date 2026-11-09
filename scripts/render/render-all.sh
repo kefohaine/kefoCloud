@@ -27,7 +27,7 @@ CONF="$ROOT/data/instance.conf"
 OUT="$ROOT/data/rendered"
 RENDER="$ROOT/scripts/render/render.sh"
 
-[ -f "$CONF" ] || { echo "render-all: missing $CONF (see config/instance.defaults)" >&2; exit 1; }
+[ -f "$CONF" ] || { echo "render-all: missing $CONF" >&2; exit 1; }
 
 val() { sed -n "s/^$1=//p" "$CONF" | head -1; }
 DATA_DIR="$(val DATA_DIR)"; [ -n "$DATA_DIR" ] || DATA_DIR="$ROOT/data"

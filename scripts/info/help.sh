@@ -185,7 +185,7 @@ make mail-logs|SERVICE=<front,smtp,imap,antispam,admin,redis,roundcube>, default
 make mail-exec|CMD='<shell command>' inside mailu-admin (escape hatch for any flask mailu command)
 make mail-config-export|dump the registry as JSON (FILE=<path> to save, SECRETS=1 to include hashes and keys)
 make mail-config-import|apply a registry dump — FILE=<yaml or json>, merges into the live registry
-make dok-recreate-mailserver|whole stack lifecycle — dok-restart-mailserver, dok-stop-mailserver, dok-logs-mailserver
+make dok-recreate-mailu-front|the whole mail project, like every dok-* action — any mailu container names it
 EOF
 
   sec "kuma accounts (Uptime Kuma)"

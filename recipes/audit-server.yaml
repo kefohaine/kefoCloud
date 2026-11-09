@@ -3,7 +3,7 @@ title: "Audit self-hosted server"
 description: "Read-only review of the repository and running system for security, reliability, and operational issues."
 instructions: |
   Work only within this repository and the host it describes.
-  Follow docs/AGENTS.md safety rules: read-only first; never modify files;
+  Read-only first: never modify files;
   never run destructive or irreversible commands; never read or print secrets
   (modules/*/.env, data/goose/.env, mailserver config, private keys,
   certs, password hashes). Report findings with severity, file path and line
@@ -34,8 +34,7 @@ parameters:
 prompt: |
   Audit this self-hosted server repository, focus: {{ focus_area }}.
 
-  Read docs/AGENTS.md (agent rules) and docs/MANUAL.md (project facts) first,
-  then the repository's Issues tab for already-known problems.
+  Start with the repository's Issues tab for already-known problems.
 
   Inspect the relevant files:
   - scripts/ (the installer, uninstall.sh, optimize.sh, datadir-nfs.sh, and the per-subsystem helpers)

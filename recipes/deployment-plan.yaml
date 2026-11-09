@@ -2,9 +2,8 @@ version: 1.0.0
 title: "Produce deployment or upgrade plan"
 description: "Read-only planning: produce a step-by-step deployment, migration, or upgrade plan for a change, with risks and rollback."
 instructions: |
-  Do not deploy or change anything. Produce a plan only. Follow docs/AGENTS.md
-  (change procedure, rollback-first, network-listener rules). Never print
-  secrets. Name likely failure modes and a rollback for each step.
+  Do not deploy or change anything. Produce a plan only. Rollback first; a
+  network-listener change ends in a working state. Never print secrets. Name likely failure modes and a rollback for each step.
 author:
   contact: "{{GITHUB_USER}}"
 extensions:
@@ -28,8 +27,8 @@ parameters:
 prompt: |
   Produce a deployment/upgrade/migration plan for this change: {{ change }}.
 
-  Read docs/MANUAL.md (deployment, protected resources, service-reference table,
-  operational gotchas, migration) and docs/AGENTS.md rules 10/16/17.
+  Read the deployment, migration and service-reference sections first, and name
+  the protected resources the change touches.
 
   Determine:
   - what files/modules/configs are affected (compose files, Makefile recipes,

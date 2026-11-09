@@ -3,7 +3,7 @@ title: "Verify backups and restore"
 description: "Read-only audit of the backup and restore posture: artifacts, schedules, off-site copies, and restore procedure."
 instructions: |
   Read-only. Do not create, delete, restore, or rotate anything. Never read or
-  print secrets or operator data. Follow docs/AGENTS.md. Report gaps and a
+  print secrets or operator data. Report gaps and a
   prioritized remediation list; do not apply fixes.
 author:
   contact: "{{GITHUB_USER}}"
@@ -30,8 +30,7 @@ parameters:
 prompt: |
   Audit the backup and restore posture, scope: {{ focus }}.
 
-  Read docs/MANUAL.md (backup gotchas, storage row, protected resources) and
-  the repository's Issues tab (open backup/restore items).
+  Start with the repository's Issues tab (open backup/restore items).
 
   Inspect:
   - the Makefile `backup` and `kopia-*` recipes and scripts/modules/kopia-admin.sh

@@ -4,7 +4,9 @@ description: "Read-only documentation audit: find drift, stale content, and dupl
 instructions: |
   Read-only. Do not edit any .md file. Produce a report of the exact drift,
   stale, and duplicate items with the precise in-place fix for each, so the
-  operator can approve. Follow docs/AGENTS.md doc-audit directives.
+  operator can approve. Apply the doc-audit directives: the executable source
+  wins, stale facts are deleted, drift is corrected in place, duplicates
+  collapse to one home.
 author:
   contact: "{{GITHUB_USER}}"
 extensions:
@@ -31,8 +33,8 @@ prompt: |
   Audit documentation for drift/stale/duplicate, scope: {{ scope }}.
 
   The repo (compose files, Makefile, scripts, config, the running system) is the
-  ground truth; docs are derived. Read docs/AGENTS.md doc-audit directives and
-  docs/MANUAL.md first.
+  ground truth; docs are derived. Apply the doc-audit directives to every .md
+  file first.
 
   For every concrete fact in the docs (port, path, command, recipe name,
   container name, unit name, image tag, route matcher), grep the executable

@@ -1,4 +1,4 @@
-# wizard.d/tasks/19-kopia.sh — `Backup Setup`: the kopia module's step (see wizard.d/modules/kopia/).
+# wizard.d/tasks/19-kopia.sh — `Backup Setup`: the kopia module's step.
 
 task_kopia() {
   task_start
