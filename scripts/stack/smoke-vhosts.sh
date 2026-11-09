@@ -33,8 +33,6 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 . "$ROOT/scripts/lib/modules.sh"
 mod_in() { mod_installed "$1"; }
 
-# ttyd.$DOMAIN is not probed at all (see the core section below).
-
 FIN="$(mod_finished)"
 if [ "$FIN" != "true" ]; then
   echo "smoke: wizard.state is not finished ('${FIN:-absent}') — refusing to run."
@@ -255,11 +253,9 @@ check_tls "www.$DOMAIN"
 # its own section below.
 
 
-# ttyd.$DOMAIN is deliberately NOT in smoke: it is tailnet-only and its LE
-# order may legitimately be pending or rate-limited (the remedy is the
-# scripts/ops/tailscale-https.sh follow-up), so it must never gate a push.
-# The host unit behind it is asserted in the Host section.
+# ttyd.$DOMAIN is tailnet-only and probed as a host core section below.
 end_sec
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Module: ocis — ownCloud Infinite Scale (single container, own store).
@@ -452,6 +448,23 @@ else
 fi
 
 check_ctns mail mailu-front mailu-imap mailu-smtp mailu-antispam mailu-admin mailu-redis roundcube
+end_sec
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Terminal — ttyd.$DOMAIN. Tailnet-only: the shell IS the homepage, so the
+# door is asserted from both sides like every other tailnet-only vhost — a
+# tailnet source gets the shell page, a public source gets 403, and the cert
+# the door serves is read. The host unit behind it is asserted in the Host
+# section; this section is the door itself.
+# ─────────────────────────────────────────────────────────────────────────────
+hdr core "Terminal — ttyd.$DOMAIN (tailnet-only)"
+if [ -z "$TS_IP" ]; then
+  say "FAIL ttyd: no Tailscale IPv4 — cannot probe the tailnet-only door"; bad
+else
+  check_tn ttyd "ttyd.$DOMAIN" "/" "200" html "ttyd serves the shell page on the tailnet"
+fi
+check ttyd-public "ttyd.$DOMAIN" "/" "403" "" "public sources are refused"
+check_tls "ttyd.$DOMAIN"
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
