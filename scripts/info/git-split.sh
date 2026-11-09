@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# scripts/info/git-split.sh — satisfy the commit-hygiene rule (AGENTS rule 26)
+# scripts/info/git-split.sh — satisfy the commit-hygiene rule (at most ten
 # by REWRITING history: split an oversized commit into consecutive chunks of at
 # most COMMIT_MAX_FILES files (auto rebase).
 #
@@ -16,7 +16,7 @@
 # SCOPE comes from scripts/lib/commit-areas.sh — the same definition
 # git-audit.sh checks against, so the splitter and the auditor never drift.
 #
-# SAFETY (AGENTS rule 17): rewriting PUBLISHED history is an operator decision,
+# SAFETY: rewriting PUBLISHED history is an operator decision,
 # so this refuses to touch any commit already reachable from a remote-tracking
 # branch unless REWRITE_PUBLISHED=1 says the operator asked for exactly that.
 # Worktree must be clean.
@@ -45,7 +45,7 @@ die() { printf 'git-split: %s\n' "$*" >&2; exit 1; }
 
 # split_from_status <subject> <body> — stdin is `git diff-tree --name-status`
 # lines. HEAD is at the parent; `git reset` has not run yet. Stages one commit
-# per chunk of at most COMMIT_MAX_FILES files (rule 26). Returns 3 when there is
+# per chunk of at most COMMIT_MAX_FILES files. Returns 3 when there is
 # nothing to split.
 split_from_status() {
   local subject="$1" body="$2"
@@ -123,7 +123,7 @@ replay_range() {
   if [ "${REWRITE_PUBLISHED:-0}" != "1" ]; then
     for c in $commits; do
       if G branch -r --contains "$c" 2>/dev/null | grep -q .; then
-        die "commit ${c:0:9} is already published on a remote — refusing to rewrite published history (rule 17; REWRITE_PUBLISHED=1 to apply an operator-approved rewrite)"
+        die "commit ${c:0:9} is already published on a remote — refusing to rewrite published history (REWRITE_PUBLISHED=1 to apply an operator-approved rewrite)"
       fi
     done
   fi
@@ -134,7 +134,7 @@ replay_range() {
     [ "$n" -gt 1 ] && need=1
   done
   if [ "$need" = 0 ]; then
-    echo "git-split: range '$range' already satisfies rule 26 ($COMMIT_MAX_FILES files per commit) — nothing to do"
+    echo "git-split: range '$range' already satisfies the file limit ($COMMIT_MAX_FILES files per commit) — nothing to do"
     return 0
   fi
 

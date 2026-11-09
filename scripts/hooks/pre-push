@@ -17,7 +17,7 @@
 # MAIN IS UNREACHABLE. This hook refuses any push whose destination is
 # refs/heads/main (or master), and any non-branch ref at all: every change
 # lands on a `temp-<N>` branch and reaches main only through a human-reviewed
-# pull request on GitHub (AGENTS rule 30). The check runs BEFORE the smoke
+# pull request on GitHub. The check runs BEFORE the smoke
 # gate, so the refusal is unconditional — a broken edge must never mask, or be
 # blamed for, a main push.
 [ "${GIT_SPLIT_INTERNAL:-}" = 1 ] && exit 0   # a git-split replay: our own commits, stand down
@@ -25,7 +25,7 @@ set -uo pipefail
 
 
 repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
-# The commit-size limit (rule 26) lives in one place; the splitter it quotes
+# The commit-size limit lives in one place; the splitter it quotes
 # reads the same file.
 . "$repo/scripts/lib/commit-areas.sh" 2>/dev/null || true
 COMMIT_MAX_FILES="${COMMIT_MAX_FILES:-10}"
@@ -106,7 +106,7 @@ while read -r lref lsha rref rsha; do
   # Identity guard: refuse to push any commit whose author/committer is not a
   # GitHub identity. Root (`root@<host>`, the no-identity fallback) and any
   # invented/non-GitHub address are non-attributable and must never reach the
-  # remote (AGENTS rule 27); the installer sets the real identity at deploy time.
+  # remote; the installer sets the real identity at deploy time.
   # Runs before the fast-forward test so a NEW branch is scanned whole (rsha=0s).
   range="$lsha"; [ "$rsha" != "0000000000000000000000000000000000000000" ] && range="$rsha..$lsha"
   bad=$(git log --format='%ae%n%ce' "$range" 2>/dev/null \
@@ -120,7 +120,7 @@ while read -r lref lsha rref rsha; do
   fi
   [ "$rsha" = "0000000000000000000000000000000000000000" ] && continue  # new branch: no rewrite warning
 
-  # Commit hygiene over the pushed range (AGENTS rule 26: at most
+  # Commit hygiene over the pushed range (at most
   # COMMIT_MAX_FILES files per commit) — AUTOMATED. This is the only place a bad
   # commit can be caught when it did NOT come from this checkout: a
   # GitHub-web-editor commit runs no local hook at all. When the range breaks
@@ -162,10 +162,10 @@ while read -r lref lsha rref rsha; do
   fi
 
   # Comments and user-facing strings describe the current configuration only
-  # (AGENTS rule 31). Whole tree, read-only; override: PROSE_AUDIT_OVERRIDE=1.
+  # Whole tree, read-only; override: PROSE_AUDIT_OVERRIDE=1.
   if [ -f "$repo/scripts/info/prose-audit.sh" ] \
      && ! bash "$repo/scripts/info/prose-audit.sh" >/dev/null 2>&1; then
-    echo "pre-push: REFUSED — the tree breaks the prose rules (AGENTS rule 31)."
+    echo "pre-push: REFUSED — the tree breaks the prose rules."
     bash "$repo/scripts/info/prose-audit.sh" | sed 's/^/  /'
     echo "  fix the findings above (make prose-audit) or push with PROSE_AUDIT_OVERRIDE=1."
     exit 1
@@ -174,7 +174,7 @@ while read -r lref lsha rref rsha; do
   # Remote-landed commits (GitHub web editor, another host) ran no local hook,
   # so the pushed range above never sees them. Audit whatever the remote has
   # that this checkout does not (`$lsha..$rsha`) and REPORT it: those commits
-  # are published, so git-split refuses them (rule 17) — a fix is an explicit
+  # are published, so git-split refuses them — a fix is an explicit
   # rewrite decision, never something this hook may do on its own.
   remote_only="$lsha..$rsha"
   if [ -n "$(git rev-list "$remote_only" 2>/dev/null | head -1)" ] \
@@ -182,14 +182,14 @@ while read -r lref lsha rref rsha; do
     if ! bash "$repo/scripts/info/git-audit.sh" "$remote_only" >/dev/null 2>&1; then
       echo "pre-push: WARNING — published commits on the remote also break the commit-hygiene rule:"
       bash "$repo/scripts/info/git-audit.sh" "$remote_only" | sed 's/^/  /'
-      echo "  They are already published: git-split refuses them (rule 17), so rewriting needs an explicit decision."
+      echo "  They are already published: git-split refuses them, so rewriting needs an explicit decision."
     fi
   fi
 
   if ! git merge-base --is-ancestor "$rsha" "$lsha" 2>/dev/null; then
     echo "pre-push: WARNING — this push replaces existing remote history (not a fast-forward)."
     echo "  After it lands, github.com may 404/500 while git stays healthy (2026-09-03 lesson)."
-    echo "  Verify with: make gh-web-health   (remedy if red: a real, meaningful commit — e.g. docs-only — re-triggers the rebuild; never an empty one, AGENTS rule 27)"
+    echo "  Verify with: make gh-web-health   (remedy if red: a real, meaningful commit — e.g. docs-only — re-triggers the rebuild; never an empty one)"
   fi
 done <<< "$refs"
 

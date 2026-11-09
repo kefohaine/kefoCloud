@@ -202,7 +202,7 @@ if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   fi
   row remote "$(git -C "$ROOT" remote get-url origin 2>/dev/null)"
   # Identity (repo-local) and the installed guards — root/invented identities are
-  # refused by the hooks (AGENTS rule 27).
+  # refused by the hooks.
   row identity "$(git -C "$ROOT" config user.name 2>/dev/null || echo '-') <$(git -C "$ROOT" config user.email 2>/dev/null || echo '-')> · useConfigOnly=$(git -C "$ROOT" config user.useConfigOnly 2>/dev/null || echo false)"
   row hooks "pre-commit $([ -x "$ROOT/.git/hooks/pre-commit" ] && echo ✓ || echo ✗) · pre-push $([ -x "$ROOT/.git/hooks/pre-push" ] && echo ✓ || echo ✗) · run make install-hooks to (re)install"
 fi

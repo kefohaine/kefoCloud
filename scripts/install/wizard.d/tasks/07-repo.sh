@@ -41,7 +41,7 @@ install_hooks() {
 }
 
 
-# AGENTS rule 30: every change is made on a branch, never on main. The installer
+# Every change is made on a branch, never on main. The installer
 # leaves the checkout on the next free temp-<N> (naming in
 # scripts/lib/temp-branch.sh) as soon as the repo is present, so a commit made
 # in this clone later — by the operator, a recipe or an agent — cannot land on

@@ -4,7 +4,7 @@
 #  0a. The installed hooks must be the copies this checkout tracks — a stale
 #      one calls libraries the worktree no longer has (scripts/lib/hooks-fresh.sh).
 #  0. The commit identity must be the operator's GitHub account (no root, no
-#     invented address) — see below.
+#     invented address).
 #  1. If any file under modules/caddy/ is staged, the Caddyfile must
 #     validate (via the running $DOMAIN container, when it's up).
 #  2. A bare `respond "ok"` in an APP vhost (cloud/kuma/mail/vault) is
@@ -35,7 +35,7 @@ staged=$(git diff --cached --name-only)
 
 # 0. Identity guard: a commit must use the operator's logged-in GitHub identity,
 #    never root and never an invented fallback. A fresh host has no git identity,
-#    so git silently falls back to `root@<host>` (AGENTS rule 27) — and any other
+#    so git silently falls back to `root@<host>` — and any other
 #    non-GitHub address is not attributable either. Only a GitHub identity is
 #    accepted: the account-noreply form git maps to the account
 #    (`<id>+<login>@users.noreply.github.com`) or GitHub's own web-commit form
@@ -80,7 +80,7 @@ for f in $app_vhosts; do
   fi
 done
 
-# 3. Commit size (AGENTS rule 26) — AUTOMATED. A commit may edit at most
+# 3. Commit size — AUTOMATED. A commit may edit at most
 #    COMMIT_MAX_FILES files (scripts/lib/commit-areas.sh). A wider change is
 #    committed as one commit per chunk by the prepare-commit-msg hook, which
 #    runs right AFTER this one — pre-commit cannot do it: it runs BEFORE the
@@ -91,7 +91,7 @@ if [ "${GIT_SPLIT_DISABLE:-}" = "1" ]; then
   nfiles=$(printf '%s\n' "$staged" | grep -c . || true)
   if [ "${nfiles:-0}" -gt "$COMMIT_MAX_FILES" ]; then
     echo "pre-commit: refusing to commit — this commit edits $nfiles files"
-    echo "  (rule 26: at most $COMMIT_MAX_FILES files per commit)."
+    echo "  (at most $COMMIT_MAX_FILES files per commit)."
     echo "  Stage fewer files with 'git add -p',"
     echo "  or unset GIT_SPLIT_DISABLE and let prepare-commit-msg split it."
     exit 1
