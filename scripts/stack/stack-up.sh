@@ -19,7 +19,7 @@
 #
 # Rules honoured:
 #   - the unit list is derived from the live system (docker ps -a + compose
-#     metadata), never a hardcoded roster (AGENTS rule 12)
+#     metadata), never a hardcoded roster
 #   - a unit is touched when its containers exist OR the installer recorded
 #     the module as enabled (`wizard.state`), so a wiped module comes back and
 #     an uninstalled one is never started or given empty data dirs
