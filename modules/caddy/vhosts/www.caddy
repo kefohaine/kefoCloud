@@ -13,7 +13,7 @@
 #   /download* Caddy file_server browse over homelab/download (mounted at
 #              /download:ro in the caddy container — drop files here).
 #   everything else — plain "ok" stub.
-# TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/cloud.{{DOMAIN}}.caddy).
+# TLS: Let's Encrypt DNS-01 via Cloudflare .
 
 # The bare domain is the address people type: it must never be a dead end.
 # There is one canonical homepage (www.{{DOMAIN}}), so the apex answers with a

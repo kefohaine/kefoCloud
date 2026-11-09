@@ -1,5 +1,5 @@
 # kuma.{{DOMAIN}} — Uptime Kuma status monitor.
-# TLS: Let's Encrypt DNS-01 via Cloudflare (see vhosts/cloud.{{DOMAIN}}.caddy).
+# TLS: Let's Encrypt DNS-01 via Cloudflare .
 
 https://kuma.{{DOMAIN}} {
     import ratelimit kuma_rl

@@ -19,9 +19,9 @@ endif
 # Makefile, and it is why every other path below hangs off $(REPO).
 REPO       := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 # The recipe author contact is the checkout's GitHub identity, derived at run
-# time — never a literal in a tracked file (AGENTS.md rule 23).
+# time — never a literal in a tracked file.
 GITHUB_USER ?= $(shell git -C $(REPO) config user.name 2>/dev/null)
-# The single untracked source of instance values (see config/instance.defaults).
+# The single untracked source of instance values.
 CONF       := $(REPO)/data/instance.conf
 DOMAIN     := $(shell sed -n 's/^DOMAIN=//p' $(CONF) 2>/dev/null | head -1)
 # Instance tree (untracked). Read from the same conf the renderer uses, so a
@@ -269,14 +269,13 @@ update:
 >@scripts/stack/stack-up.sh --update
 >@bash scripts/stack/smoke-vhosts.sh || scripts/lib/mklog warn "smoke reported failures — see above (smoke runs only on a finished install)"
 
-# Live edge smoke test — every vhost must serve its real app (see
-# scripts/stack/smoke-vhosts.sh). Runs ONLY on a finished install (wizard.state
+# Live edge smoke test — every vhost must serve its real app. Runs ONLY on a finished install (wizard.state
 # finished=true) and has no bypass. Run after any modules/caddy/ change or
 # `docker restart caddy`. The pre-push hook runs this automatically.
 smoke:
 >@bash scripts/stack/smoke-vhosts.sh
 
-# GitHub web git-data health (see scripts/info/gh-web-health.sh). Run after any
+# GitHub web git-data health. Run after any
 # full-history rewrite + force-push: a rewritten history can leave the GitHub
 # web page 404/500 while git stays healthy (2026-09-03 incident); the remedy
 # is a nudge commit, which triggers GitHub's rebuild. The pre-push hook
@@ -286,7 +285,7 @@ gh-web-health:
 
 # Install the repo's git hooks (pre-commit: identity + Caddy validate + app-vhost
 # stub guard; prepare-commit-msg: auto-split a change wider than ten files
-# (rule 26) into one commit per chunk;
+# into one commit per chunk of at most ten files;
 # pre-push: live vhost smoke test + history-rewrite warning +
 # auto-split/fill-revert over the pushed range). The installer runs this
 # automatically; re-run manually after cloning or after editing a hook.
@@ -297,7 +296,7 @@ install-hooks:
 >@scripts/lib/mklog info "installed git hooks: pre-commit (identity + Caddy validate + app-vhost stub guard), prepare-commit-msg (auto-split over the ten-file limit), pre-push (refuses main + live vhost smoke + history-rewrite warning + auto-split)"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Mailboxes (Mailu `flask mailu` CLI — see `make help-more` > mail server).
+# Mailboxes (Mailu `flask mailu` CLI; `make help-more` lists the mail recipes).
 # Passwords never land in shell history or the process list.
 # Friends log in at https://mail.$(DOMAIN) with just the local part
 # (ROUNDCUBEMAIL_USERNAME_DOMAIN=$(DOMAIN)); the full stack lives in the
@@ -314,7 +313,7 @@ mail-gen:
 >@bash scripts/modules/mail-gen.sh "$(MAIL)" "$(if $(filter command line,$(origin PWD)),$(PWD))" "$(QUOTA)"
 
 # Disposable forwarding alias: random 7-digit local part forwarding to TO
-# (see scripts/modules/mail-alias-gen.sh). No mailbox is consumed; same-domain
+# No mailbox is consumed; same-domain
 # targets are refused by the script.
 mail-gen-alias:
 >@[ -n "$(TO)" ] || { scripts/lib/mklog error "usage: make mail-gen-alias TO=target@example.com"; exit 1; }
@@ -703,7 +702,7 @@ matrix-gen:
 >@bash scripts/modules/matrix-gen.sh
 
 # Recreate MAS after a version change with a dump-first safety net, then
-# Synapse. Requires CONFIRM=yes; see scripts/modules/matrix-update.sh.
+# Synapse. Requires CONFIRM=yes.
 matrix-update:
 >@bash scripts/modules/matrix-update.sh
 
@@ -810,7 +809,7 @@ bash $(REPO)/scripts/info/goose-tokens.sh
 sudo cp $(RENDER_DIR)/config/ssh/50-cloud-init.conf /etc/ssh/sshd_config.d/50-cloud-init.conf
 # The tracked copy keeps a PLACEHOLDER tailnet address; the live IP is rendered
 # in at deploy time so an instance-specific address never lands in a tracked
-# file (AGENTS rule 12). The old plain `cp` here silently overwrote the live
+# file. The old plain `cp` here silently overwrote the live
 # 10-tailnet.conf with the placeholder — dnsmasq then fail-looped on
 # "Cannot assign requested address" and tailnet DNS died with it.
 @TS_IP=$$(tailscale ip -4 2>/dev/null | head -n1); \
@@ -1029,7 +1028,7 @@ migrate:
 
 .PHONY: git-issue git-start git-branch git-switch git-del git-branches git-pr git-land git-pull git-add git-com git-push git-force-push git-audit pr-guard prose-audit git-split
 
-# The branch + pull-request workflow (AGENTS rule 30). `main` is write-once: a
+# The branch + pull-request workflow. `main` is write-once: a
 # change is made on a branch named temp-<N> (temp-1, temp-2, … derived from the
 # branches that exist, never hardcoded) and merged through a pull request a
 # human reviews on GitHub. scripts/hooks/pre-push refuses any push to main, so
@@ -1070,12 +1069,12 @@ git-del:
 git-branches:
 >@bash scripts/ops/git-pr.sh list
 
-# Audit (rule 26) the branch, push it, then open the pull request with an
+# Audit the branch, push it, then open the pull request with an
 # authenticated gh (or print the compare URL and a PR body). ISSUE=<n> writes
 # `Closes #<n>`, linking the issue to the PR; without one, the body uses the
 # new-feature form (how it works / benefits / risks). BASE=<branch> opens the PR
 # into that branch instead of main (a stacked change). The body ends with the
-# PR's one `## Revert` recipe (rule 10). A human reviews and merges — nothing
+# PR's one `## Revert` recipe. A human reviews and merges — nothing
 # here merges.
 git-pr:
 >@bash scripts/ops/git-pr.sh submit $(if $(ISSUE),--issue $(ISSUE),) $(if $(BASE),--base $(BASE),)
@@ -1090,8 +1089,8 @@ git-pull:
 >cd $(REPO) && git pull --ff-only
 
 # Commit-hygiene monitor (scripts/info/git-audit.sh). Walks a revision range and
-# reports the rule a commit cannot check about itself: rule 26 (at most ten
-# files per commit, the same limit the pre-commit hook splits on). Default range: what a push would publish; RANGE=<a..b> audits anything (RANGE=origin/main
+# reports the one thing a commit cannot check about itself: a change wider
+# than ten files, the same limit the pre-commit hook splits on). Default range: what a push would publish; RANGE=<a..b> audits anything (RANGE=origin/main
 # = the whole published history). The pre-push hook runs it over every pushed
 # range and refuses on a violation — that is the only way to catch a commit made
 # in the GitHub web editor, which runs no local hook.
@@ -1108,14 +1107,14 @@ pr-guard:
 # Prose monitor (scripts/info/prose-audit.sh). Comments and user-facing strings
 # describe the CURRENT configuration only: no docs/ path, no size or duration
 # measured on one host, no other machine or its live address, no plan or guess
-# (AGENTS rule 31). Whole tree, read-only; the pre-push hook and `make git-pr`
+# Whole tree, read-only; the pre-push hook and `make git-pr`
 # both gate on it.
 prose-audit:
 >@bash scripts/info/prose-audit.sh
 
 # The rewriter behind the two hooks (scripts/info/git-split.sh). It performs the
 # fix `git-audit` only reports: split an oversized commit into one commit per
-# chunk of ten files (rule 26) — a replay/rebase over the given range. Refuses to
+# chunk of ten files — a replay/rebase over the given range. Refuses to
 # rewrite any published commit, and needs a clean worktree. RANGE defaults to what
 # a push would publish (`make git-split RANGE=<a..b>`); `ARGS=--dry-run` reports
 # only. The prepare-commit-msg hook calls it with --staged; the pre-push hook
