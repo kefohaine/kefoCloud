@@ -79,7 +79,7 @@ containers_up() {
     if svc_skip_repair mailserver mailserver -- mailu-front; then
       detail "  mailserver already up, inputs unchanged — skipped"
     else
-      log "  recreate: mailserver";  make dok-recreate-mailserver  >>"$LOG" 2>&1 || fail mailserver
+      log "  recreate: mailserver";  make dok-recreate TARGET=mailu-front  >>"$LOG" 2>&1 || fail mailserver
     fi
     svc_note_applied mailserver mailserver --
   fi

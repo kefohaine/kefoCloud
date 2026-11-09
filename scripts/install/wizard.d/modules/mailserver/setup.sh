@@ -23,7 +23,7 @@ mail_wait_ready() {
     fi
     if ! docker exec mailu-admin true >/dev/null 2>&1; then
       log "  mailu-admin not running — recreating (attempt $((i/5+1)))"
-      make dok-recreate-mailserver >>"$LOG" 2>&1 || true
+      make dok-recreate TARGET=mailu-front >>"$LOG" 2>&1 || true
     fi
     sleep 5; i=$((i+5))
   done
@@ -63,12 +63,12 @@ mailbox_add() {
     fi
     if printf '%s' "$out" | grep -qiE 'permission denied|read-only file system|cannot open|unable to (write|create)'; then
       log "  Mailu config store not writable — recreating admin"
-      make dok-recreate-mailserver >>"$LOG" 2>&1 || true
+      make dok-recreate TARGET=mailu-front >>"$LOG" 2>&1 || true
       mail_wait_ready
     fi
     if ! docker exec mailu-admin true >/dev/null 2>&1; then
       log "  mailu-admin not running — recreating before the next attempt"
-      make dok-recreate-mailserver >>"$LOG" 2>&1 || true
+      make dok-recreate TARGET=mailu-front >>"$LOG" 2>&1 || true
       mail_wait_ready
     fi
     sleep 5; i=$((i+5))

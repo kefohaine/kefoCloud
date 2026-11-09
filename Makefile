@@ -28,16 +28,10 @@ DOMAIN     := $(shell sed -n 's/^DOMAIN=//p' $(CONF) 2>/dev/null | head -1)
 # host that moved data/ keeps working; the repo-relative path is the norm.
 DATA_DIR   := $(or $(shell sed -n 's/^DATA_DIR=//p' $(CONF) 2>/dev/null | head -1),$(REPO)/data)
 RENDER_DIR := $(REPO)/data/rendered
-COMPOSE  := docker compose -f
-# The container roster is DERIVED from the catalog (config/modules.conf), never
-# a hand-kept list: every container a module declares gets the dok-<action>-<ctn>
-# targets, and the edge (caddy, the one container that is not a module) is added
-# explicitly. Add a container to its module's row and its targets appear.
-MODULE_CONTAINERS := $(shell awk '!/^#/ && NF>=4 {for(i=4;i<=NF;i++) printf "%s ", $$i}' $(REPO)/config/modules.conf 2>/dev/null)
+COMPOSE  := docker compose
 # The module names the catalog declares (+ the edge, which is not a module) —
 # every MODULE=<m> recipe accepts these and nothing hardcodes the roster.
 MODULES := $(shell awk '!/^#/ && NF>=4 {printf "%s ", $$1}' $(REPO)/config/modules.conf 2>/dev/null)edge
-CONTAINERS := caddy $(sort $(MODULE_CONTAINERS))
 HOST     := ttyd dnsmasq goose
 # The tailnet device that receives files — one spelling for the taildrop
 # helpers (TAILDROP_HOST is an alias). No
@@ -48,38 +42,28 @@ TAILDROP ?= $(TAILDROP_HOST)
 # Docker containers: dok-<action>-<ctn>
 # `dok-` prefix marks container (docker) actions so they don't collide
 # visually with host systemd actions (systemd-restart/systemd-log below).
-# One set of rules, expanded across $(CONTAINERS); append -<ctn> for one
-# container, -all for every container. Every container of a module shares that
-# module's compose file (mailserver + roundcube, matrix + element-admin, …), so
-# a compose-unit action on one affects all of them.
+# The container you name IS the container acted on. Its compose unit is read
+# from that container at run time — the compose project's config file lives in
+# its labels — so no container list is kept here, a compose file may rename or
+# add a service freely, and a name that resolves to nothing fails on the spot
+# instead of being refused by a roster. Every container of one compose project
+# shares that project (mailu-* + roundcube, matrix + element-admin, …), so a
+# project action on one affects all of them.
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: $(addprefix dok-recreate-,$(CONTAINERS)) dok-recreate-all dok-recreate
-.PHONY: $(addprefix dok-restart-,$(CONTAINERS)) dok-restart-all dok-restart
-.PHONY: $(addprefix dok-stop-,$(CONTAINERS)) dok-stop-all dok-stop
-.PHONY: $(addprefix dok-logs-,$(CONTAINERS)) dok-logs-all dok-logs
+.PHONY: dok-recreate-all dok-recreate
+.PHONY: dok-restart-all dok-restart
+.PHONY: dok-stop-all dok-stop
+.PHONY: dok-logs-all dok-logs
 
 # caddy rebuilds its image locally; the rest just pull.
 # $(DOMAIN) = custom Dockerfile adds caddy-dns/cloudflare for ACME DNS-01
 #   on every vhost; DNS-01 keeps cert issuance independent of the proxy.
 
-# Per-container compose file, also derived from the catalog: every container of
-# a module resolves to that module dir's compose file (mailu-* + roundcube ->
-# modules/mailserver, immich-server -> modules/immich, matrix-synapse -> matrix).
-#
-# One $(eval) per module row, never one awk that prints every assignment:
-# `$(shell)` collapses newlines, so a multi-line awk lands in make as a SINGLE
-# line and only its first `:=` survives — every other container then resolved to
-# an empty COMPOSE_FILE and `make dok-recreate-<ctn>` ran
-# `docker compose -f /root/kefoCloud` ("is a directory").
-module_dir = $(shell awk -v m=$(1) '$$1==m{print $$2; exit}' $(REPO)/config/modules.conf 2>/dev/null)
-$(foreach m,$(MODULES),$(eval MODULE_CONTAINERS_$(m) := $(shell awk -v m=$(m) '$$1==m{for(i=4;i<=NF;i++) printf "%s ", $$i}' $(REPO)/config/modules.conf 2>/dev/null)))
-$(foreach m,$(MODULES),$(foreach c,$(MODULE_CONTAINERS_$(m)),$(eval COMPOSE_FILE_$(c) := modules/$(call module_dir,$(m))/docker-compose.yml)))
-COMPOSE_FILE_caddy := modules/caddy/docker-compose.yml
-# Every compose unit's argument list comes from the catalog: one file per
-# module dir. A project that ships several files is passed as "-f a -f b" by
-# dok-recreate-all below.
-compose-file-of = $(REPO)/$(COMPOSE_FILE_$1)
+# The compose argument list of one container ("-f a.yml" or "-f a.yml -f b.yml"
+# for a project that ships several files), read from the container itself.
+comma := ,
+compose-of = $(patsubst %,-f %,$(subst $(comma), ,$(shell docker inspect --format '{{index .Config.Labels "com.docker.compose.project.config_files"}}' $(1) 2>/dev/null)))
 
 # One compose unit's force-recreate, shared by dok-recreate-<ctn> and
 # dok-recreate-all so the two can never drift. caddy rebuilds its image
@@ -97,48 +81,29 @@ compose-file-of = $(REPO)/$(COMPOSE_FILE_$1)
 # $1 is the compose ARGUMENT LIST (one file, or "a.yml -f b.yml" for a project
 # with several files) — never quoted, so `-f a -f b` stays two arguments.
 define compose_recreate_cmds
-if [ "$1" = "$(REPO)/modules/caddy/docker-compose.yml" ]; then \
+case "$1" in \
+  *modules/caddy/docker-compose.yml*) \
     if ! $(COMPOSE) $1 up -d --force-recreate --remove-orphans --build; then \
       scripts/lib/mklog warn "compose build unavailable (buildx < 0.17 on trixie) — falling back to docker build + compose up"; \
       docker build -t caddy:local $(REPO)/modules/caddy \
         && $(COMPOSE) $1 up -d --force-recreate --remove-orphans; \
-    fi; \
-  else \
-    $(COMPOSE) $1 up -d --force-recreate --remove-orphans; \
-  fi
+    fi ;; \
+  *) $(COMPOSE) $1 up -d --force-recreate --remove-orphans ;; \
+esac
 endef
 
-define dok_recreate_rule
-dok-recreate-$1:
->@$(call compose_recreate_cmds,$(call compose-file-of,$1))
-endef
-$(foreach s,$(CONTAINERS),$(eval $(call dok_recreate_rule,$s)))
+dok-recreate-%:
+>@$(call compose_recreate_cmds,$(call compose-of,$*))
 
-define dok_restart_rule
-dok-restart-$1:
-># Restart every container declared in this service's compose file.
->$(COMPOSE) $(call compose-file-of,$1) restart
-endef
-$(foreach s,$(CONTAINERS),$(eval $(call dok_restart_rule,$s)))
+# Restart / stop every container of the named container's compose project.
+dok-restart-%:
+>$(COMPOSE) $(call compose-of,$*) restart
 
-define dok_stop_rule
-dok-stop-$1:
->$(COMPOSE) $(call compose-file-of,$1) stop
-endef
-$(foreach s,$(CONTAINERS),$(eval $(call dok_stop_rule,$s)))
+dok-stop-%:
+>$(COMPOSE) $(call compose-of,$*) stop
 
-# Primary container to tail per service: mailserver runs mailu-* + roundcube
-# and has no container named after itself, so its log target is mailu-admin
-# (per-service view: make mail-logs SERVICE=<svc>).
-LOG_CONTAINER_mailserver := mailu-admin
-log-container-of = $(if $(LOG_CONTAINER_$1),$(LOG_CONTAINER_$1),$1)
-
-define dok_logs_rule
-dok-logs-$1:
-># Tail the service's primary container.
->docker logs $(call log-container-of,$1) --tail 50 -f
-endef
-$(foreach s,$(CONTAINERS),$(eval $(call dok_logs_rule,$s)))
+dok-logs-%:
+>docker logs $* --tail 50 -f
 
 # Shared loop: force-recreate every compose unit under modules/ (the same
 # per-file body the -<ctn> rules use).
@@ -156,7 +121,7 @@ dok-recreate-all:
 >@for d in $(REPO)/modules/*/; do \
     set -- $$(ls $$d/docker-compose*.yml 2>/dev/null) || continue; \
     [ $$# -gt 0 ] || continue; \
-    args="$$1"; shift; for f in "$$@"; do args="$$args -f $$f"; done; \
+    args="-f $$1"; shift; for f in "$$@"; do args="$$args -f $$f"; done; \
     $(call compose_recreate_cmds,"$$args"); \
   done
 
@@ -164,7 +129,7 @@ dok-restart-all:
 >@for d in $(REPO)/modules/*/; do \
     set -- $$(ls $$d/docker-compose*.yml 2>/dev/null) || continue; \
     [ $$# -gt 0 ] || continue; \
-    args="$$1"; shift; for f in "$$@"; do args="$$args -f $$f"; done; \
+    args="-f $$1"; shift; for f in "$$@"; do args="$$args -f $$f"; done; \
     $(COMPOSE) $$args restart; \
   done
 
@@ -173,17 +138,15 @@ dok-stop-all:
 >@for d in $(REPO)/modules/*/; do \
     set -- $$(ls $$d/docker-compose*.yml 2>/dev/null) || continue; \
     [ $$# -gt 0 ] || continue; \
-    args="$$1"; shift; for f in "$$@"; do args="$$args -f $$f"; done; \
+    args="-f $$1"; shift; for f in "$$@"; do args="$$args -f $$f"; done; \
     $(COMPOSE) $$args stop; \
   done
 
-# container:label pairs, so the mailserver map is applied without a shell case.
-DOK_LOG_TARGETS := $(foreach c,$(CONTAINERS),$(call log-container-of,$c):$c)
-
+# Every container that is running, tailed at once — the live list, never one
+# kept here.
 dok-logs-all:
->@stdbuf -oL bash -c 'for t in $(DOK_LOG_TARGETS); do \
-    lc=$${t%%:*}; c=$${t#*:}; \
-    docker logs $$lc --tail 50 -f 2>&1 | stdbuf -oL sed "s/^/[$$c] /" & \
+>@stdbuf -oL bash -c 'for c in $$(docker ps --format "{{.Names}}"); do \
+    docker logs "$$c" --tail 50 -f 2>&1 | stdbuf -oL sed "s/^/[$$c] /" & \
   done; wait'
 
 TARGET ?=
@@ -193,10 +156,8 @@ TARGET ?=
 # usage line names every accepted value).
 .PHONY: dok-action
 dok-action:
->@case " $(CONTAINERS) " in \
-    *" $(TARGET) "*) $(MAKE) --no-print-directory $(ACTION)-$(TARGET);; \
-    *) scripts/lib/mklog error "usage: make $(ACTION) TARGET=<ctn>  (one of: $(CONTAINERS))"; exit 1;; \
-  esac
+>@[ -n "$(TARGET)" ] || { scripts/lib/mklog error "usage: make $(ACTION) TARGET=<ctn>"; exit 1; }
+>@$(MAKE) --no-print-directory $(ACTION)-$(TARGET)
 
 dok-recreate:
 >@$(MAKE) --no-print-directory ACTION=dok-recreate dok-action
@@ -425,8 +386,8 @@ mail-list:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Mailserver stack (Mailu) — the compose unit itself. Lifecycle stays in the
-# generic dok-* set (dok-recreate-mailserver / dok-restart-mailserver /
-# dok-stop-mailserver / dok-logs-mailserver); everything here is mail-specific:
+# generic dok-* set, named by any mailu container (dok-recreate-mailu-front …,
+# or dok-recreate TARGET=<ctn>); everything here is mail-specific:
 # health, the /data ownership trap, per-service logs, domains, aliases, limits,
 # the admin password, registry export/import, queue, DKIM, TLS.
 # Every recipe reads the live .env — no instance value is hardcoded.
@@ -437,11 +398,12 @@ mail-list:
         mail-limits mail-manager mail-aliases mail-alias-add \
         mail-admin-password mail-config-export mail-config-import
 
-MAIL_COMPOSE  := $(COMPOSE) $(REPO)/modules/mailserver/docker-compose.yml
+MAIL_COMPOSE  := $(COMPOSE) -f $(REPO)/modules/mailserver/docker-compose.yml
 MAIL_ADMIN    := docker exec mailu-admin flask mailu
 MAIL_ENV      := $(REPO)/modules/mailserver/.env
-MAIL_CONTAINERS := mailu-front mailu-smtp mailu-imap mailu-antispam mailu-admin mailu-redis roundcube
-MAIL_SERVICES   := front smtp imap antispam admin redis roundcube
+# The mail project's containers, read from the project itself (recursive: the
+# shell runs when a recipe expands it, so the list is whatever is there).
+MAIL_CTNS      = $(shell $(MAIL_COMPOSE) ps -a --format '{{.Name}}' 2>/dev/null)
 # Host path of the container's /data, and of /dkim + /mail.
 MAIL_DATA_ROOT := $(or $(shell sed -n 's/^DATA_DIR=//p' $(MAIL_ENV) 2>/dev/null | head -1),$(REPO)/data)/mailserver
 MAIL_DATA      := $(MAIL_DATA_ROOT)/data
@@ -451,7 +413,7 @@ mail-status:
 >@$(MAIL_COMPOSE) ps
 >@echo ""
 >@printf '  %-18s %-10s %s\n' CONTAINER STATE HEALTH
->@for c in $(MAIL_CONTAINERS); do \
+>@for c in $(MAIL_CTNS); do \
     st=$$(docker inspect -f '{{.State.Status}}' $$c 2>/dev/null || echo missing); \
     he=$$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}-{{end}}' $$c 2>/dev/null || echo -); \
     printf '  %-18s %-10s %s\n' "$$c" "$$st" "$$he"; \
@@ -483,7 +445,7 @@ mail-doctor:
   if [ -n "$$end" ]; then echo "  admin.mail.$(DOMAIN):443 $$end"; \
   else scripts/lib/mklog error "no TLS answer for admin.mail.$(DOMAIN)"; fail=1; fi; \
   echo "== containers"; \
-  for c in $(MAIL_CONTAINERS); do \
+  for c in $(MAIL_CTNS); do \
     st=$$(docker inspect -f '{{.State.Status}}' $$c 2>/dev/null || echo missing); \
     if [ "$$st" = running ]; then echo "  $$c running"; \
     else scripts/lib/mklog error "$$c $$st"; fail=1; fi; \
@@ -524,13 +486,12 @@ mail-tls:
   done
 >@ls -1 "$(MAIL_DATA_ROOT)/certs" 2>/dev/null | sed 's/^/  cert file: /' || true
 
-# One service's log (docker logs mailu-<svc>). dok-logs-mailserver only knows
-# the container named after the compose service, so it tails admin alone.
+# One service's log (docker logs mailu-<svc>), the container resolved from the
+# compose project (SERVICE defaults to admin).
 mail-logs:
 >@svc="$(SERVICE)"; svc=$${svc:-admin}; \
-  case " $(MAIL_SERVICES) " in *" $$svc "*) ;; \
-    *) scripts/lib/mklog error "unknown SERVICE '$$svc' — one of: $(MAIL_SERVICES)"; exit 1;; esac; \
-  ctr="mailu-$$svc"; [ "$$svc" = roundcube ] && ctr=roundcube; \
+  ctr=$$($(MAIL_COMPOSE) ps -a --format '{{.Service}} {{.Name}}' 2>/dev/null | awk -v s="$$svc" '$$1==s{print $$2; exit}'); \
+  [ -n "$$ctr" ] || { scripts/lib/mklog error "no service '$$svc' in the mail compose file — try: make mail-status"; exit 1; }; \
   docker logs "$$ctr" --tail 50 -f
 
 # Escape hatch: anything the Mailu CLI or the image can run, inside mailu-admin.

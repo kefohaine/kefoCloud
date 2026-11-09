@@ -424,7 +424,7 @@ The compose files are the source of truth. This table is the one-line reference 
 | ocis    | `modules/ocis/docker-compose.yml` | `ocis` | `make dok-restart-ocis` | `make dok-recreate-ocis` |
 | vault   | `modules/vaultwarden/docker-compose.yml` | `vaultwarden` | `make dok-restart-vaultwarden` | `make dok-recreate-vaultwarden` |
 | kuma    | `modules/uptimekuma/docker-compose.yml` | `uptimekuma` | `make dok-restart-uptimekuma` | `make dok-recreate-uptimekuma` |
-| mail | `modules/mailserver/docker-compose.yml` | `mailu-front` + `mailu-imap` + `mailu-smtp` + `mailu-antispam` + `mailu-admin` + `mailu-redis` + `roundcube` | `make dok-restart-mailserver` | `make dok-recreate-mailserver` |
+| mail | `modules/mailserver/docker-compose.yml` | `mailu-front` + `mailu-imap` + `mailu-smtp` + `mailu-antispam` + `mailu-admin` + `mailu-redis` + `roundcube` | `make dok-restart TARGET=mailu-front` | `make dok-recreate TARGET=mailu-front` |
 | home | `modules/homarr/docker-compose.yml` | `homarr` | `make dok-restart-homarr` | `make dok-recreate-homarr` |
 | blog | `modules/writefreely/docker-compose.yml` | `writefreely` | `make dok-restart-writefreely` | `make dok-recreate-writefreely` (rebuilds `writefreely:local` from the pinned release tarball) |
 | photos | `modules/immich/docker-compose.yml` | `immich-server` + `immich-db` + `immich-redis` | `make dok-restart-immich-server` | `make dok-recreate-immich-server` (depends_on brings db + redis up) |
