@@ -4,7 +4,7 @@
 # drift: scripts/info/git-audit.sh judges a range against these,
 # scripts/info/git-split.sh rewrites a range to satisfy them.
 #
-# SCOPE (AGENTS rule 26): a commit edits at most COMMIT_MAX_FILES tracked files
+# SCOPE: a commit edits at most COMMIT_MAX_FILES tracked files
 # (10). Nothing else is bounded — no folder, no subfolder, no change type. A
 # wider change is split automatically into consecutive chunks of the sorted
 # path list, so a chunk is the unit a commit is judged and split on.

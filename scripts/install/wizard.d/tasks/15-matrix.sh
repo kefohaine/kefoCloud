@@ -1,4 +1,4 @@
-# wizard.d/tasks/15-matrix.sh — `Matrix Setup`: the chat module's step (see wizard.d/modules/matrix/).
+# wizard.d/tasks/15-matrix.sh — `Matrix Setup`: the chat module's step.
 
 task_matrix() {
   task_start

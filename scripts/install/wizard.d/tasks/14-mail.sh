@@ -1,4 +1,4 @@
-# wizard.d/tasks/14-mail.sh — `Mail Setup`: the mailserver module’s step (see wizard.d/modules/mailserver/).
+# wizard.d/tasks/14-mail.sh — `Mail Setup`: the mailserver module’s step.
 
 # Per-module setup, one checklist row each (a module that is off marks its row
 # [SKIP], so the checklist says exactly which module ran and which was off).

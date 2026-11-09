@@ -42,7 +42,7 @@
 #
 # Layout: this file is only the ENTRY POINT and the run order — the paths, the
 # channels, the checklist UI, the prompts, the tasks and each module's own step
-# live in wizard.d/ (see the source loop below). ONE process: every file is
+# live in wizard.d/. ONE process: every file is
 # SOURCED, never executed, so the checklist arrays, the error tags and the EXIT
 # trap stay shared globals. Add a task = one file in wizard.d/tasks/ plus one
 # row in wizard.d/tasks/index.sh (the ONLY place the order exists).
@@ -84,7 +84,7 @@ run_install() {
   local _t
   # TASKS has one entry per checklist row, smoke included; the pipeline runs
   # every row but the last (smoke is run by finalize_install, after the
-  # checkpoint — see the smoke row there).
+  # checkpoint).
   for _t in "${TASKS[@]:0:${#TASKS[@]}-1}"; do
     "$_t"
     [ -n "${TASK_ERR:-}" ] && { TASK_ERR=; pause_and_resolve || return 1; }

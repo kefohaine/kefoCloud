@@ -5,7 +5,7 @@
 # in exactly one place.
 #
 # Every change reaches the base branch through a branch named `temp-<N>`, N a
-# counter: temp-1, temp-2, temp-3 … Nothing may push to `main` (AGENTS rule 30);
+# counter: temp-1, temp-2, temp-3 … Nothing may push to `main`;
 # the branch is created off a freshly pulled `main`, pushed, and merged through a
 # human-reviewed pull request. The counter is always DERIVED from the branches
 # that exist (local and on `origin`) — never stored in a file, never hardcoded,

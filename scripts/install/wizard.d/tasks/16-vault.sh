@@ -1,4 +1,4 @@
-# wizard.d/tasks/16-vault.sh — `Vaultwarden Setup`: the vault module’s step (see wizard.d/modules/vaultwarden/).
+# wizard.d/tasks/16-vault.sh — `Vaultwarden Setup`: the vault module’s step.
 
 task_vault() {
   task_start

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/ops/git-pr.sh — the branch + pull-request workflow, in one place.
 #
-# `main` is write-once (AGENTS rule 30): every change is made on a branch named
+# `main` is write-once: every change is made on a branch named
 # `temp-<N>` created off a freshly pulled `main`, pushed, and merged through a
 # pull request that a HUMAN reviews and accepts on GitHub. Nothing here (or
 # anywhere else in the repo) can push `main` — scripts/hooks/pre-push refuses
@@ -48,7 +48,7 @@
 #                                   delete the local branch
 #
 # A --dry-run only reads and prints: nothing is fetched, created, committed,
-# pushed or deleted. That is the mode an agent may exercise (AGENTS rule 29).
+# pushed or deleted. That is the mode an agent may exercise.
 #
 # The last step is always a HUMAN's: the agent ends at the opened/printed pull
 # request and waits for review and merge. Nothing here merges or pushes main.
@@ -198,7 +198,7 @@ current_branch() { G rev-parse --abbrev-ref HEAD 2>/dev/null; }
 
 require_clean() {
   [ -z "$(G status --porcelain)" ] && return 0
-  error "the working tree has uncommitted changes — commit or stash them first (rule 26 works on committed history)"
+  error "the working tree has uncommitted changes — commit or stash them first (the file limit works on committed history)"
   G status --short | sed 's/^/  /'
   return 1
 }
@@ -542,7 +542,7 @@ cmd_submit() {
   fi
   if ! bash "$REPO/scripts/info/prose-audit.sh" >/dev/null; then
     bash "$REPO/scripts/info/prose-audit.sh" | sed 's/^/  /'
-    error "the tree breaks the prose rules (AGENTS rule 31) — make prose-audit"
+    error "the tree breaks the prose rules — make prose-audit"
     return 1
   fi
   # The shapes that make a pull request land nothing or arrive CONFLICTING are
@@ -616,7 +616,7 @@ cmd_submit() {
 # feature, how it works, its benefits and its risks, which is the other
 # accepted form. The last section is always the pull request's one revert
 # recipe: the base branch's SHA before the PR, so `git reset --hard` undoes the
-# squash-merged result in one command (AGENTS rule 10).
+# squash-merged result in one command.
 submit_body() {
   local range="$1" explicit="${2:-}" n base_sha body
   n="${explicit:-$(G log --format='%s%n%b' "$range" | grep -oE '(Closes|Fix(es|ed)?|Resolves) #[0-9]+|#[0-9]+' | grep -oE '[0-9]+' | head -1)}"
