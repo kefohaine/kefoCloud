@@ -17,7 +17,7 @@ services:
       # SMTP — verification / invite / notification emails via the local
       # mailserver (vaultwarden@${DOMAIN} sender mailbox, STARTTLS on 587).
       # Values come from modules/vaultwarden/.env (gitignored — generated
-      # by the installer's seed_stack; see vaultwarden_setup).
+      # by the installer's seed_stack).
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT}
       SMTP_SECURITY: ${SMTP_SECURITY}
@@ -29,7 +29,7 @@ services:
 
     extra_hosts:
       # Map the cert FQDN to the mail container's bridge IP so SMTP TLS
-      # SNI + cert verification see mail.${DOMAIN} (same pattern as the
+      # SNI + cert verification target mail.${DOMAIN} (same pattern as the
       # nextcloud container — the LE cert CN must match the host).
       - "mail.${DOMAIN}:172.22.0.9"
 

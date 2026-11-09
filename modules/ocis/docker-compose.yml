@@ -45,7 +45,7 @@ services:
     networks:
       net:
         # Caddy runs with network_mode: host, so it dials the bridge IP, not a
-        # container name (see modules/caddy/vhosts/cloud.caddy).
+        # container name.
         ipv4_address: 172.22.0.27
 
     logging:
