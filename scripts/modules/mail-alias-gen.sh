@@ -4,11 +4,15 @@
 # alias lands in TO (any address, internal or external). The alias is ALWAYS
 # generated — TO is the only argument; custom aliases aren't accepted.
 # Usage: make mail-gen-alias TO=target@example.com
+#        mail-gen-alias.sh --dry-run TO   (or DRYRUN=1) prints the plan only.
 
 . "$(dirname "$(readlink -f "$0")")/../lib/instance.sh" 2>/dev/null || true
+. "$(dirname "$(readlink -f "$0")")/../lib/dryrun.sh"
 set -euo pipefail
 
 DOMAIN=$DOMAIN
+dryrun_wanted "$@" && DRY=1
+dryrun_args "$@"; set -- "${DRYRUN_ARGS[@]}"
 TO="${1:-}"
 [ -n "$TO" ] || { echo "Usage: make mail-gen-alias TO=target@example.com"; exit 1; }
 
@@ -45,6 +49,12 @@ for _ in $(seq 1 10); do
   fi
 done
 [ -n "$alias_addr" ] || { echo "mail-gen-alias: no unique alias found after 10 tries"; exit 1; }
+
+if [ "${DRY:-0}" = 1 ]; then
+  dryrun_plan "create a fresh forwarding alias (7 random digits, e.g. $alias_addr) -> $TO in Mailu"
+  dryrun_note "a real run would then print: delete with: make mail-del-alias FROM=$alias_addr TO=$TO"
+  dryrun_end
+fi
 
 docker exec mailu-admin flask mailu alias "$candidate" "$DOMAIN" "$TO" >/dev/null
 

@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
-# Plumbing string scrub for this repo's multi-root DAG (filter tools drop the
-# $GITHUB_USER-era side here). Replaces the
-# given <old> <new> string pairs in EVERY blob's content across all history,
-# preserving identities, messages, dates, merges, both roots and all paths.
+# History rewrite: replaces the given <old> <new> string pairs in EVERY blob's
+# content across all history — the scrub for a value that must not stay in the
+# history — preserving identities, messages, dates, the graph's shape and every
+# path. Operator action: it updates refs/heads/main in the clone and pushes
+# nothing.
 # Usage: scripts/ops/replace-string.sh <repo-dir> <old> <new> [...]
+#   Add --dry-run (or DRYRUN=1) to print the pair/blob scope, the commit count
+#   and the ref it would update, rewriting nothing.
 
 . "$(dirname "$(readlink -f "$0")")/../lib/instance.sh" 2>/dev/null || true
+# Plan mode (--dry-run / DRYRUN=1): the gate below prints the plan, writes nothing.
+. "$(dirname "$(readlink -f "$0")")/../lib/dryrun.sh"
 set -euo pipefail
+dryrun_wanted "$@" && DRY=1
+dryrun_args "$@"; set -- "${DRYRUN_ARGS[@]}"
 repo=$1; shift
 cd "$repo"
 tip=$(git rev-parse HEAD)
@@ -14,6 +21,12 @@ tip=$(git rev-parse HEAD)
 # collect pairs
 olds=(); news=()
 while [ $# -gt 0 ]; do olds+=("$1"); news+=("$2"); shift 2; done
+
+if [ "${DRY:-0}" = 1 ]; then
+  dryrun_plan "replace ${#olds[@]} string pair(s) in every blob reachable from $tip in $repo"
+  dryrun_plan "rewrite $(( $(git rev-list --count "$tip") )) commits, then update ref refs/heads/main to the rebuilt tip (nothing pushed)"
+  dryrun_end
+fi
 
 # 1) build blob replacement map across all reachable blobs
 declare -A bmap

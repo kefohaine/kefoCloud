@@ -12,8 +12,13 @@
 # edit. Requires CONFIRM=delete-accounts (the literal words, nothing else).
 #
 #   make matrix-reset CONFIRM=delete-accounts
+#   DRYRUN=1 bash scripts/modules/matrix-identity.sh CONFIRM=delete-accounts   (plan only)
+#
+# --dry-run / DRYRUN=1 prints the plan and exits 0: CONFIRM is still required,
+# so a plan run still refuses without it. Nothing is dropped or deleted.
 set -uo pipefail
 . "$(dirname "$(readlink -f "$0")")/../lib/instance.sh"
+. "$(dirname "$(readlink -f "$0")")/../lib/dryrun.sh"
 
 [ "${CONFIRM:-}" = delete-accounts ] || {
   echo "matrix-identity: refusing — re-run with CONFIRM=delete-accounts (this deletes every account, room and session)" >&2
@@ -31,7 +36,23 @@ MAS="$DATA_DIR/matrix/mas"
 [ -n "${DOMAIN:-}" ] || { echo "matrix-identity: DOMAIN is empty in $ENV" >&2; exit 1; }
 [ -n "${DATA_DIR:-}" ] || { echo "matrix-identity: DATA_DIR is empty in $ENV" >&2; exit 1; }
 
+dryrun_wanted "$@" && DRY=1
+
 say() { printf 'matrix-identity: %s\n' "$*" >&2; }
+
+if [ "${DRY:-0}" = 1 ]; then
+  _keys=$(ls "$SYN"/*.signing.key 2>/dev/null | paste -sd' ' -)
+  dryrun_plan "stop matrix-synapse, matrix-mas, matrix-element and element-admin"
+  dryrun_plan "start matrix-db and matrix-mas-db"
+  dryrun_plan "drop and re-create the Synapse database \"$POSTGRES_DB\" (owner $POSTGRES_USER) on matrix-db"
+  dryrun_plan "drop and re-create the MAS database \"mas\" (owner mas) on matrix-mas-db"
+  dryrun_plan "delete $SYN/homeserver.yaml and the signing key(s) ${_keys:-$SYN/*.signing.key}"
+  dryrun_plan "delete $DATA_DIR/matrix/element/config.json and $DATA_DIR/matrix/mas/config.yaml"
+  dryrun_plan "regenerate that configuration with matrix-gen.sh under server_name matrix.$DOMAIN"
+  dryrun_plan "start the whole chat stack: docker compose -f $COMPOSE up -d"
+  dryrun_plan "re-create the single admin account @$SYNAPSE_ADMIN_USER:matrix.$DOMAIN in MAS (its password is read from $ENV and is never printed)"
+  dryrun_end "nothing changed — every account, room, device and session is still there"
+fi
 
 say "stopping the chat stack"
 docker compose -f "$COMPOSE" stop matrix-synapse matrix-mas matrix-element element-admin >/dev/null 2>&1 || true

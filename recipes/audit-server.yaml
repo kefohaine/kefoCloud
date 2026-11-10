@@ -37,7 +37,7 @@ prompt: |
   Start with the repository's Issues tab for already-known problems.
 
   Inspect the relevant files:
-  - scripts/ (the installer, uninstall.sh, optimize.sh, datadir-nfs.sh, and the per-subsystem helpers)
+  - scripts/ (install/ for the wizard, ops/, modules/, stack/ and info/, plus each script's own header)
   - modules/*/docker-compose.yml and the Caddy edge under modules/caddy/ ($DOMAIN in general)
   - config/ (reference host configs), Makefile, docs/
 
@@ -46,7 +46,7 @@ prompt: |
   - secrets and credentials (never print their values)
   - firewall (UFW) and exposed ports; Cloudflare proxied vs DNS-only records
   - Docker privileges, docker.sock mounts, and host path bind-mounts
-  - backup and restore behavior (make backup, the nightly pg_dump cron in scripts/ops/datadir-nfs.sh)
+  - backup and restore behavior (make backup -> scripts/modules/kopia-admin.sh snapshot, the Kopia repository under $DATA_DIR/kopia, restore from the Kopia UI)
   - destructive make recipes and whether they have a confirmation guard
   - consistency between documentation and implementation
 

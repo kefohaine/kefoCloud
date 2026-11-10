@@ -1,4 +1,10 @@
 # wizard.d/lib/cloudflare.sh — the Cloudflare API: A records (converging), SSL mode, mail MX/SPF/DMARC.
+#
+# DRYRUN=1 (set by scripts/ops/dns-sync.sh --dry-run) turns every writer below into a
+# printer: the same name/module table runs, one "would …" line per record lands on
+# stdout, and no request that changes the zone is sent. Reads (the zone id, the public
+# IP) still happen, so a plan never disagrees with a real run.
+. "$(dirname "${BASH_SOURCE[0]}")/../../../lib/dryrun.sh"
 
 ssl_mode_full() {
   # API first (needs Zone Settings read on the token); fall back to a
@@ -20,6 +26,14 @@ ssl_mode_full() {
 cf_mail_record() { # $1=type(TXT/MX) $2=relative name (or apex) $3=content $4=priority(MX only)
   local type="$1" name="$2" content="$3" prio="${4:-0}" fqdn="$2" records rid current payload response
   [ "$name" = "$DOMAIN" ] || fqdn="$name.$DOMAIN"
+  if [ "${DRYRUN:-0}" = 1 ]; then
+    if [ "$type" = MX ]; then
+      dryrun_plan "converge MX $fqdn -> $content (priority $prio)"
+    else
+      dryrun_plan "converge $type $fqdn -> $content"
+    fi
+    return 0
+  fi
   records=$(curl -fsS -G -H "Authorization: Bearer $CF_API_TOKEN" \
     --data-urlencode "type=$type" --data-urlencode "name=$fqdn" \
     "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records") || {
@@ -98,6 +112,10 @@ cf_mail_dns() {
     local rec rid cur prox fqdn
     # An empty host means the zone apex: "$DOMAIN", never ".$DOMAIN".
     fqdn="${1:+$1.}$DOMAIN"
+    if [ "${DRYRUN:-0}" = 1 ]; then
+      dryrun_plan "converge A $fqdn -> $HOST_IP (proxied=$2)"
+      return 0
+    fi
     rec=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
       "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$fqdn")
     rid=$(printf '%s' "$rec" | jq -r '.result[0].id // empty')
@@ -120,6 +138,10 @@ cf_mail_dns() {
   cf_a_del() { # cf_a_del <host> — remove an A record whose door was disabled
     local fqdn rid
     fqdn="${1:+$1.}$DOMAIN"
+    if [ "${DRYRUN:-0}" = 1 ]; then
+      dryrun_plan "remove the A record for $fqdn if present"
+      return 0
+    fi
     rid=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
       "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$fqdn" \
       | jq -r '.result[0].id // empty')
@@ -158,7 +180,6 @@ cf_mail_dns() {
   # under it, so a two-label name has no edge certificate and a proxied record
   # fails the TLS handshake — the origin serves its own LE cert instead.
   mod_on chat && cf_record auth.matrix false || cf_a_del auth.matrix
-  mod_on chat && cf_record auth.matrix false || cf_a_del auth.matrix
   # The call stack (module: chat): call.matrix, livekit.matrix and
   # livekit-jwt.matrix are all TWO-LABEL names, so they are DNS-ONLY like
   # auth.matrix — Cloudflare's universal certificate covers the apex and one
@@ -194,6 +215,10 @@ cf_mail_dns() {
   # (DNS-01 only needs the TXT record for the certificate).
   cf_a_del admin.mail
   mod_on mail && cf_mail_dns
+  if [ "${DRYRUN:-0}" = 1 ]; then
+    dryrun_plan "set the zone SSL mode to full"
+    return 0
+  fi
   curl -s -X PATCH -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
     "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/settings/ssl" -d '{"value":"full"}' >>"$LOG" 2>&1 || true
   # DNS-only tokens can't set SSL mode; surface it as an expected manual step.

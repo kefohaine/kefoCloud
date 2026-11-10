@@ -1,17 +1,31 @@
 #!/usr/bin/env bash
-# Plumbing path-drop for this repo's multi-root DAG (filter tools drop the
-# $GITHUB_USER-era side here). Removes the
-# given paths from EVERY commit's tree, preserving identities, messages,
-# dates, merges, both roots and all other content byte-exact.
+# History rewrite: removes the given paths from EVERY commit's tree, preserving
+# identities, messages, dates, the graph's shape and all other content
+# byte-exact. It replays the commits through the plumbing (commit-tree) because
+# `filter-branch` and `filter-repo` rewrite the graph instead of replaying it.
+# Operator action: it updates refs/heads/main in the clone and pushes nothing.
 # Usage: drop-path.sh <repo-dir> <path...>
+#   Add --dry-run (or DRYRUN=1) to print the commit count and the ref it would
+#   update, rewriting nothing.
 
 . "$(dirname "$(readlink -f "$0")")/../lib/instance.sh" 2>/dev/null || true
+# Plan mode (--dry-run / DRYRUN=1): the gate below prints the plan, writes nothing.
+. "$(dirname "$(readlink -f "$0")")/../lib/dryrun.sh"
 set -euo pipefail
+dryrun_wanted "$@" && DRY=1
+dryrun_args "$@"; set -- "${DRYRUN_ARGS[@]}"
 repo=$1; shift
 cd "$repo"
 tip=$(git rev-parse HEAD)
 declare -A map
 mapfile -t commits < <(git rev-list --reverse --topo-order "$tip")
+
+if [ "${DRY:-0}" = 1 ]; then
+  dryrun_plan "drop $* from every tree across ${#commits[@]} commits reachable from $tip in $repo"
+  dryrun_plan "update ref refs/heads/main to the rebuilt tip (nothing pushed)"
+  dryrun_end
+fi
+
 echo "rebuilding ${#commits[@]} commits, dropping: $*"
 idx=$(mktemp); rawf=$(mktemp)
 for c in "${commits[@]}"; do

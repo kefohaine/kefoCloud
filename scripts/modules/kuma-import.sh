@@ -21,8 +21,12 @@
 #      current container set's monitors/groups exist
 #
 # Run via `make kuma-import`; requires docker + sqlite3 in uptimekuma.
+#
+# Plan mode: `make kuma-import DRYRUN=1` or `kuma-import.sh --dry-run [<db>]`
+# names the swap, the backup and the monitors it would adapt, and stops nothing.
 
 . "$(dirname "$(readlink -f "$0")")/../lib/instance.sh" 2>/dev/null || true
+. "$(dirname "$(readlink -f "$0")")/../lib/dryrun.sh"
 
 set -euo pipefail
 
@@ -32,10 +36,24 @@ set -euo pipefail
 REPO="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
 KUMA_DATA=$DATA_DIR/kuma/data
 IMPORT_DIR=$DATA_DIR/kuma/import
+# --dry-run is a flag, not the source path.
+if dryrun_wanted "$@"; then DRY=1; fi
+dryrun_args "$@"; set -- "${DRYRUN_ARGS[@]}"
 SRC="${1:-$IMPORT_DIR/kuma.db}"
 STAMP=$(date +%Y%m%d-%H%M%S)
 
 [ -f "$SRC" ] || { echo "source db not found: $SRC"; exit 1; }
+
+if [ "${DRY:-0}" = 1 ]; then
+  dryrun_note "plan only: uptimekuma stays up, $KUMA_DATA/kuma.db is untouched"
+  dryrun_plan "ensure $IMPORT_DIR exists"
+  dryrun_plan "back up $KUMA_DATA/kuma.db to $IMPORT_DIR/kuma.db.pre-import-$STAMP"
+  dryrun_plan "swap $KUMA_DATA/kuma.db for $SRC (and drop kuma.db-wal / kuma.db-shm)"
+  dryrun_plan "restart uptimekuma and wait for it to migrate the imported schema"
+  dryrun_plan "adapt monitors in the imported db: URLs to the $DOMAIN stack, rename 'docker: vhosts' to 'docker: caddy' (container caddy), deactivate docker: share-flask, docker: homer, http: share, http: www, http: api, docker_host 'local' to the local socket"
+  dryrun_plan "re-run modules/uptimekuma/seed-monitors.sql on the imported db"
+  dryrun_end
+fi
 
 sudo mkdir -p "$IMPORT_DIR"
 
