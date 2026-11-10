@@ -391,7 +391,9 @@ The ruleset must not carry the *Restrict updates* or *Restrict creations* rules 
 
 ## Releases, tags and milestones
 
-A release is a `v<major>.<minor>.<patch>` tag plus a GitHub Release, cut at the commit that closes its milestone. The `v0.x` releases are pre-releases, each retro-tagged at the commit that ends one era of the build — the first installer, the operator surface, the five-container stack, the reusable template, the recipes, the module architecture, migration and backup, the kefoCloud rename and mail platform, the modular wizard and the nine-module set. `v1.0.0` is the first stable release; its commit is the point where the nine modules, the modular wizard and the GitHub workflow are all in place.
+A release is a `v<major>.<minor>.<patch>` tag plus a GitHub Release, cut at the commit that closes its milestone. The `v0.x` releases (`v0.1.00` through `v0.11.00`) are pre-releases, each retro-tagged at the commit that ends one era of the build — the initial commit, the first Compose stack, the operator surface, the homelab service split, the reusable template, the agent layer, the module architecture, migration and backup, the kefoCloud rename and mail platform, the modular wizard and the nine-module set. `v1.0.00` is the first stable release; its commit is the point where the nine modules, the modular wizard and the GitHub workflow are all in place.
+
+Every tag name carries a trailing `0` on the patch number because the original `v<major>.<minor>.<patch>` names were retired by immutable releases and cannot be re-created; `v0.1.00` and `v0.1.0` are the same version, and release cross-references use the tag spelling.
 
 The tag is created by the release step through the GitHub API or the Releases form, never pushed from a clone — `scripts/hooks/pre-push` refuses every non-branch ref. Release notes state the milestone's scope, not a per-commit changelog, because the history is linear and one logical change spans several per-file commits.
 
