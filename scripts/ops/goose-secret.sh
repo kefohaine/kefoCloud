@@ -11,13 +11,26 @@
 # (filter-repo + force-push) — never something a script does silently.
 #
 # Usage: scripts/ops/goose-secret.sh          (sudo; the .env is root:root 0600)
+#        DRYRUN=1 scripts/ops/goose-secret.sh  (or --dry-run: print the plan,
+#        mint and write nothing)
 set -euo pipefail
 
 . "$(dirname "$(readlink -f "$0")")/../lib/instance.sh"
 
+# Plan mode (--dry-run / DRYRUN=1): the gate below prints the plan, mints nothing.
+. "$(dirname "$(readlink -f "$0")")/../lib/dryrun.sh"
+
 ENVF="$DATA_DIR/goose/.env"
 
 [ "$(id -u)" -eq 0 ] || { echo "goose-secret: run as root (sudo make goose-secret)" >&2; exit 1; }
+
+dryrun_wanted "$@" && DRY=1
+
+if [ "${DRY:-0}" = 1 ]; then
+  dryrun_plan "rotate GOOSE_SERVER__SECRET_KEY in $ENVF (random 32-byte hex, printed once on a real run; every other line preserved)"
+  dryrun_plan "restart goose so the unit's EnvironmentFile= picks up the new key (every paired client must re-pair)"
+  dryrun_end
+fi
 
 key="$(openssl rand -hex 32)"
 

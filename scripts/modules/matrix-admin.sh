@@ -19,8 +19,13 @@
 #   matrix-admin.sh del <user>                deactivate an account
 #   matrix-admin.sh status                    containers + /health
 #   matrix-admin.sh logs [<lines>]            tail the Synapse container
+#
+# Every subcommand accepts --dry-run (or DRYRUN=1): add, passwd, admin and del
+# then print the plan and change nothing; users, status and logs are read-only
+# either way.
 set -uo pipefail
 . "$(dirname "$(readlink -f "$0")")/../lib/instance.sh"
+. "$(dirname "$(readlink -f "$0")")/../lib/dryrun.sh"
 
 ENV="$REPO_DIR/modules/matrix/.env"
 [ -f "$ENV" ] || { echo "matrix-admin: $ENV is missing — run 'make matrix-gen'" >&2; exit 1; }
@@ -118,6 +123,9 @@ PY
 # _sql <query> — read the store through its own psql client (users live there).
 _sql() { docker exec matrix-db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "$1"; }
 
+dryrun_wanted "$@" && DRY=1
+dryrun_args "$@"; set -- "${DRYRUN_ARGS[@]}"
+
 case "${1:-status}" in
   users)
     printf '%-32s %-5s %-11s %s\n' USER ADMIN DEACTIVATED CREATED
@@ -126,6 +134,12 @@ case "${1:-status}" in
     ;;
   add)
     user=${2:-}; [ -n "$user" ] || die "usage: matrix-admin.sh add <user> [<pass>] [admin]"
+    if [ "${DRY:-0}" = 1 ]; then
+      dryrun_plan "register the MAS account $(full_id "$user")"
+      [ "${4:-}" = admin ] && dryrun_plan "grant $(full_id "$user") the Synapse server-admin flag"
+      dryrun_note "password: not printed in a plan — a real run prints it once"
+      dryrun_end
+    fi
     pass=${3:-$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)}
     # A plain account by default: `-a` makes every new user a SERVER ADMIN, and
     # the admin flag is then only ever taken away. Only the fourth argument
@@ -145,6 +159,11 @@ case "${1:-status}" in
     ;;
   passwd)
     user=${2:-}; [ -n "$user" ] || die "usage: matrix-admin.sh passwd <user> [<pass>]"
+    if [ "${DRY:-0}" = 1 ]; then
+      dryrun_plan "reset the password of $(full_id "$user") in MAS (sessions out)"
+      dryrun_note "password: not printed in a plan — a real run prints it once"
+      dryrun_end
+    fi
     pass=${3:-$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)}
     docker exec matrix-mas mas-cli manage -c /data/config.yaml set-password "$user" "$pass" >/dev/null 2>&1 \
       || die "password reset failed for $(full_id "$user")"
@@ -153,11 +172,20 @@ case "${1:-status}" in
   admin)
     user=${2:-}; flag=${3:-}
     case "$flag" in true|false) ;; *) die "usage: matrix-admin.sh admin <user> <true|false>" ;; esac
+    if [ "${DRY:-0}" = 1 ]; then
+      dryrun_plan "set the Synapse server-admin flag of $(full_id "$user") to $flag"
+      dryrun_end
+    fi
     out=$(_api admin "$(full_id "$user")" "$flag" 2>&1) || die "admin flag change failed: $out"
     echo "$(full_id "$user") admin=$flag"
     ;;
   del)
     user=${2:-}; [ -n "$user" ] || die "usage: matrix-admin.sh del <user>"
+    if [ "${DRY:-0}" = 1 ]; then
+      dryrun_plan "lock $user in MAS (mas-cli manage lock-user)"
+      dryrun_plan "deactivate $(full_id "$user") in Synapse (erase: false)"
+      dryrun_end
+    fi
     docker exec matrix-mas mas-cli manage -c /data/config.yaml lock-user "$user" >/dev/null 2>&1 \
       || die "lock failed for $(full_id "$user")"
     _api deactivate "$(full_id "$user")" >/dev/null 2>&1 || true

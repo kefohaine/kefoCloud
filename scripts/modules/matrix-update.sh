@@ -8,8 +8,11 @@
 # tag reverted plus the dump restored.
 #
 # Run via `make matrix-update CONFIRM=yes` (operator action).
+# --dry-run / DRYRUN=1 prints the plan and exits 0: CONFIRM is still required
+# and still refuses without it, and no dump, pull or recreate happens.
 set -uo pipefail
 . "$(dirname "$(readlink -f "$0")")/../lib/instance.sh"
+. "$(dirname "$(readlink -f "$0")")/../lib/dryrun.sh"
 
 COMPOSE="$REPO_DIR/modules/matrix/docker-compose.yml"
 ENV="$REPO_DIR/modules/matrix/.env"
@@ -32,6 +35,18 @@ EOF
 fi
 
 say() { printf 'matrix-update: %s\n' "$*" >&2; }
+
+dryrun_wanted "$@" && DRY=1
+
+if [ "${DRY:-0}" = 1 ]; then
+  dryrun_plan "create $BACKUP_DIR (mode 700) and dump the MAS database (matrix-mas-db) to $DUMP"
+  dryrun_plan "validate that backup with gzip -t and set it to mode 600"
+  dryrun_plan "pull the matrix-mas image"
+  dryrun_plan "recreate matrix-mas (its migrations run on start) and wait for it to report healthy"
+  dryrun_plan "recreate matrix-synapse and wait for /health on 127.0.0.1:8008"
+  dryrun_note "the backup would be kept at $DUMP (restore: zcat $DUMP | docker exec -i matrix-mas-db psql -U mas -d mas)"
+  dryrun_end "nothing changed — no dump written, no image pulled, no container recreated"
+fi
 
 mkdir -p "$BACKUP_DIR" || { echo "matrix-update: cannot create $BACKUP_DIR" >&2; exit 1; }
 chmod 700 "$BACKUP_DIR"

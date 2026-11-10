@@ -14,13 +14,76 @@
 #
 # The admin bot the `make matrix-*` recipes authenticate as is created by
 # scripts/modules/matrix-admin.sh; its credentials live in the same .env.
+#
+# Plan mode (--dry-run or DRYRUN=1) lists every file it would write and every
+# .env key it would seed, and writes nothing.
 set -uo pipefail
 . "$(dirname "$(readlink -f "$0")")/../lib/instance.sh"
+. "$(dirname "$(readlink -f "$0")")/../lib/dryrun.sh"
+dryrun_wanted "$@" && DRY=1
 
 ENV="$REPO_DIR/modules/matrix/.env"
 SYN="$DATA_DIR/matrix/synapse"
 ELM="$DATA_DIR/matrix/element"
 MAS="$DATA_DIR/matrix/mas"
+
+if [ "${DRY:-0}" = 1 ]; then
+  dryrun_plan "create the directories $SYN, $ELM, $MAS/keys, $DATA_DIR/matrix/pgdata and $DATA_DIR/matrix/mas-pgdata"
+  [ -f "$ENV" ] || dryrun_plan "create $ENV (mode 0600)"
+  # _plan_seed mirrors _seed's rule — a key that already carries a value is
+  # never rotated — and describes a generated value instead of minting it.
+  _plan_seed() {  # _plan_seed <KEY> <shown value>
+    grep -qE "^$1=.+" "$ENV" 2>/dev/null && return 0
+    dryrun_plan "seed $1=$2 in $ENV"
+  }
+  _plan_seed POSTGRES_DB                        synapse
+  _plan_seed POSTGRES_USER                      synapse
+  _plan_seed POSTGRES_PASSWORD                  "<random hex 32, written to the .env, never printed>"
+  _plan_seed SYNAPSE_REGISTRATION_SHARED_SECRET "<random hex 32, written to the .env, never printed>"
+  _plan_seed SYNAPSE_MACAROON_SECRET            "<random hex 64, written to the .env, never printed>"
+  _plan_seed SYNAPSE_FORM_SECRET                "<random hex 32, written to the .env, never printed>"
+  _plan_seed SYNAPSE_ADMIN_USER                 mkadmin
+  _plan_seed SYNAPSE_ADMIN_PASSWORD             "<random hex 24, written to the .env, never printed>"
+  _plan_seed MAS_DB_PASSWORD                    "<random hex 32, written to the .env, never printed>"
+  _plan_seed MAS_ENCRYPTION_SECRET              "<random hex 32, written to the .env, never printed>"
+  _plan_seed MAS_CLIENT_SECRET                  "<random hex 32, written to the .env, never printed>"
+  _plan_seed MAS_SYNAPSE_SECRET                 "<random hex 32, written to the .env, never printed>"
+  _plan_seed LIVEKIT_KEY                        "<random hex 8, written to the .env, never printed>"
+  _plan_seed LIVEKIT_SECRET                     "<random hex 32, written to the .env, never printed>"
+  if [ -s "$SYN/homeserver.yaml" ]; then
+    dryrun_note "keep the existing $SYN/homeserver.yaml"
+  else
+    dryrun_plan "write $SYN/homeserver.yaml (PostgreSQL, server_name matrix.$DOMAIN, MAS delegation)"
+    dryrun_plan "write $SYN/log.config"
+  fi
+  if [ -s "$ELM/config.json" ]; then
+    jq -e '.element_call.url and .features.feature_login_with_qr' "$ELM/config.json" >/dev/null 2>&1 \
+      || dryrun_plan "set the Element Call widget + QR sign-in keys that $ELM/config.json lacks"
+    grep -q '"m.authentication"' "$ELM/config.json" \
+      || dryrun_plan "add the MAS issuer to $ELM/config.json"
+  else
+    dryrun_plan "write $ELM/config.json (homeserver https://matrix.$DOMAIN, MAS issuer https://auth.matrix.$DOMAIN/)"
+  fi
+  if [ -s "$SYN/homeserver.yaml" ]; then
+    _plan_missing=""
+    grep -qE '^[[:space:]]*msc4108_enabled:' "$SYN/homeserver.yaml" || _plan_missing="$_plan_missing msc4108_enabled"
+    grep -qE '^[[:space:]]*msc4143_enabled:' "$SYN/homeserver.yaml" || _plan_missing="$_plan_missing msc4143_enabled"
+    [ -n "$_plan_missing" ] \
+      && dryrun_plan "append$_plan_missing to the experimental_features block of $SYN/homeserver.yaml (or warn if it has its own)"
+    grep -qE '^matrix_rtc:' "$SYN/homeserver.yaml" \
+      || dryrun_plan "append the matrix_rtc LiveKit transports to $SYN/homeserver.yaml"
+  fi
+  [ -s "$DATA_DIR/call/livekit.yaml" ] || dryrun_plan "write $DATA_DIR/call/livekit.yaml (mode 0600, keys LIVEKIT_KEY/LIVEKIT_SECRET from the .env)"
+  [ -s "$DATA_DIR/call/element-call/config.json" ] || dryrun_plan "write $DATA_DIR/call/element-call/config.json (homeserver https://matrix.$DOMAIN)"
+  if [ -s "$MAS/config.yaml" ]; then
+    dryrun_note "keep the existing $MAS/config.yaml"
+  else
+    dryrun_plan "generate $MAS/keys/rsa.pem and $MAS/keys/ec.pem (private, mode 0600, owner 65532)"
+    dryrun_plan "write $MAS/config.yaml (mode 0600, secrets from the .env)"
+  fi
+  [ -d "$MAS/keys" ] && dryrun_plan "tighten $MAS/keys to 0700 and its *.pem to 0600, owner 65532"
+  dryrun_end
+fi
 mkdir -p "$SYN" "$ELM" "$MAS/keys" "$DATA_DIR/matrix/pgdata" "$DATA_DIR/matrix/mas-pgdata"
 touch "$ENV"
 chmod 600 "$ENV"

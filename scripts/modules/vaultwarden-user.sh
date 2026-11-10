@@ -13,13 +13,21 @@
 #
 # Subcommands: list | add <email> <pass> | ensure <email> <pass> | del <email>
 # (add fails if the account exists; ensure is add-if-missing, for the installer)
+#
+# A plan run (--dry-run, or DRYRUN=1) prints what add/ensure/del would write and
+# exits 0 without touching the DB; `list` is read-only either way.
 
 set -uo pipefail
+. "$(dirname "$(readlink -f "$0")")/../lib/dryrun.sh"
 
 ROOT="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
 DB="$ROOT/data/vault/data/db.sqlite3"
 
 [ -f "$DB" ] || { echo "error: $DB not found (is the vaultwarden container up?)" >&2; exit 1; }
+
+dryrun_wanted "$@" && DRY=1
+dryrun_args "$@"
+set -- "${DRYRUN_ARGS[@]}"
 
 MODE="${1:-}"; shift 2>/dev/null || true
 
@@ -29,6 +37,27 @@ case "$MODE" in
   list) RUN=(python3) ;;
   *)    RUN=(sudo python3) ;;
 esac
+
+# ── plan only: add/ensure/del print what they would write, and stop ─────────
+# The password is never echoed: only the derived keys are described. `list` is
+# read-only and runs normally.
+if [ "${DRY:-0}" = 1 ]; then
+  case "$MODE" in
+    add)
+      dryrun_plan "create the account '${1:-}' in $DB — add refuses first if that account already exists"
+      dryrun_plan "insert one users row with a fresh uuid, salt and security stamp, and the client-side keys derived from the password (the password itself is never stored or printed)"
+      dryrun_note "a real run would then print: info:  account '${1:-}' created"
+      dryrun_end ;;
+    ensure)
+      dryrun_plan "print 'info:  account already exists' and write nothing if '${1:-}' is already in $DB"
+      dryrun_plan "otherwise insert one users row for '${1:-}' with a fresh uuid, salt and security stamp, and the client-side keys derived from the password (never stored or printed)"
+      dryrun_end ;;
+    del)
+      dryrun_plan "delete '${1:-}' from $DB: every row in every table that has a user_uuid column (derived from the live schema), then its users row"
+      dryrun_note "a real run refuses if '${1:-}' is not found"
+      dryrun_end ;;
+  esac
+fi
 
 "${RUN[@]}" - "$DB" "$MODE" "$@" <<'PYEOF'
 import base64, hashlib, hmac, os, subprocess, sys, tempfile, uuid, datetime, sqlite3

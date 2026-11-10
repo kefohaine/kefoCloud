@@ -17,7 +17,7 @@
 # with `git rev-parse` from the script's own directory, and "not a checkout" is
 # a skip, not an error.
 #
-# Style mirrors the installer / nc-datadir-nfs.sh: welcome banner + description, no
+# Style mirrors the installer: welcome banner + description, no
 # interactive prompts (every choice is auto-detected or env-overridable),
 # fully unattended work. At the end any failures and manual steps are
 # reported with a problem + hint each; every time you press Enter the script
