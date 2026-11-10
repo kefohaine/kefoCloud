@@ -11,11 +11,15 @@
 # Idempotent: re-running replaces the previous serve config. No prompts.
 #
 # Usage (as root):
-#   bash scripts/ops/tailscale-https.sh
+#   bash scripts/ops/tailscale-https.sh [--dry-run]
+#   --dry-run / DRYRUN=1: print the serve config it would apply; apply nothing.
 
 . "$(dirname "$(readlink -f "$0")")/../lib/instance.sh" 2>/dev/null \
   || { [ -f data/instance.conf ] && . ./data/instance.conf; }
 : "${DOMAIN:?DOMAIN missing — run from the repo root or source data/instance.conf}"
+
+# Plan mode (--dry-run / DRYRUN=1): the gate below prints the plan, serves nothing.
+. "$(dirname "$(readlink -f "$0")")/../lib/dryrun.sh"
 
 set -uo pipefail
 
@@ -29,6 +33,14 @@ fi
 if ! tailscale status >/dev/null 2>&1; then
   echo "FAIL: tailscaled is not answering (systemctl start tailscaled?)" >&2
   exit 1
+fi
+
+dryrun_wanted "$@" && DRY=1
+
+if [ "${DRY:-0}" = 1 ]; then
+  dryrun_plan "run: tailscale serve --bg --https 443 https+insecure://127.0.0.1:443 (replaces any current serve config)"
+  dryrun_note "the ttyd.$DOMAIN name is not used: the tail door becomes https://<machine>.<tailnet>.ts.net"
+  dryrun_end
 fi
 
 # https+insecure: the origin (the local Caddy edge on 127.0.0.1:443) may still

@@ -7,6 +7,8 @@
 #   stack-up.sh --update     (manual)  make update
 #   stack-up.sh --check      (timer)   repair pass — start only what is missing
 #   stack-up.sh --validate   (gate)    validate the edge config, change nothing
+#   stack-up.sh --dry-run    (plan)    print what this run would pull, recreate or
+#                                      start, unit by unit, and change nothing
 #
 # WHY THIS EXISTS: `make update` used to run `apt-get upgrade -y` and then a
 # force-recreate loop under make's `-eu`. Any single failure aborted the loop,
@@ -28,6 +30,7 @@
 
 . "$(dirname "$(readlink -f "$0")")/../lib/instance.sh" 2>/dev/null || true
 . "$(dirname "$(readlink -f "$0")")/../lib/modules.sh" 2>/dev/null || true
+. "$(dirname "$(readlink -f "$0")")/../lib/dryrun.sh"
 set -uo pipefail
 
 REPO=$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)
@@ -40,7 +43,8 @@ for a in "$@"; do
     --update)   MODE=update ;;
     --check)    MODE=check ;;
     --validate) MODE=validate ;;
-    *) echo "usage: $0 [--update|--check|--validate]"; exit 2 ;;
+    --dry-run)  DRY=1 ;;
+    *) echo "usage: $0 [--update|--check|--validate|--dry-run]"; exit 2 ;;
   esac
 done
 
@@ -49,8 +53,10 @@ warn() { [ -x "$LOG" ] && "$LOG" warn "$*" || echo "warn: $*"; }
 err()  { [ -x "$LOG" ] && "$LOG" error "$*" || echo "error: $*"; }
 
 mkdir -p "$DATA"
-exec 9>"$DATA/.stack-up.lock"
-flock -n 9 || { info "another stack-up run is in progress — nothing to do"; exit 0; }
+if [ "${DRY:-0}" != 1 ]; then
+  exec 9>"$DATA/.stack-up.lock"
+  flock -n 9 || { info "another stack-up run is in progress — nothing to do"; exit 0; }
+fi
 
 compose()   { ( cd "$REPO" && docker compose -f "$1" "${@:2}" ); }
 unit_names(){ compose "$1" config --format json 2>/dev/null | jq -r '.services[] | (.container_name // .name)' 2>/dev/null; }
@@ -108,6 +114,14 @@ edge_input_hash() {
 
 unit_up() {   # unit_up <file> [service...]
   local f=$1; shift
+  if [ "${DRY:-0}" = 1 ]; then
+    case "$MODE" in
+      update) is_build "$f" || dryrun_plan "pull ${f#$REPO/}"; dryrun_plan "up -d --force-recreate ${f#$REPO/}" ;;
+      check)  dryrun_plan "start ${f#$REPO/} (repair pass: this unit is not running)" ;;
+      *)      dryrun_plan "up -d ${f#$REPO/}" ;;
+    esac
+    return 0
+  fi
   case "$MODE" in
     update)
       is_build "$f" || compose "$f" pull || warn "pull failed: $f"
@@ -162,7 +176,18 @@ for d in "$REPO"/modules/*/; do
 done
 
 # ── the edge, LAST, behind the gate ────────────────────────────────────────
-if [ -n "$EDGE" ]; then
+if [ -n "$EDGE" ] && [ "${DRY:-0}" = 1 ]; then
+  info "edge: $EDGE (last, gated)"
+  dryrun_note "the edge config would be validated with docker compose config -q and caddy adapt (no container started)"
+  case "$MODE" in
+    update)
+      dryrun_plan "tag the running edge image ${EDGE_CTN:-<edge>} as :rollback"
+      dryrun_plan "rebuild and up -d --force-recreate the edge (or recreate without a build when its inputs hash is unchanged)"
+      dryrun_plan "probe https://$SHOST/ on 127.0.0.1:443 and roll back to :rollback if the edge does not answer 200/30x" ;;
+    check) dryrun_plan "up -d the edge only if it is not running" ;;
+    *)     dryrun_plan "up -d the edge" ;;
+  esac
+elif [ -n "$EDGE" ]; then
   info "edge: $EDGE (last, gated)"
   edge_config_ok || { err "edge config invalid — running edge left untouched"; FAILURE+=("$EDGE (config)"); }
   if [ "${#FAILURE[@]}" -eq 0 ]; then
@@ -213,6 +238,10 @@ if [ -n "$EDGE" ]; then
 fi
 
 # ── summary ────────────────────────────────────────────────────────────────
+if [ "${DRY:-0}" = 1 ]; then
+  dryrun_end "nothing changed — no image pulled, no container created, started or recreated"
+fi
+
 if [ "${#FAILURE[@]}" -eq 0 ]; then
   case "$MODE" in
     update) info "update complete — every deployed unit recreated, edge verified" ;;
