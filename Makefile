@@ -226,10 +226,10 @@ systemd-action:
 # attach). There is no per-device registry and no way to name a session from the
 # URL — a second shell is a tmux window INSIDE main (make tmux-new / tmux-open).
 
-# AIO dashboard (scripts/info/fetch.sh): host perf (uptime, load, cpu, memory,
-# swap, disk), all available modules (installed green / uninstalled red),
-# git, units, failed units (+ their targets), docker, tmux, backups, mail,
-# tailnet — one aligned colored read; module-aware (wizard.state).
+# One-screen dashboard (scripts/info/fetch.sh): banner, then a host block (ssh
+# target, os, uptime, disk /, memory, swap, ip) and a state block (install
+# checkpoint, git, tailnet, host units, tmux, docker, module count) — one
+# aligned read, module-aware (wizard.state). Depth is `make fetch-more`.
 # Render the skeleton into data/rendered/ (Caddy tree + config/) and refresh the
 # instance block in every service .env. Everything that lands on the host or in
 # a container comes from here, never from the tracked files directly.

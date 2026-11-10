@@ -40,7 +40,7 @@ core() {
 
   sec "dashboard & health"
   rows <<'EOF'
-make fetch|AIO dashboard — host perf, modules, git, units, docker, tmux, backups, mail, tailnet
+make fetch|one screen — os, uptime, disk, memory, swap, ip, install checkpoint, git, tailnet, host units, tmux, docker, module count
 make render|skeleton → live: render data/rendered/ + refresh each service .env
 make fetch-more|deep dive — per-core cpu, mem breakdown, processes, sockets, all units+timers+cron, docker caps/stats/log sizes, disk+inodes, data/ growth, tailnet prefs, DNS probes, TLS expiry
 make smoke|live edge test — every vhost, tailnet edge, tls, mail (pre-push hook runs it; records its verdict only when the installer asks)

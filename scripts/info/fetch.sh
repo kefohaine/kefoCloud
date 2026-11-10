@@ -1,25 +1,19 @@
 #!/usr/bin/env bash
-# scripts/info/fetch.sh — the `make fetch` AIO dashboard.
+# scripts/info/fetch.sh — the `make fetch` one-screen dashboard.
 #
-# One aligned, colored, one-screen read of the live system: the install
-# checkpoint, every available module (installed green, not-installed red), every
-# repo container (running green, stopped red), host perf (uptime, load, cpu,
-# memory, swap, disk, top memory processes), git, host units, failed units
-# (+ each failed unit's target in () marks), tmux, backups, and the
-# tailnet — one row per fact, no duplicate listings.
+# The banner, then two fixed blocks, each row one live fact and nothing else:
+#   host     — ssh target, os, uptime, disk /, memory, swap, ip (one interface,
+#              the default-route one, with its prefix)
+#   kefocloud — the install checkpoint (wizard.state `finished`), then git,
+#              tailnet, host services, tmux, docker, modules
+# Anything deeper (load, top processes, containers by name, failed units,
+# backups, routes) is `make fetch-more`'s job, not this screen's.
 #
 # Module-aware: the record comes from data/wizard.state via
 # scripts/lib/modules.sh — the ONE accessor (the installer is the sole writer).
-# TWO INDEPENDENT FACTS, never conflated:
-#   * `installation` — the install checkpoint printed FIRST: complete (green) /
-#                  pending (red) / no state, from wizard.state `finished`.
-#   * `modules`  — installed (green) vs not installed (red), from wizard.state,
-#                  regardless of `finished`. A not-installed module is ABSENT —
-#                  no route — and is printed in WORDS, never colour alone: it is
-#                  NOT 'tailnet-only'.
-#   * `containers` — the repo-wide roster (config/modules.conf + the edge),
-#                  green=running / red=stopped, from live docker — independent
-#                  of which modules are enabled.
+# `installation` is the install checkpoint printed FIRST (the honest caveat for
+# every row below it); `modules` counts the installed modules against every
+# module config/modules.conf declares.
 #
 # No arguments. Colors auto-disable when stdout is not a tty or NO_COLOR is set.
 
@@ -28,18 +22,25 @@ set -uo pipefail
 export LC_ALL=C
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-PROJECT_DIR="$ROOT/data"
 . "$ROOT/scripts/lib/modules.sh"
-mod_in() { mod_installed "$1"; }
 
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
-  B=$'\033[1m' D=$'\033[2m' R=$'\033[31m' G=$'\033[32m' Y=$'\033[33m' C=$'\033[36m' N=$'\033[0m'
+  B=$'\033[1m' D=$'\033[2m' R=$'\033[31m' G=$'\033[32m' Y=$'\033[33m' N=$'\033[0m'
 else
-  B='' D='' R='' G='' Y='' C='' N=''
+  B='' D='' R='' G='' Y='' N=''
 fi
 
-row()  { printf "  %s%-9s%s %s\n" "${C}${B}" "$1" "$N" "$2"; }
-rule() { printf "  %s%s%s\n" "$D" "$(printf '%*s' 62 '' | tr ' ' '-')" "$N"; }
+# label field 11 + "| ", or 13 and no pipe: both put the value at the same column
+row()  { printf "  %-11s| %s\n" "$1" "$2"; }
+row0() { printf "  %-13s%s\n" "$1" "$2"; }
+rule() { printf "  %s%s%s\n" "$D" "$(printf '%*s' 72 '' | tr ' ' '-')" "$N"; }
+
+# bytes -> binary unit, one decimal under 10 (2.9 TiB), integer above (156 GiB)
+hum() {
+  awk -v b="${1:-0}" 'BEGIN{split("B KiB MiB GiB TiB PiB",u," ");i=0;v=b;
+    while(v>=1024&&i<5){v/=1024;i++}
+    if(i==0)printf "%d B",v; else if(v<10)printf "%.1f %s",v,u[i+1]; else printf "%.0f %s",v,u[i+1]}'
+}
 
 cat <<'BANNER'
 
@@ -55,182 +56,119 @@ cat <<'BANNER'
                                 ░                                   ░      
 
 BANNER
-printf "  %s%s%s — kefoCloud fetch  %s· %s%s\n" "$B" "$(hostname)" "$N" "$D" "$(date '+%F %T %Z')" "$N"
+
+rule
+printf "  %s[WARN]%s %s%s make fetch%s\n" "$Y" "$N" "$D" "$(date '+[%H:%M:%S]')" "$N"
+rule
+echo ""
+
+# ssh — the login this dashboard was read over
+row0 ssh "$(id -un)@$(hostname -s)"
+
 rule
 
-# installation — the install checkpoint (wizard.state `finished`), first: the
-# honest caveat for every row below. complete=green, pending/no state=red.
+# os
+. /etc/os-release 2>/dev/null || true
+row os "${PRETTY_NAME:-Debian} $(uname -m) $(dpkg --print-architecture 2>/dev/null || uname -m)"
+
+# uptime — since the boot date
+up=$(cut -d. -f1 /proc/uptime)
+boot=$(date -d "@$(( $(date +%s) - up ))" '+%F' 2>/dev/null || echo '?')
+row uptime "$((up / 86400))d $(((up % 86400) / 3600))h $(((up % 3600) / 60))m since ${boot}"
+
+# disk / — used / size (pct)
+read -r dk_u dk_s dk_p < <(df -B1 / | awk 'NR==2{print $3, $2, $5+0}')
+dcol="$N"
+[ "${dk_p:-0}" -ge 90 ] 2>/dev/null && dcol="$R"
+[ "${dk_p:-0}" -ge 75 ] 2>/dev/null && dcol="$Y"
+row "disk /" "${dcol}$(hum "$dk_u") / $(hum "$dk_s") (${dk_p}%)${N}"
+
+# memory + swap — one `free` read
+freeb=$(free -b)
+read -r mt mu < <(awk '/^Mem:/{print $2, $3}' <<<"$freeb")
+read -r st su < <(awk '/^Swap:/{print $2, $3}' <<<"$freeb")
+mp=$(( mu * 100 / (mt > 0 ? mt : 1) ))
+mcol="$N"; [ "$mp" -ge 85 ] 2>/dev/null && mcol="$R"
+row memory "${mcol}$(hum "$mu") / $(hum "$mt") (${mp}%)${N}"
+if [ "${st:-0}" -eq 0 ]; then
+  row swap "${D}none${N}"
+else
+  sp=$(( su * 100 / st ))
+  row swap "$(hum "$su") / $(hum "$st") (${sp}%)"
+fi
+
+# ip — the default-route interface's address and prefix (one interface, not every
+# bridge: docker0 / br-* are global too and would otherwise be listed)
+ifc=$(ip -4 route show default 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1); exit}}')
+if [ -n "$ifc" ]; then
+  cidr=$(ip -4 -o addr show dev "$ifc" scope global 2>/dev/null | awk 'NR==1{print $4}')
+else
+  cidr=$(ip -4 -o addr show scope global 2>/dev/null | awk 'NR==1{print $4}')
+fi
+row ip "${cidr:-${D}no global ipv4${N}}"
+
+rule
+echo ""
+
+# kefocloud — the install checkpoint (wizard.state `finished`)
 case "$(mod_finished)" in
-  true)    row installation "${G}complete${N} — wizard.state finished=true" ;;
-  false)   row installation "${R}pending${N} — wizard.state finished=false (install did not complete)" ;;
-  absent)  row installation "${R}pending${N} — data/wizard.state absent (never installed)" ;;
-  *)       row installation "${R}pending${N} — finished=$(mod_finished)" ;;
+  true)    row0 kefocloud "${G}installed${N}" ;;
+  *)       row0 kefocloud "${R}pending${N}" ;;
 esac
 
-# host
-up=$(cut -d. -f1 /proc/uptime)
-up_d=$((up / 86400)); up_h=$(((up % 86400) / 3600))
-. /etc/os-release 2>/dev/null || true
-row host "${PRETTY_NAME:-Debian} · up ${up_d}d ${up_h}h"
+rule
 
-# load + cpu
-read -r l1 l5 l15 _ < /proc/loadavg
-ncpu="$(nproc)"
-lcol="$N"
-awk -v v="$l15" -v n="$ncpu" 'BEGIN{exit !(v > n*2)}' && lcol="$R"
-cpup=$(top -bn1 2>/dev/null | awk '/^%Cpu/{printf "%.0f", 100-$8; exit}')
-row load "${lcol}${l1} ${l5} ${l15}${N} · cpu ${cpup:-?}% · ${ncpu} cores"
+# git — working tree state · branch line (upstream + [gone] included)
+gb=$(git -C "$ROOT" status -sb 2>/dev/null | head -1 | sed 's/^## //')
+gd=$(git -C "$ROOT" status --porcelain 2>/dev/null | wc -l)
+if [ "${gd:-0}" -gt 0 ]; then gs="${Y}${gd} uncommitted${N}"; else gs="${G}clean${N}"; fi
+row git "${gs} · ${gb:-no git}"
 
-# memory + swap (one `free` read, not three)
-freeb=$(free -b)
-m=$(awk '/^Mem:/{printf "%.1f/%.1f GiB", $3/1073741824, $2/1073741824}' <<<"$freeb")
-mp=$(awk '/^Mem:/{printf "%d", $3*100/$2}' <<<"$freeb")
-s=$(awk '/^Swap:/{if($2==0){print "none"; exit} printf "%.1f/%.1f GiB", $3/1073741824, $2/1073741824}' <<<"$freeb")
-mcol="$N"; [ "${mp:-0}" -ge 85 ] 2>/dev/null && mcol="$R"
-row memory "${mcol}${m} (${mp:-?}%)${N} · swap ${s}"
-
-# disk (one `df` read)
-read -r dk_used dk_size dp < <(df -h / | awk 'NR==2{print $3, $2, $5+0}')
-dk="${dk_used}/${dk_size} (${dp}%)"
-dcol="$N"
-[ "${dp:-0}" -ge 90 ] 2>/dev/null && dcol="$R"
-[ "${dp:-0}" -ge 75 ] 2>/dev/null && dcol="$Y"
-row "disk /" "${dcol}${dk}${N}"
-
-# top memory processes
-topmem=$(ps -eo comm,pmem --sort=-pmem --no-headers 2>/dev/null | head -3 \
-  | awk '{printf "%s%s %.0f%%", (NR>1?" · ":""), $1, $2}')
-row "top mem" "$topmem"
-
-# modules — ALWAYS every module the repo declares (config/modules.conf), from
-# wizard.state: recorded in green, the rest in red with the words spelled out
-# (never colour alone — a not-installed module must not be inferred from colour).
-mods=""
-while read -r m; do
-  [ -n "$m" ] || continue
-  if mod_installed "$m"; then mods+="${G}${m}${N}  "
-  else mods+="${R}${m}${N} ${D}(not installed)${N}  "; fi
-done < <(mod_all)
-mods+="${D}(wizard.state enabled_modules)${N}"
-row modules "$mods"
-
-# containers — mod_roster: the edge + EVERY declared module's containers, state
-# from live docker, INDEPENDENT of which modules are enabled. running=green,
-# stopped=red.
-roster="$(mod_roster)"
-runnow="$(docker ps --format '{{.Names}}' 2>/dev/null)"
-ctns=""
-for c in $roster; do
-  case "$c" in "") continue ;; esac
-  if grep -qx "$c" <<<"$runnow"; then ctns+="${G}${c}${N}  "
-  else ctns+="${R}${c} (stopped)${N}  "; fi
-done
-row containers "$ctns"
-
-# git
-if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  gb=$(git -C "$ROOT" status -sb 2>/dev/null | head -1 | sed 's/^## //')
-  gd=$(git -C "$ROOT" status --porcelain 2>/dev/null | wc -l)
-  if [ "$gd" -gt 0 ]; then gs="${Y}${gd} uncommitted${N}"; else gs="${G}clean${N}"; fi
-  row git "$gb · $gs"
-  # The repo's git guards (identity/edge pre-commit + smoke pre-push) — installed
-  # by `make install-hooks` and at deploy time by the installer.
-  if [ -x "$ROOT/.git/hooks/pre-commit" ] && [ -x "$ROOT/.git/hooks/pre-push" ]; then
-    row hooks "${G}installed${N} — pre-commit (identity + edge), pre-push (smoke)"
-  else
-    row hooks "${R}missing${N} — run: make install-hooks"
-  fi
-fi
-
-# host units
-us=""
-for u in ttyd dnsmasq goose; do
-  if [ "$(systemctl is-active "$u" 2>/dev/null)" = active ]; then
-    us+="${G}✓${N} $u  "
-  else
-    us+="${R}✗${N} $u  "
-  fi
-done
-row units "$us"
-
-# failed units (+ each unit's target in () marks)
-nfl=$(systemctl --failed --no-legend --plain 2>/dev/null)
-nf=$(echo "$nfl" | grep -c . || true)
-if [ "${nf:-0}" = 0 ]; then
-  row failed "${G}none${N}"
-else
-  # unit name -> where it points (mount Where / device What / unit Desc)
-  ftoks=""
-  while read -r un _; do
-    [ -n "$un" ] || continue
-    tgt=$(systemctl show "$un" -p Where --value 2>/dev/null)
-    [ -n "$tgt" ] || tgt=$(systemctl show "$un" -p What --value 2>/dev/null)
-    [ -n "$tgt" ] || tgt=$(systemctl show "$un" -p Description --value 2>/dev/null)
-    ftoks+="${R}${un}${N}${D}(${tgt})${N}  "
-  done < <(echo "$nfl" | head -3)
-  row failed "${R}${nf} failed${N} ${ftoks}"
-fi
-
-# docker
-if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-  toks=()
-  nunh=0
-  while IFS=$'\t' read -r nm st; do
-    [ -n "$nm" ] || continue
-    case "$st" in
-      *unhealthy*)  nunh=$((nunh+1)); toks+=("${R}${nm} ✗${N}");;
-      *restarting*) nunh=$((nunh+1)); toks+=("${Y}${nm} ↻${N}");;
-      *)            toks+=("${G}${nm}${N}");;
-    esac
-  done < <(docker ps --format '{{.Names}}\t{{.Status}}' 2>/dev/null)
-  dhead="${#toks[@]} up"
-  [ "$nunh" -gt 0 ] && dhead="${dhead} · ${R}${nunh} unhealthy${N}"
-  row docker "$dhead"
-  buf=""; i=0
-  for t in "${toks[@]}"; do
-    buf+="$t   "; i=$((i+1))
-    if [ $((i % 5)) = 0 ]; then printf "            %s\n" "$buf"; buf=""; fi
-  done
-  [ -n "$buf" ] && printf "            %s\n" "$buf"
-else
-  row docker "${R}docker unavailable${N}"
-fi
-
-# tmux
-if command -v tmux >/dev/null 2>&1; then
-  tsess=$(tmux ls -F '#{session_name}' 2>/dev/null | tr '\n' ' ')
-  if [ -n "$tsess" ]; then row tmux "$tsess"; else row tmux "${D}none${N}"; fi
-fi
-
-# backups
-if [ -d "$PROJECT_DIR/backups" ]; then
-  blist=$(ls -1t "$PROJECT_DIR/backups" 2>/dev/null)
-  if [ -n "$blist" ]; then
-    bn=$(echo "$blist" | wc -l)
-    b3=$(echo "$blist" | head -3 | tr '\n' ' ')
-    extra=""; [ "$bn" -gt 3 ] && extra=" ${D}(+$((bn-3)) older)${N}"
-    row backups "$b3$extra"
-  else
-    row backups "${D}empty${N}"
-  fi
-else
-  row backups "${D}none yet — make backup${N}"
-fi
-
-# tailnet — read the JSON, not the columnar `tailscale status`: its human
-# output marks an ONLINE node with "-" (not "idle"/"active"), so the old
-# grep-for-idle/active count read a healthy net as "0 up", and its first line is
-# this host (self), which the old `tail -n +2` dropped — the machine never
-# listed itself. Self counts as an up device and is listed first.
+# tailnet — JSON, not the columnar `tailscale status`: its human output marks an
+# ONLINE node with "-" (not "idle"/"active"), which once read a healthy net as
+# "0 up". up:down counts self + peers, then this host's tailnet address.
 if command -v tailscale >/dev/null 2>&1 && ts_json=$(tailscale status --json 2>/dev/null) && [ -n "$ts_json" ]; then
   tsip=$(printf '%s' "$ts_json" | jq -r '.Self.TailscaleIPs[0] // empty' 2>/dev/null)
-  up=$(printf '%s' "$ts_json" | jq -r '[.Self, (.Peer[]?)] | map(select(.Online == true)) | length' 2>/dev/null)
-  noff=$(printf '%s' "$ts_json" | jq -r '[.Peer[]?] | map(select(.Online != true)) | length' 2>/dev/null)
-  pnames=$(printf '%s' "$ts_json" | jq -r '[.Self.HostName, (.Peer[]?.HostName)] | .[:5] | join(" ")' 2>/dev/null)
-  row tailnet "${tsip} · ${G}${up:-0} up${N} · ${D}${noff:-0} offline${N} · ${pnames}"
+  upn=$(printf '%s' "$ts_json" | jq -r '[.Self, (.Peer[]?)] | map(select(.Online == true)) | length' 2>/dev/null)
+  down=$(printf '%s' "$ts_json" | jq -r '[.Peer[]?] | map(select(.Online != true)) | length' 2>/dev/null)
+  row tailnet "${G}${upn:-0}${N}:${R}${down:-0}${N} up:down · ${tsip:-?}"
 else
   row tailnet "${D}tailscale unavailable${N}"
 fi
 
+# services — the host units this stack depends on, active:inactive
+sup=0; sdown=0
+for u in ttyd dnsmasq goose; do
+  if [ "$(systemctl is-active "$u" 2>/dev/null)" = active ]; then sup=$((sup + 1)); else sdown=$((sdown + 1)); fi
+done
+scol="$N"; [ "$sdown" -gt 0 ] && scol="$R"
+row services "${G}${sup}${N}:${scol}${sdown}${N} up:down"
+
+# tmux — sessions
+if command -v tmux >/dev/null 2>&1; then
+  tsess=$(tmux ls -F '#{session_name}' 2>/dev/null | grep -c . || true)
+  row tmux "${tsess} up"
+else
+  row tmux "${D}tmux unavailable${N}"
+fi
+
+# docker — running containers
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  drun=$(docker ps -q 2>/dev/null | grep -c . || true)
+  dcol="$G"; [ "${drun:-0}" -eq 0 ] && dcol="$R"
+  row docker "${dcol}${drun} up${N}"
+else
+  row docker "${R}docker unavailable${N}"
+fi
+
+# modules — installed count / every module config/modules.conf declares
+mtot=0; minst=0
+while read -r m; do
+  [ -n "$m" ] || continue
+  mtot=$((mtot + 1))
+  mod_installed "$m" && minst=$((minst + 1))
+done < <(mod_all)
+mcol="$G"; [ "$minst" -lt "$mtot" ] && mcol="$Y"
+row modules "${mcol}${minst} / ${mtot} enabled${N}"
+
 rule
-echo ""
