@@ -10,28 +10,44 @@
 # are stored nowhere else.
 #
 # Usage: mail-gen.sh [MAIL] [PWD] [QUOTA]
+#        mail-gen.sh --dry-run [MAIL] [PWD] [QUOTA]   (or DRYRUN=1) prints the
+#        plan only — no domain, mailbox or quota is touched.
 
 . "$(dirname "$(readlink -f "$0")")/../lib/instance.sh" 2>/dev/null || true
+. "$(dirname "$(readlink -f "$0")")/../lib/dryrun.sh"
 
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_QUOTA=$(cat "$SCRIPT_DIR/../../modules/mailserver/default-quota" 2>/dev/null || echo 1G)
 
+dryrun_wanted "$@" && DRY=1
+dryrun_args "$@"; set -- "${DRYRUN_ARGS[@]}"
+
 MAIL="${1:-}"
 PWD="${2:-}"
 QUOTA="${3:-}"
 [ -n "$MAIL" ] || MAIL=$(tr -dc 'a-z' < /dev/urandom | head -c 7)
 case "$MAIL" in *@*) ;; *) MAIL="$MAIL@$DOMAIN" ;; esac
-[ -n "$PWD" ] || PWD=$(openssl rand -base64 12 | tr -d '\n')
+# A plan never mints the credential it must not print.
+[ -n "$PWD" ] || [ "${DRY:-0}" = 1 ] || PWD=$(openssl rand -base64 12 | tr -d '\n')
 [ -n "$QUOTA" ] || QUOTA="$DEFAULT_QUOTA"
 
 localpart="${MAIL%@*}"; dom="${MAIL#*@}"
-docker exec mailu-admin flask mailu domain "$dom" >/dev/null 2>&1 || true
-docker exec mailu-admin flask mailu user "$localpart" "$dom" "$PWD" >/dev/null || exit 1
 raw=${QUOTA%B}
 bytes=$(numfmt --from=iec "$raw" 2>/dev/null || echo "$raw")
 case "$bytes" in ''|*[!0-9]*) bytes=1000000000 ;; esac
+
+if [ "${DRY:-0}" = 1 ]; then
+  dryrun_plan "create the domain $dom in Mailu if it is absent"
+  dryrun_plan "create the mailbox $MAIL (localpart $localpart, domain $dom)"
+  dryrun_plan "set quota_bytes=$bytes ($QUOTA) on $MAIL through config-update, carrying the password hash the real run stores (a missing hash would roll the whole transaction back)"
+  dryrun_note "password: not printed in a plan — a real run prints it once"
+  dryrun_end
+fi
+
+docker exec mailu-admin flask mailu domain "$dom" >/dev/null 2>&1 || true
+docker exec mailu-admin flask mailu user "$localpart" "$dom" "$PWD" >/dev/null || exit 1
 # config-update sets the password from password_hash and a missing hash means
 # password=None → NOT NULL violation → the WHOLE transaction (quota included)
 # rolls back silently. Carry the hash the CLI just stored, or the quota never

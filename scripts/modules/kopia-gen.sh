@@ -9,10 +9,28 @@
 #
 # The values are instance state: modules/kopia/.env is gitignored, and compose
 # reads it through the instance block `make render` writes alongside them.
+#
+# Plan mode (writes nothing, refuses nothing it would otherwise refuse):
+#   bash scripts/modules/kopia-gen.sh --dry-run        (or DRYRUN=1)
 set -uo pipefail
 . "$(dirname "$(readlink -f "$0")")/../lib/instance.sh"
+. "$(dirname "$(readlink -f "$0")")/../lib/dryrun.sh"
 
 ENV="$REPO_DIR/modules/kopia/.env"
+
+dryrun_wanted "$@" && DRY=1
+if [ "${DRY:-0}" = 1 ]; then
+  dryrun_plan "create $DATA_DIR/kopia/repository and $DATA_DIR/kopia/config if they are missing"
+  [ -e "$ENV" ] || dryrun_plan "create modules/kopia/.env (mode 0600)"
+  grep -qE '^KOPIA_PASSWORD=.+' "$ENV" 2>/dev/null \
+    || dryrun_plan "seed KOPIA_PASSWORD (random, printed once on a real run)"
+  grep -qE '^KOPIA_SERVER_USERNAME=.+' "$ENV" 2>/dev/null \
+    || dryrun_plan "seed KOPIA_SERVER_USERNAME=kopia"
+  grep -qE '^KOPIA_SERVER_PASSWORD=.+' "$ENV" 2>/dev/null \
+    || dryrun_plan "seed KOPIA_SERVER_PASSWORD (random, printed once on a real run)"
+  dryrun_end
+fi
+
 mkdir -p "$DATA_DIR/kopia/repository" "$DATA_DIR/kopia/config"
 touch "$ENV"
 chmod 600 "$ENV"

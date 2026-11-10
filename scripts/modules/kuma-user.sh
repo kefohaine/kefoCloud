@@ -8,12 +8,20 @@
 # USER=… PASS=…, kuma-passwd USER=… PASS=…, kuma-del-user USER=….
 #
 # Subcommands: list | add <user> <pass> | passwd <user> <pass> | del <user>
+#
+# add/passwd/del accept --dry-run (or DRYRUN=1): they print the plan and write
+# nothing (the password is hashed only on a real run); list is read-only.
 
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
+. "$(dirname "$(readlink -f "$0")")/../lib/dryrun.sh"
 
 DB="$ROOT/data/kuma/data/kuma.db"
+
+# --dry-run is a flag, not the subcommand.
+dryrun_wanted "$@" && DRY=1
+dryrun_args "$@"; set -- "${DRYRUN_ARGS[@]}"
 
 hash_pass() { # hash_pass <plaintext> — bcrypt via the container (no argv leak)
   docker exec -e KUMA_PASS="$1" uptimekuma node -e \
@@ -31,6 +39,10 @@ EOF
     ;;
   add)
     [ $# -eq 3 ] || { echo "usage: kuma-user.sh add <user> <pass>"; exit 1; }
+    if [ "${DRY:-0}" = 1 ]; then
+      dryrun_plan "create kuma user '$2' in $DB (password bcrypt-hashed, never printed)"
+      dryrun_end
+    fi
     HASH=$(hash_pass "$3") || exit 1
     sudo python3 - "$DB" "$2" "$HASH" <<'EOF' || exit 1
 import sqlite3, sys
@@ -44,6 +56,10 @@ EOF
     ;;
   passwd)
     [ $# -eq 3 ] || { echo "usage: kuma-user.sh passwd <user> <pass>"; exit 1; }
+    if [ "${DRY:-0}" = 1 ]; then
+      dryrun_plan "set a new password for kuma user '$2' in $DB (bcrypt hash, never printed)"
+      dryrun_end
+    fi
     HASH=$(hash_pass "$3") || exit 1
     sudo python3 - "$DB" "$2" "$HASH" <<'EOF' || exit 1
 import sqlite3, sys
@@ -56,6 +72,10 @@ EOF
     ;;
   del)
     [ $# -eq 2 ] || { echo "usage: kuma-user.sh del <user>"; exit 1; }
+    if [ "${DRY:-0}" = 1 ]; then
+      dryrun_plan "delete kuma user '$2' from $DB, with their monitors and notifications"
+      dryrun_end
+    fi
     sudo python3 - "$DB" "$2" <<'EOF' || exit 1
 import sqlite3, sys
 db = sqlite3.connect(sys.argv[1]); c = db.cursor()
