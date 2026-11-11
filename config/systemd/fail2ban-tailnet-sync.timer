@@ -1,0 +1,14 @@
+[Unit]
+Description=fail2ban: periodic tailnet whitelist refresh + unban pass
+Documentation=file:{{REPO_DIR}}/scripts/ops/fail2ban-tailnet-sync.sh
+
+[Timer]
+# First pass shortly after boot, then once a minute: a tailnet device that got
+# banned is out for at most one interval, and a NAT renumbering is picked up
+# without anyone editing a config file.
+OnBootSec=30s
+OnUnitActiveSec=60s
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

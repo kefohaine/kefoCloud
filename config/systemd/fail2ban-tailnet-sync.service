@@ -1,0 +1,12 @@
+[Unit]
+Description=fail2ban: refresh the tailnet whitelist and unban its addresses
+Documentation=file:{{REPO_DIR}}/scripts/ops/fail2ban-tailnet-sync.sh
+After=fail2ban.service tailscaled.service
+Wants=fail2ban.service
+
+[Service]
+Type=oneshot
+# One pass: re-collect the endpoints, then unban any jailed address on the list.
+# The same script answers each jail's ignorecommand, so the ban-time check and
+# this repair pass share one source of truth.
+ExecStart={{REPO_DIR}}/scripts/ops/fail2ban-tailnet-sync.sh
