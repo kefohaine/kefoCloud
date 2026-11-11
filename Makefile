@@ -862,10 +862,14 @@ sudo systemctl enable --now fail2ban
 sudo ufw --force delete allow from 172.22.0.0/16 to any port 7681 proto tcp 2>/dev/null || true
 sudo cp $(RENDER_DIR)/config/systemd/kefo-stack.service /etc/systemd/system/kefo-stack.service
 sudo cp $(RENDER_DIR)/config/systemd/tmux-main.service /etc/systemd/system/tmux-main.service
+sudo cp $(RENDER_DIR)/config/systemd/fail2ban-tailnet-sync.service /etc/systemd/system/fail2ban-tailnet-sync.service
+sudo cp $(RENDER_DIR)/config/systemd/fail2ban-tailnet-sync.timer /etc/systemd/system/fail2ban-tailnet-sync.timer
 sudo systemctl daemon-reload
 sudo systemctl enable --now goose ttyd
 sudo systemctl enable kefo-stack.service
 @scripts/lib/mklog info "boot unit installed + enabled: kefo-stack.service (every deployed compose unit comes up on boot)"
+sudo systemctl enable --now fail2ban-tailnet-sync.timer
+@scripts/lib/mklog info "tailnet whitelist timer installed + enabled (bans that hit a tailnet endpoint are lifted within one interval)"
 sudo systemctl enable --now tmux-main.service
 @scripts/lib/mklog info "tmux 'main' session ensured + enabled (make tmux-open TAG=main to attach)"
 sudo systemctl restart sshd dnsmasq
