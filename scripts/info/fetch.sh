@@ -5,7 +5,7 @@
 #   host     — ssh target, os, uptime, disk /, memory, swap, ip (one interface,
 #              the default-route one, with its prefix)
 #   kefocloud — the install checkpoint (wizard.state `finished`), then git,
-#              tailnet, host services, tmux, docker, modules
+#              tailnet, host systemd units, tmux sessions, docker containers, modules
 # Anything deeper (load, top processes, containers by name, failed units,
 # backups, routes) is `make fetch-more`'s job, not this screen's.
 #
@@ -136,27 +136,40 @@ else
   row tailnet "${D}tailscale unavailable${N}"
 fi
 
-# services — the host units this stack depends on, active:inactive
+# systemctl — the host units this stack depends on, active:inactive
 sup=0; sdown=0
 for u in ttyd dnsmasq goose; do
   if [ "$(systemctl is-active "$u" 2>/dev/null)" = active ]; then sup=$((sup + 1)); else sdown=$((sdown + 1)); fi
 done
 scol="$N"; [ "$sdown" -gt 0 ] && scol="$R"
-row services "${G}${sup}${N}:${scol}${sdown}${N} up:down"
+row systemctl "${G}${sup}${N}:${scol}${sdown}${N} up:down"
 
 # tmux — sessions
 if command -v tmux >/dev/null 2>&1; then
   tsess=$(tmux ls -F '#{session_name}' 2>/dev/null | grep -c . || true)
-  row tmux "${tsess} up"
+  row tmux "${tsess} alive"
 else
   row tmux "${D}tmux unavailable${N}"
 fi
 
-# docker — running containers
+# docker — running / recorded containers. `recorded` is the caddy edge plus
+# every container of every module wizard.state has enabled: what the install
+# actually put on this host. Green ONLY when all of them run — one stopped
+# container is exactly what this row exists to surface, so a partial stack goes
+# red like an empty one.
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-  drun=$(docker ps -q 2>/dev/null | grep -c . || true)
-  dcol="$G"; [ "${drun:-0}" -eq 0 ] && dcol="$R"
-  row docker "${dcol}${drun} up${N}"
+  drunning=$(docker ps --format '{{.Names}}' 2>/dev/null)
+  drec=0; drun=0
+  # mod_containers prints no trailing newline: one `echo` per module keeps the
+  # command substitution's word splitting from gluing two modules' lists.
+  for c in caddy $(while read -r m; do
+      [ -n "$m" ] || continue; mod_installed "$m" || continue; mod_containers "$m"; echo
+    done < <(mod_all)); do
+    drec=$((drec + 1))
+    grep -qx "$c" <<<"$drunning" && drun=$((drun + 1))
+  done
+  dcol="$G"; [ "$drun" -lt "$drec" ] && dcol="$R"
+  row docker "${dcol}${drun}/${drec} running${N}"
 else
   row docker "${R}docker unavailable${N}"
 fi
