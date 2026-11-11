@@ -44,9 +44,9 @@ is_public() {
 build() {
   command -v tailscale >/dev/null 2>&1 || return 1
   command -v jq >/dev/null 2>&1 || return 1
-  # Every direct address of Self and every peer: "1.2.3.4:41641" or
-  # "[2001:db8::1]:41641". `CurAddr` is the address in use right now, `Endpoints`
-  # is the wider candidate set; both are read so a peer flipping between paths
+  # Every direct address of Self and every peer — an address plus a port, or
+  # a bracketed IPv6 address plus a port. `CurAddr` is the address in use now, `Endpoints`
+  # is the wider candidate set; both are read so a peer switching paths
   # stays whitelisted.
   tailscale status --json 2>/dev/null \
     | jq -r '[.Self, .Peer[]?] | .[] | ((.Endpoints // [])[]?, .CurAddr // empty)' 2>/dev/null \
