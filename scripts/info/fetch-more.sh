@@ -38,6 +38,27 @@ sec()  { local pad=$((W - ${#1} - 6)); [ "$pad" -lt 2 ] && pad=2
 have() { command -v "$1" >/dev/null 2>&1; }
 dot()  { local s="$1" n="$2" t="${3:-}"; [ -n "$t" ] && printf "%s%d %s · " "$s" "$n" "$t" || printf "%s%d %s" "$s" "$n"; }
 
+# A probe that never answers must not hold the screen. Anything that talks to
+# dockerd/tailscaled/systemd-journald, or walks a data tree, runs under a hard
+# budget: a wedged daemon socket otherwise blocks that call forever and the run
+# stops mid-screen with no error. A probe that misses its budget prints `?`.
+TMO=${TMO:-8}
+tmo() { local s="$1"; shift; timeout "$s" "$@" 2>/dev/null; }
+
+# data/ growth — one `du` per top-level directory, in PARALLEL, each under its
+# own budget. data/photos and data/ocis hold the bulk of the instance's files,
+# and one serial walk over them on a cold page cache stalls the whole screen for
+# a minute with the disk header already printed. A tree that misses the budget
+# prints `?` instead of holding the rest of the row.
+bigdirs() {
+  local d
+  for d in "$DATA"/*/; do [ -d "$d" ] || continue; printf '%s\n' "${d%/}"; done \
+    | TMO_DU="${TMO_DU:-20}" xargs -P "${DU_JOBS:-8}" -I{} bash -c \
+        's=$(timeout "$TMO_DU" du -sh "$1" 2>/dev/null | cut -f1); printf "%s\t%s\n" "${s:-?}" "$1"' _ {} \
+    | sort -rh | head -6 \
+    | awk -v p="$DATA/" '{s=$1; sub(p,"",$2); printf "%s %s  ", s, $2}'
+}
+
 echo ""
 printf "  %s%s%s — kefoCloud fetch-more  %s· %s%s\n" "$B" "$(hostname)" "$N" "$D" "$(date '+%F %T %Z')" "$N"
 printf "  %srepo %s · data %s%s\n" "$D" "$ROOT" "$DATA" "$N"
@@ -78,7 +99,7 @@ row cache "$(awk '/^Cached:/{c+=$2} /^Buffers:/{c+=$2} /^SReclaimable:/{c+=$2} /
 swapdev="$(swapon --show=NAME,SIZE,USED --noheadings 2>/dev/null | awk '{printf "%s %s used %s", $1, $2, $3}')"
 row swap "${swapdev:-none} · swappiness $(cat /proc/sys/vm/swappiness 2>/dev/null) · overcommit $(cat /proc/sys/vm/overcommit_memory 2>/dev/null)"
 if [ "$(swapon --show=NAME --noheadings 2>/dev/null | wc -l)" -eq 0 ] && [ -f /swapfile ]; then row swap-file "/swapfile present but NOT active"; fi
-row oom "$(dmesg 2>/dev/null | grep -ci 'out of memory\|oom-kill' 2>/dev/null || true) events in dmesg · score_adj root=$(cat /proc/self/oom_score_adj 2>/dev/null)"
+row oom "$(tmo 4 dmesg | grep -ci 'out of memory\|oom-kill' 2>/dev/null || true) events in dmesg · score_adj root=$(cat /proc/self/oom_score_adj 2>/dev/null)"
 row top-mem "$(ps -eo comm,pmem --sort=-pmem --no-headers 2>/dev/null | grep -vE '^(ps|awk|grep|sed|head|cut|tr|sort|wc|bash|sh)$' | head -4 | awk '{printf "%s%s %.1f%%", (NR>1?" · ":""), $1, $2}')"
 row top-cpu "$(ps -eo comm,pcpu --sort=-pcpu --no-headers 2>/dev/null | grep -vE '^(ps|awk|grep|sed|head|cut|tr|sort|wc|bash|sh)$' | head -4 | awk '{printf "%s%s %.1f%%", (NR>1?" · ":""), $1, $2}')"
 
@@ -87,10 +108,10 @@ sec "disk"
 printf "            %-28s %8s %8s %5s %6s\n" "mount" "used" "size" "use%" "inodes%"
 df -hT -x tmpfs -x devtmpfs -x overlay 2>/dev/null | awk 'NR>1{printf "            %-28s %8s %8s %5s\n", $7, $4, $3, $6}'
 df -i 2>/dev/null | awk '$5 ~ /%/ {p=$5+0; if (p>50) printf "            inodes %-20s %s\n", $6, $5}'
-row biggest "$(du -sh "$DATA"/*/ 2>/dev/null | sort -rh | head -6 | awk '{printf "%s %s  ", $1, $2}' | sed "s#$DATA/##g")"
-row logs "$(du -sh "$LOG_DIR" 2>/dev/null | cut -f1 || echo -) · journal $(journalctl --disk-usage 2>/dev/null | sed 's/.*take up //; s/ in the file system.*//') · logrotate $(test -f /etc/logrotate.d/instance && echo installed || echo MISSING)"
-row docker-disk "$(docker system df --format '{{.Type}}: {{.Size}}' 2>/dev/null | tr '\n' ' ')"
-row backups "$(ls -1 "$DATA/backups" 2>/dev/null | wc -l) files · $(du -sh "$DATA/backups" 2>/dev/null | cut -f1 || echo 0) · newest: $(ls -1t "$DATA/backups" 2>/dev/null | head -2 | tr '\n' ' ')"
+row biggest "$(bigdirs)"
+row logs "$(tmo 6 du -sh "$LOG_DIR" | cut -f1 || echo -) · journal $(tmo 4 journalctl --disk-usage | sed 's/.*take up //; s/ in the file system.*//') · logrotate $(test -f /etc/logrotate.d/instance && echo installed || echo MISSING)"
+row docker-disk "$(tmo 8 docker system df --format '{{.Type}}: {{.Size}}' | tr '\n' ' ')"
+row backups "$(ls -1 "$DATA/backups" 2>/dev/null | wc -l) files · $(tmo 6 du -sh "$DATA/backups" | cut -f1 || echo 0) · newest: $(ls -1t "$DATA/backups" 2>/dev/null | head -2 | tr '\n' ' ')"
 
 # ───────────────────────────── processes ────────────────────────────────────
 sec "processes (top)"
@@ -142,14 +163,14 @@ dead="$(comm -23 \
 if [ -n "$dead" ]; then row "enabled-dead" "${Y}$(echo "$dead" | tr '\n' ' ')${N}"; else row "enabled-dead" "${G}none${N}"; fi
 row timers "$(systemctl list-timers --no-pager --no-legend 2>/dev/null | awk 'NF>6{printf "%s(%s) ", $7, $1}' | head -6)"
 row cron "$(ls /etc/cron.d/ 2>/dev/null | tr '\n' ' ') · root crontab $(crontab -l 2>/dev/null | grep -vc '^#\|^$' 2>/dev/null || true) lines"
-row journald "$(systemctl is-active systemd-journald) · $(journalctl --disk-usage 2>/dev/null | sed 's/.*take up //; s/ in the file system.*//') · capped $(grep -h SystemMaxUse /etc/systemd/journald.conf.d/*.conf 2>/dev/null | cut -d= -f2 | tr '\n' ' ')"
+row journald "$(systemctl is-active systemd-journald) · $(tmo 4 journalctl --disk-usage | sed 's/.*take up //; s/ in the file system.*//') · capped $(grep -h SystemMaxUse /etc/systemd/journald.conf.d/*.conf 2>/dev/null | cut -d= -f2 | tr '\n' ' ')"
 
 # ──────────────────────────────── docker ────────────────────────────────────
 sec "docker"
-if have docker && docker info >/dev/null 2>&1; then
+if have docker && tmo 5 docker info >/dev/null 2>&1; then
   row engine "$(docker version --format '{{.Server.Version}}' 2>/dev/null) · $(docker info --format '{{.Driver}} · {{.CgroupVersion}} · {{.NCPU}}cpu {{.MemTotal}}B mem' 2>/dev/null)"
   row log-caps "driver $(jq -r '."log-driver" // "default"' /etc/docker/daemon.json 2>/dev/null) · max-size $(jq -r '."log-opts"."max-size" // "-"' /etc/docker/daemon.json 2>/dev/null) · max-file $(jq -r '."log-opts"."max-file" // "-"' /etc/docker/daemon.json 2>/dev/null) · live-restore $(jq -r '."live-restore" // false' /etc/docker/daemon.json 2>/dev/null)"
-  row inventory "$(docker images -q 2>/dev/null | wc -l) images ($(docker system df --format '{{.Type}} {{.TotalCount}}' 2>/dev/null | awk '/Images/{print $2}')) · $(docker volume ls -q 2>/dev/null | wc -l) volumes · $(docker network ls -q 2>/dev/null | wc -l) networks"
+  row inventory "$(tmo 8 docker images -q | wc -l) images ($(tmo 8 docker system df --format '{{.Type}} {{.TotalCount}}' | awk '/Images/{print $2}')) · $(docker volume ls -q 2>/dev/null | wc -l) volumes · $(docker network ls -q 2>/dev/null | wc -l) networks"
   echo ""
   printf "            %-16s %6s %-20s %-18s %-6s %s\n" CONTAINER "CPU%" MEMORY NET "PIDS" RESTARTS
   while IFS=$'\t' read -r nm cpu mem net pids; do
@@ -159,9 +180,9 @@ if have docker && docker info >/dev/null 2>&1; then
     col="$G"; [ "$hs" = unhealthy ] && col="$R"; [ "$hs" = restarting ] && col="$Y"
     [ "${rc:-0}" -gt 5 ] 2>/dev/null && col="$Y"
     printf "            %s%-16s%s %6s %-20s %-18s %-6s %s%s\n" "$col" "$nm" "$N" "$cpu" "$mem" "$net" "$pids" "$rc" ""
-  done < <(docker stats --no-stream --format '{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}\t{{.PIDs}}' 2>/dev/null)
+  done < <(tmo 8 docker stats --no-stream --format '{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}\t{{.PIDs}}')
   row published "$(docker ps --format '{{.Ports}}' 2>/dev/null | grep -oE '0\.0\.0\.0:[0-9]+(-[0-9]+)?' | sort -u -t: -k2 -n | tr '\n' ' ')"
-  row ctn-logs "$(du -ch $(docker inspect -f '{{.LogPath}}' $(docker ps -aq) 2>/dev/null | grep . ) 2>/dev/null | tail -1 | cut -f1)"
+  row ctn-logs "$(tmo 10 du -ch $(tmo 8 docker inspect -f '{{.LogPath}}' $(docker ps -aq) | grep . ) | tail -1 | cut -f1)"
   row outside-mounts "$(for c in $(docker ps --format '{{.Names}}' 2>/dev/null); do docker inspect -f '{{range .Mounts}}{{.Source}}{{"\n"}}{{end}}' "$c" 2>/dev/null; done | sort -u | grep -v "^$ROOT" | grep -v '^$' | head -3 | tr '\n' ' ' | cut -c1-70)"
 else
   row docker "${R}engine unavailable${N}"
@@ -169,9 +190,9 @@ fi
 
 # ─────────────────────────────── tailnet ────────────────────────────────────
 sec "tailnet"
-if have tailscale && ts="$(tailscale status 2>/dev/null)"; then
-  row ip "$(tailscale ip -4 2>/dev/null | head -1) · $(tailscale status --json 2>/dev/null | jq -r '.Self.DNSName // "-"' | sed 's/\.$//')"
-  row prefs "$(tailscale debug prefs 2>/dev/null | jq -r '"ssh:" + (."RunSSH"|tostring) + " exit:" + (."ExitNodeID" // "-") + " routes:" + ((."AdvertiseRoutes" // []) | length | tostring) + " serve:" + ((."FileServer" // {}) | tostring)' 2>/dev/null | cut -c1-60)"
+if have tailscale && ts="$(tmo 6 tailscale status)"; then
+  row ip "$(tmo 6 tailscale ip -4 | head -1) · $(tmo 6 tailscale status --json | jq -r '.Self.DNSName // "-"' | sed 's/\.$//')"
+  row prefs "$(tmo 6 tailscale debug prefs | jq -r '"ssh:" + (."RunSSH"|tostring) + " exit:" + (."ExitNodeID" // "-") + " routes:" + ((."AdvertiseRoutes" // []) | length | tostring) + " serve:" + ((."FileServer" // {}) | tostring)' 2>/dev/null | cut -c1-60)"
   peers="$(echo "$ts" | tail -n +2)"
   row peers "${G}$(echo "$peers" | grep -cw 'active\|idle' || true) up${N} · ${D}$(echo "$peers" | grep -cw offline || true) offline${N} · $(echo "$peers" | awk '{print $2}' | head -5 | tr '\n' ' ')"
   row offline "$(echo "$peers" | awk '/offline/{print $2}' | head -6 | tr '\n' ' ')"
@@ -179,7 +200,7 @@ else
   row tailnet "${R}tailscale unavailable${N}"
 fi
 if have dig; then
-  TSIP="$(tailscale ip -4 2>/dev/null | head -1)"
+  TSIP="$(tmo 6 tailscale ip -4 | head -1)"
   lans="$(dig +short +time=2 +tries=1 "cloud.${DOMAIN:-example.com}" @"${TSIP:-127.0.0.1}" 2>/dev/null | grep -v '^;' | head -1)"
   pun="$(dig +short +time=2 +tries=1 "cloud.${DOMAIN:-example.com}" @1.1.1.1 2>/dev/null | grep -v '^;' | head -1)"
   row dns "dnsmasq $(systemctl is-active dnsmasq 2>/dev/null) · listen $(grep -h '^listen-address' /etc/dnsmasq.d/*.conf 2>/dev/null | cut -d= -f2 | tr '\n' ' ') → cloud.${DOMAIN:-?}: ${lans:-NO ANSWER}"
