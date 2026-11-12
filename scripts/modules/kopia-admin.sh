@@ -1,85 +1,224 @@
 #!/usr/bin/env bash
-# scripts/modules/kopia-admin.sh — accounts, repository and snapshots for the
-# Kopia module, through the kopia CLI inside its own container.
+# scripts/modules/kopia-admin.sh — repository and snapshots for the Kopia
+# module, through the kopia CLI inside its own container.
 #
-#   kopia-admin.sh status                 containers, repository, snapshots
-#   kopia-admin.sh username [<user>]      rotate the web UI/API account name
-#   kopia-admin.sh password [<pass>]      rotate the web UI/API password
-#   kopia-admin.sh snapshot [<source>]    snapshot a source (default: /source)
+#   kopia-admin.sh status                 container, repository, snapshots
+#   kopia-admin.sh init                   connect the off-box repository and set
+#                                         its retention policy (idempotent)
+#   kopia-admin.sh snapshot [<source>]    snapshot a source (default: the read-only mount)
+#   kopia-admin.sh restore <id> [<dir>]   restore one snapshot into an empty
+#                                         directory (default: <data>/restore)
 #   kopia-admin.sh snapshots              list snapshots
+#   kopia-admin.sh stats                  repository size on disk + content histogram
+#   kopia-admin.sh maint-info             maintenance schedule/owner/next run
+#   kopia-admin.sh maint [full]           run maintenance now (full = re-pack+GC)
+#   kopia-admin.sh expire <id>            let retention drop one snapshot
+#   kopia-admin.sh delete <id>            delete one snapshot immediately
+#   kopia-admin.sh cli <args...>          any other kopia subcommand, unwrapped
+#   kopia-admin.sh policy [<target>]      show the policy for a source
+#   kopia-admin.sh ignore-add <pat> [<t>] add an ignore rule (path from the
+#                                         source root) to a source's policy
+#   kopia-admin.sh ignore-rm <pat> [<t>]  drop an ignore rule
+#   kopia-admin.sh verify [<percent>]     verify a sample of stored packs
 #   kopia-admin.sh logs [<lines>]         tail the container
+#
+# There is no server in this module: no UI account, no API, no listener. The
+# repository lives on the off-box disk and is reached over SFTP on the tailnet;
+# its location and identity come from KOPIA_SFTP_* in data/instance.conf.
 #
 # Any of these accepts --dry-run (or DRYRUN=1) to print the plan instead of
 # writing; status/snapshots/logs are read-only and run normally either way.
 set -uo pipefail
 . "$(dirname "$(readlink -f "$0")")/../lib/instance.sh"
 . "$(dirname "$(readlink -f "$0")")/../lib/dryrun.sh"
+. "$(dirname "$(readlink -f "$0")")/../lib/modules.sh"
+. "$(dirname "$(readlink -f "$0")")/../lib/kopia-env.sh"
 
 ENV="$REPO_DIR/modules/kopia/.env"
 [ -f "$ENV" ] || { echo "kopia-admin: $ENV is missing — run 'make kopia-gen'" >&2; exit 1; }
 # shellcheck disable=SC1090
 . "$ENV"
 
-CONF=/data/config/repository.config
-# --dry-run is a flag, not a positional argument (so it can precede the verb).
+PORT="${KOPIA_SFTP_PORT:-22}"
+kopia_live || { echo "kopia-admin: container '$(mod_containers kopia)' is absent — run 'make dok-recreate-kopia' first" >&2; exit 1; }
+CONF="$KOPIA_CONFIG" KEY="$KOPIA_KEY" KNOWN="$KOPIA_KNOWN" SRC="$KOPIA_SOURCE"
+HOST_ID="$(kopia_host)"
+
 dryrun_wanted "$@" && DRY=1
 dryrun_args "$@"; set -- "${DRYRUN_ARGS[@]}"
 die() { printf 'kopia-admin: %s\n' "$*" >&2; exit 1; }
-kopia() { docker exec -e KOPIA_PASSWORD="$KOPIA_PASSWORD" kopia kopia "$@"; }
-# _recreate — both credentials are compose env values, so a new one only takes
-# effect once the container is recreated from the .env it was just written to.
-_recreate() {
-  ( cd "$REPO_DIR" && docker compose -f modules/kopia/docker-compose.yml up -d ) >/dev/null \
-    || die "recreate failed — the new value is in modules/kopia/.env"
+kopia() { docker exec -e KOPIA_PASSWORD="$KOPIA_PASSWORD" "$KOPIA_CTN" kopia --config-file="$CONF" "$@"; }
+connected() { kopia repository status >/dev/null 2>&1; }
+# The identity kopia recorded for this config — user@hostname.
+repo_identity() { kopia repository status 2>/dev/null | sed -n 's/^Hostname: *//p;'; }
+sftp_flags() {
+  printf '%s\n' --path="$KOPIA_SFTP_PATH" --host="$KOPIA_SFTP_HOST" --port="$PORT" \
+    --username="$KOPIA_SFTP_USER" --keyfile="$KEY" --known-hosts="$KNOWN"
 }
 
 case "${1:-status}" in
   status)
-    docker ps -a --filter name='^kopia$' --format '  {{.Names}}\t{{.Status}}'
-    kopia --config-file="$CONF" repository status || die "repository not reachable"
-    kopia --config-file="$CONF" snapshot list --all 2>/dev/null | tail -20 || true
+    docker ps -a --filter "name=^${KOPIA_CTN}$" --format '  {{.Names}}\t{{.Status}}'
+    if connected; then
+      kopia repository status
+      kopia snapshot list --all 2>/dev/null | tail -20 || true
+    else
+      echo "  repository: not connected (run 'make kopia-init')" >&2
+      exit 1
+    fi
     ;;
-  username)
+
+  init)
+    for v in KOPIA_SFTP_HOST KOPIA_SFTP_USER KOPIA_SFTP_PATH; do
+      [ -n "${!v:-}" ] || die "$v is empty — set it in $DATA_DIR/instance.conf, then run 'make render'"
+    done
     if [ "${DRY:-0}" = 1 ]; then
-      if [ -n "${2:-}" ]; then
-        dryrun_plan "set KOPIA_SERVER_USERNAME=$2 in modules/kopia/.env, then recreate the kopia container"
-      else
-        dryrun_plan "rotate KOPIA_SERVER_USERNAME in modules/kopia/.env to a random 'kopia-<hex>' name (printed once on a real run), then recreate the kopia container"
-      fi
+      [ -s "$DATA_DIR/kopia/ssh/known_hosts" ] || dryrun_plan "pin the host key of $KOPIA_SFTP_HOST:$PORT into $KNOWN (ssh-keyscan)"
+      connected || dryrun_plan "create an sftp repository at $KOPIA_SFTP_USER@$KOPIA_SFTP_HOST:$KOPIA_SFTP_PATH and connect $CONF to it"
+      dryrun_plan "set the global retention policy (${KOPIA_KEEP_LATEST:-10} latest, ${KOPIA_KEEP_DAILY:-14} daily, ${KOPIA_KEEP_WEEKLY:-8} weekly, ${KOPIA_KEEP_MONTHLY:-12} monthly)"
       dryrun_end
     fi
-    user=${2:-kopia-$(openssl rand -hex 4)}
-    sed -i "s/^KOPIA_SERVER_USERNAME=.*/KOPIA_SERVER_USERNAME=$user/" "$ENV" \
-      || die "cannot write modules/kopia/.env"
-    _recreate
-    printf 'kopia UI username: %s\n' "$user"
-    ;;
-  password)
-    if [ "${DRY:-0}" = 1 ]; then
-      dryrun_plan "rotate KOPIA_SERVER_PASSWORD in modules/kopia/.env (random, or the value given — printed once on a real run), then recreate the kopia container"
-      dryrun_end
+    if [ ! -s "$DATA_DIR/kopia/ssh/known_hosts" ]; then
+      command -v ssh-keyscan >/dev/null 2>&1 \
+        || die "ssh-keyscan is missing — install openssh-client, or write the host key into $KNOWN"
+      ssh-keyscan -p "$PORT" "$KOPIA_SFTP_HOST" >"$DATA_DIR/kopia/ssh/known_hosts" 2>/dev/null
+      [ -s "$DATA_DIR/kopia/ssh/known_hosts" ] \
+        || die "cannot reach $KOPIA_SFTP_HOST:$PORT — is that machine awake and on the tailnet?"
+      echo "kopia-admin: pinned the host key of $KOPIA_SFTP_HOST:$PORT"
     fi
-    pass=${2:-$(openssl rand -hex 24)}
-    # The password is a compose env value (KOPIA_SERVER_PASSWORD), so changing it
-    # means updating modules/kopia/.env and recreating the container.
-    sed -i "s/^KOPIA_SERVER_PASSWORD=.*/KOPIA_SERVER_PASSWORD=$pass/" "$ENV"
-    _recreate
-    printf 'kopia UI password: %s\n' "$pass"
+    # The recorded identity must match this container, or maintenance (and
+    # retention) silently stops being this host's job. --override-hostname pins it
+    # to the container's configured hostname instead of a throwaway container id.
+    mapfile -t SFTP < <(sftp_flags)
+    if connected && [ -n "${HOST_ID:-}" ] && [ "$(repo_identity)" = "$HOST_ID" ]; then
+      echo "kopia-admin: already connected as $(repo_identity) — leaving it alone"
+    elif connected; then
+      kopia repository connect sftp "${SFTP[@]}" --override-hostname="$HOST_ID" \
+        || die "repository reconnect failed"
+      echo "kopia-admin: reconnected as $HOST_ID (was $(repo_identity))"
+    else
+      kopia repository create sftp "${SFTP[@]}" --override-hostname="$HOST_ID" \
+        || die "repository create failed — is the disk mounted at $KOPIA_SFTP_PATH and this key authorized there?"
+      echo "kopia-admin: repository created at $KOPIA_SFTP_USER@$KOPIA_SFTP_HOST:$KOPIA_SFTP_PATH"
+    fi
+    # Without quick maintenance nothing reclaims the data behind an expired or
+    # deleted snapshot — the repository would grow forever.
+    kopia maintenance set --owner="root@${HOST_ID:-kopia}" --enable-quick=true >/dev/null 2>&1 \
+      || echo "kopia-admin: warning — could not claim maintenance ownership" >&2
+    kopia policy set --global \
+      --keep-latest="${KOPIA_KEEP_LATEST:-10}" \
+      --keep-daily="${KOPIA_KEEP_DAILY:-14}" \
+      --keep-weekly="${KOPIA_KEEP_WEEKLY:-8}" \
+      --keep-monthly="${KOPIA_KEEP_MONTHLY:-12}" \
+      || die "retention policy could not be set"
+    # The source tree holds kopia's own state too; ignoring it keeps a snapshot
+    # from crawling into the backup's own config, key and cache.
+    if [ -n "$KOPIA_SELF" ]; then
+      kopia policy set "$SRC" --add-ignore="$KOPIA_SELF" \
+        || die "source ignore policy could not be set"
+    fi
     ;;
+
   snapshot)
     if [ "${DRY:-0}" = 1 ]; then
-      dryrun_plan "snapshot ${2:-/source} into the kopia repository through the kopia container"
+      dryrun_plan "snapshot ${2:-$SRC} into the off-box repository through the kopia container"
       dryrun_end
     fi
-    kopia --config-file="$CONF" snapshot create "${2:-/source}" || die "snapshot failed"
+    # Same lock the timer takes: a manual run waits for a running window instead
+    # of starting a second, overlapping snapshot of the same source.
+    kopia_lock -w 3600 || die "another snapshot is still running — see 'make kopia-status'"
+    kopia snapshot create "${2:-$SRC}" || die "snapshot failed"
     ;;
+
+  policy)
+    kopia policy show "${2:-$SRC}" || die "policy could not be read"
+    ;;
+
+  ignore-add|ignore-rm)
+    [ -n "${2:-}" ] || die "usage: kopia-admin.sh $1 <pattern> [<source>]"
+    flag=--add-ignore
+    [ "$1" = ignore-rm ] && flag=--remove-ignore
+    kopia policy set "${3:-$SRC}" "$flag=$2" || die "policy update failed"
+    ;;
+
+  restore)
+    [ -n "${2:-}" ] || die "usage: kopia-admin.sh restore <snapshot-id> [<dir>]"
+    TGT="${3:-$KOPIA_DATA/restore}"
+    if [ "${DRY:-0}" = 1 ]; then
+      dryrun_plan "restore snapshot $2 into $TGT inside $KOPIA_CTN"
+      dryrun_end
+    fi
+    # A restore into a populated directory would silently overwrite files that
+    # are not part of the snapshot; refuse instead of guessing.
+    if docker exec "$KOPIA_CTN" sh -c "test -d '$TGT' && [ -n \"\$(ls -A '$TGT')\" ]" 2>/dev/null; then
+      die "$TGT is not empty — restore into an empty directory"
+    fi
+    kopia_lock -w 3600 || die "another snapshot or restore is still running"
+    docker exec "$KOPIA_CTN" mkdir -p "$TGT"
+    kopia snapshot restore "$2" "$TGT" || die "restore failed"
+    echo "kopia-admin: restored snapshot $2 into $KOPIA_CTN:$TGT"
+    ;;
+
+  stats)
+    # Bytes come from the disk itself: kopia's whole-repo enumeration
+    # (`blob stats`, a full `blob list`) stalls on this SFTP transport and never
+    # returns, so it is not used here.
+    if [ -n "${KOPIA_SFTP_PATH:-}" ] && kopia_ssh "du -sh '$KOPIA_SFTP_PATH'" >/dev/null 2>&1; then
+      echo "  repository directory:"
+      kopia_ssh "du -sh '$KOPIA_SFTP_PATH'"
+      kopia_ssh "df -h '$KOPIA_SFTP_PATH' | tail -1"
+    else
+      echo "  repository directory: unreachable (backup host asleep or off the tailnet)"
+    fi
+    echo
+    kopia content stats
+    ;;
+
+  maint-info)
+    kopia maintenance info
+    ;;
+
+  maint)
+    FULL=""
+    [ "${2:-}" = full ] && FULL="--full"
+    # The first maintenance run needs an owner; it is the account in the repo.
+    kopia maintenance run $FULL 2>&1 | tail -5 \
+      || die "maintenance failed — set the owner first: make kopia ARGS=\"maintenance set --owner=me\""
+    ;;
+
+  expire)
+    [ -n "${2:-}" ] || die "usage: kopia-admin.sh expire <snapshot-id>"
+    kopia snapshot expire "$2"
+    ;;
+
+  delete)
+    [ -n "${2:-}" ] || die "usage: kopia-admin.sh delete <snapshot-id>"
+    kopia snapshot delete --delete "$2" || die "delete failed"
+    ;;
+
+  cli)
+    shift
+    [ "$#" -gt 0 ] || die "usage: kopia-admin.sh cli <kopia subcommand...>"
+    kopia "$@"
+    ;;
+
   snapshots)
-    kopia --config-file="$CONF" snapshot list --all
+    kopia snapshot list --all
     ;;
+
+  verify)
+    if [ "${DRY:-0}" = 1 ]; then
+      dryrun_plan "re-read ${2:-5}% of the stored packs from the repository and verify their hashes"
+      dryrun_end
+    fi
+    kopia snapshot verify --verify-files-percent="${2:-5}"
+    ;;
+
   logs)
     docker logs kopia --tail "${2:-50}" -f
     ;;
+
   *)
-    die "usage: kopia-admin.sh status|username|password|snapshot|snapshots|logs"
+    die "usage: kopia-admin.sh status|init|snapshot|snapshots|verify|logs"
     ;;
 esac

@@ -331,19 +331,22 @@ check_ctns chat matrix-synapse matrix-element matrix-db matrix-mas matrix-mas-db
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Module: kopia — backup server. kopia.$DOMAIN is TAILNET-ONLY: both halves are
-# asserted (a public source gets 403, a tailnet source gets the UI), so a
-# half-applied change fails here instead of passing on one side.
+# Module: kopia — a client, not a service. There is no route to probe: the
+# observable facts are the container, the timer that drives it, and the ABSENCE
+# of a published port (a port here would mean server mode came back).
 # ─────────────────────────────────────────────────────────────────────────────
-hdr kopia "Backup — Kopia (module: kopia) · kopia.$DOMAIN (tailnet-only)"
-if [ -z "$TS_IP" ]; then
-  say "FAIL kopia: no Tailscale IPv4 — cannot probe the tailnet-only door"; bad
-else
-  check_tn kopia "kopia.$DOMAIN" "/" "200 301 302 307 308 401" html "Kopia UI answers on the tailnet"
-fi
-check kopia-public "kopia.$DOMAIN" "/" "403" "" "public sources are refused"
-check_tls "kopia.$DOMAIN"
+hdr kopia "Backup — Kopia (module: kopia) · CLI snapshot to the off-box repository"
 check_ctns kopia kopia
+if systemctl is-enabled kopia-snapshot.timer >/dev/null 2>&1; then
+  say "ok   timer: kopia-snapshot.timer enabled"
+else
+  say "FAIL timer: kopia-snapshot.timer is not enabled — nothing takes snapshots"; bad
+fi
+if docker port kopia 2>/dev/null | grep -q .; then
+  say "FAIL listener: the kopia container publishes a port — server mode is gone, so this is drift"; bad
+else
+  say "ok   listener: none (no HTTP server, no UI, no API)"
+fi
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
