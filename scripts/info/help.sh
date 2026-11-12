@@ -249,7 +249,8 @@ make kopia-init|connect the off-box SFTP repository and set retention — needs 
 make kopia-verify|re-read a sample of the stored packs and check their hashes — PERCENT=<n>, default 5
 make kopia-stats|repository size: blob count and the content-size histogram
 make kopia-maint-info|maintenance owner, schedule and next run
-make kopia-maint|run maintenance now — FULL=1 re-packs and drops unreferenced blobs
+make kopia-maint-owner|let kopia run quick passes by itself (CONFIRM=yes)
+make kopia-maint|run maintenance now (CONFIRM=yes) — FULL=1 re-packs and drops unreferenced blobs (heavy: a spinning USB disk cannot absorb it)
 make kopia-expire|let retention drop one snapshot — SNAPSHOT=<id>, CONFIRM=yes
 make kopia-delete|delete one snapshot immediately — SNAPSHOT=<id>, CONFIRM=yes
 make kopia|any other kopia subcommand — ARGS="repository status"

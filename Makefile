@@ -214,7 +214,7 @@ systemd-action:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: fetch fetch-more render smoke gh-web-health install-hooks update apt-upgrade install-config help matrix-gen matrix-update matrix-add-admin matrix-users matrix-add matrix-passwd matrix-flag-admin matrix-del matrix-status matrix-logs matrix-reset kopia-gen kopia-status kopia-init kopia-snapshot kopia-snapshots kopia-restore kopia-policy kopia-stats kopia-maint-info kopia-maint kopia-expire kopia-delete kopia kopia-ignore-add kopia-ignore-rm kopia-verify kopia-logs
+.PHONY: fetch fetch-more render smoke gh-web-health install-hooks update apt-upgrade install-config help matrix-gen matrix-update matrix-add-admin matrix-users matrix-add matrix-passwd matrix-flag-admin matrix-del matrix-status matrix-logs matrix-reset kopia-gen kopia-status kopia-init kopia-snapshot kopia-snapshots kopia-restore kopia-policy kopia-stats kopia-maint-info kopia-maint kopia-maint-owner kopia-expire kopia-delete kopia kopia-ignore-add kopia-ignore-rm kopia-verify kopia-logs
 .PHONY: kuma-import kuma-list-users kuma-add-user kuma-passwd kuma-del-user
 .PHONY: vaultwarden-list-users vaultwarden-add-user vaultwarden-del-user
 .PHONY: writefreely-users writefreely-add-user writefreely-passwd writefreely-del-user
@@ -787,7 +787,12 @@ kopia-stats:
 kopia-maint-info:
 >@bash $(KOPIA_ADMIN) maint-info
 
+kopia-maint-owner:
+>$(call guard_confirm,kopia-maint-owner)
+>@bash $(KOPIA_ADMIN) maint-owner
+
 kopia-maint:
+>$(call guard_confirm,kopia-maint)
 >@bash $(KOPIA_ADMIN) maint $(if $(FULL),full,)
 
 # Destructive: one snapshot goes. expire lets retention decide the timing,

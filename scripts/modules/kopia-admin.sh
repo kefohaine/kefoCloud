@@ -11,7 +11,12 @@
 #   kopia-admin.sh snapshots              list snapshots
 #   kopia-admin.sh stats                  repository size on disk + content histogram
 #   kopia-admin.sh maint-info             maintenance schedule/owner/next run
-#   kopia-admin.sh maint [full]           run maintenance now (full = re-pack+GC)
+#   kopia-admin.sh maint-owner            claim maintenance for this host, so
+#                                         kopia runs quick passes by itself
+#                                         (needs CONFIRM=yes: it is background
+#                                         work on the disk)
+#   kopia-admin.sh maint [full]           run maintenance now (needs CONFIRM=yes;
+#                                         full = re-pack + drop unreferenced)
 #   kopia-admin.sh expire <id>            let retention drop one snapshot
 #   kopia-admin.sh delete <id>            delete one snapshot immediately
 #   kopia-admin.sh cli <args...>          any other kopia subcommand, unwrapped
@@ -47,10 +52,23 @@ HOST_ID="$(kopia_host)"
 dryrun_wanted "$@" && DRY=1
 dryrun_args "$@"; set -- "${DRYRUN_ARGS[@]}"
 die() { printf 'kopia-admin: %s\n' "$*" >&2; exit 1; }
-kopia() { docker exec -e KOPIA_PASSWORD="$KOPIA_PASSWORD" "$KOPIA_CTN" kopia --config-file="$CONF" "$@"; }
-connected() { kopia repository status >/dev/null 2>&1; }
+# Every kopia call is time-bounded inside the container, so a wedged SFTP session
+# dies on its own instead of holding the disk busy: reads get KOPIA_TIMEOUT (60 s),
+# mutations KOPIA_LONG_TIMEOUT (300 s), and a snapshot opts out with
+# KOPIA_BUDGET=0 because it legitimately uploads for a long time.
+kopia() {
+  local budget="${KOPIA_BUDGET:-${KOPIA_LONG_TIMEOUT:-300}}"
+  if [ "$budget" = 0 ]; then
+    docker exec -e KOPIA_PASSWORD="$KOPIA_PASSWORD" "$KOPIA_CTN" \
+      kopia --config-file="$CONF" "$@"
+  else
+    docker exec -e KOPIA_PASSWORD="$KOPIA_PASSWORD" "$KOPIA_CTN" \
+      timeout "$budget" kopia --config-file="$CONF" "$@"
+  fi
+}
+connected() { KOPIA_BUDGET="${KOPIA_TIMEOUT:-60}" kopia repository status >/dev/null 2>&1; }
 # The identity kopia recorded for this config — user@hostname.
-repo_identity() { kopia repository status 2>/dev/null | sed -n 's/^Hostname: *//p;'; }
+repo_identity() { KOPIA_BUDGET="${KOPIA_TIMEOUT:-60}" kopia repository status 2>/dev/null | sed -n 's/^Hostname: *//p;'; }
 sftp_flags() {
   printf '%s\n' --path="$KOPIA_SFTP_PATH" --host="$KOPIA_SFTP_HOST" --port="$PORT" \
     --username="$KOPIA_SFTP_USER" --keyfile="$KEY" --known-hosts="$KNOWN"
@@ -101,10 +119,10 @@ case "${1:-status}" in
         || die "repository create failed — is the disk mounted at $KOPIA_SFTP_PATH and this key authorized there?"
       echo "kopia-admin: repository created at $KOPIA_SFTP_USER@$KOPIA_SFTP_HOST:$KOPIA_SFTP_PATH"
     fi
-    # Without quick maintenance nothing reclaims the data behind an expired or
-    # deleted snapshot — the repository would grow forever.
-    kopia maintenance set --owner="root@${HOST_ID:-kopia}" --enable-quick=true >/dev/null 2>&1 \
-      || echo "kopia-admin: warning — could not claim maintenance ownership" >&2
+    # Maintenance is left unclaimed here on purpose. Claiming it makes kopia run
+    # a quick maintenance pass by itself after every snapshot, which is background
+    # work on the backup disk nobody asked for. `make kopia-maint-owner` claims it
+    # explicitly; until then the repository only grows by what snapshots add.
     kopia policy set --global \
       --keep-latest="${KOPIA_KEEP_LATEST:-10}" \
       --keep-daily="${KOPIA_KEEP_DAILY:-14}" \
@@ -127,7 +145,8 @@ case "${1:-status}" in
     # Same lock the timer takes: a manual run waits for a running window instead
     # of starting a second, overlapping snapshot of the same source.
     kopia_lock -w 3600 || die "another snapshot is still running — see 'make kopia-status'"
-    kopia snapshot create "${2:-$SRC}" || die "snapshot failed"
+    KOPIA_BUDGET="${KOPIA_SNAPSHOT_TIMEOUT:-0}" kopia snapshot create "${2:-$SRC}" \
+      || die "snapshot failed"
     ;;
 
   policy)
@@ -168,7 +187,8 @@ case "${1:-status}" in
       kopia_ssh "du -sh '$KOPIA_SFTP_PATH'"
       kopia_ssh "df -h '$KOPIA_SFTP_PATH' | tail -1"
     else
-      echo "  repository directory: unreachable (backup host asleep or off the tailnet)"
+      echo "  repository directory: unreachable (host asleep, disk unplugged, or off the tailnet)"
+      exit 0
     fi
     echo
     kopia content stats
@@ -178,12 +198,23 @@ case "${1:-status}" in
     kopia maintenance info
     ;;
 
+  maint-owner)
+    [ "${CONFIRM:-no}" = yes ] \
+      || die "claiming maintenance makes kopia run unattended passes on the backup disk — re-run with CONFIRM=yes"
+    kopia maintenance set --owner="root@$(kopia_host)" --enable-quick=true >/dev/null 2>&1 \
+      || die "could not claim maintenance ownership"
+    echo "kopia-admin: maintenance owner is now root@$(kopia_host) (quick passes enabled)"
+    ;;
+
   maint)
+    [ "${CONFIRM:-no}" = yes ] \
+      || die "maintenance rewrites and deletes blobs on the backup disk — re-run with CONFIRM=yes"
     FULL=""
     [ "${2:-}" = full ] && FULL="--full"
-    # The first maintenance run needs an owner; it is the account in the repo.
-    kopia maintenance run $FULL 2>&1 | tail -5 \
-      || die "maintenance failed — set the owner first: make kopia ARGS=\"maintenance set --owner=me\""
+    # A full pass is the heaviest thing this module can do; it is bounded only by
+    # its own progress output and must be watched, never scheduled.
+    KOPIA_BUDGET=0 kopia maintenance run $FULL 2>&1 | tail -5 \
+      || die "maintenance failed — is an owner set ('make kopia-maint-owner CONFIRM=yes')?"
     ;;
 
   expire)
@@ -211,7 +242,7 @@ case "${1:-status}" in
       dryrun_plan "re-read ${2:-5}% of the stored packs from the repository and verify their hashes"
       dryrun_end
     fi
-    kopia snapshot verify --verify-files-percent="${2:-5}"
+    KOPIA_BUDGET=0 kopia snapshot verify --verify-files-percent="${2:-5}"
     ;;
 
   logs)

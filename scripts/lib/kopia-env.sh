@@ -61,6 +61,16 @@ kopia_lock() {
   flock "$@" 9
 }
 
+# Remote work is bounded on purpose. Nothing here may run unattended for hours:
+# every provider-bound command gets a wall-clock budget and a short network
+# timeout, so a sleeping laptop, an unplugged disk or a wedged SFTP session fails
+# in seconds instead of hammering a disk for the rest of the night.
+#   KOPIA_TIMEOUT       wall-clock seconds for a read/short kopia command (60)
+#   KOPIA_LONG_TIMEOUT  wall-clock seconds for a mutating one (300)
+#   KOPIA_SSH_TIMEOUT   wall-clock seconds for one remote shell command (20)
+# A snapshot is the one operation allowed to outlive them (KOPIA_SNAPSHOT_TIMEOUT,
+# default 0 = no cap): it uploads the whole source and is guarded by the lock.
+
 # kopia_ssh <remote-command> — run one command on the backup host over the same
 # key/known_hosts/port the SFTP transport uses (needs KOPIA_SFTP_*). Used for what
 # the repository cannot answer about itself, like the size of its directory.
@@ -74,9 +84,11 @@ kopia_ssh() {
   key="$(kopia_hostpath "${KOPIA_KEY:-}")"
   known="$(kopia_hostpath "${KOPIA_KNOWN:-}")"
   [ -r "$key" ] || return 1
-  ssh -i "$key" -p "$port" \
-      -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes \
-      -o UserKnownHostsFile="$known" \
+  timeout "${KOPIA_SSH_TIMEOUT:-20}" \
+    ssh -i "$key" -p "$port" \
+      -o BatchMode=yes -o ConnectTimeout=5 \
+      -o ServerAliveInterval=5 -o ServerAliveCountMax=2 \
+      -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$known" \
       "$user@$host" "$1" 2>/dev/null
 }
 
