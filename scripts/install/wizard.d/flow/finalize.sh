@@ -138,7 +138,6 @@ success_block() {
   if mod_on mail; then
     n=$((n+1)); printf '   %d. Mailboxes: make mail-gen MAIL=name@%s (or bare make mail-gen for a disposable)\n' "$n" "$DOMAIN"
     local senders=""
-    mod_on chat && senders+=" matrix@$DOMAIN"
     mod_on vault && senders+=" vaultwarden@$DOMAIN"
     [ -n "$senders" ] && printf '      %sthe app SMTP sender mailboxes are created automatically:%s%s\n' "$C_GREY" "$senders" "$C_RST"
   fi
