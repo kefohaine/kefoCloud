@@ -1,0 +1,14 @@
+[Unit]
+Description=kopia: periodic snapshot into the off-box repository
+
+[Timer]
+# Two daily windows, not one: the repository sits on a laptop's external disk,
+# so a single fixed hour can land while that machine is asleep. A missed window
+# is visible as a failed unit rather than silently skipped.
+OnCalendar=*-*-* 09,21:30:00
+RandomizedDelaySec=10m
+Persistent=true
+AccuracySec=1m
+
+[Install]
+WantedBy=timers.target

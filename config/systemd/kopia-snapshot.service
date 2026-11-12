@@ -1,0 +1,14 @@
+[Unit]
+Description=kopia: snapshot the server's data into the off-box repository
+Documentation=file:{{REPO_DIR}}/docs/MANUAL.md
+After=docker.service network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart={{REPO_DIR}}/scripts/ops/kopia-snapshot.sh
+# The repository is on another machine's disk: a first run has to upload the
+# whole tree over the tailnet, and a restore-sized pack set is slow to read.
+TimeoutStartSec=12h
+Nice=10
+IOSchedulingClass=idle
