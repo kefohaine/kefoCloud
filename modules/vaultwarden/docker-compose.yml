@@ -29,8 +29,8 @@ services:
 
     extra_hosts:
       # Map the cert FQDN to the mail container's bridge IP so SMTP TLS
-      # SNI + cert verification target mail.${DOMAIN} (same pattern as the
-      # nextcloud container — the LE cert CN must match the host).
+      # SNI + cert verification target mail.${DOMAIN} — the LE cert CN must
+      # match the host.
       - "mail.${DOMAIN}:172.22.0.9"
 
     volumes:
