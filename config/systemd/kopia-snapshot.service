@@ -1,6 +1,6 @@
 [Unit]
 Description=kopia: snapshot the server's data into the off-box repository
-Documentation=file:{{REPO_DIR}}/docs/MANUAL.md
+Documentation=file:{{REPO_DIR}}/scripts/ops/kopia-snapshot.sh
 After=docker.service network-online.target tailscaled.service
 Wants=network-online.target
 
