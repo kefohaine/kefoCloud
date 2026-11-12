@@ -79,8 +79,8 @@ success_block() {
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
   mod_on photos && printf '  %sImmich%s       https://photos.%s    %s(first account created in the UI becomes the admin)%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
-  mod_on kopia && printf '  %sKopia%s        https://kopia.%s     %s%s / modules/kopia/.env%s\n' \
-    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${KOPIA_SERVER_USERNAME:-kopia}" "$C_RST"
+  mod_on kopia && printf '  %sKopia%s        snapshots → %s   %s(authorize %s/data/kopia/ssh/id_ed25519.pub there, then: make kopia-init)%s\n' \
+    "$C_PURPLE" "$C_RST" "${KOPIA_SFTP_USER:-kopia}@${KOPIA_SFTP_HOST:-<backup machine>}:${KOPIA_SFTP_PATH:-<path>}" "$C_GREY" "$DATA" "$C_RST"
   mod_on vault && printf '  %sVaultwarden%s  https://vault.%s    %s%s / %s%s\n' \
     "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${VAULTWARDEN_ADMIN_USER:-admin@$DOMAIN}" "${VAULTWARDEN_ADMIN_PASSWORD:-<see modules/vaultwarden/.env>}" "$C_RST"
   mod_on monitor && printf '  %sUptime Kuma%s  https://kuma.%s    %sadmin / %s%s\n' \

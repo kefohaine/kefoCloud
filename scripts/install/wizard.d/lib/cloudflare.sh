@@ -195,9 +195,6 @@ cf_mail_dns() {
   # vault): dnsmasq answers it for tailnet clients, the vhost 403s everything
   # else, and the public zone must hold NO record (DNS-01 only needs the TXT).
   cf_a_del admin.matrix
-  # kopia.$DOMAIN is the backup server and is TAILNET-ONLY: dnsmasq answers it
-  # for tailnet clients and the vhost 403s every other source.
-  cf_a_del kopia
   # photos.$DOMAIN is Immich, DNS-ONLY (grey cloud): uploads and video streams
   # must not pass through the CF proxy.
   mod_on photos && cf_record photos false || cf_a_del photos

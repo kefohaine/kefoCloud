@@ -23,8 +23,8 @@ prep_dirs() {
                $ROOT/data/matrix/mas/keys \
                $ROOT/data/matrix/pgdata \
                $ROOT/data/matrix/mas-pgdata \
-               $ROOT/data/kopia/repository \
                $ROOT/data/kopia/config \
+               $ROOT/data/kopia/ssh \
                $ROOT/data/ocis/data \
                $ROOT/data/ocis/config \
                $ROOT/data/photos/library \
@@ -84,7 +84,7 @@ prep_dirs() {
   need_chown "$ROOT/data/mailserver/data" 100 && chown_tree "$ROOT/data/mailserver/data" 100:1000
   need_chown "$ROOT/data/mailserver/redis" 999 && chown_tree "$ROOT/data/mailserver/redis" 999:1000
   need_chown $ROOT/data/mailserver/roundcube 33 && chown_tree $ROOT/data/mailserver/roundcube 33:33
-  # root-owned: the kopia repository/config, the public drop folder and the
+  # root-owned: the kopia client config/ssh key, the public drop folder and the
   # instance web roots (read-only from the edge container).
   # Each PostgreSQL data dir stays root-owned — the postgres entrypoint chowns
   # it to its own uid on first boot.
@@ -130,9 +130,10 @@ write_instance_conf() {
   # are rendered from it (make render) and scripts read it (scripts/lib/instance.sh).
   # Values we do not own here (SERVER_IP, EMAIL, TIMEZONE) are PRESERVED from an
   # existing file — re-running the installer must never wipe them.
-  local f="$DATA/instance.conf" keep=""
+  local f="$DATA/instance.conf" keep="" have_kopia=""
   mkdir -p "$DATA"
-  [ -f "$f" ] && keep=$(grep -E '^(SERVER_IP|EMAIL|TIMEZONE)=' "$f" || true)
+  [ -f "$f" ] && keep=$(grep -E '^(SERVER_IP|EMAIL|TIMEZONE|KOPIA_SFTP_[A-Z]+)=' "$f" || true)
+  grep -q '^KOPIA_SFTP_HOST=' <<<"$keep" && have_kopia=1
   {
     echo "# data/instance.conf — the values for THIS host (untracked, mode 0600)."
     echo "# Written by the installer. Edit by hand and run 'make render' to apply."
@@ -147,6 +148,15 @@ write_instance_conf() {
     printf 'REPO_DIR=%s\n' "$REPO"
     printf 'DATA_DIR=%s\n' "$DATA"
     printf 'LOG_DIR=%s\n' "$LOG_DIR"
+    # The backup target is only meaningful with the module on, and a re-run must
+    # never overwrite it with newer-but-empty prompt answers: an existing value
+    # in `keep` wins.
+    if [ -z "$have_kopia" ] && mod_on kopia && [ -n "${KOPIA_SFTP_HOST:-}" ]; then
+      printf 'KOPIA_SFTP_HOST=%s\n' "$KOPIA_SFTP_HOST"
+      printf 'KOPIA_SFTP_PORT=%s\n' "${KOPIA_SFTP_PORT:-22}"
+      printf 'KOPIA_SFTP_USER=%s\n' "$KOPIA_SFTP_USER"
+      printf 'KOPIA_SFTP_PATH=%s\n' "$KOPIA_SFTP_PATH"
+    fi
     [ -n "$keep" ] && printf '%s\n' "$keep"
   } > "$f"
   chmod 600 "$f"
