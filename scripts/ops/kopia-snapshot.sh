@@ -40,7 +40,7 @@ kopia_lock -n \
 k() { docker exec -e KOPIA_PASSWORD="$KOPIA_PASSWORD" "$KOPIA_CTN" kopia --config-file="$KOPIA_CONFIG" "$@"; }
 
 k repository status >/dev/null 2>&1 \
-  || { echo "kopia-snapshot: repository unreachable (off-box disk asleep, unmounted, or key refused) — run 'make kopia-status'" >&2; exit 1; }
+  || { echo "kopia-snapshot: repository unreachable (storage host asleep, volume unmounted, or key refused) — run 'make kopia-status'" >&2; exit 1; }
 
 # What is excluded is a POLICY on the source (set by `make kopia-init`), not a
 # flag here: `kopia snapshot create` has no --exclude.

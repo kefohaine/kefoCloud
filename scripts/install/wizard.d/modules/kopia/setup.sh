@@ -27,7 +27,7 @@ kopia_setup() {
   detail "  container runs (client only: no server, no listener)"
 
   if systemctl is-enabled --quiet kopia-snapshot.timer 2>/dev/null; then
-    detail "  kopia-snapshot.timer is enabled (two daily windows)"
+    detail "  kopia-snapshot.timer is enabled (one window a day, at midnight)"
   else
     warn kopia_timer "kopia-snapshot.timer is not enabled — nothing takes snapshots"
   fi

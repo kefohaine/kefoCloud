@@ -335,7 +335,7 @@ end_sec
 # observable facts are the container, the timer that drives it, and the ABSENCE
 # of a published port (a port here would mean server mode came back).
 # ─────────────────────────────────────────────────────────────────────────────
-hdr kopia "Backup — Kopia (module: kopia) · CLI snapshot to the off-box repository"
+hdr kopia "Backup — Kopia (module: kopia) · CLI snapshot to external backup storage"
 check_ctns kopia kopia
 if systemctl is-enabled kopia-snapshot.timer >/dev/null 2>&1; then
   say "ok   timer: kopia-snapshot.timer enabled"

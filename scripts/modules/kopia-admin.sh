@@ -3,7 +3,7 @@
 # module, through the kopia CLI inside its own container.
 #
 #   kopia-admin.sh status                 container, repository, snapshots
-#   kopia-admin.sh init                   connect the off-box repository and set
+#   kopia-admin.sh init                   connect the repository on external backup storage and set
 #                                         its retention policy (idempotent)
 #   kopia-admin.sh snapshot [<source>]    snapshot a source (default: the read-only mount)
 #   kopia-admin.sh restore <id> [<dir>]   restore one snapshot into an empty
@@ -28,7 +28,7 @@
 #   kopia-admin.sh logs [<lines>]         tail the container
 #
 # There is no server in this module: no UI account, no API, no listener. The
-# repository lives on the off-box disk and is reached over SFTP on the tailnet;
+# repository lives on external backup storage and is reached over SFTP on the tailnet;
 # its location and identity come from KOPIA_SFTP_* in data/instance.conf.
 #
 # Any of these accepts --dry-run (or DRYRUN=1) to print the plan instead of
@@ -139,7 +139,7 @@ case "${1:-status}" in
 
   snapshot)
     if [ "${DRY:-0}" = 1 ]; then
-      dryrun_plan "snapshot ${2:-$SRC} into the off-box repository through the kopia container"
+      dryrun_plan "snapshot ${2:-$SRC} into the repository on external backup storage through the kopia container"
       dryrun_end
     fi
     # Same lock the timer takes: a manual run waits for a running window instead

@@ -63,7 +63,7 @@ kopia_lock() {
 
 # Remote work is bounded on purpose. Nothing here may run unattended for hours:
 # every provider-bound command gets a wall-clock budget and a short network
-# timeout, so a sleeping laptop, an unplugged disk or a wedged SFTP session fails
+# timeout, so an unreachable storage host, an unplugged volume or a wedged SFTP session fails
 # in seconds instead of hammering a disk for the rest of the night.
 #   KOPIA_TIMEOUT       wall-clock seconds for a read/short kopia command (60)
 #   KOPIA_LONG_TIMEOUT  wall-clock seconds for a mutating one (300)
