@@ -64,7 +64,7 @@ save_state() {
     printf 'CF_API_TOKEN=%q\n'       "${CF_API_TOKEN:-}"
     printf 'TS_AUTHKEY=%q\n'         "${TS_AUTHKEY:-}"
     printf 'TS_IP=%q\n'              "${TS_IP:-}"
-    # kopia's off-box repository target (module kopia only): tailnet name,
+    # kopia's external backup storage target (module kopia only): tailnet name,
     # login and path on the disk another machine mounts. Reused on resume.
     printf 'KOPIA_SFTP_HOST=%q\n'    "${KOPIA_SFTP_HOST:-}"
     printf 'KOPIA_SFTP_PORT=%q\n'    "${KOPIA_SFTP_PORT:-22}"

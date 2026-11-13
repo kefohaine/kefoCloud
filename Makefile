@@ -756,7 +756,7 @@ matrix-reset:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Kopia backups — module `kopia` (modules/kopia/). A client only: no server, no
-# UI, no listener. Snapshots go over SFTP to a repository on the off-box disk
+# UI, no listener. Snapshots go over SFTP to a repository on the external backup storage
 # and are taken by kopia-snapshot.timer; these recipes drive the same CLI by hand.
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -783,7 +783,7 @@ kopia-stats:
 >@bash $(KOPIA_ADMIN) stats
 
 # Maintenance: decides nothing, only reclaims. INFO is read-only; maint runs the
-# incremental pass, FULL=1 re-packs and drops unreferenced blobs (slow on USB).
+# incremental pass, FULL=1 re-packs and drops unreferenced blobs (slow on consumer-grade external storage).
 kopia-maint-info:
 >@bash $(KOPIA_ADMIN) maint-info
 
@@ -835,7 +835,7 @@ kopia-ignore-rm:
 >@bash $(KOPIA_ADMIN) ignore-rm "$(IGNORE)" "$(SOURCE)"
 
 # Re-reads a sample of the stored packs and checks their hashes — the check
-# that proves the off-box copy is restorable. PERCENT defaults to 5.
+# that proves the copy on external backup storage is restorable. PERCENT defaults to 5.
 kopia-verify:
 >@bash $(KOPIA_ADMIN) verify "$(PERCENT)"
 
@@ -934,7 +934,7 @@ sudo systemctl enable kefo-stack.service
 sudo systemctl enable --now fail2ban-tailnet-sync.timer
 @scripts/lib/mklog info "tailnet whitelist timer installed + enabled (bans that hit a tailnet endpoint are lifted within one interval)"
 sudo systemctl enable --now kopia-snapshot.timer
-@scripts/lib/mklog info "kopia snapshot timer installed + enabled (two daily windows; it no-ops when the module is absent)"
+@scripts/lib/mklog info "kopia snapshot timer installed + enabled (once a day at midnight; it no-ops when the module is absent)"
 sudo systemctl enable --now tmux-main.service
 @scripts/lib/mklog info "tmux 'main' session ensured + enabled (make tmux-open TAG=main to attach)"
 sudo systemctl restart sshd dnsmasq
@@ -1029,9 +1029,9 @@ install-cron:
 .PHONY: backup
 
 # One snapshot of every module's data, through Kopia — a client, no server.
-# The repository lives on the off-box disk named by KOPIA_SFTP_* and holds every
+# The repository lives on the external backup storage named by KOPIA_SFTP_* and holds every
 # data dir plus the rendered config; kopia-snapshot.timer runs the same command
-# twice a day, and retention, verification and restore are `make kopia-*`.
+# once a day at midnight, and retention, verification and restore are `make kopia-*`.
 backup:
 >@bash $(REPO)/scripts/modules/kopia-admin.sh snapshot "$(SOURCE)"
 

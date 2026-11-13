@@ -39,7 +39,7 @@ prompt: |
   - what is and is not covered: matrix (PostgreSQL + media), vaultwarden data,
     kuma db, mailserver Maildirs/config, ocis, pages, rendered config, secrets
   - that the repository is the OFF-BOX one (KOPIA_SFTP_* in data/instance.conf):
-    the timer's last result, whether the disk was mounted, and whether the
+    the timer's last result, whether the volume was mounted, and whether the
     snapshot covers what it claims (restore drill: `make kopia-verify`)
 
   Return:

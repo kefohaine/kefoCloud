@@ -280,12 +280,12 @@ ask_inputs() {
   save_state
 
   # 8 — kopia's repository target, only when that module was chosen. The
-  # repository lives on the disk ANOTHER machine mounts, so its tailnet name,
+  # repository lives on external backup storage another machine provides, so its tailnet name,
   # login and path are install-time inputs: nothing on this host can discover
   # them, and a later run must not guess.
   if mod_on kopia; then
     if [ -z "${KOPIA_SFTP_HOST:-}" ]; then
-      printf '%s[INFO]%s Backup disk machine, tailnet name (e.g. laptop.tailnet.ts.net): ' "$C_GREY" "$C_RST"
+      printf '%s[INFO]%s Backup storage host, tailnet name (e.g. host.tailnet.ts.net): ' "$C_GREY" "$C_RST"
       read -r KOPIA_SFTP_HOST
     fi
     [ -n "$KOPIA_SFTP_HOST" ] || { echo "Backup target required for module kopia."; exit 1; }

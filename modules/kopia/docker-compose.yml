@@ -18,8 +18,8 @@ services:
     # Idle client, nothing else. No `server start`, no published port, no HTTP
     # listener: the container exists so `kopia snapshot create` has a kopia
     # binary with the repository config mounted, and kopia-snapshot.timer drives
-    # it through `docker exec`. Health is NOT tied to the off-box disk: a slept
-    # laptop would otherwise mark the container unhealthy every night, so there
+    # it through `docker exec`. Health is NOT tied to the external backup storage: an unreachable
+    # storage host would otherwise mark the container unhealthy every night, so there
     # is no healthcheck — a failed snapshot is the real signal and the timer
     # records it.
     entrypoint: ["/bin/sh", "-c", "exec sleep infinity"]
@@ -27,7 +27,7 @@ services:
     volumes:
       # $DATA_DIR/kopia — kopia's client config (which points at the remote
       # repository) plus the ssh/ key and known_hosts the SFTP transport uses.
-      # The repository itself is NOT here: it is on the off-box disk.
+      # The repository itself is NOT here: it is on the external backup storage.
       - ${DATA_DIR}/kopia:/data
       # Every module's data dir plus the rendered config, read-only: this is
       # what a snapshot covers. The writable mount above is the only exclusion —

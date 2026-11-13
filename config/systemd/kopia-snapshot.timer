@@ -1,11 +1,11 @@
 [Unit]
-Description=kopia: periodic snapshot into the off-box repository
+Description=kopia: periodic snapshot into the repository on external backup storage
 
 [Timer]
-# Two daily windows, not one: the repository sits on a laptop's external disk,
-# so a single fixed hour can land while that machine is asleep. A missed window
-# is visible as a failed unit rather than silently skipped.
-OnCalendar=*-*-* 09,21:30:00
+# One window a day, at midnight: the repository sits on external backup storage,
+# so the run is placed where that machine is normally plugged in and idle. A
+# missed window is visible as a failed unit rather than silently skipped.
+OnCalendar=*-*-* 00:00:00
 RandomizedDelaySec=10m
 Persistent=true
 AccuracySec=1m

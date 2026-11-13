@@ -51,7 +51,7 @@ EOF
   rows <<'EOF'
 make update|pull + recreate every deployed unit via stack-up.sh — edge last, gated, auto-rollback
 make apt-upgrade|apt-get update + upgrade (deliberately separate from the container work)
-make backup|take one Kopia snapshot of every module's data and the rendered config into the off-box repository
+make backup|take one Kopia snapshot of every module's data and the rendered config into the repository on external backup storage
 EOF
 
   sec "migrate / restore"
@@ -245,12 +245,12 @@ EOF
   sec "kopia backups (module: kopia)"
   rows <<'EOF'
 make kopia-status|container state, repository status and the latest snapshots
-make kopia-init|connect the off-box SFTP repository and set retention — needs KOPIA_SFTP_* in data/instance.conf (idempotent)
+make kopia-init|connect the SFTP repository on external backup storage and set retention — needs KOPIA_SFTP_* in data/instance.conf (idempotent)
 make kopia-verify|re-read a sample of the stored packs and check their hashes — PERCENT=<n>, default 5
 make kopia-stats|repository size: blob count and the content-size histogram
 make kopia-maint-info|maintenance owner, schedule and next run
 make kopia-maint-owner|let kopia run quick passes by itself (CONFIRM=yes)
-make kopia-maint|run maintenance now (CONFIRM=yes) — FULL=1 re-packs and drops unreferenced blobs (heavy: a spinning USB disk cannot absorb it)
+make kopia-maint|run maintenance now (CONFIRM=yes) — FULL=1 re-packs and drops unreferenced blobs (heavy: consumer-grade external storage cannot absorb it)
 make kopia-expire|let retention drop one snapshot — SNAPSHOT=<id>, CONFIRM=yes
 make kopia-delete|delete one snapshot immediately — SNAPSHOT=<id>, CONFIRM=yes
 make kopia|any other kopia subcommand — ARGS="repository status"
