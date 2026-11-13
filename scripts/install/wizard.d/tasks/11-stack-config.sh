@@ -241,6 +241,10 @@ seed_stack() {
     oseed PROXY_TLS false
     oseed PROXY_HTTP_ADDR 0.0.0.0:9200
     oseed OCIS_INSECURE false
+    # Classic WebDAV clients (Windows Explorer, macOS Finder, davfs2, rclone)
+    # speak Basic only, and oCIS leaves it off unless this is set: without it
+    # their PROPFIND gets a Bearer-only 401 forever.
+    oseed PROXY_ENABLE_BASIC_AUTH true
     oseed IDM_CREATE_DEMO_USERS false
     oseed OCIS_LOG_LEVEL info
     if ! grep -q '^IDM_ADMIN_PASSWORD=.' "$oenv"; then
