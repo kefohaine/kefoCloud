@@ -223,6 +223,7 @@ EOF
 make ocis-status|the container and the OCS capabilities probe (the real health, not /healthz)
 make ocis-admin-pass|reset an IDM password interactively — USER=<name>, default admin (no web-UI equivalent)
 make ocis-logs|tail the ocis container (N=<lines>, default 50)
+make ocis-webdav|the WebDAV door: container + DAV route status, then the URL to mount — USER=<name>, default admin
 EOF
 
   sec "dashboard (module: home — Homarr, no account CLI)"
