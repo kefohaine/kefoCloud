@@ -77,6 +77,18 @@ kopia_lock() {
 # Container paths are not host paths: /data is $DATA_DIR/kopia on this side.
 kopia_hostpath() { printf '%s' "${1/#\/data\//$DATA_DIR/kopia/}"; }
 
+kopia_volume() { # [path] — device|mountpoint|total|used|avail (KiB) of the volume
+  # holding the repository path, so a report never silently describes the host's
+  # own root volume when the target volume is not mounted.
+  local p="${1:-${KOPIA_SFTP_PATH:-}}"
+  [ -n "$p" ] || return 1
+  kopia_ssh "df -Pk '$p' 2>/dev/null | awk 'NR==2{print \$1\"|\"\$6\"|\"\$2\"|\"\$3\"|\"\$4}'"
+}
+
+kopia_rootdev() { # device of the backup host's root volume
+  kopia_ssh "df -Pk / 2>/dev/null | awk 'NR==2{print \$1}'"
+}
+
 kopia_ssh() {
   local host="${KOPIA_SFTP_HOST:-}" user="${KOPIA_SFTP_USER:-}" port="${KOPIA_SFTP_PORT:-22}"
   [ -n "$host" ] && [ -n "$user" ] || return 1

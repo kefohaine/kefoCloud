@@ -247,7 +247,7 @@ EOF
 make kopia-status|container state, repository status and the latest snapshots
 make kopia-init|connect the SFTP repository on external backup storage and set retention — needs KOPIA_SFTP_* in data/instance.conf (idempotent)
 make kopia-verify|re-read a sample of the stored packs and check their hashes — PERCENT=<n>, default 5
-make kopia-stats|repository size: blob count and the content-size histogram
+make kopia-stats|repository size + the target volume (warns if it is the storage host's main volume) and the content-size histogram
 make kopia-maint-info|maintenance owner, schedule and next run
 make kopia-maint-owner|let kopia run quick passes by itself (CONFIRM=yes)
 make kopia-maint|run maintenance now (CONFIRM=yes) — FULL=1 re-packs and drops unreferenced blobs (heavy: consumer-grade external storage cannot absorb it)

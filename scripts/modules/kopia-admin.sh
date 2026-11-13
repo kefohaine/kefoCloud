@@ -182,12 +182,19 @@ case "${1:-status}" in
     # Bytes come from the disk itself: kopia's whole-repo enumeration
     # (`blob stats`, a full `blob list`) stalls on this SFTP transport and never
     # returns, so it is not used here.
-    if [ -n "${KOPIA_SFTP_PATH:-}" ] && kopia_ssh "du -sh '$KOPIA_SFTP_PATH'" >/dev/null 2>&1; then
-      echo "  repository directory:"
-      kopia_ssh "du -sh '$KOPIA_SFTP_PATH'"
-      kopia_ssh "df -h '$KOPIA_SFTP_PATH' | tail -1"
+    vol="$(kopia_volume 2>/dev/null)" || vol=""
+    if [ -n "$vol" ] && kopia_ssh "du -sh '$KOPIA_SFTP_PATH'" >/dev/null 2>&1; then
+      dev=${vol%%|*}; rest=${vol#*|}; mnt=${rest%%|*}
+      echo "  repository directory: $(kopia_ssh "du -sh '$KOPIA_SFTP_PATH'")"
+      awk -v d="$dev" -v m="$mnt" -v v="$vol" 'BEGIN{
+        n=split(v,a,"|"); gib=1024*1024
+        printf "  volume: %s at %s — %.1f GiB used of %.1f GiB (%.1f GiB free)\n",
+          d, m, a[4]/gib, a[3]/gib, a[5]/gib }'
+      if [ "$dev" = "$(kopia_rootdev 2>/dev/null)" ]; then
+        echo "  WARNING: $KOPIA_SFTP_PATH is on the host's main volume, not a separate backup volume"
+      fi
     else
-      echo "  repository directory: unreachable (host asleep, disk unplugged, or off the tailnet)"
+      echo "  repository directory: unreachable (host asleep, volume unplugged, or off the tailnet)"
       exit 0
     fi
     echo
