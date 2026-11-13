@@ -64,6 +64,12 @@ save_state() {
     printf 'CF_API_TOKEN=%q\n'       "${CF_API_TOKEN:-}"
     printf 'TS_AUTHKEY=%q\n'         "${TS_AUTHKEY:-}"
     printf 'TS_IP=%q\n'              "${TS_IP:-}"
+    # kopia's external backup storage target (module kopia only): tailnet name,
+    # login and path on the disk another machine mounts. Reused on resume.
+    printf 'KOPIA_SFTP_HOST=%q\n'    "${KOPIA_SFTP_HOST:-}"
+    printf 'KOPIA_SFTP_PORT=%q\n'    "${KOPIA_SFTP_PORT:-22}"
+    printf 'KOPIA_SFTP_USER=%q\n'    "${KOPIA_SFTP_USER:-}"
+    printf 'KOPIA_SFTP_PATH=%q\n'    "${KOPIA_SFTP_PATH:-}"
     # The device's PUBLIC ssh key(s) (safe to store): reuses on resume, re-asked
     # on a fresh run. SSH_PUBKEYS is the allowlist (newline-separated); the
     # legacy single SSH_PUBKEY is kept pointing at the first key for back-compat.

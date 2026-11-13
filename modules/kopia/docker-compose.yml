@@ -1,6 +1,7 @@
 services:
   kopia:
     image: kopia/kopia:0.19.0
+    hostname: kopia
     container_name: kopia
     restart: unless-stopped
 
@@ -9,44 +10,30 @@ services:
 
     environment:
       TZ: ${TIMEZONE}
+      # The one secret this module owns: it opens the repository, which lives
+      # off this host. There is no server account — no UI, no API.
       KOPIA_PASSWORD: ${KOPIA_PASSWORD}
-      KOPIA_SERVER_USERNAME: ${KOPIA_SERVER_USERNAME}
-      KOPIA_SERVER_PASSWORD: ${KOPIA_SERVER_PASSWORD}
       KOPIA_CHECK_FOR_UPDATES: "false"
 
-    # The server needs a repository before it can serve one: create it on
-    # first start (idempotent — an existing filesystem repository is left
-    # alone), then run the web UI/API. `--insecure` keeps the listener on plain
-    # HTTP because TLS terminates at the Caddy edge, which is the only route in.
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - >
-        kopia repository status --config-file=/data/config/repository.config >/dev/null 2>&1 ||
-        kopia repository create filesystem --path=/data/repository --config-file=/data/config/repository.config;
-        exec kopia server start
-        --config-file=/data/config/repository.config
-        --address=0.0.0.0:51515
-        --insecure
-        --server-username="$${KOPIA_SERVER_USERNAME}"
-        --server-password="$${KOPIA_SERVER_PASSWORD}"
+    # Idle client, nothing else. No `server start`, no published port, no HTTP
+    # listener: the container exists so `kopia snapshot create` has a kopia
+    # binary with the repository config mounted, and kopia-snapshot.timer drives
+    # it through `docker exec`. Health is NOT tied to the external backup storage: an unreachable
+    # storage host would otherwise mark the container unhealthy every night, so there
+    # is no healthcheck — a failed snapshot is the real signal and the timer
+    # records it.
+    entrypoint: ["/bin/sh", "-c", "exec sleep infinity"]
 
     volumes:
-      # $DATA_DIR/kopia/{repository,config} — the backup repository and kopia's
-      # own client config. Both are instance state and never tracked.
+      # $DATA_DIR/kopia — kopia's client config (which points at the remote
+      # repository) plus the ssh/ key and known_hosts the SFTP transport uses.
+      # The repository itself is NOT here: it is on the external backup storage.
       - ${DATA_DIR}/kopia:/data
-      # Every module's data dir plus the rendered config, read-only: the UI
-      # picks which of these sources a snapshot policy covers.
+      # Every module's data dir plus the rendered config, read-only: this is
+      # what a snapshot covers. The writable mount above is the only exclusion —
+      # `make kopia-init` writes it into the source's ignore policy, so the
+      # backup never contains itself.
       - ${DATA_DIR}:/source:ro
-
-    expose:
-      - "51515"
-
-    healthcheck:
-      test: ["CMD-SHELL", "kopia repository status --config-file=/data/config/repository.config >/dev/null || exit 1"]
-      interval: 60s
-      timeout: 15s
-      retries: 3
-      start_period: 30s
 
     logging:
       driver: json-file

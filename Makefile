@@ -32,7 +32,7 @@ COMPOSE  := docker compose
 # The module names the catalog declares (+ the edge, which is not a module) —
 # every MODULE=<m> recipe accepts these and nothing hardcodes the roster.
 MODULES := $(shell awk '!/^#/ && NF>=4 {printf "%s ", $$1}' $(REPO)/config/modules.conf 2>/dev/null)edge
-HOST     := ttyd dnsmasq goose
+HOST     := ttyd dnsmasq goose kopia-snapshot
 # The tailnet device that receives files — one spelling for the taildrop
 # helpers (TAILDROP_HOST is an alias). No
 # default: shipping to an arbitrary device is worse than a usage error.
@@ -214,7 +214,7 @@ systemd-action:
 # Maintenance
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: fetch fetch-more render smoke gh-web-health install-hooks update apt-upgrade install-config help matrix-gen matrix-update matrix-add-admin matrix-users matrix-add matrix-passwd matrix-flag-admin matrix-del matrix-status matrix-logs matrix-reset kopia-gen kopia-status kopia-password kopia-username kopia-snapshot kopia-snapshots kopia-logs
+.PHONY: fetch fetch-more render smoke gh-web-health install-hooks update apt-upgrade install-config help matrix-gen matrix-update matrix-add-admin matrix-users matrix-add matrix-passwd matrix-flag-admin matrix-del matrix-status matrix-logs matrix-reset kopia-gen kopia-status kopia-init kopia-snapshot kopia-snapshots kopia-restore kopia-policy kopia-stats kopia-maint-info kopia-maint kopia-maint-owner kopia-expire kopia-delete kopia kopia-ignore-add kopia-ignore-rm kopia-verify kopia-logs
 .PHONY: kuma-import kuma-list-users kuma-add-user kuma-passwd kuma-del-user
 .PHONY: vaultwarden-list-users vaultwarden-add-user vaultwarden-del-user
 .PHONY: writefreely-users writefreely-add-user writefreely-passwd writefreely-del-user
@@ -755,8 +755,9 @@ matrix-reset:
 >@CONFIRM=$(CONFIRM) bash $(REPO)/scripts/modules/matrix-identity.sh
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Kopia backups — module `kopia` (modules/kopia/). The web UI is
-# kopia.$DOMAIN (tailnet-only); these recipes drive the same CLI headlessly.
+# Kopia backups — module `kopia` (modules/kopia/). A client only: no server, no
+# UI, no listener. Snapshots go over SFTP to a repository on the external backup storage
+# and are taken by kopia-snapshot.timer; these recipes drive the same CLI by hand.
 # ─────────────────────────────────────────────────────────────────────────────
 
 KOPIA_ADMIN := $(REPO)/scripts/modules/kopia-admin.sh
@@ -764,19 +765,79 @@ KOPIA_ADMIN := $(REPO)/scripts/modules/kopia-admin.sh
 kopia-status:
 >@bash $(KOPIA_ADMIN) status
 
-# PASS is generated and printed once when omitted; the container is recreated.
-kopia-password:
->@bash $(KOPIA_ADMIN) password "$(PASS)"
+# One-time connect: pins the target's host key, creates the repository at
+# KOPIA_SFTP_PATH on KOPIA_SFTP_HOST and sets retention. Idempotent.
+kopia-init:
+>@bash $(KOPIA_ADMIN) init
 
-# USER is generated and printed once when omitted; the container is recreated.
-kopia-username:
->@bash $(KOPIA_ADMIN) username "$(USER)"
-
+# SOURCE is a path inside the container; without it the module snapshots its own
+# read-only bind mount, read live from the container (scripts/lib/kopia-env.sh).
 kopia-snapshot:
 >@bash $(KOPIA_ADMIN) snapshot "$(SOURCE)"
 
 kopia-snapshots:
 >@bash $(KOPIA_ADMIN) snapshots
+
+# Repository size: blob counts and bytes per prefix (what the disk actually holds).
+kopia-stats:
+>@bash $(KOPIA_ADMIN) stats
+
+# Maintenance: decides nothing, only reclaims. INFO is read-only; maint runs the
+# incremental pass, FULL=1 re-packs and drops unreferenced blobs (slow on consumer-grade external storage).
+kopia-maint-info:
+>@bash $(KOPIA_ADMIN) maint-info
+
+kopia-maint-owner:
+>$(call guard_confirm,kopia-maint-owner)
+>@bash $(KOPIA_ADMIN) maint-owner
+
+kopia-maint:
+>$(call guard_confirm,kopia-maint)
+>@bash $(KOPIA_ADMIN) maint $(if $(FULL),full,)
+
+# Destructive: one snapshot goes. expire lets retention decide the timing,
+# delete removes it and its now-unreferenced data immediately.
+kopia-expire:
+>$(call guard_confirm,kopia-expire)
+>@[ -n "$(SNAPSHOT)" ] || { scripts/lib/mklog error "usage: make kopia-expire SNAPSHOT=<id> CONFIRM=yes"; exit 1; }
+>@bash $(KOPIA_ADMIN) expire "$(SNAPSHOT)"
+
+kopia-delete:
+>$(call guard_confirm,kopia-delete)
+>@[ -n "$(SNAPSHOT)" ] || { scripts/lib/mklog error "usage: make kopia-delete SNAPSHOT=<id> CONFIRM=yes"; exit 1; }
+>@bash $(KOPIA_ADMIN) delete "$(SNAPSHOT)"
+
+# Anything the wrappers above do not cover: make kopia ARGS="blob list --prefix p"
+kopia:
+>@[ -n "$(ARGS)" ] || { scripts/lib/mklog error 'usage: make kopia ARGS="<kopia subcommand> [flags]"'; exit 1; }
+>@bash $(KOPIA_ADMIN) cli $(ARGS)
+
+# Restore one snapshot into an empty directory INSIDE the data mount (default
+# <data>/restore), so the result is visible on the host; a non-empty target is
+# refused. SNAPSHOT is the id from `make kopia-snapshots`.
+kopia-restore:
+>@[ -n "$(SNAPSHOT)" ] || { scripts/lib/mklog error "usage: make kopia-restore SNAPSHOT=<id>  [TO=/data/restore]"; exit 1; }
+>@bash $(KOPIA_ADMIN) restore "$(SNAPSHOT)" "$(TO)"
+
+# Which folders land in a snapshot is a POLICY on the source, not a flag on the
+# snapshot command: the source is the whole read-only data mount, so a pattern is
+# anchored at its root (IGNORE=/mail drops <data>/mail). Read-only; the two
+# writers below re-print the policy so the new rule set is visible.
+kopia-policy:
+>@bash $(KOPIA_ADMIN) policy "$(SOURCE)"
+
+kopia-ignore-add:
+>@[ -n "$(IGNORE)" ] || { scripts/lib/mklog error "usage: make kopia-ignore-add IGNORE=/path  (path is relative to the source root)"; exit 1; }
+>@bash $(KOPIA_ADMIN) ignore-add "$(IGNORE)" "$(SOURCE)"
+
+kopia-ignore-rm:
+>@[ -n "$(IGNORE)" ] || { scripts/lib/mklog error "usage: make kopia-ignore-rm IGNORE=/path"; exit 1; }
+>@bash $(KOPIA_ADMIN) ignore-rm "$(IGNORE)" "$(SOURCE)"
+
+# Re-reads a sample of the stored packs and checks their hashes — the check
+# that proves the copy on external backup storage is restorable. PERCENT defaults to 5.
+kopia-verify:
+>@bash $(KOPIA_ADMIN) verify "$(PERCENT)"
 
 kopia-logs:
 >@bash $(KOPIA_ADMIN) logs "$(or $(N),50)"
@@ -864,12 +925,16 @@ sudo cp $(RENDER_DIR)/config/systemd/kefo-stack.service /etc/systemd/system/kefo
 sudo cp $(RENDER_DIR)/config/systemd/tmux-main.service /etc/systemd/system/tmux-main.service
 sudo cp $(RENDER_DIR)/config/systemd/fail2ban-tailnet-sync.service /etc/systemd/system/fail2ban-tailnet-sync.service
 sudo cp $(RENDER_DIR)/config/systemd/fail2ban-tailnet-sync.timer /etc/systemd/system/fail2ban-tailnet-sync.timer
+sudo cp $(RENDER_DIR)/config/systemd/kopia-snapshot.service /etc/systemd/system/kopia-snapshot.service
+sudo cp $(RENDER_DIR)/config/systemd/kopia-snapshot.timer /etc/systemd/system/kopia-snapshot.timer
 sudo systemctl daemon-reload
 sudo systemctl enable --now goose ttyd
 sudo systemctl enable kefo-stack.service
 @scripts/lib/mklog info "boot unit installed + enabled: kefo-stack.service (every deployed compose unit comes up on boot)"
 sudo systemctl enable --now fail2ban-tailnet-sync.timer
 @scripts/lib/mklog info "tailnet whitelist timer installed + enabled (bans that hit a tailnet endpoint are lifted within one interval)"
+sudo systemctl enable --now kopia-snapshot.timer
+@scripts/lib/mklog info "kopia snapshot timer installed + enabled (once a day at midnight; it no-ops when the module is absent)"
 sudo systemctl enable --now tmux-main.service
 @scripts/lib/mklog info "tmux 'main' session ensured + enabled (make tmux-open TAG=main to attach)"
 sudo systemctl restart sshd dnsmasq
@@ -963,12 +1028,12 @@ install-cron:
 
 .PHONY: backup
 
-# One snapshot of every module's data, through Kopia — the backup server on
-# kopia.$DOMAIN (tailnet-only). The repository lives in $DATA_DIR/kopia and
-# holds every data dir plus the rendered config; restoring, retention and
-# off-box copies are done from the Kopia UI or `make kopia-*`.
+# One snapshot of every module's data, through Kopia — a client, no server.
+# The repository lives on the external backup storage named by KOPIA_SFTP_* and holds every
+# data dir plus the rendered config; kopia-snapshot.timer runs the same command
+# once a day at midnight, and retention, verification and restore are `make kopia-*`.
 backup:
->@bash $(REPO)/scripts/modules/kopia-admin.sh snapshot /source
+>@bash $(REPO)/scripts/modules/kopia-admin.sh snapshot "$(SOURCE)"
 
 # Tmux sessions
 # Persistent terminal sessions on the host — detach (Ctrl-b d) and the

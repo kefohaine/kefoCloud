@@ -51,7 +51,7 @@ EOF
   rows <<'EOF'
 make update|pull + recreate every deployed unit via stack-up.sh — edge last, gated, auto-rollback
 make apt-upgrade|apt-get update + upgrade (deliberately separate from the container work)
-make backup|take one Kopia snapshot of every module's data and the rendered config (restore, retention and off-box copies from kopia.$DOMAIN)
+make backup|take one Kopia snapshot of every module's data and the rendered config into the repository on external backup storage
 EOF
 
   sec "migrate / restore"
@@ -131,8 +131,8 @@ EOF
   rows <<'EOF'
 make matrix-gen|generate Matrix secrets + Synapse/Element configs (idempotent)
 make matrix-update|dump the MAS database, then recreate MAS and Synapse (CONFIRM=yes)
-make kopia-gen|generate the kopia repository password + UI account (idempotent)
-make kopia-snapshot|take a snapshot now — SOURCE=<path in the container>, default /source
+make kopia-gen|generate the kopia repository password + SFTP key, then print the public key to authorize (idempotent)
+make kopia-snapshot|take a snapshot now — SOURCE=<path in the container>, default: the container’s read-only source mount
 make kuma-import|import an adapted Uptime Kuma db (KUMA_DB=<path>)
 make gh-web-health|check the GitHub web git-data endpoints (after a history rewrite)
 EOF
@@ -245,9 +245,20 @@ EOF
   sec "kopia backups (module: kopia)"
   rows <<'EOF'
 make kopia-status|container state, repository status and the latest snapshots
-make kopia-password|rotate the web UI password and recreate the container — PASS=<new> (generated and printed once when omitted)
-make kopia-username|rotate the web UI username and recreate the container — USER=<name> (generated and printed once when omitted)
+make kopia-init|connect the SFTP repository on external backup storage and set retention — needs KOPIA_SFTP_* in data/instance.conf (idempotent)
+make kopia-verify|re-read a sample of the stored packs and check their hashes — PERCENT=<n>, default 5
+make kopia-stats|repository size + the target volume (warns if it is the storage host's main volume) and the content-size histogram
+make kopia-maint-info|maintenance owner, schedule and next run
+make kopia-maint-owner|let kopia run quick passes by itself (CONFIRM=yes)
+make kopia-maint|run maintenance now (CONFIRM=yes) — FULL=1 re-packs and drops unreferenced blobs (heavy: consumer-grade external storage cannot absorb it)
+make kopia-expire|let retention drop one snapshot — SNAPSHOT=<id>, CONFIRM=yes
+make kopia-delete|delete one snapshot immediately — SNAPSHOT=<id>, CONFIRM=yes
+make kopia|any other kopia subcommand — ARGS="repository status"
 make kopia-snapshots|list snapshots (kopia-snapshot takes one)
+make kopia-restore|restore one snapshot into an empty dir — SNAPSHOT=<id>, TO=<dir in the container> (default <data>/restore)
+make kopia-policy|show the policy for a source — SOURCE=, default: the read-only source mount
+make kopia-ignore-add|add an ignore rule to a source's policy — IGNORE=/path, relative to the source root
+make kopia-ignore-rm|drop an ignore rule — IGNORE=/path
 make kopia-logs|tail the kopia container (N=<lines>, default 50)
 EOF
 

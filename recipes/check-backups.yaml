@@ -35,11 +35,12 @@ prompt: |
   Inspect:
   - the Makefile `backup` and `kopia-*` recipes and scripts/modules/kopia-admin.sh
   - the kopia container: repository status, snapshot list, retention policies,
-    and what the /source mount actually contains
+    and what the module's read-only source mount actually contains
   - what is and is not covered: matrix (PostgreSQL + media), vaultwarden data,
     kuma db, mailserver Maildirs/config, ocis, pages, rendered config, secrets
-  - whether there is an off-box copy of the repository beyond this host (Kopia
-    `repository sync-to` target, or a second copy on another device)
+  - that the repository is the OFF-BOX one (KOPIA_SFTP_* in data/instance.conf):
+    the timer's last result, whether the volume was mounted, and whether the
+    snapshot covers what it claims (restore drill: `make kopia-verify`)
 
   Return:
 Return:

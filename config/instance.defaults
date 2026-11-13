@@ -26,6 +26,12 @@
 # SERVER_IP — the host's public IPv4 (needed for DNS + mail PTR checks)
 # EMAIL — the operator's contact address (admin@$DOMAIN)
 # TIMEZONE — IANA zone used by containers and cron (UTC)
+# KOPIA_SFTP_HOST — tailnet name of the machine that owns the backup disk
+# KOPIA_SFTP_PORT — sshd port there (22)
+# KOPIA_SFTP_USER — login whose authorized_keys holds kopia-gen's public key
+# KOPIA_SFTP_PATH — repository path on that disk (/Volumes/backup/kopia)
+# KOPIA_KEEP_* — snapshot retention, in snapshots (10 latest, 14 daily,
+#                8 weekly, 12 monthly)
 #
 # Written by the installer:
 # VIDEO_CALLING — "true" to run Talk (spreed + signaling + coturn); the talk

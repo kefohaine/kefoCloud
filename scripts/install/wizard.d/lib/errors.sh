@@ -89,7 +89,8 @@ problem() {
     matrix_gen)     echo "Matrix secrets or configs not generated (make matrix-gen failed)" ;;
     kopia)          echo "the kopia container is not running" ;;
     kopia_gen)      echo "kopia secrets not generated (make kopia-gen failed)" ;;
-    kopia_setup)    echo "the kopia repository does not open" ;;
+    kopia_setup)    echo "the kopia container is not running" ;;
+    kopia_timer)    echo "the kopia snapshot timer is not enabled" ;;
     kuma_admin)     echo "uptime kuma admin user is missing" ;;
     kuma_seed)      echo "uptime kuma monitors are not seeded" ;;
     zone)           echo "Cloudflare zone '$DOMAIN' not found" ;;
@@ -128,7 +129,8 @@ hint() {
     matrix_gen)     echo "run: make matrix-gen in $REPO, then re-check" ;;
     kopia)          echo "run: make dok-recreate-kopia, then re-check" ;;
     kopia_gen)      echo "run: make kopia-gen in $REPO, then re-check" ;;
-    kopia_setup)    echo "run: make kopia-status (then make dok-logs-kopia), then re-check" ;;
+    kopia_setup)    echo "run: make dok-recreate-kopia, then re-check" ;;
+    kopia_timer)    echo "run: sudo systemctl enable --now kopia-snapshot.timer, then re-check" ;;
     vaultwarden)    echo "run: make dok-recreate-vaultwarden, then re-check" ;;
     kuma)           echo "run: make dok-recreate-uptimekuma, then re-check" ;;
     mailserver)     echo "run: make dok-recreate TARGET=mailu-front, then re-check" ;;
@@ -193,7 +195,7 @@ recheck() {
     sweep) [ -z "$(sweep_hits)" ] ;;
     sslmode) ssl_mode_full ;;
     matrix_setup) docker exec matrix-synapse python3 -c 'import urllib.request,sys; sys.exit(0 if urllib.request.urlopen("http://127.0.0.1:8008/health").status == 200 else 1)' >/dev/null 2>&1 && curl -sk --max-time 15 "https://chat.$DOMAIN/" | grep -qi '<title>' ;;
-    kopia_setup) docker exec -e KOPIA_PASSWORD="$(sed -n 's/^KOPIA_PASSWORD=//p' "$REPO/modules/kopia/.env" 2>/dev/null)" kopia kopia --config-file=/data/config/repository.config repository status >/dev/null 2>&1 ;;
+    kopia_setup) docker ps --format '{{.Names}}' | grep -qx kopia ;;
     dkim_setup)      dig +short TXT "dkim._domainkey.$DOMAIN" @"$(dig +short NS "$DOMAIN" | head -1)" 2>/dev/null | tr -d '"' | grep -qE 'p=[A-Za-z0-9+/=]{100,}' ;;
     dns_mail_txt) mod_on mail || return 0; cf_mail_dns; local records; records=$(curl -fsS -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" 2>/dev/null) || return 1; printf '%s' "$records" | jq -e --arg d "$DOMAIN" --arg s "v=spf1 a:mail.$DOMAIN mx -all" --arg m 'v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s;' '[.result[] | {type,name,content}] as $r | [[$d,"MX"],["_dmarc."+$d,"TXT"]] as $fs | [($fs[] | . as $x | any($r[]; .type==$x[1] and .name==$x[0])), any($r[]; .type=="TXT" and .name==$d and .content==$s)] | all' >/dev/null ;;
     vaultwarden_setup) if mod_on mail; then . modules/vaultwarden/.env 2>/dev/null; mailbox_add "vaultwarden@$DOMAIN" "${SMTP_PASSWORD:-}" >/dev/null 2>&1; mailbox_exists "vaultwarden@$DOMAIN"; else false; fi ;;
