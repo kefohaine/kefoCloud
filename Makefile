@@ -218,7 +218,7 @@ systemd-action:
 .PHONY: kuma-import kuma-list-users kuma-add-user kuma-passwd kuma-del-user
 .PHONY: vaultwarden-list-users vaultwarden-add-user vaultwarden-del-user
 .PHONY: writefreely-users writefreely-add-user writefreely-passwd writefreely-del-user
-.PHONY: immich-users immich-admin-pass immich-grant-admin ocis-status ocis-admin-pass ocis-logs dns-sync
+.PHONY: immich-users immich-admin-pass immich-grant-admin ocis-status ocis-admin-pass ocis-logs ocis-webdav dns-sync
 .PHONY: deploy backup
 
 # The web terminal is ONE page and ONE shell: ttyd.$DOMAIN (the shell IS the
@@ -687,6 +687,16 @@ ocis-admin-pass:
 
 ocis-logs:
 >@docker logs ocis --tail $(or $(N),50) -f
+
+# The WebDAV door into one account's files, i.e. what a WebDAV client is
+# configured with. The paths are oCIS's own (no route here decides them), so the
+# recipe proves the container and the DAV route answer and then prints the URL
+# for the account named by USER=<name> (default admin).
+ocis-webdav:
+>@[ -n "$(DOMAIN)" ] || { scripts/lib/mklog error "no DOMAIN in $(CONF) — is the instance installed?"; exit 1; }
+>@printf '  container\t'; docker ps -a --filter name='^ocis$$' --format '{{.Status}}'
+>@printf '  dav\t'; curl -s -o /dev/null -m 8 -w '%{http_code}\n' -X PROPFIND -H 'Depth: 0' "https://cloud.$(DOMAIN)/remote.php/dav/files/" || true
+>@printf '  url\thttps://cloud.$(DOMAIN)/remote.php/dav/files/%s/\n' '$(or $(USER),admin)'
 
 # Converge the Cloudflare zone from data/wizard.state: the ONE rule set the
 # installer uses (wizard.d/lib/cloudflare.sh cf_dns). Run it after enabling a
