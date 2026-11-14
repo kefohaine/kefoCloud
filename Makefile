@@ -32,7 +32,7 @@ COMPOSE  := docker compose
 # The module names the catalog declares (+ the edge, which is not a module) —
 # every MODULE=<m> recipe accepts these and nothing hardcodes the roster.
 MODULES := $(shell awk '!/^#/ && NF>=4 {printf "%s ", $$1}' $(REPO)/config/modules.conf 2>/dev/null)edge
-HOST     := ttyd dnsmasq goose kopia-snapshot
+HOST     := ttyd dnsmasq goose kefocloud maintenance
 # The tailnet device that receives files — one spelling for the taildrop
 # helpers (TAILDROP_HOST is an alias). No
 # default: shipping to an arbitrary device is worse than a usage error.
@@ -767,7 +767,7 @@ matrix-reset:
 # ─────────────────────────────────────────────────────────────────────────────
 # Kopia backups — module `kopia` (modules/kopia/). A client only: no server, no
 # UI, no listener. Snapshots go over SFTP to a repository on the external backup storage
-# and are taken by kopia-snapshot.timer; these recipes drive the same CLI by hand.
+# and are taken by kefocloud.timer; these recipes drive the same CLI by hand.
 # ─────────────────────────────────────────────────────────────────────────────
 
 KOPIA_ADMIN := $(REPO)/scripts/modules/kopia-admin.sh
@@ -935,20 +935,25 @@ sudo cp $(RENDER_DIR)/config/systemd/kefo-stack.service /etc/systemd/system/kefo
 sudo cp $(RENDER_DIR)/config/systemd/tmux-main.service /etc/systemd/system/tmux-main.service
 sudo cp $(RENDER_DIR)/config/systemd/fail2ban-tailnet-sync.service /etc/systemd/system/fail2ban-tailnet-sync.service
 sudo cp $(RENDER_DIR)/config/systemd/fail2ban-tailnet-sync.timer /etc/systemd/system/fail2ban-tailnet-sync.timer
-sudo cp $(RENDER_DIR)/config/systemd/kopia-snapshot.service /etc/systemd/system/kopia-snapshot.service
-sudo cp $(RENDER_DIR)/config/systemd/kopia-snapshot.timer /etc/systemd/system/kopia-snapshot.timer
-sudo cp $(RENDER_DIR)/config/systemd/git-prune.service /etc/systemd/system/git-prune.service
-sudo cp $(RENDER_DIR)/config/systemd/git-prune.timer /etc/systemd/system/git-prune.timer
+sudo cp $(RENDER_DIR)/config/systemd/kefocloud.service /etc/systemd/system/kefocloud.service
+sudo cp $(RENDER_DIR)/config/systemd/kefocloud.timer /etc/systemd/system/kefocloud.timer
+sudo cp $(RENDER_DIR)/config/systemd/maintenance.service /etc/systemd/system/maintenance.service
+sudo cp $(RENDER_DIR)/config/systemd/maintenance.timer /etc/systemd/system/maintenance.timer
 sudo systemctl daemon-reload
 sudo systemctl enable --now goose ttyd
 sudo systemctl enable kefo-stack.service
 @scripts/lib/mklog info "boot unit installed + enabled: kefo-stack.service (every deployed compose unit comes up on boot)"
 sudo systemctl enable --now fail2ban-tailnet-sync.timer
 @scripts/lib/mklog info "tailnet whitelist timer installed + enabled (bans that hit a tailnet endpoint are lifted within one interval)"
-sudo systemctl enable --now kopia-snapshot.timer
-@scripts/lib/mklog info "kopia snapshot timer installed + enabled (once a day at midnight; it no-ops when the module is absent)"
-sudo systemctl enable --now git-prune.timer
-@scripts/lib/mklog info "git prune timer installed + enabled (drops local branches whose pull request landed, once a day)"
+sudo systemctl enable --now kefocloud.timer
+@scripts/lib/mklog info "kefocloud night window installed + enabled (23:40: snapshot when kopia is installed, branch prune when a GitHub credential works; both skip quietly)"
+# The midnight maintenance window owns apt now: the distro's own two apt timers
+# would otherwise race it for the same lock. Masked, not just disabled, because
+# a package upgrade can re-enable an apt timer.
+sudo systemctl disable --now apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
+sudo systemctl mask apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1 || true
+sudo systemctl enable --now maintenance.timer
+@scripts/lib/mklog info "maintenance window installed + enabled (00:00 local: upgrade, autoremove/clean, docker prune, journal vacuum, fail2ban pass)"
 sudo systemctl enable --now tmux-main.service
 @scripts/lib/mklog info "tmux 'main' session ensured + enabled (make tmux-open TAG=main to attach)"
 sudo systemctl restart sshd dnsmasq
@@ -1044,8 +1049,10 @@ install-cron:
 
 # One snapshot of every module's data, through Kopia — a client, no server.
 # The repository lives on the external backup storage named by KOPIA_SFTP_* and holds every
-# data dir plus the rendered config; kopia-snapshot.timer runs the same command
-# once a day at midnight, and retention, verification and restore are `make kopia-*`.
+# data dir plus the rendered config; kefocloud.timer runs the same command once a
+# day (quietly skipping when it cannot), and retention, verification and restore
+# are `make kopia-*`. Run by hand, this recipe is the loud one: it reports the
+# failure and exits non-zero.
 backup:
 >@bash $(REPO)/scripts/modules/kopia-admin.sh snapshot "$(SOURCE)"
 
@@ -1219,7 +1226,8 @@ git-push:
 >cd $(REPO) && git push
 
 # Drop LOCAL branches whose pull request landed (upstream gone after a fetch):
-# what the daily git-prune.timer runs. DRYRUN=1 prints the plan and changes
+# what the nightly kefocloud window runs (and this manual run is the loud one: a
+# fetch that cannot reach the remote exits non-zero). DRYRUN=1 prints the plan and changes
 # nothing. Never touches the base, the current branch, or the remote.
 git-prune:
 >@bash scripts/ops/git-prune.sh

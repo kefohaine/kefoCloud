@@ -1,0 +1,13 @@
+[Unit]
+Description=host maintenance: one nightly window for upgrade, cleanups and fail2ban
+
+[Timer]
+# Midnight local wall clock: 00:00 CET in winter, 00:00 CEST in summer, with no
+# DST edit. Persistent, so a host that was off still runs the window on boot.
+OnCalendar=*-*-* 00:00:00
+RandomizedDelaySec=10m
+Persistent=true
+AccuracySec=1m
+
+[Install]
+WantedBy=timers.target

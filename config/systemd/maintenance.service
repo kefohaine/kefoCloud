@@ -1,0 +1,14 @@
+[Unit]
+Description=host maintenance: package upgrade, cleanups, one fail2ban whitelist pass
+Documentation=file:{{REPO_DIR}}/scripts/ops/maintenance.sh
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart={{REPO_DIR}}/scripts/ops/maintenance.sh
+# The window serializes behind a running snapshot and then does a full upgrade:
+# bounded so a wedged apt lock fails the unit instead of holding the night.
+TimeoutStartSec=3h
+Nice=10
+IOSchedulingClass=idle

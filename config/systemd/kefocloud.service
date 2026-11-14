@@ -1,0 +1,15 @@
+[Unit]
+Description=kefocloud: nightly Kopia snapshot + local-branch prune (adaptive)
+Documentation=file:{{REPO_DIR}}/scripts/ops/kefocloud-nightly.sh
+After=docker.service network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart={{REPO_DIR}}/scripts/ops/kefocloud-nightly.sh
+# A first snapshot uploads the whole tree over the tailnet; the prune behind it
+# is seconds. The kopia call carries its own budget, so this only bounds the
+# pathological case.
+TimeoutStartSec=12h
+Nice=10
+IOSchedulingClass=idle

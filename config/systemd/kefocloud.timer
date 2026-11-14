@@ -1,0 +1,16 @@
+[Unit]
+Description=kefocloud: nightly snapshot + branch prune, ahead of the maintenance window
+
+[Timer]
+# 23:40, not midnight: the snapshot is the restore point that must PREDATE the
+# upgrade maintenance.timer applies at 00:00, and the two share
+# data/.nightly.lock so an upload still running at midnight makes the upgrade
+# wait instead of competing for the same disk and link. Local wall clock, so it
+# is 23:40 CET in winter and 23:40 CEST in summer.
+OnCalendar=*-*-* 23:40:00
+RandomizedDelaySec=5m
+Persistent=true
+AccuracySec=1m
+
+[Install]
+WantedBy=timers.target
