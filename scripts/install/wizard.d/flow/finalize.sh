@@ -65,32 +65,53 @@ success_block() {
   printf '  %s[SUCCESS]%s the stack is up\n' "$C_GREEN" "$C_RST"
   printf ' %s%s%s\n' "$C_GREEN" "$R" "$C_RST"
   # Only the enabled modules' sites are listed — a site the operator chose not
-  # to install (and so will not answer) must not appear. Shell (the tailnet
-  # door) and the machine's own addresses are always part of the stack.
-  mod_on chat && printf '  %sElement%s      https://chat.%s      admin %s@%s:matrix.%s %s(password: modules/matrix/.env)%s\n' \
-    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${SYNAPSE_ADMIN_USER:-mkadmin}" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
-  mod_on chat && printf '  %sElement Admin%s https://admin.matrix.%s  %s(tailnet only; same admin account)%s\n' \
-    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
-  mod_on ocis && printf '  %sownCloud%s     https://cloud.%s     %sadmin / %s%s\n' \
-    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "IDM_ADMIN_PASSWORD in modules/ocis/.env" "$C_RST"
-  mod_on home && printf '  %sHomarr%s       https://home.%s      %s(first account created in the UI owns the board)%s\n' \
-    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
-  mod_on blog && printf '  %sWriteFreely%s  https://blog.%s      %s(create the admin: make writefreely-add-user USER=<name> PASS=<password> ADMIN=1)%s\n' \
-    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
-  mod_on photos && printf '  %sImmich%s       https://photos.%s    %s(first account created in the UI becomes the admin)%s\n' \
-    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
-  mod_on kopia && printf '  %sKopia%s        snapshots → %s   %s(authorize %s/data/kopia/ssh/id_ed25519.pub there, then: make kopia-init)%s\n' \
-    "$C_PURPLE" "$C_RST" "${KOPIA_SFTP_USER:-kopia}@${KOPIA_SFTP_HOST:-<backup machine>}:${KOPIA_SFTP_PATH:-<path>}" "$C_GREY" "$DATA" "$C_RST"
-  mod_on vault && printf '  %sVaultwarden%s  https://vault.%s    %s%s / %s%s\n' \
-    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${VAULTWARDEN_ADMIN_USER:-admin@$DOMAIN}" "${VAULTWARDEN_ADMIN_PASSWORD:-<see modules/vaultwarden/.env>}" "$C_RST"
-  mod_on monitor && printf '  %sUptime Kuma%s  https://kuma.%s    %sadmin / %s%s\n' \
-    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${KUMA_PASS:-(already set — rotate with: make kuma-passwd USER=admin PASS=…)}" "$C_RST"
-  # mail.$DOMAIN is the public mail door (Roundcube + the SMTP/IMAP cert);
-  # Mailu's platform door is the tailnet-only admin.mail.$DOMAIN.
-  mod_on mail && printf '  %sMailu admin%s  https://admin.mail.%s/admin   %s(tailnet-only — mailboxes via make mail-gen)%s\n' \
-    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
-  mod_on mail && printf '  %sWebmail%s      https://mail.%s   %s(roundcube)%s\n' \
-    "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
+  # to install (and so will not answer) must not appear. The list is
+  # `enabled_modules_list` (config/modules.conf), never a hardcoded roster: a
+  # module with no bespoke line below still gets its door printed from the
+  # hosts column, so adding a module cannot make the summary silently omit it.
+  # Shell (the tailnet door) and the machine's own addresses always follow.
+  local _m _host
+  for _m in $(enabled_modules_list); do
+    case "$_m" in
+      chat)
+        printf '  %sElement%s      https://chat.%s      admin %s@%s:matrix.%s %s(password: modules/matrix/.env)%s\n' \
+          "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${SYNAPSE_ADMIN_USER:-mkadmin}" "$DOMAIN" "$C_GREY" "$C_RST"
+        printf '  %sElement Admin%s https://admin.matrix.%s  %s(tailnet only; same admin account)%s\n' \
+          "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST" ;;
+      ocis)
+        printf '  %sownCloud%s     https://cloud.%s     %sadmin / %s%s\n' \
+          "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "IDM_ADMIN_PASSWORD in modules/ocis/.env" "$C_RST" ;;
+      home)
+        printf '  %sHomarr%s       https://home.%s      %s(first account created in the UI owns the board)%s\n' \
+          "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST" ;;
+      blog)
+        printf '  %sWriteFreely%s  https://blog.%s      %s(create the admin: make writefreely-add-user USER=<name> PASS=<password> ADMIN=1)%s\n' \
+          "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST" ;;
+      photos)
+        printf '  %sImmich%s       https://photos.%s    %s(first account created in the UI becomes the admin)%s\n' \
+          "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST" ;;
+      kopia)
+        printf '  %sKopia%s        snapshots → %s   %s(authorize %s/kopia/ssh/id_ed25519.pub there, then: make kopia-init)%s\n' \
+          "$C_PURPLE" "$C_RST" "${KOPIA_SFTP_USER:-kopia}@${KOPIA_SFTP_HOST:-<backup machine>}:${KOPIA_SFTP_PATH:-<path>}" "$C_GREY" "$DATA" "$C_RST" ;;
+      vault)
+        printf '  %sVaultwarden%s  https://vault.%s    %s%s / %s%s\n' \
+          "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${VAULTWARDEN_ADMIN_USER:-admin@$DOMAIN}" "${VAULTWARDEN_ADMIN_PASSWORD:-<see modules/vaultwarden/.env>}" "$C_RST" ;;
+      monitor)
+        printf '  %sUptime Kuma%s  https://kuma.%s    %sadmin / %s%s\n' \
+          "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${KUMA_PASS:-(already set — rotate with: make kuma-passwd USER=admin PASS=…)}" "$C_RST" ;;
+      # mail.$DOMAIN is the public mail door (Roundcube + the SMTP/IMAP cert);
+      # Mailu's platform door is the tailnet-only admin.mail.$DOMAIN.
+      mail)
+        printf '  %sMailu admin%s  https://admin.mail.%s/admin   %s(tailnet-only — mailboxes via make mail-gen)%s\n' \
+          "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST"
+        printf '  %sWebmail%s      https://mail.%s   %s(roundcube)%s\n' \
+          "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST" ;;
+      *)
+        _host="$(awk -v m="$_m" '$1 !~ /^#/ && $1 == m { print $2; exit }' "$REPO/config/modules.conf" 2>/dev/null)"
+        [ -n "$_host" ] && [ "$_host" != "-" ] \
+          && printf '  %s%s%s https://%s.%s\n' "$C_PURPLE" "$_m" "$C_RST" "$_host" "$DOMAIN" ;;
+    esac
+  done
   if [ "${TAIL_TLS_FALLBACK:-false}" = true ]; then
     printf '  %sShell%s        %s(tailnet-only — run scripts/ops/tailscale-https.sh to serve it via tailscale)%s\n' \
       "$C_PURPLE" "$C_RST" "$C_GREY" "$C_RST"
