@@ -337,10 +337,10 @@ end_sec
 # ─────────────────────────────────────────────────────────────────────────────
 hdr kopia "Backup — Kopia (module: kopia) · CLI snapshot to external backup storage"
 check_ctns kopia kopia
-if systemctl is-enabled kopia-snapshot.timer >/dev/null 2>&1; then
-  say "ok   timer: kopia-snapshot.timer enabled"
+if systemctl is-enabled kefocloud.timer >/dev/null 2>&1; then
+  say "ok   timer: kefocloud.timer enabled"
 else
-  say "FAIL timer: kopia-snapshot.timer is not enabled — nothing takes snapshots"; bad
+  say "FAIL timer: kefocloud.timer is not enabled — nothing takes snapshots"; bad
 fi
 if docker port kopia 2>/dev/null | grep -q .; then
   say "FAIL listener: the kopia container publishes a port — server mode is gone, so this is drift"; bad

@@ -130,7 +130,7 @@ hint() {
     kopia)          echo "run: make dok-recreate-kopia, then re-check" ;;
     kopia_gen)      echo "run: make kopia-gen in $REPO, then re-check" ;;
     kopia_setup)    echo "run: make dok-recreate-kopia, then re-check" ;;
-    kopia_timer)    echo "run: sudo systemctl enable --now kopia-snapshot.timer, then re-check" ;;
+    kopia_timer)    echo "run: sudo systemctl enable --now kefocloud.timer, then re-check" ;;
     vaultwarden)    echo "run: make dok-recreate-vaultwarden, then re-check" ;;
     kuma)           echo "run: make dok-recreate-uptimekuma, then re-check" ;;
     mailserver)     echo "run: make dok-recreate TARGET=mailu-front, then re-check" ;;
