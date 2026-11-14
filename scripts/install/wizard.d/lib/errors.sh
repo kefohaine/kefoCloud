@@ -90,7 +90,7 @@ problem() {
     kopia)          echo "the kopia container is not running" ;;
     kopia_gen)      echo "kopia secrets not generated (make kopia-gen failed)" ;;
     kopia_setup)    echo "the kopia container is not running" ;;
-    kopia_timer)    echo "the kopia snapshot timer is not enabled" ;;
+    kopia_timer)    echo "the nightly kefocloud window is not enabled (no snapshots)" ;;
     kuma_admin)     echo "uptime kuma admin user is missing" ;;
     kuma_seed)      echo "uptime kuma monitors are not seeded" ;;
     zone)           echo "Cloudflare zone '$DOMAIN' not found" ;;

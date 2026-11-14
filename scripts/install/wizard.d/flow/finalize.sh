@@ -170,7 +170,7 @@ summary() {
     fi
   fi
   if [ ${#ERR_WARN_TAGS[@]} -gt 0 ]; then
-    _section "WARNINGS (no success block — see $LOG)" "$C_ORANGE"
+    _section "WARNINGS (do not block the install — see $LOG)" "$C_ORANGE"
     local wt
     for i in "${!ERR_WARN_TAGS[@]}"; do
       wt="${ERR_WARN_TAGS[$i]}"
