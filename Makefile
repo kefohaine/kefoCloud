@@ -937,6 +937,8 @@ sudo cp $(RENDER_DIR)/config/systemd/fail2ban-tailnet-sync.service /etc/systemd/
 sudo cp $(RENDER_DIR)/config/systemd/fail2ban-tailnet-sync.timer /etc/systemd/system/fail2ban-tailnet-sync.timer
 sudo cp $(RENDER_DIR)/config/systemd/kopia-snapshot.service /etc/systemd/system/kopia-snapshot.service
 sudo cp $(RENDER_DIR)/config/systemd/kopia-snapshot.timer /etc/systemd/system/kopia-snapshot.timer
+sudo cp $(RENDER_DIR)/config/systemd/git-prune.service /etc/systemd/system/git-prune.service
+sudo cp $(RENDER_DIR)/config/systemd/git-prune.timer /etc/systemd/system/git-prune.timer
 sudo systemctl daemon-reload
 sudo systemctl enable --now goose ttyd
 sudo systemctl enable kefo-stack.service
@@ -945,6 +947,8 @@ sudo systemctl enable --now fail2ban-tailnet-sync.timer
 @scripts/lib/mklog info "tailnet whitelist timer installed + enabled (bans that hit a tailnet endpoint are lifted within one interval)"
 sudo systemctl enable --now kopia-snapshot.timer
 @scripts/lib/mklog info "kopia snapshot timer installed + enabled (once a day at midnight; it no-ops when the module is absent)"
+sudo systemctl enable --now git-prune.timer
+@scripts/lib/mklog info "git prune timer installed + enabled (drops local branches whose pull request landed, once a day)"
 sudo systemctl enable --now tmux-main.service
 @scripts/lib/mklog info "tmux 'main' session ensured + enabled (make tmux-open TAG=main to attach)"
 sudo systemctl restart sshd dnsmasq
@@ -1105,7 +1109,7 @@ migrate:
 # Git
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: git-issue git-start git-branch git-switch git-del git-branches git-pr git-land git-pull git-add git-com git-push git-force-push git-audit pr-guard prose-audit git-split
+.PHONY: git-issue git-start git-branch git-switch git-del git-branches git-pr git-land git-pull git-add git-com git-push git-force-push git-audit pr-guard prose-audit git-split git-prune
 
 # The branch + pull-request workflow. `main` is write-once: a
 # change is made on a branch named temp-<N> (temp-1, temp-2, … derived from the
@@ -1213,6 +1217,12 @@ git-com:
 
 git-push:
 >cd $(REPO) && git push
+
+# Drop LOCAL branches whose pull request landed (upstream gone after a fetch):
+# what the daily git-prune.timer runs. DRYRUN=1 prints the plan and changes
+# nothing. Never touches the base, the current branch, or the remote.
+git-prune:
+>@bash scripts/ops/git-prune.sh
 
 # Force-push a branch whose history was rewritten (identity swap, linearization,
 # path scrub). --force-with-lease ONLY: it refuses when the remote tip is not the
