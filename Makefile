@@ -947,13 +947,23 @@ sudo systemctl enable --now fail2ban-tailnet-sync.timer
 @scripts/lib/mklog info "tailnet whitelist timer installed + enabled (bans that hit a tailnet endpoint are lifted within one interval)"
 sudo systemctl enable --now kefocloud.timer
 @scripts/lib/mklog info "kefocloud night window installed + enabled (23:40: snapshot when kopia is installed, branch prune when a GitHub credential works; both skip quietly)"
-# The midnight maintenance window owns apt now: the distro's own two apt timers
-# would otherwise race it for the same lock. Masked, not just disabled, because
-# a package upgrade can re-enable an apt timer.
+# The midnight maintenance window owns these jobs now: it calls each unit itself
+# (scripts/ops/maintenance.sh), so their own timers are masked — masked, not just
+# disabled, because a package upgrade can re-enable an apt timer. The two apt
+# timers go first: left running, they would race the window for the apt lock.
 sudo systemctl disable --now apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
 sudo systemctl mask apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1 || true
+sudo systemctl disable --now logrotate.timer dpkg-db-backup.timer man-db.timer \
+  systemd-tmpfiles-clean.timer fstrim.timer e2scrub_all.timer 2>/dev/null || true
+sudo systemctl mask logrotate.timer dpkg-db-backup.timer man-db.timer \
+  systemd-tmpfiles-clean.timer fstrim.timer e2scrub_all.timer >/dev/null 2>&1 || true
+# The two units this window replaced: disabled, then removed from the unit dir.
+sudo systemctl disable --now kopia-snapshot.timer git-prune.timer 2>/dev/null || true
+sudo rm -f /etc/systemd/system/kopia-snapshot.service /etc/systemd/system/kopia-snapshot.timer \
+  /etc/systemd/system/git-prune.service /etc/systemd/system/git-prune.timer
+sudo systemctl daemon-reload
 sudo systemctl enable --now maintenance.timer
-@scripts/lib/mklog info "maintenance window installed + enabled (00:00 local: upgrade, autoremove/clean, docker prune, journal vacuum, fail2ban pass)"
+@scripts/lib/mklog info "maintenance window installed + enabled (00:00 local: upgrade, autoremove/clean, logrotate, dpkg backup, man-db, tmpfiles, docker prune, journal vacuum, Sunday TRIM + scrub, fail2ban pass)"
 sudo systemctl enable --now tmux-main.service
 @scripts/lib/mklog info "tmux 'main' session ensured + enabled (make tmux-open TAG=main to attach)"
 sudo systemctl restart sshd dnsmasq

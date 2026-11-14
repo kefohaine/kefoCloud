@@ -3,9 +3,17 @@
 #
 # Runs by maintenance.timer at midnight (local wall clock, so CET in winter and
 # CEST in summer with no DST edit): package index refresh, upgrade, the cleanups
-# that follow an upgrade, and one fail2ban whitelist pass. Everything that used
-# to be a separate daily unit now happens here, in one serialized window, so
-# nothing fights the same apt lock or the same disk at midnight.
+# that follow an upgrade, the distro jobs whose own timers are masked by
+# `make install-config` (log rotation, the dpkg database backup, the man-page
+# index, tmpfiles aging, and on Sunday the weekly TRIM + ext4 scrub), and one
+# fail2ban whitelist pass. Everything that used to be a separate daily unit now
+# happens here, in one serialized window, so nothing fights the same apt lock or
+# the same disk at midnight.
+#
+# The merged jobs are CALLED, not reimplemented (`systemctl start <unit>.service`):
+# the distro's own unit keeps its configuration and its failure reporting, and a
+# timer that is masked cannot drift away from the logic that used to run under it.
+# Weekly work stays weekly — it is gated on Sunday, not run every night.
 #
 # Kopia snapshots and the local-branch prune are NOT here: they belong to
 # kefocloud-nightly.sh / kefocloud.timer, because they depend on the kopia
@@ -33,6 +41,18 @@ LOCK_WAIT=7200
 
 say() { printf 'maintenance: %s\n' "$*"; }
 step() { printf '\n== %s ==\n' "$*"; }
+# Weekly, not nightly: the jobs that were weekly before the merge keep that
+# cadence, inside the same window (Sunday is ISO day 7).
+weekly() { [ "$(date +%u)" = 7 ]; }
+# start_unit <unit> — run a distro job that lost its timer to this window.
+start_unit() {
+  local u="$1"
+  if ! systemctl cat "$u" >/dev/null 2>&1; then
+    say "$u is absent on this host — skipped"; return 0
+  fi
+  if [ "${DRY:-0}" = 1 ]; then dryrun_plan "systemctl start $u"; return 0; fi
+  run "systemctl start $u" systemctl start "$u"
+}
 fail=0
 run() {   # run <description> <command...>
   local d="$1"; shift
@@ -72,7 +92,16 @@ run "apt-get autoremove --purge" env DEBIAN_FRONTEND=noninteractive \
     apt-get -y autoremove --purge
 run "apt-get clean" apt-get clean
 
-# 3. Container garbage. Dangling images and build cache only: `-a` would drop
+# 3. The distro jobs whose timers are masked so this window owns them. Order
+#    matters only in that these follow the upgrade: log rotation and the dpkg
+#    database copy should describe the packages that are now installed.
+step "merged: tmpfiles, logrotate, dpkg database backup, man-page index"
+run "systemd-tmpfiles --clean" systemd-tmpfiles --clean
+start_unit logrotate.service
+start_unit dpkg-db-backup.service
+start_unit man-db.service
+
+# 4. Container garbage. Dangling images and build cache only: `-a` would drop
 #    images the compose files still name, and a re-pull needs the network.
 if command -v docker >/dev/null 2>&1; then
   step "docker: dangling images + build cache"
@@ -82,14 +111,23 @@ else
   say "docker is absent — no container cleanup"
 fi
 
-# 4. Journal size. Project logs under LOG_DIR are rotated by logrotate.timer;
+# 5. Journal size. Project logs under LOG_DIR are rotated by logrotate.timer;
 #    this bounds the unit output that has no other cap.
 if command -v journalctl >/dev/null 2>&1; then
   step "journal: keep 14 days"
   run "journalctl --vacuum-time=14d" journalctl --vacuum-time=14d --quiet
 fi
 
-# 5. One fail2ban whitelist pass after the upgrade: a restart can leave a ban
+# 6. Weekly: TRIM and the ext4 scrub, which were weekly timers of their own.
+if weekly; then
+  step "weekly: TRIM + ext4 scrub"
+  start_unit fstrim.service
+  start_unit e2scrub_all.service
+else
+  say "weekly jobs (TRIM, ext4 scrub) are Sunday's — skipped tonight"
+fi
+
+# 7. One fail2ban whitelist pass after the upgrade: a restart can leave a ban
 #    behind, and the per-minute repair loop is the steady state, not this.
 if [ -x "$ROOT/scripts/ops/fail2ban-tailnet-sync.sh" ]; then
   step "fail2ban: tailnet whitelist + unban pass"
