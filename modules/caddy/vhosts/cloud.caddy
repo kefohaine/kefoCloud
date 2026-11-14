@@ -31,7 +31,7 @@ https://cloud.{{DOMAIN}} {
     rate_limit @web {
         zone cloud_rl {
             key {remote_host}
-            events 240
+            events 300
             window 1m
         }
     }
