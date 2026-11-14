@@ -265,10 +265,10 @@ sudo bash scripts/install/wizard.sh        # fresh install, or repair a finished
 sudo bash scripts/install/uninstall.sh     # take it apart (module by module, --interactive)
 ```
 
-The installer asks `Do you wish to continue?` and, on a machine that already has a finished install, offers repair instead. All inputs are collected before any work and each is persisted immediately, so an aborted run resumes: locale country, GitHub collaborator opt-in (+ a `name email` commit identity and a push key it verifies automatically), the device's public SSH key, Tailscale auth key, Cloudflare API token, domain, and the modules as one space-separated line (any of the names `config/modules.conf` declares, any order, `all` for every one). Affirmations accept only `yes`/`no`; the answer is stored as `true`/`false`.
+The installer asks `Do you want to continue?` and, on a machine that already holds a saved run, asks `Do you want to repair this installation?`; answering `no` offers `Start a fresh install instead?`, and `no` to both cancels without touching anything. All inputs are collected before any work and each is persisted immediately, so an aborted run resumes: locale country, GitHub collaborator opt-in (+ a `name email` commit identity and a push key it verifies automatically), the device's public SSH key, Tailscale auth key, Cloudflare API token, domain, and the modules as one space-separated line (any of the names `config/modules.conf` declares, any order, `all` for every one). Affirmations accept only `yes`/`no`; the answer is stored as `true`/`false`.
 
 
-Repair is idempotent and add-only for every module the operator keeps: it skips services whose inputs are unchanged, recreates Caddy only when the rendered config is newer, never re-issues a certificate that is already served, and hands a module the operator turned off to `uninstall.sh --granular`, which removes only that module — its containers, its data dirs and its Cloudflare A records (and the mail ports from the firewall) — so a turned-off app stops serving instead of staying reachable. A resume re-runs the whole pipeline (every step is safe to repeat) and asks only for values it is missing; the module set is always asked so a repair can change the selection. A run started fresh asks every prompt again and ignores the saved answers without deleting them, so a later run can still resume. There is no prompt-defaults file.
+Repair is idempotent and add-only for every module the operator keeps: it skips services whose inputs are unchanged, recreates Caddy only when the rendered config is newer, never re-issues a certificate that is already served, and hands a module the operator turned off to `uninstall.sh --granular`, which removes only that module — its containers, its data dirs and its Cloudflare A records (and the mail ports from the firewall) — so a turned-off app stops serving instead of staying reachable. A resume re-runs the whole pipeline (every step is safe to repeat) and asks only for values it is missing; the module set is always asked so a repair can change the selection. A fresh run asks every prompt again and ignores the saved answers without deleting them: `data/wizard.state` is moved to `data/wizard.state.prev` (mode 0600) before the first prompt, so a later run can still be pointed at it by hand. There is no prompt-defaults file.
 
 Uninstall is the exact opposite in the same style: three consequence confirmations by default, or `--interactive` to pick the scope (modules, the whole framework, or cancel). SSH hardening is deliberately kept and operator data is never deleted without a per-category confirm; the tailnet membership goes last so the session survives. The run prints how to rebuild.
 
@@ -297,8 +297,7 @@ run resumes instead of re-asking. Then the run is unattended through the pipelin
 steps — and ends with `write_state` (`finished=true`) → one `make smoke`, whose exit code
 is the verdict; a failure records `finished=false`. Log: `$LOG_DIR/wizard.log`.
 
-Re-running it on a finished install offers **repair** after a yes/no confirmation; to
-rebuild from scratch, run `scripts/install/uninstall.sh` first, then the installer again.
+Re-running it on a finished install offers **repair**; answering `no` then offers a **fresh** run, which asks every value again and keeps the previous answers in `data/wizard.state.prev`. Neither option removes data/ — the installer is add-only. To rebuild from scratch, run `scripts/install/uninstall.sh` first, then the installer again.
 
 ### What the script does not do
 

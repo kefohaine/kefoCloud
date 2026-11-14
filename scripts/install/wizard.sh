@@ -3,10 +3,12 @@
 #
 # ALL inputs are collected up front, in one fixed order, before any install
 # work, and each is persisted immediately (so an abort mid-run leaves the
-# answers for a resume). Order: continue-gate, apply-previous-answers (only when
-# state exists), GitHub collaborator opt-in (+ commit identity + automatic key
-# verification), device SSH key, Tailscale auth key, Cloudflare API token,
-# domain, modules (one space-separated line). Every affirmation takes only the
+# answers for a resume). Order: continue-gate, repair-or-fresh (only when state
+# exists: repair reuses every saved answer, fresh moves them to <state>.prev and
+# asks again), locale country, GitHub collaborator opt-in (+ commit identity +
+# automatic key verification), device SSH key, Tailscale auth key, Cloudflare API
+# token, domain, modules (one space-separated line), and the kopia backup target
+# when that module is on. Every affirmation takes only the
 # literal words `yes`/`no` (no shortcut, no default); the answer is recorded as
 # the boolean true/false. Then it runs unattended as a fixed 19-row checklist
 # (grey [WAIT] -> animated orange [EXEC] -> green [DONE] / red [FAIL]; a failed
@@ -145,25 +147,52 @@ main() {
   fi
 
   if [ -n "$_prev" ]; then
-    # A previous run is only ever REPAIRED: the installer is add-only and never
-    # removes, so a re-run can not wipe data/. The gate asks once and stops
-    # when the answer is no.
+    # A previous run is either REPAIRED (saved answers reused) or replaced by a
+    # FRESH run (saved answers kept at <state>.prev, not deleted). Neither one
+    # removes data/: the installer is add-only, so a re-run can not wipe it.
     printf "%s[WARN]%s 'data/wizard.state' detected - wizard previously ran\n" "$C_ORANGE" "$C_RST"
     local _repair
     ask_boolean "Do you want to repair this installation?" _repair || _repair=false
     if [ "$_repair" != "true" ]; then
-      log "  repair declined at the confirmation prompt — nothing was changed"
-      msg "Repair cancelled — nothing was changed."
-      exit 0
-    fi
-    REPAIR=true
-    detail "  repairing — every saved value is reused; only missing ones are asked"
-    # A repair is a full pipeline re-run, not a skip: every step is idempotent
-    # (containers are recreated, DNS records upserted, setup steps re-applied),
-    # so a re-run after a green install works but does the work again. Say so,
-    # because "repair" reads like "continue from where it stopped" (2026-10-16).
-    if [ "${FINISHED:-false}" = "true" ]; then
-      msg "  previous run finished successfully — a repair re-runs the pipeline but only re-applies what is missing or changed (enabled-in-state but not detected locally gets installed; running services with unchanged inputs are skipped)."
+      # Not a repair does not have to mean "stop": the operator may want a FRESH
+      # run. A fresh run ignores every saved answer but never deletes them — the
+      # state file is moved aside to <state>.prev, so a later run can still
+      # resume from it. Both options are described on one line each, and the
+      # second answer decides; declining it leaves the system untouched.
+      printf '%s[INFO]%s repair = reuse every saved value, ask only what is missing\n' "$C_GREY" "$C_RST"
+      printf '%s[INFO]%s fresh  = ask every value again, ignore the saved ones (they are kept at %s.prev)\n' "$C_GREY" "$C_RST" "$INSTALL_STATE"
+      local _fresh
+      ask_boolean "Start a fresh install instead?" _fresh || _fresh=false
+      if [ "$_fresh" != "true" ]; then
+        log "  repair and fresh both declined — nothing was changed"
+        msg "Cancelled — nothing was changed."
+        exit 0
+      fi
+      if [ -f "$INSTALL_STATE" ]; then
+        mv -f "$INSTALL_STATE" "$INSTALL_STATE.prev" 2>/dev/null \
+          || { msg "Could not set the previous answers aside ($INSTALL_STATE.prev) — nothing was changed."; exit 1; }
+        chmod 600 "$INSTALL_STATE.prev" 2>/dev/null || true
+        detail "  fresh run — the previous answers are kept at $INSTALL_STATE.prev"
+      fi
+      # Forget everything load_state put in the environment: with the file moved
+      # aside, the prompts below ask each value again and save_state cannot
+      # resurrect a stale one.
+      unset DOMAIN LOCALE_COUNTRY CF_API_TOKEN TS_AUTHKEY TS_IP KOPIA_SFTP_HOST \
+            KOPIA_SFTP_PORT KOPIA_SFTP_USER KOPIA_SFTP_PATH SSH_PUBKEY SSH_PUBKEYS \
+            GH_REMOTE GH_AUTH_OK GITHUB_COMMIT_NAME GITHUB_COMMIT_EMAIL \
+            NC_APPS_APPLIED VIDEO_CALLING CLIENT_PUSH
+      local _mk
+      for _mk in $(_state_modules); do unset "MOD_${_mk^^}"; done
+    else
+      REPAIR=true
+      detail "  repairing — every saved value is reused; only missing ones are asked"
+      # A repair is a full pipeline re-run, not a skip: every step is idempotent
+      # (containers are recreated, DNS records upserted, setup steps re-applied),
+      # so a re-run after a green install works but does the work again. Say so,
+      # because "repair" reads like "continue from where it stopped" (2026-10-16).
+      if [ "${FINISHED:-false}" = "true" ]; then
+        msg "  previous run finished successfully — a repair re-runs the pipeline but only re-applies what is missing or changed (enabled-in-state but not detected locally gets installed; running services with unchanged inputs are skipped)."
+      fi
     fi
   else
     # No previous run: drop whatever instance.sh's fallbacks put in the
