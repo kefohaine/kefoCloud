@@ -26,10 +26,10 @@ kopia_setup() {
   fi
   detail "  container runs (client only: no server, no listener)"
 
-  if systemctl is-enabled --quiet kopia-snapshot.timer 2>/dev/null; then
-    detail "  kopia-snapshot.timer is enabled (one window a day, at midnight)"
+  if systemctl is-enabled --quiet kefocloud.timer 2>/dev/null; then
+    detail "  kefocloud.timer is enabled (one window a day, shortly before midnight)"
   else
-    warn kopia_timer "kopia-snapshot.timer is not enabled — nothing takes snapshots"
+    warn kopia_timer "kefocloud.timer is not enabled — nothing takes snapshots"
   fi
 
   if docker exec -e KOPIA_PASSWORD="$KOPIA_PASSWORD" "$KOPIA_CTN" \

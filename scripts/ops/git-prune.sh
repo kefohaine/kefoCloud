@@ -17,8 +17,8 @@
 # is never the cheaper mistake. The base and the current branch are never
 # touched, and nothing here reaches the remote beyond `fetch --prune`.
 #
-# Run by git-prune.timer once a day; the plan is
-# `DRYRUN=1 bash scripts/ops/git-prune.sh`.
+# Run by kefocloud.timer once a night (skipped there when no GitHub credential is
+# usable); the plan is `DRYRUN=1 bash scripts/ops/git-prune.sh`.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
