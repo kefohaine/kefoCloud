@@ -3,9 +3,9 @@
 # stack-up.sh — the single, idempotent entry point that brings every DEPLOYED
 # compose unit up. Callers:
 #
-#   stack-up.sh              (boot)    $NODE_NAME-stack.service
+#   stack-up.sh              (boot)    kefo-stack.service
 #   stack-up.sh --update     (manual)  make update
-#   stack-up.sh --check      (timer)   repair pass — start only what is missing
+#   stack-up.sh --check      (manual)  repair pass — start only what is missing
 #   stack-up.sh --validate   (gate)    validate the edge config, change nothing
 #   stack-up.sh --dry-run    (plan)    print what this run would pull, recreate or
 #                                      start, unit by unit, and change nothing

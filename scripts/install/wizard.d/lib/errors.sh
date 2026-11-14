@@ -90,7 +90,7 @@ problem() {
     kopia)          echo "the kopia container is not running" ;;
     kopia_gen)      echo "kopia secrets not generated (make kopia-gen failed)" ;;
     kopia_setup)    echo "the kopia container is not running" ;;
-    kopia_timer)    echo "the kopia snapshot timer is not enabled" ;;
+    kopia_timer)    echo "the nightly kefocloud window is not enabled (no snapshots)" ;;
     kuma_admin)     echo "uptime kuma admin user is missing" ;;
     kuma_seed)      echo "uptime kuma monitors are not seeded" ;;
     zone)           echo "Cloudflare zone '$DOMAIN' not found" ;;
@@ -196,6 +196,11 @@ recheck() {
     sslmode) ssl_mode_full ;;
     matrix_setup) docker exec matrix-synapse python3 -c 'import urllib.request,sys; sys.exit(0 if urllib.request.urlopen("http://127.0.0.1:8008/health").status == 200 else 1)' >/dev/null 2>&1 && curl -sk --max-time 15 "https://chat.$DOMAIN/" | grep -qi '<title>' ;;
     kopia_setup) docker ps --format '{{.Names}}' | grep -qx kopia ;;
+    # Generated artefacts: the make target writes these, so their presence IS the
+    # fix (re-running it happens in the loop above, before this is asked).
+    matrix_gen) [ -s "$REPO/modules/matrix/.env" ] && [ -s "$DATA/matrix/mas/config.yaml" ] ;;
+    kopia_gen) [ -s "$REPO/modules/kopia/.env" ] && [ -s "$DATA/kopia/ssh/id_ed25519" ] ;;
+    kopia_timer) systemctl is-enabled --quiet kefocloud.timer ;;
     dkim_setup)      dig +short TXT "dkim._domainkey.$DOMAIN" @"$(dig +short NS "$DOMAIN" | head -1)" 2>/dev/null | tr -d '"' | grep -qE 'p=[A-Za-z0-9+/=]{100,}' ;;
     dns_mail_txt) mod_on mail || return 0; cf_mail_dns; local records; records=$(curl -fsS -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" 2>/dev/null) || return 1; printf '%s' "$records" | jq -e --arg d "$DOMAIN" --arg s "v=spf1 a:mail.$DOMAIN mx -all" --arg m 'v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s;' '[.result[] | {type,name,content}] as $r | [[$d,"MX"],["_dmarc."+$d,"TXT"]] as $fs | [($fs[] | . as $x | any($r[]; .type==$x[1] and .name==$x[0])), any($r[]; .type=="TXT" and .name==$d and .content==$s)] | all' >/dev/null ;;
     vaultwarden_setup) if mod_on mail; then . modules/vaultwarden/.env 2>/dev/null; mailbox_add "vaultwarden@$DOMAIN" "${SMTP_PASSWORD:-}" >/dev/null 2>&1; mailbox_exists "vaultwarden@$DOMAIN"; else false; fi ;;
@@ -259,6 +264,11 @@ resolve_errors() {
         matrix_setup) matrix_setup;;
         vaultwarden_setup) vaultwarden_setup;;
         dkim_setup) mail_wait_ready 2>/dev/null || true; dkim_setup;;
+        # A failed generator is re-run here too: its make target is idempotent
+        # (it seeds only what is missing), and without this the tag could never
+        # clear — `recheck` has nothing to probe until the artefacts exist.
+        matrix_gen) make -C "$REPO" matrix-gen >>"$LOG" 2>&1 || true;;
+        kopia_gen)  make -C "$REPO" kopia-gen  >>"$LOG" 2>&1 || true;;
       esac
       if recheck "$tag"; then
         _note "$(printf '   %s✓ solved%s: %s — %s' "$C_GREEN" "$C_RST" "$tag" "$(problem "$tag")")"
