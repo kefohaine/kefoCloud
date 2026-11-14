@@ -196,6 +196,7 @@ recheck() {
     sslmode) ssl_mode_full ;;
     matrix_setup) docker exec matrix-synapse python3 -c 'import urllib.request,sys; sys.exit(0 if urllib.request.urlopen("http://127.0.0.1:8008/health").status == 200 else 1)' >/dev/null 2>&1 && curl -sk --max-time 15 "https://chat.$DOMAIN/" | grep -qi '<title>' ;;
     kopia_setup) docker ps --format '{{.Names}}' | grep -qx kopia ;;
+    kopia_timer) systemctl is-enabled --quiet kefocloud.timer ;;
     dkim_setup)      dig +short TXT "dkim._domainkey.$DOMAIN" @"$(dig +short NS "$DOMAIN" | head -1)" 2>/dev/null | tr -d '"' | grep -qE 'p=[A-Za-z0-9+/=]{100,}' ;;
     dns_mail_txt) mod_on mail || return 0; cf_mail_dns; local records; records=$(curl -fsS -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" 2>/dev/null) || return 1; printf '%s' "$records" | jq -e --arg d "$DOMAIN" --arg s "v=spf1 a:mail.$DOMAIN mx -all" --arg m 'v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s;' '[.result[] | {type,name,content}] as $r | [[$d,"MX"],["_dmarc."+$d,"TXT"]] as $fs | [($fs[] | . as $x | any($r[]; .type==$x[1] and .name==$x[0])), any($r[]; .type=="TXT" and .name==$d and .content==$s)] | all' >/dev/null ;;
     vaultwarden_setup) if mod_on mail; then . modules/vaultwarden/.env 2>/dev/null; mailbox_add "vaultwarden@$DOMAIN" "${SMTP_PASSWORD:-}" >/dev/null 2>&1; mailbox_exists "vaultwarden@$DOMAIN"; else false; fi ;;

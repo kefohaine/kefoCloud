@@ -226,6 +226,7 @@ ask_locale() {
       # The checklist marker follows the country too (silent, cosmetic).
       ANIM_SYM=$(currency_symbol "$(country_code "$LOCALE_COUNTRY" 2>/dev/null || true)")
       detail "  locale country '$LOCALE_COUNTRY' -> timezone $tz, marker '$ANIM_SYM'"
+      save_state
       return 0
     fi
     echo "   unknown country: $LOCALE_COUNTRY (name or ISO 3166 code, e.g. France / FR)"
@@ -253,7 +254,7 @@ ask_inputs() {
   # 4 — Tailscale auth key (input visible).
   if [ -z "${TS_AUTHKEY:-}" ]; then
     printf '%s[INFO]%s Tailscale Authentication Key: ' "$C_GREY" "$C_RST"
-    read -r TS_AUTHKEY
+    read -rs TS_AUTHKEY; echo
   fi
   [ -n "$TS_AUTHKEY" ] || { echo "Auth key required."; exit 1; }
   save_state
@@ -261,7 +262,7 @@ ask_inputs() {
   # 5 — Cloudflare API token (input visible).
   if [ -z "${CF_API_TOKEN:-}" ]; then
     printf '%s[INFO]%s Cloudflare API Token: ' "$C_GREY" "$C_RST"
-    read -r CF_API_TOKEN
+    read -rs CF_API_TOKEN; echo
   fi
   [ -n "$CF_API_TOKEN" ] || { echo "Token required."; exit 1; }
   save_state
