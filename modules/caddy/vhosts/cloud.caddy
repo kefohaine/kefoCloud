@@ -9,7 +9,32 @@
 # TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
 
 https://cloud.{{DOMAIN}} {
-    import ratelimit cloud_rl
+    # Two rate-limit zones, split by door — NOT the shared one-zone snippet.
+    # A WebDAV client (macOS Finder, rclone, davfs2) legitimately issues
+    # hundreds of PROPFINDs a minute over /remote.php/dav, and while this vhost
+    # kept ONE per-host bucket the whole edge shared its 240 events: a sync
+    # burned it, and the browser's next request for /config.json came back 429,
+    # which the oCIS web front renders as "configuration manquante ou
+    # incorrecte" (2026-11-14, 1532 x 429 in one session, 2 of them on
+    # /config.json, same public IP as the sync). DAV gets its own wide zone so
+    # the web UI can never be starved by a sync; the browser/API side keeps the
+    # original budget.
+    @dav path /remote.php/* /dav/*
+    rate_limit @dav {
+        zone cloud_dav_rl {
+            key {remote_host}
+            events 3000
+            window 1m
+        }
+    }
+    @web not path /remote.php/* /dav/*
+    rate_limit @web {
+        zone cloud_rl {
+            key {remote_host}
+            events 240
+            window 1m
+        }
+    }
     # Access log for the fail2ban web-login jail (config/fail2ban): one file
     # per app so a jail bans on ITS login endpoint, not the whole edge.
     log {
