@@ -30,9 +30,13 @@ fi
 # is root@<the machine name>. This installer is the ONLY place the machine is
 # renamed — it sets the static hostname to $NODE_NAME (task_packages) and writes
 # HOSTNAME=$NODE_NAME into data/instance.conf, so every other script derives the
-# name from there rather than hardcoding it. Hardcoded here exceptionally; the
-# tailnet node adopts this hostname automatically, so no explicit rename is needed.
-NODE_NAME="kefomachine"
+# name from there rather than hardcoding it.
+# The default applies ONLY while instance.conf carries no HOSTNAME of its own
+# (instance.sh above has already loaded it when it does): an operator who set
+# HOSTNAME there keeps it, instead of the wizard renaming the box back on every
+# run. The tailnet node adopts the hostname automatically, so no explicit rename
+# is needed.
+grep -q '^HOSTNAME=' "$DATA/instance.conf" 2>/dev/null || NODE_NAME="kefomachine"
 RENDER_DIR="$DATA/rendered"
 # $LOG_DIR (EVERY log this project writes: install, uninstall and any module
 # log) is repo-relative (data/logs), so the whole namespace sits next to the
