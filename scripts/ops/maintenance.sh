@@ -101,10 +101,35 @@ start_unit logrotate.service
 start_unit dpkg-db-backup.service
 start_unit man-db.service
 
-# 4. Container garbage. Dangling images and build cache only: `-a` would drop
+# 4. Docker. The upgrade often lands a new docker-ce, and dockerd then restarts
+#    and recreates /var/run/docker.sock. Containers that bind that socket keep the
+#    OLD inode — live-restore is exactly why they are still running — so every
+#    docker-API call inside them fails with `connect ECONNREFUSED
+#    /var/run/docker.sock`. That is how Kuma reported the whole stack down while
+#    every site still answered 200, and it stayed wrong until someone restarted
+#    the container by hand. Restart only the socket clients that predate the
+#    socket, so a normal night touches nothing.
+socket_clients() {
+  local sock=/var/run/docker.sock sock_at id started name
+  [ -S "$sock" ] || { say "$sock is absent — no socket clients to refresh"; return 0; }
+  sock_at=$(stat -c %Y "$sock" 2>/dev/null) || return 0
+  for id in $(docker ps -q 2>/dev/null); do
+    case "$(docker inspect -f '{{range .HostConfig.Binds}}{{.}} {{end}}' "$id" 2>/dev/null)" in
+      *"$sock"*) ;;
+      *) continue ;;
+    esac
+    started=$(docker inspect -f '{{.State.StartedAt}}' "$id" 2>/dev/null) || continue
+    [ "$(date -d "$started" +%s 2>/dev/null || echo 0)" -lt "$sock_at" ] || continue
+    name=$(docker inspect -f '{{.Name}}' "$id" 2>/dev/null | sed 's#^/##')
+    run "docker restart $name (holds a socket from before dockerd restarted)" \
+        docker restart "$id"
+  done
+}
+#    Container garbage: dangling images and build cache only, `-a` would drop
 #    images the compose files still name, and a re-pull needs the network.
 if command -v docker >/dev/null 2>&1; then
-  step "docker: dangling images + build cache"
+  step "docker: socket clients, dangling images + build cache"
+  socket_clients
   run "docker image prune" docker image prune -f
   run "docker builder prune (older than 7 days)" docker builder prune -f --filter until=168h
 else
