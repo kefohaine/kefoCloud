@@ -29,42 +29,30 @@ _ask_boolean_raw() {
   done
 }
 
-# ONE prompt for the whole module set, space-separated (multiple spaces / commas
-# tolerated, any order). Every name not listed becomes false. ALWAYS asked, even
-# on a repair: a saved MOD_* set is non-empty even when every answer is false, so
-# skipping on "all saved" left the operator unable to change the selection.
+# ONE yes/no question per module, asked in roster order — the roster IS
+# config/modules.conf, so a module added there is askable, recordable and
+# detectable with no edit here. ALWAYS asked, even on a repair: a saved MOD_*
+# set is never a reason to skip (the operator must be able to change it). Each
+# answer is recorded as the boolean true/false and saved immediately, so an
+# abort mid-list keeps the modules already answered.
 ask_modules() {
-  local k name ans ok mods
-  # The offer list IS config/modules.conf (via _state_modules) — a module added
-  # there is askable, recordable and detectable with no edit here. Normalize the
-  # newline-separated roster to ONE space-separated line: the case matcher below
-  # is ` $mods `, so a newline between names made every module except the first
-  # and last "unknown" and silently refused a valid selection.
-  mods="$(_state_modules | paste -sd' ' -)"
-  while :; do
-    printf '%s[INFO]%s Modules to install, separated by spaces (%s) — or 'all' for every one: ' \
-      "$C_GREY" "$C_RST" "$(printf '%s' "$mods" | paste -sd' ' -)"
-    read -r ans || exit 1
-    ans="${ans,,}"; ans="${ans//,/ }"
-    # Presets: `all` (and `everything`) expands to the whole roster, which is
-    # the same choice as naming every app. Any other word must be an app key.
-    case " $ans " in
-      *" all "*|*" everything "*) ans="$mods" ;;
-    esac
-    ok=1
-    for k in $ans; do
-      case " $mods " in *" $k "*) ;; *) echo "   unknown module: $k"; ok= ;; esac
-    done
-    [ -n "$ok" ] || continue
-    for k in $mods; do
-      name="MOD_${k^^}"
-      case " $ans " in *" $k "*) printf -v "$name" '%s' true ;; *) printf -v "$name" '%s' false ;; esac
-    done
-    return 0
+  local m _dir host name _row
+  # The roster is read into a list FIRST and each line is split with a
+  # here-string: a `while read` loop would hold stdin for its whole body, so
+  # every ask_boolean inside it would read the roster instead of the answer.
+  local -a _rows=()
+  mapfile -t _rows < <(awk '$1 !~ /^#/ && NF { print $1, $2, $3 }' "$REPO/config/modules.conf" 2>/dev/null)
+  for _row in "${_rows[@]:-}"; do
+    read -r m _dir host <<<"$_row"
+    [ -n "$m" ] || continue
+    [ "$host" = "-" ] && host=""
+    name="MOD_${m^^}"
+    ask_boolean "Install $m${host:+ (https://$host.$DOMAIN)}?" "$name" || exit 1
+    save_state
   done
 }
 
-# ── Per-vhost exposure: one line for every door this run installs ─────────
+# ── Per-vhost exposure: one yes/no question per door this run installs ────
 # Each Caddy vhost is `tailnet-vpn` (no public A record, the machine dnsmasq
 # answers it for tailnet clients, the vhost 403s every other source) or
 # `cloudflare-dns` (a public A record, no gate — reachable from the internet).
@@ -84,55 +72,27 @@ exposure_offer() {
   done | awk '!seen[$0]++'
 }
 
-# One prompt line, `vhost=value` space-separated, naming EVERY offered door. No
-# default and no blank-to-keep: an unlisted door, an unknown name or a value
-# outside the two is re-asked as a whole line. A repair reuses the answers
-# instance.conf already records and asks only the missing ones; a fresh run
-# answers everything again.
+# One yes/no question per offered door: yes = cloudflare-dns (a public A record,
+# reachable from the internet), no = tailnet-vpn (no public record, the edge 403s
+# every other source). A repair reuses what instance.conf already records and
+# asks only a door with no valid answer; a fresh run asks every door again.
 ask_exposure() {
-  local offer cur="" v val ans ok kv name missing=0
+  local v val pub offer
   # `</dev/null`: nothing the offer list runs may eat the operator's answer —
   # with stdin redirected (a piped/scripted run) a subcommand reading stdin
-  # would consume the exposure line and the prompt would re-ask for ever.
-  # One line, space-separated: every membership test below is `" $offer "`, which
-  # a newline-separated list would never match.
-  offer="$(exposure_offer </dev/null | paste -sd' ' -)"
+  # would consume it and the prompt would re-ask for ever.
+  offer="$(exposure_offer </dev/null)"
   [ -n "$offer" ] || { detail "  exposure: no vhost belongs to this run's modules"; return 0; }
   for v in $offer; do
     val="$(exposure_of "$v")"
-    exposure_valid "$val" || missing=1
-    cur+="${cur:+ }$v=${val:-unset}"
-  done
-  if [ -n "${REPAIR:-}" ] && [ "$missing" = 0 ]; then
-    detail "  exposure: $cur (recorded in instance.conf)"
-    return 0
-  fi
-  while :; do
-    printf '\n Every door this run installs is one of two exposures:\n'
-    printf '   tailnet-vpn     no public DNS record — reached only from the tailnet (the edge 403s every other source)\n'
-    printf '   cloudflare-dns  a public DNS record — reached from the internet\n'
-    printf '   current: %s\n' "$cur"
-    printf '%s[INFO]%s Exposure for every door, space-separated vhost=value (%s): ' \
-      "$C_GREY" "$C_RST" "$offer"
-    read -r ans || exit 1
-    ans="${ans//,/ }"
-    ok=1
-    for kv in $ans; do
-      case "$kv" in
-        *=*) name="${kv%%=*}"; val="${kv#*=}" ;;
-        *)   echo "   not vhost=value: $kv"; ok=; continue ;;
-      esac
-      case " $offer " in *" $name "*) ;; *) echo "   unknown door: $name"; ok= ;; esac
-      exposure_valid "$val" || { echo "   $name: '$val' is not tailnet-vpn or cloudflare-dns"; ok=; }
-    done
-    for v in $offer; do
-      case " $ans " in *" $v="*) ;; *) echo "   missing door: $v"; ok= ;; esac
-    done
-    [ -n "$ok" ] || continue
-    for kv in $ans; do
-      printf -v "$(exposure_key "${kv%%=*}")_EXPOSURE" '%s' "${kv#*=}"
-    done
-    return 0
+    if [ -n "${REPAIR:-}" ] && exposure_valid "$val"; then
+      detail "  exposure: $v=$val (recorded in instance.conf)"
+      continue
+    fi
+    ask_boolean "$v public?" pub || exit 1
+    val=tailnet-vpn
+    [ "$pub" = true ] && val=cloudflare-dns
+    printf -v "$(exposure_key "$v")_EXPOSURE" '%s' "$val"
   done
 }
 
@@ -285,6 +245,13 @@ currency_symbol() {
   esac
 }
 ask_locale() {
+  local tz
+  # Known value: a machine already set to a real zone needs no answer — the
+  # country is asked only while the host still sits on UTC (a fresh VPS default).
+  if [ -z "${LOCALE_COUNTRY:-}" ]; then
+    tz="$(timedatectl show -p Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null || true)"
+    case "$tz" in ""|UTC|Etc/*) ;; *) LOCALE_COUNTRY="$tz" ;; esac
+  fi
   while :; do
     if [ -z "${LOCALE_COUNTRY:-}" ]; then
       printf '%s[INFO]%s Locale country (name or ISO code, e.g. France / FR): ' "$C_GREY" "$C_RST"
@@ -306,13 +273,20 @@ ask_locale() {
   done
 }
 
+# Known value, so never asked: a node already logged in to the tailnet answers
+# with a live tailnet IPv4 — the join in task_tailscale skips itself in that case.
+tailscale_online() { [ -n "$(tailscale ip -4 2>/dev/null | head -n1)" ]; }
+
 ask_inputs() {
   # Inputs are collected in ONE fixed order, all before any install work, and
   # each is persisted immediately (save_state) so an abort mid-run leaves the
   # answers for a resume. Order: locale country (sets local time first),
   # github-remote-access (+ identity), device-ssh, tailscale, cloudflare, domain,
-  # modules, per-vhost exposure. The repair question precedes all of these (it decides whether saved
-  # answers are reused); the module set is asked on every run.
+  # modules (one yes/no each), per-vhost exposure (one yes/no each). The repair
+  # question precedes all of these (it decides whether saved answers are reused);
+  # the module set is asked on every run. A value this machine can read for
+  # itself is never asked: the host timezone, the checkout's git identity, a
+  # tailnet that is already joined, and the domain of a token that sees one zone.
 
   # 1 — locale country: resolved to a timezone and applied before any timestamp.
   ask_locale
@@ -323,12 +297,16 @@ ask_inputs() {
   # 3 — device SSH public key (strict, required).
   ask_ssh_key
 
-  # 4 — Tailscale auth key (input visible).
-  if [ -z "${TS_AUTHKEY:-}" ]; then
+  # 4 — Tailscale auth key (input visible). Skipped when the node is already on
+  # the tailnet (a repair always has its key in wizard.state, so this only ever
+  # saves a question on a host that joined before).
+  if [ -z "${TS_AUTHKEY:-}" ] && [ -z "${REPAIR:-}" ] && tailscale_online; then
+    detail "  tailscale: node already joined — no auth key asked"
+  elif [ -z "${TS_AUTHKEY:-}" ]; then
     printf '%s[INFO]%s Tailscale Authentication Key: ' "$C_GREY" "$C_RST"
     read -rs TS_AUTHKEY; echo
+    [ -n "$TS_AUTHKEY" ] || { echo "Auth key required."; exit 1; }
   fi
-  [ -n "$TS_AUTHKEY" ] || { echo "Auth key required."; exit 1; }
   save_state
 
   # 5 — Cloudflare API token (input visible).
@@ -339,7 +317,17 @@ ask_inputs() {
   [ -n "$CF_API_TOKEN" ] || { echo "Token required."; exit 1; }
   save_state
 
-  # 6 — domain.
+  # 6 — domain. Known value when the token sees exactly one zone: that zone IS
+  # the instance's domain, so the name is never asked for.
+  if [ -z "${DOMAIN:-}" ] && command -v curl >/dev/null && command -v jq >/dev/null; then
+    local _zones
+    _zones="$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
+      "https://api.cloudflare.com/client/v4/zones?per_page=50" 2>/dev/null | jq -r '.result[].name' 2>/dev/null)"
+    if [ "$(printf '%s\n' "$_zones" | grep -c .)" = 1 ]; then
+      DOMAIN="$_zones"
+      detail "  domain: $DOMAIN (the only zone this token sees)"
+    fi
+  fi
   if [ -z "${DOMAIN:-}" ]; then
     printf '%s[INFO]%s Domain Name: ' "$C_GREY" "$C_RST"
     read -r DOMAIN
@@ -348,35 +336,15 @@ ask_inputs() {
   [[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]] || { echo "Invalid domain: $DOMAIN"; exit 1; }
   save_state
 
-  # 7 — modules (one space-separated prompt).
+  # 7 — modules, one yes/no question each.
   ask_modules
   save_state
 
-  # 8 — per-vhost exposure, one line for the doors the module answer enables.
-  # Not saved to wizard.state: instance.conf is their one store.
+  # 8 — per-vhost exposure, one yes/no question per door the module answer
+  # enables. Not saved to wizard.state: instance.conf is their one store.
   ask_exposure
 
-  # 9 — kopia's repository target, only when that module was chosen. The
-  # repository lives on external backup storage another machine provides, so its tailnet name,
-  # login and path are install-time inputs: nothing on this host can discover
-  # them, and a later run must not guess.
-  if mod_on kopia; then
-    if [ -z "${KOPIA_SFTP_HOST:-}" ]; then
-      printf '%s[INFO]%s Backup storage host, tailnet name (e.g. host.tailnet.ts.net): ' "$C_GREY" "$C_RST"
-      read -r KOPIA_SFTP_HOST
-    fi
-    [ -n "$KOPIA_SFTP_HOST" ] || { echo "Backup target required for module kopia."; exit 1; }
-    if [ -z "${KOPIA_SFTP_USER:-}" ]; then
-      printf '%s[INFO]%s Login on that machine (its authorized_keys holds the key kopia-gen printed): ' "$C_GREY" "$C_RST"
-      read -r KOPIA_SFTP_USER
-    fi
-    [ -n "$KOPIA_SFTP_USER" ] || { echo "Backup login required for module kopia."; exit 1; }
-    if [ -z "${KOPIA_SFTP_PATH:-}" ]; then
-      printf '%s[INFO]%s Repository path on the mounted disk (e.g. /Volumes/backup/kopia): ' "$C_GREY" "$C_RST"
-      read -r KOPIA_SFTP_PATH
-    fi
-    [ -n "$KOPIA_SFTP_PATH" ] || { echo "Repository path required for module kopia."; exit 1; }
-    KOPIA_SFTP_PORT="${KOPIA_SFTP_PORT:-22}"
-    save_state
-  fi
+  # Kopia's repository target is NOT collected here: the backup disk belongs to
+  # another machine, so the wizard installs the client and the timer and leaves
+  # the target (KOPIA_SFTP_* in data/instance.conf) as an operator follow-up.
 }

@@ -21,6 +21,18 @@ github_cred_inputs() {
   fi
   save_state
   [ "${GH_REMOTE}" = "true" ] || return 0
+  # Known value, so never asked: an identity the checkout already carries
+  # (`git config user.name/user.email`, repo-local or global).
+  if [ -z "${GITHUB_COMMIT_NAME:-}" ] || [ -z "${GITHUB_COMMIT_EMAIL:-}" ]; then
+    local _n _e
+    _n="$(git -C "$REPO" config --get user.name 2>/dev/null || true)"
+    _e="$(git -C "$REPO" config --get user.email 2>/dev/null || true)"
+    if [ -n "$_n" ] && [ -n "$_e" ]; then
+      GITHUB_COMMIT_NAME="$_n"
+      GITHUB_COMMIT_EMAIL="$_e"
+      detail "  git identity from the checkout: $_n <$_e>"
+    fi
+  fi
   # One prompt for both halves of the commit identity: "name email". REQUIRED
   # when pushing is on — there is no blank-skip and no root fallback.
   if [ -z "${GITHUB_COMMIT_NAME:-}" ] || [ -z "${GITHUB_COMMIT_EMAIL:-}" ]; then
