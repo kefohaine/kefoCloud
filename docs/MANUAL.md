@@ -112,9 +112,13 @@ Cloudflare **proxying** is not a repo value: a record is created DNS-only and an
 update touches only content and TTL, so the orange cloud is set in the dashboard and
 survives every repair.
 
-`make check-exposure` asserts the wiring read-only (renders into a temp dir): every
-vhost is a target, the dnsmasq skeleton answers each gated host, the gate renders
-under `tailnet-vpn` only, and it precedes the limiter.
+A missing answer fails the render (`conditional key(s) missing`) instead of dropping
+the gate: the block is what stands between a tailnet door and the internet, so the
+render refuses rather than publish an unguarded edge — record the answer (installer
+repair, or `make vhost-exposure`) and render again. `make check-exposure` asserts the
+wiring read-only (renders into a temp dir): every vhost is a target, the dnsmasq
+skeleton answers each gated host, the gate renders under `tailnet-vpn` only, and it
+precedes the limiter.
 
 #### Module state vs route exposure
 

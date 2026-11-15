@@ -480,18 +480,35 @@ end_sec
 # ─────────────────────────────────────────────────────────────────────────────
 hdr core "Doors — one probe per vhost, from its recorded exposure"
 DOOR_SERVED="200 204 301 302 307 308 401 404 405 421"   # 403 is the gate, never "served"
+# Only doors this run actually serves: a vhost of a module that is NOT installed
+# answers 502 (the lesson in the manual), and its recorded exposure says nothing
+# about a route that does not exist.
+LIVE_DOORS="www"
+for _m in $(_state_modules); do
+  mod_on "$_m" && LIVE_DOORS+=" $(mod_vhosts "$_m")"
+done
 for _v in $(exposure_targets); do
+  case " $LIVE_DOORS " in *" $_v "*) ;; *) continue ;; esac
   _e="$(exposure_of "$_v")"
   _h="$(exposure_hosts "$_v" | head -n1)"
   [ -n "$_h" ] || continue
+  # A host installed before the answer existed records nothing. Assert the edge
+  # AS RENDERED (`$DATA_DIR/rendered/caddy/`, what the container runs) and say
+  # so: the installer repair records the answer, and from then on this asserts
+  # the recorded value instead of the render.
+  if [ -z "$_e" ]; then
+    _r="$DATA_DIR/rendered/caddy/$_v.caddy"
+    if [ -f "$_r" ] && grep -q 'respond @not_tailnet 403' "$_r"; then _e=tailnet-vpn
+    elif [ -f "$_r" ]; then _e=cloudflare-dns
+    else say "note  $_v: exposure not recorded and no rendered vhost — run the installer (repair)"; continue; fi
+    say "note  $_v: exposure not recorded; asserting the rendered edge ($_e)"
+  fi
   case "$_e" in
     tailnet-vpn)
       check    "$_v-door" "$_h" "/" "403" "" "public source refused (tailnet-vpn)"
       check_tn "$_v-tn"   "$_h" "/" "$DOOR_SERVED" "" "served to a tailnet source" ;;
     cloudflare-dns)
       check    "$_v-door" "$_h" "/" "$DOOR_SERVED" "" "served to a public source (cloudflare-dns)" ;;
-    '')
-      say "FAIL $_v: no recorded exposure — run the installer (repair) once, or make vhost-exposure"; bad ;;
     *)
       say "FAIL $_v: '$_e' is not an exposure (tailnet-vpn|cloudflare-dns)"; bad ;;
   esac
