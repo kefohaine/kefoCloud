@@ -130,7 +130,7 @@ write_instance_conf() {
   # are rendered from it (make render) and scripts read it (scripts/lib/instance.sh).
   # Values we do not own here (SERVER_IP, EMAIL, TIMEZONE) are PRESERVED from an
   # existing file — re-running the installer must never wipe them.
-  local f="$DATA/instance.conf" keep="" have_kopia=""
+  local f="$DATA/instance.conf" keep="" have_kopia="" _v _k _val
   mkdir -p "$DATA"
   [ -f "$f" ] && keep=$(grep -E '^(SERVER_IP|EMAIL|TIMEZONE|KOPIA_SFTP_[A-Z]+)=' "$f" || true)
   grep -q '^KOPIA_SFTP_HOST=' <<<"$keep" && have_kopia=1
@@ -158,6 +158,23 @@ write_instance_conf() {
       printf 'KOPIA_SFTP_PATH=%s\n' "$KOPIA_SFTP_PATH"
     fi
     [ -n "$keep" ] && printf '%s\n' "$keep"
+    # One exposure answer per Caddy vhost FILE, so no template branch is ever
+    # driven by a missing key (scripts/lib/exposure.sh reads these). A vhost of
+    # a module this run does not install gets `tailnet-vpn`: there is no route
+    # to publish, cf_dns deletes its A record, and the gate stays — never an
+    # invented public door. The two fixed doors are recorded here too: ttyd is
+    # always tailnet-vpn, the core www/apex pages always cloudflare-dns.
+    for _v in $(exposure_all); do
+      _k="$(exposure_key "$_v")_EXPOSURE"
+      _val="${!_k:-}"
+      exposure_valid "$_val" || {
+        case "$_v" in
+          www) _val=cloudflare-dns ;;
+          *)   _val=tailnet-vpn ;;
+        esac
+      }
+      printf '%s=%s\n' "$_k" "$_val"
+    done
   } > "$f"
   chmod 600 "$f"
   detail "  instance.conf written ($f) — every template renders from it"

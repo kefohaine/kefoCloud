@@ -1,4 +1,4 @@
-# wizard.d/lib/prompt.sh — the up-front input collection (locale, ssh key, tailscale, cloudflare, domain, modules).
+# wizard.d/lib/prompt.sh — the up-front input collection (locale, ssh key, tailscale, cloudflare, domain, modules, per-vhost exposure).
 
 # Module prompts are ALWAYS asked — there is no answer-sheet defaults file, and
 # every prompt is asked on every run except when a resume supplies the answer.
@@ -59,6 +59,73 @@ ask_modules() {
     for k in $mods; do
       name="MOD_${k^^}"
       case " $ans " in *" $k "*) printf -v "$name" '%s' true ;; *) printf -v "$name" '%s' false ;; esac
+    done
+    return 0
+  done
+}
+
+# ── Per-vhost exposure: one line for every door this run installs ─────────
+# Each Caddy vhost is `tailnet-vpn` (no public A record, the machine dnsmasq
+# answers it for tailnet clients, the vhost 403s every other source) or
+# `cloudflare-dns` (a public A record, no gate — reachable from the internet).
+# The answers are recorded ONLY in data/instance.conf as <VHOST>_EXPOSURE —
+# never in wizard.state — so there is one store and one accessor
+# (scripts/lib/exposure.sh). write_instance_conf (tasks/11-stack-config.sh)
+# writes them; this prompt is not a writer.
+#
+# The offer list is derived: mod_vhosts of every module this run enables, never
+# a roster. The two fixed doors — ttyd and the core www/apex pages — are never
+# offered (they are not a choice; see scripts/lib/exposure.sh).
+exposure_offer() {
+  local m
+  for m in $(_state_modules); do
+    mod_on "$m" || continue
+    mod_vhosts "$m"
+  done | awk '!seen[$0]++'
+}
+
+# One prompt line, `vhost=value` space-separated, naming EVERY offered door. No
+# default and no blank-to-keep: an unlisted door, an unknown name or a value
+# outside the two is re-asked as a whole line. A repair reuses the answers
+# instance.conf already records and asks only the missing ones; a fresh run
+# answers everything again.
+ask_exposure() {
+  local offer cur="" v val ans ok kv name missing=0
+  offer="$(exposure_offer)"
+  [ -n "$offer" ] || { detail "  exposure: no vhost belongs to this run's modules"; return 0; }
+  for v in $offer; do
+    val="$(exposure_of "$v")"
+    exposure_valid "$val" || missing=1
+    cur+="${cur:+ }$v=${val:-unset}"
+  done
+  if [ -n "${REPAIR:-}" ] && [ "$missing" = 0 ]; then
+    detail "  exposure: $cur (recorded in instance.conf)"
+    return 0
+  fi
+  while :; do
+    printf '\n Every door this run installs is one of two exposures:\n'
+    printf '   tailnet-vpn     no public DNS record — reached only from the tailnet (the edge 403s every other source)\n'
+    printf '   cloudflare-dns  a public DNS record — reached from the internet\n'
+    printf '   current: %s\n' "$cur"
+    printf '%s[INFO]%s Exposure for every door, space-separated vhost=value (%s): ' \
+      "$C_GREY" "$C_RST" "$(printf '%s' "$offer" | paste -sd' ' -)"
+    read -r ans || exit 1
+    ans="${ans//,/ }"
+    ok=1
+    for kv in $ans; do
+      case "$kv" in
+        *=*) name="${kv%%=*}"; val="${kv#*=}" ;;
+        *)   echo "   not vhost=value: $kv"; ok=; continue ;;
+      esac
+      case " $offer " in *" $name "*) ;; *) echo "   unknown door: $name"; ok= ;; esac
+      exposure_valid "$val" || { echo "   $name: '$val' is not tailnet-vpn or cloudflare-dns"; ok=; }
+    done
+    for v in $offer; do
+      case " $ans " in *" $v="*) ;; *) echo "   missing door: $v"; ok= ;; esac
+    done
+    [ -n "$ok" ] || continue
+    for kv in $ans; do
+      printf -v "$(exposure_key "${kv%%=*}")_EXPOSURE" '%s' "${kv#*=}"
     done
     return 0
   done
@@ -239,7 +306,7 @@ ask_inputs() {
   # each is persisted immediately (save_state) so an abort mid-run leaves the
   # answers for a resume. Order: locale country (sets local time first),
   # github-remote-access (+ identity), device-ssh, tailscale, cloudflare, domain,
-  # modules. The repair question precedes all of these (it decides whether saved
+  # modules, per-vhost exposure. The repair question precedes all of these (it decides whether saved
   # answers are reused); the module set is asked on every run.
 
   # 1 — locale country: resolved to a timezone and applied before any timestamp.
@@ -280,7 +347,11 @@ ask_inputs() {
   ask_modules
   save_state
 
-  # 8 — kopia's repository target, only when that module was chosen. The
+  # 8 — per-vhost exposure, one line for the doors the module answer enables.
+  # Not saved to wizard.state: instance.conf is their one store.
+  ask_exposure
+
+  # 9 — kopia's repository target, only when that module was chosen. The
   # repository lives on external backup storage another machine provides, so its tailnet name,
   # login and path are install-time inputs: nothing on this host can discover
   # them, and a later run must not guess.
