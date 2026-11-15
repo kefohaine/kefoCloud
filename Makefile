@@ -921,6 +921,17 @@ sudo cp $(RENDER_DIR)/config/fail2ban/jail.d/sshd.conf /etc/fail2ban/jail.d/sshd
       scripts/lib/mklog warn "fail2ban jail $$name skipped: log source $${logpath:-<unset>} is absent"; \
     fi; \
   done
+# A jail removed or RENAMED in config/ must leave the host too: the old
+# web-element jail would otherwise keep watching element.log beside the new
+# web-element-client one, the same offender banned twice and a stale name live
+# in fail2ban's own configuration.
+>@for f in /etc/fail2ban/jail.d/web-*.conf; do \
+    [ -e "$$f" ] || continue; \
+    name=$$(basename "$$f"); \
+    [ -e "$(RENDER_DIR)/config/fail2ban/jail.d/$$name" ] && continue; \
+    sudo rm -f "$$f"; \
+    scripts/lib/mklog info "fail2ban jail $$name removed (no longer in config/)"; \
+  done
 # Logging: ONE namespace ({{LOG_DIR}}) for every log this project writes,
 # bounded by ONE logrotate rule. Docker output is capped globally in
 # config/docker/daemon.json (10m x3); no journald drop-in exists —
