@@ -19,20 +19,27 @@ https://cloud.{{DOMAIN}} {
     # /config.json, same public IP as the sync). DAV gets its own wide zone so
     # the web UI can never be starved by a sync; the browser/API side keeps the
     # original budget.
-    @dav path /remote.php/* /dav/*
-    rate_limit @dav {
-        zone cloud_dav_rl {
-            key {remote_host}
-            events 3000
-            window 1m
+    # Exposure (scripts/lib/exposure.sh): a tailnet-vpn door refuses every
+    # non-tailnet source before either limiter — a refused flood must not spend
+    # a zone window; a cloudflare-dns door carries no gate.
+    route {
+        {{IF CLOUD_EXPOSURE=tailnet-vpn}}@not_tailnet not remote_ip 100.64.0.0/10
+        respond @not_tailnet 403{{END}}
+        @dav path /remote.php/* /dav/*
+        rate_limit @dav {
+            zone cloud_dav_rl {
+                key {remote_host}
+                events 3000
+                window 1m
+            }
         }
-    }
-    @web not path /remote.php/* /dav/*
-    rate_limit @web {
-        zone cloud_rl {
-            key {remote_host}
-            events 300
-            window 1m
+        @web not path /remote.php/* /dav/*
+        rate_limit @web {
+            zone cloud_rl {
+                key {remote_host}
+                events 300
+                window 1m
+            }
         }
     }
     # Access log for the fail2ban web-login jail (config/fail2ban): one file

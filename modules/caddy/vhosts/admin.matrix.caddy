@@ -1,10 +1,12 @@
 # admin.matrix.{{DOMAIN}} — Element Admin, the ESS CE administration panel
 # (part of the chat module, container element-admin).
 #
-# TAILNET-ONLY, like vault/kopia/mailu: the panel can read every account, room
-# and session on the homeserver, so the name has no public A record — dnsmasq
-# answers it for tailnet clients and every other source is refused before the
-# proxy runs. DNS-01 needs only the TXT record, so the certificate still issues.
+# The panel can read every account, room and session on the homeserver, so its
+# default exposure is `tailnet-vpn`: no public A record, dnsmasq answers it for
+# tailnet clients and every other source is refused before the proxy runs.
+# `make vhost-exposure TARGET=admin.matrix VALUE=cloudflare-dns` publishes it —
+# the operator's call, never a silent default. DNS-01 needs only the TXT record,
+# so the certificate keeps issuing either way.
 #
 # The app is a static SPA: it talks to matrix.{{DOMAIN}} (Synapse admin API) and
 # auth.matrix.{{DOMAIN}} (MAS admin API) directly from the browser, so this vhost
@@ -13,7 +15,6 @@
 # TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
 
 https://admin.matrix.{{DOMAIN}} {
-    import ratelimit admin_rl
     tls {
         # Fallback issuer chain: Let's Encrypt first, then Buypass Go SSL and
         # ZeroSSL — free providers tried in order, so a per-issuer rate limit
@@ -32,8 +33,14 @@ https://admin.matrix.{{DOMAIN}} {
         }
     }
     import compress
-    @not_tailnet not remote_ip 100.64.0.0/10
-    respond @not_tailnet 403
+    # Exposure (scripts/lib/exposure.sh): a tailnet-vpn door refuses every
+    # non-tailnet source here, ahead of the limiter — a refused flood must not
+    # spend the shared zone window; a cloudflare-dns door carries no gate.
+    route {
+        {{IF ADMIN_MATRIX_EXPOSURE=tailnet-vpn}}@not_tailnet not remote_ip 100.64.0.0/10
+        respond @not_tailnet 403{{END}}
+        import ratelimit admin_rl
+    }
     header {
         import security_headers
         # Nothing here may be cached: a stale panel would keep asserting a state

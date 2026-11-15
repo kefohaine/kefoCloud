@@ -1,9 +1,9 @@
 # admin.mail.{{DOMAIN}} — Mailu's platform door (admin UI at /admin + the
-# platform as served by mailu-front at 172.22.0.9:80). TAILNET-ONLY (same model
-# as vault.{{DOMAIN}}): the name has NO public A record — tailnet clients
-# resolve it through the machine dnsmasq (config/dnsmasq/10-tailnet.conf) and
-# every other source is refused before the proxy runs (@not_tailnet). DNS-01
-# needs only the TXT record, so the certificate keeps issuing.
+# platform as served by mailu-front at 172.22.0.9:80). Its default exposure is
+# `tailnet-vpn`: no public A record — tailnet clients resolve the name through
+# the machine dnsmasq (config/dnsmasq/10-tailnet.conf) and every other source is
+# refused before the proxy runs (@not_tailnet). `make vhost-exposure` may publish
+# it instead; DNS-01 needs only the TXT record, so the certificate keeps issuing.
 #
 # The FRONT keeps the name mail.{{DOMAIN}} (compose HOSTNAMES): that is the name
 # SMTP/IMAP present and the one its /certs pair is issued for, and it is the
@@ -35,12 +35,14 @@ https://admin.mail.{{DOMAIN}} {
     header {
         import security_headers
     }
-    # Tailnet-only: everything outside 100.64.0.0/10 is refused here, before
-    # the proxy (the name is not in public DNS either). The gate sits ahead of
-    # the limiter so a refused flood cannot consume the shared zone window.
+    # Exposure (scripts/lib/exposure.sh): a tailnet-vpn door refuses every
+    # source outside 100.64.0.0/10 here, before the proxy (the name is not in
+    # public DNS either), and the gate sits ahead of the limiter so a refused
+    # flood cannot consume the shared zone window. A cloudflare-dns door keeps
+    # the limiter and the proxy, and drops the gate.
     route {
-        @not_tailnet not remote_ip 100.64.0.0/10
-        respond @not_tailnet 403
+        {{IF ADMIN_MAIL_EXPOSURE=tailnet-vpn}}@not_tailnet not remote_ip 100.64.0.0/10
+        respond @not_tailnet 403{{END}}
         import ratelimit admin_mail_rl
         reverse_proxy 172.22.0.9:80 {
             # strip Mailu front's own security headers so the site-level set
