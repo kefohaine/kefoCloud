@@ -127,6 +127,57 @@ check() {
 }
 
 
+# door_exposure <host> — the answer recorded for the vhost that declares this
+# host, or (for a host installed before the answer existed) the answer the
+# RENDERED vhost was built with. Empty when neither is available.
+door_exposure() {
+  local host="$1" e v
+  e="$(exposure_of_host "$host" 2>/dev/null || true)"
+  [ -n "$e" ] && { printf '%s' "$e"; return; }
+  for v in $(exposure_targets 2>/dev/null); do
+    exposure_hosts "$v" 2>/dev/null | grep -qx "$host" || continue
+    if [ -f "$DATA_DIR/rendered/caddy/$v.caddy" ]; then
+      if grep -q 'respond @not_tailnet 403' "$DATA_DIR/rendered/caddy/$v.caddy"; then
+        printf '%s' tailnet-vpn
+      else
+        printf '%s' cloudflare-dns
+      fi
+    fi
+    return
+  done
+}
+
+# door_curl_args <host> — how to reach THIS door: a public source (loopback
+# resolution, the plain `check` path) or the tailnet one. Every helper below
+# that only reads headers or a body goes through it, so a gated door is probed
+# the way it is meant to be reached instead of reading the 403 page.
+door_curl_args() {
+  local host="$1" e
+  e="$(door_exposure "$host")"
+  case "$e" in
+    tailnet-vpn) printf '%s\n' --interface "$TS_IP" --resolve "$host:443:$TS_IP" ;;
+    *)           printf '%s\n' --resolve "$host:443:127.0.0.1" ;;
+  esac
+}
+
+# check_door <name> <host> <path> <want-codes> [html] [desc] — the probe for a
+# MODULE door. What "served" means depends on the answer recorded for that host:
+#   cloudflare-dns → a public source must be served (check)
+#   tailnet-vpn    → a public source must get 403 AND a tailnet source served
+# The module sections used to probe every door as if it were public, so the
+# moment a door was gated each of its checks turned into a false FAIL (403 is
+# the gate doing its job).
+check_door() {
+  local name="$1" host="$2" path="$3" codes="$4" want_html="${5:-}" desc="${6:-}"
+  case "$(door_exposure "$host")" in
+    tailnet-vpn)
+      check    "$name-public" "$host" "$path" "403" "" "$desc (public source refused)"
+      check_tn "$name"        "$host" "$path" "$codes" "$want_html" "$desc (tailnet)" ;;
+    *)
+      check "$name" "$host" "$path" "$codes" "$want_html" "$desc" ;;
+  esac
+}
+
 # check_tn <name> <host> <path> <want-codes> [html] [desc] — same probe, but
 # sourced from the host's Tailscale address, so it arrives on tailnet-only
 # routes (the @not_tailnet guard sees 100.64.0.0/10). Used for vault.$DOMAIN,
@@ -155,7 +206,8 @@ check_tn() {
 # header scans flag) must fail the smoke and block the push.
 check_sec_headers() {
   local name="$1" host="$2" path="${3:-/}" desc="${4:-}"
-  local args=(--resolve "$host:443:127.0.0.1" -sI --max-time 12)
+  local args=(); mapfile -t args < <(door_curl_args "$host")
+  args+=(-sI --max-time 12)
   local hdrs xfo xcto hsts
   hdrs=$(curl "${args[@]}" "https://$host$path")
   xfo=$(grep -icE '^x-frame-options: SAMEORIGIN' <<<"$hdrs")
@@ -173,7 +225,8 @@ check_sec_headers() {
 # here (an edge stub, or a metadata document with no issuer in it).
 check_body() {
   local name="$1" host="$2" path="$3" needle="$4" desc="${5:-}" body
-  body=$(curl -s --max-time 12 --resolve "$host:443:127.0.0.1" "https://$host$path")
+  local args=(); mapfile -t args < <(door_curl_args "$host")
+  body=$(curl -s --max-time 12 "${args[@]}" "https://$host$path")
   if [[ "$body" != *"$needle"* ]]; then
     say "FAIL $name: body lacks '$needle' — https://$host$path"; bad
   else
@@ -189,8 +242,8 @@ check_body() {
 check_cors() {
   local name="$1" host="$2" path="$3" origin="$4" desc="${5:-}"
   local acao
-  acao=$(curl -s -o /dev/null -D - --max-time 12 \
-    --resolve "$host:443:127.0.0.1" -H "Origin: $origin" \
+  local args=(); mapfile -t args < <(door_curl_args "$host")
+  acao=$(curl -s -o /dev/null -D - --max-time 12 "${args[@]}" -H "Origin: $origin" \
     "https://$host$path" | grep -ic '^access-control-allow-origin:')
   if [ "$acao" -lt 1 ]; then
     say "FAIL $name cors: no Access-Control-Allow-Origin — $origin cannot read https://$host$path"; bad
@@ -263,7 +316,7 @@ end_sec
 # root-absolute URLs from OCIS_URL, so any other path prefix would break it.
 # ─────────────────────────────────────────────────────────────────────────────
 hdr ocis "Cloud — ownCloud Infinite Scale (module: ocis) · cloud.$DOMAIN"
-check ocis "cloud.$DOMAIN" "/" "200 301 302 307 308" html "oCIS web UI answers"
+check_door ocis "cloud.$DOMAIN" "/" "200 301 302 307 308" html "oCIS web UI answers"
 check_sec_headers ocis "cloud.$DOMAIN" "/" "one of each"
 check_tls "cloud.$DOMAIN"
 check_ctns ocis ocis
@@ -277,17 +330,17 @@ end_sec
 # proxied, Synapse DNS-only); admin.matrix is never in the public zone.
 # ─────────────────────────────────────────────────────────────────────────────
 hdr chat "Chat — ESS CE (module: chat) · chat.$DOMAIN + matrix.$DOMAIN + auth.matrix.$DOMAIN + admin.matrix.$DOMAIN + call.matrix.$DOMAIN"
-check chat "chat.$DOMAIN" "/" "200 301 302 307 308" html "Element answers"
+check_door chat "chat.$DOMAIN" "/" "200 301 302 307 308" html "Element answers"
 check_sec_headers chat "chat.$DOMAIN" "/" "one of each"
 check_tls "chat.$DOMAIN"
 # /_matrix/client/versions is the one route every client calls first; a bare
 # `respond "ok"` stub answers 200 text/plain and fails this html-typed check.
-check matrix-api "matrix.$DOMAIN" "/_matrix/client/versions" "200" "" "Synapse client API answers"
+check_door matrix-api "matrix.$DOMAIN" "/_matrix/client/versions" "200" "" "Synapse client API answers"
 check_sec_headers matrix "matrix.$DOMAIN" "/_matrix/client/versions" "one of each"
 check_tls "matrix.$DOMAIN"
 # Client discovery names the homeserver URL AND the MAS issuer: a client that
 # cannot read m.authentication cannot log in at all.
-check matrix-wk "matrix.$DOMAIN" "/.well-known/matrix/client" "200" "" "client discovery answers"
+check_door matrix-wk "matrix.$DOMAIN" "/.well-known/matrix/client" "200" "" "client discovery answers"
 check_cors matrix-wk "matrix.$DOMAIN" "/.well-known/matrix/client" "https://admin.matrix.$DOMAIN" "discovery readable cross-origin"
 # auth.matrix.$DOMAIN is the identity provider (MAS); every token Synapse accepts is
 # minted here, so a 200 on its discovery document is the real health signal.
@@ -295,13 +348,13 @@ check_cors matrix-wk "matrix.$DOMAIN" "/.well-known/matrix/client" "https://admi
 # admin panel) that cannot read it falls back to posting a password to /login,
 # which delegated auth does not serve — the login page then reports a
 # communication problem and the register page cannot list flows.
-check matrix-authmd "matrix.$DOMAIN" "/_matrix/client/v1/auth_metadata" "200" "" "auth metadata answers"
+check_door matrix-authmd "matrix.$DOMAIN" "/_matrix/client/v1/auth_metadata" "200" "" "auth metadata answers"
 check_body matrix-authmd "matrix.$DOMAIN" "/_matrix/client/v1/auth_metadata" "auth.matrix.$DOMAIN" "auth metadata names the MAS issuer"
 # The compatibility layer, for clients that speak no OIDC: /login, /logout and
 # /refresh are proxied to MAS because Synapse answers M_UNRECOGNIZED for them.
-check matrix-login "matrix.$DOMAIN" "/_matrix/client/v3/login" "200" "" "legacy login is served by MAS"
+check_door matrix-login "matrix.$DOMAIN" "/_matrix/client/v3/login" "200" "" "legacy login is served by MAS"
 check_body matrix-login "matrix.$DOMAIN" "/_matrix/client/v3/login" "\"flows\"" "legacy login lists its flows"
-check mas-discovery "auth.matrix.$DOMAIN" "/.well-known/openid-configuration" "200" "" "MAS discovery answers"
+check_door mas-discovery "auth.matrix.$DOMAIN" "/.well-known/openid-configuration" "200" "" "MAS discovery answers"
 check_sec_headers auth "auth.matrix.$DOMAIN" "/.well-known/openid-configuration" "one of each"
 check_tls "auth.matrix.$DOMAIN"
 # admin.matrix.$DOMAIN is the Element Admin panel, TAILNET-ONLY: it can read
@@ -320,13 +373,13 @@ check_tls "admin.matrix.$DOMAIN"
 # token service. The RTC transport route is asserted on its own: it needs a
 # token, so 401 is the healthy answer and 404 is exactly the MISSING_MATRIX_RTC_
 # TRANSPORT failure a browser shows — invisible to every other check here.
-check call "call.matrix.$DOMAIN" "/" "200" html "Element Call answers"
+check_door call "call.matrix.$DOMAIN" "/" "200" html "Element Call answers"
 check_tls "call.matrix.$DOMAIN"
-check livekit "livekit.matrix.$DOMAIN" "/" "200" "" "LiveKit signalling answers"
+check_door livekit "livekit.matrix.$DOMAIN" "/" "200" "" "LiveKit signalling answers"
 check_tls "livekit.matrix.$DOMAIN"
-check livekit-jwt "livekit-jwt.matrix.$DOMAIN" "/sfu/get" "405" "" "SFU token service answers (POST only)"
+check_door livekit-jwt "livekit-jwt.matrix.$DOMAIN" "/sfu/get" "405" "" "SFU token service answers (POST only)"
 check_tls "livekit-jwt.matrix.$DOMAIN"
-check rtc "matrix.$DOMAIN" "/_matrix/client/unstable/org.matrix.msc4143/rtc/transports" "401" "" "MatrixRTC transport route is served"
+check_door rtc "matrix.$DOMAIN" "/_matrix/client/unstable/org.matrix.msc4143/rtc/transports" "401" "" "MatrixRTC transport route is served"
 check_ctns chat matrix-synapse matrix-element matrix-db matrix-mas matrix-mas-db element-admin livekit livekit-jwt element-call
 end_sec
 
@@ -374,8 +427,8 @@ end_sec
 hdr home "Home — Homarr dashboard (module: home)"
 # Homarr is a Next.js app: its assets are ROOT-absolute (/_next/...), so it
 # cannot be served under a path and owns a hostname of its own.
-check home "home.$DOMAIN" "/" "200 301 302 307 308" "" "Homarr answers (board or login redirect)"
-check home-login "home.$DOMAIN" "/auth/login" "200" html "Homarr login page renders"
+check_door home "home.$DOMAIN" "/" "200 301 302 307 308" "" "Homarr answers (board or login redirect)"
+check_door home-login "home.$DOMAIN" "/auth/login" "200" html "Homarr login page renders"
 check_sec_headers home "home.$DOMAIN" "/"
 check_tls "home.$DOMAIN"
 check_ctns home homarr
@@ -385,8 +438,8 @@ end_sec
 # Module: blog — WriteFreely on its own vhost.
 # ─────────────────────────────────────────────────────────────────────────────
 hdr blog "Blog — WriteFreely (module: blog)"
-check blog "blog.$DOMAIN" "/" "200" html "WriteFreely answers"
-check blog-login "blog.$DOMAIN" "/login" "200" html "WriteFreely login page"
+check_door blog "blog.$DOMAIN" "/" "200" html "WriteFreely answers"
+check_door blog-login "blog.$DOMAIN" "/login" "200" html "WriteFreely login page"
 check_sec_headers blog "blog.$DOMAIN" "/" "one of each"
 check_tls "blog.$DOMAIN"
 check_ctns blog writefreely
@@ -396,8 +449,8 @@ end_sec
 # Module: photos — Immich (DNS-only vhost, its own PostgreSQL + Redis).
 # ─────────────────────────────────────────────────────────────────────────────
 hdr photos "Photos — Immich (module: photos)"
-check photos "photos.$DOMAIN" "/" "200 301 302 307 308" html "Immich web answers"
-check photos-api "photos.$DOMAIN" "/api/server/ping" "200" "" "Immich API answers"
+check_door photos "photos.$DOMAIN" "/" "200 301 302 307 308" html "Immich web answers"
+check_door photos-api "photos.$DOMAIN" "/api/server/ping" "200" "" "Immich API answers"
 check_sec_headers photos "photos.$DOMAIN" "/" "one of each"
 check_tls "photos.$DOMAIN"
 check_ctns photos immich-server immich-db immich-redis
@@ -407,7 +460,7 @@ end_sec
 # Module: monitor — Uptime Kuma.
 # ─────────────────────────────────────────────────────────────────────────────
 hdr monitor "Monitor — Uptime Kuma (module: monitor)"
-check kuma "kuma.$DOMAIN" "/" "200 301 302 307 308" html "Uptime Kuma answers"
+check_door kuma "kuma.$DOMAIN" "/" "200 301 302 307 308" html "Uptime Kuma answers"
 check_sec_headers kuma "kuma.$DOMAIN" "/" "one of each"
 check_tls "kuma.$DOMAIN"
 check_ctns monitor uptimekuma
@@ -422,7 +475,7 @@ hdr mail "Mail — Mailu platform + Roundcube webmail (module: mail)"
 # door and TAILNET-ONLY (same model as vault): no public A record, and the vhost
 # 403s every source outside 100.64.0.0/10. Both halves are asserted, so a
 # half-applied change fails here instead of passing.
-check mail "mail.$DOMAIN" "/" "200 301 302 307 308" html "Roundcube webmail"
+check_door mail "mail.$DOMAIN" "/" "200 301 302 307 308" html "Roundcube webmail"
 check_sec_headers mail "mail.$DOMAIN" "/" "one of each"
 check_tls "mail.$DOMAIN"
 if [ -z "$TS_IP" ]; then
@@ -484,8 +537,8 @@ DOOR_SERVED="200 204 301 302 307 308 401 404 405 421"   # 403 is the gate, never
 # answers 502 (the lesson in the manual), and its recorded exposure says nothing
 # about a route that does not exist.
 LIVE_DOORS="www"
-for _m in $(_state_modules); do
-  mod_on "$_m" && LIVE_DOORS+=" $(mod_vhosts "$_m")"
+for _m in $(mod_all); do
+  mod_installed "$_m" && LIVE_DOORS+=" $(mod_vhosts "$_m")"
 done
 for _v in $(exposure_targets); do
   case " $LIVE_DOORS " in *" $_v "*) ;; *) continue ;; esac
