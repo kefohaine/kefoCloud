@@ -384,7 +384,7 @@ clone + `docker network create net --subnet=172.22.0.0/16` + `make install-confi
 | Stop or recreate the whole stack | `make dok-stop-all CONFIRM=yes`, `make dok-recreate-all CONFIRM=yes` — both refuse without `CONFIRM=yes` |
 | Restart / log one host unit | `make systemd-restart-<svc>`, `systemd-log-<svc>` |
 | Config in the repo → live | `make render`, `make install-config`, `make deploy` |
-| Move one door between the tailnet and the public zone (or back) | `make vhost-exposure TARGET=<vhost> VALUE=<cloudflare-dns|tailnet-vpn>` |
+| Move one door between the tailnet and the public zone (or back) | `make vhost-exposure TARGET=<vhost> VALUE=<cloudflare-dns|tailnet-vpn>` (plan: `DRYRUN=1`) |
 | Re-converge the Cloudflare A records | `make dns-sync` (plan: `DRYRUN=1`) |
 | Assert the exposure wiring, read-only | `make check-exposure` |
 | Backup, restore, verify | `make backup`, `make kopia-status`, `make kopia-snapshots`, `make kopia-policy`, `make kopia-verify` |

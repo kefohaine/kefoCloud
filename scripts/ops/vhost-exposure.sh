@@ -6,7 +6,8 @@
 # The answer is one key in data/instance.conf (<VHOST>_EXPOSURE, read by
 # scripts/lib/exposure.sh). Besides the installer this is the only writer of
 # that file, and it is an operator action: it restarts the edge, rewrites the
-# zone and reprobes the door.
+# zone and reprobes the door. `DRYRUN=1` prints the plan — same refusals, same
+# steps, nothing written — and stops before the first mutation.
 #
 # The four parts of one exposure change, in order — a change that stops after
 # any of them is half applied:
@@ -31,6 +32,7 @@ WIZ_DIR="$(cd "$(dirname "$(readlink -f "$0")")/../install" && pwd)"
 # The wizard's libs are written to be SOURCED (one process, shared globals), so
 # load them in the same order and reuse their functions — env.sh also sources
 # scripts/lib/modules.sh, which brings the exposure accessor.
+. "$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)/lib/dryrun.sh"
 for _f in lib/env.sh lib/log.sh lib/state.sh lib/cloudflare.sh lib/errors.sh; do
   # shellcheck disable=SC1090  # the paths are relative to WIZ_DIR on purpose
   . "$WIZ_DIR/wizard.d/$_f" || { echo "vhost-exposure: cannot source $_f" >&2; exit 1; }
@@ -85,6 +87,28 @@ esac
 echo "           the edge is restarted (every door drops for a second), then the record, dnsmasq"
 echo "           and a two-sided probe follow."
 echo ""
+
+# The plan: every step a real run would take, in the order it takes them, with
+# the same refusals already applied above. Nothing is written and the
+# confirmation below is not asked (a plan decides nothing).
+if dryrun_wanted "$@"; then
+  KEY="$(exposure_key "$TARGET")_EXPOSURE"
+  dryrun_plan "write $KEY=$VALUE to $DATA/instance.conf (mode 0600, other keys untouched)"
+  dryrun_plan "render (make render)"
+  dryrun_plan "restart the edge (make dok-restart TARGET=caddy) — every door drops for a second"
+  for _h in $HOSTS; do
+    _rel="${_h%."$DOMAIN"}"; [ "$_rel" = "$_h" ] && _rel="(apex)"
+    case "$VALUE" in
+      cloudflare-dns) dryrun_plan "converge the Cloudflare A record for $_rel to \$HOST_IP (proxied untouched)";;
+      tailnet-vpn)    dryrun_plan "delete the Cloudflare A record for $_rel";;
+    esac
+  done
+  dryrun_plan "install the dnsmasq answers (make install-dnsmasq-conf) and reload dnsmasq"
+  dryrun_plan "probe the door from a public source and from the tailnet, then make smoke"
+  [ "$CUR" = tailnet-vpn ] && [ "$VALUE" = cloudflare-dns ] \
+    && dryrun_note "a real run asks for the literal word 'yes' before publishing this door"
+  dryrun_end "nothing changed"
+fi
 
 # Leaving tailnet-vpn is the one direction that publishes a door: the literal
 # word `yes` is required (no shortcut, no default — a typo aborts).
