@@ -13,7 +13,14 @@ https://livekit.matrix.{{DOMAIN}} {
     log {
         output file /var/log/caddy/livekit.log
     }
-    import ratelimit livekit_rl
+    # Exposure (scripts/lib/exposure.sh): a tailnet-vpn door refuses every
+    # non-tailnet source here, ahead of the limiter — a refused flood must not
+    # spend the shared zone window; a cloudflare-dns door carries no gate.
+    route {
+        {{IF LIVEKIT_MATRIX_EXPOSURE=tailnet-vpn}}@not_tailnet not remote_ip 100.64.0.0/10
+        respond @not_tailnet 403{{END}}
+        import ratelimit livekit_rl
+    }
     tls {
         # Fallback issuer chain: Let's Encrypt first, then Buypass Go SSL and
         # ZeroSSL — free providers tried in order, so a per-issuer rate limit
