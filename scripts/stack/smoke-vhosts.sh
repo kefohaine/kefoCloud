@@ -471,16 +471,30 @@ check_tls "ttyd.$DOMAIN"
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Doors — every gated vhost, not only the four the sections above name. The
-# list is derived (scripts/lib/exposure.sh reads each vhost file and the
-# recorded answer), so a door added later cannot slip through untested, and a
-# recorded `tailnet-vpn` that answers a public source is a failure.
+# Doors — every vhost, from its RECORDED answer rather than a hardcoded list:
+# scripts/lib/exposure.sh reads each vhost file and the value this host
+# records, so a door added or flipped later cannot slip through untested.
+#   tailnet-vpn    public source 403 AND served to a tailnet source
+#   cloudflare-dns served to a public source
+# No assertion here looks at `proxied`: the zone flag is the operator's.
 # ─────────────────────────────────────────────────────────────────────────────
-hdr core "Doors — recorded exposure, one probe per tailnet-vpn vhost"
+hdr core "Doors — one probe per vhost, from its recorded exposure"
+DOOR_SERVED="200 204 301 302 307 308 401 404 405 421"   # 403 is the gate, never "served"
 for _v in $(exposure_targets); do
-  [ "$(exposure_of "$_v")" = tailnet-vpn ] || continue
+  _e="$(exposure_of "$_v")"
   _h="$(exposure_hosts "$_v" | head -n1)"
-  [ -n "$_h" ] && check "$_v-door" "$_h" "/" "403" "" "public sources refused (tailnet-vpn)"
+  [ -n "$_h" ] || continue
+  case "$_e" in
+    tailnet-vpn)
+      check    "$_v-door" "$_h" "/" "403" "" "public source refused (tailnet-vpn)"
+      check_tn "$_v-tn"   "$_h" "/" "$DOOR_SERVED" "" "served to a tailnet source" ;;
+    cloudflare-dns)
+      check    "$_v-door" "$_h" "/" "$DOOR_SERVED" "" "served to a public source (cloudflare-dns)" ;;
+    '')
+      say "FAIL $_v: no recorded exposure — run the installer (repair) once, or make vhost-exposure"; bad ;;
+    *)
+      say "FAIL $_v: '$_e' is not an exposure (tailnet-vpn|cloudflare-dns)"; bad ;;
+  esac
 done
 end_sec
 

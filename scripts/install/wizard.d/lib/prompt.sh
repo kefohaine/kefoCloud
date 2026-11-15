@@ -91,7 +91,12 @@ exposure_offer() {
 # answers everything again.
 ask_exposure() {
   local offer cur="" v val ans ok kv name missing=0
-  offer="$(exposure_offer)"
+  # `</dev/null`: nothing the offer list runs may eat the operator's answer —
+  # with stdin redirected (a piped/scripted run) a subcommand reading stdin
+  # would consume the exposure line and the prompt would re-ask for ever.
+  # One line, space-separated: every membership test below is `" $offer "`, which
+  # a newline-separated list would never match.
+  offer="$(exposure_offer </dev/null | paste -sd' ' -)"
   [ -n "$offer" ] || { detail "  exposure: no vhost belongs to this run's modules"; return 0; }
   for v in $offer; do
     val="$(exposure_of "$v")"
@@ -108,7 +113,7 @@ ask_exposure() {
     printf '   cloudflare-dns  a public DNS record — reached from the internet\n'
     printf '   current: %s\n' "$cur"
     printf '%s[INFO]%s Exposure for every door, space-separated vhost=value (%s): ' \
-      "$C_GREY" "$C_RST" "$(printf '%s' "$offer" | paste -sd' ' -)"
+      "$C_GREY" "$C_RST" "$offer"
     read -r ans || exit 1
     ans="${ans//,/ }"
     ok=1

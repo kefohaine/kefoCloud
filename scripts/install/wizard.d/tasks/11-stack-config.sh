@@ -130,9 +130,13 @@ write_instance_conf() {
   # are rendered from it (make render) and scripts read it (scripts/lib/instance.sh).
   # Values we do not own here (SERVER_IP, EMAIL, TIMEZONE) are PRESERVED from an
   # existing file — re-running the installer must never wipe them.
-  local f="$DATA/instance.conf" keep="" have_kopia="" _v _k _val
+  local f="$DATA/instance.conf" keep="" have_kopia="" old_exp="" _v _k _val
   mkdir -p "$DATA"
   [ -f "$f" ] && keep=$(grep -E '^(SERVER_IP|EMAIL|TIMEZONE|KOPIA_SFTP_[A-Z]+)=' "$f" || true)
+  # The recorded exposure answers, captured BEFORE the rewrite below truncates
+  # the file: a repair that did not re-ask (every door already valid) must keep
+  # what the operator chose, not fall back to a default.
+  [ -f "$f" ] && old_exp=$(grep -E '^[A-Z0-9_]+_EXPOSURE=' "$f" || true)
   grep -q '^KOPIA_SFTP_HOST=' <<<"$keep" && have_kopia=1
   {
     echo "# data/instance.conf — the values for THIS host (untracked, mode 0600)."
@@ -167,6 +171,8 @@ write_instance_conf() {
     for _v in $(exposure_all); do
       _k="$(exposure_key "$_v")_EXPOSURE"
       _val="${!_k:-}"
+      # Prompt answer first, then the answer already on disk, then the default.
+      exposure_valid "$_val" || _val="$(sed -n "s/^$_k=//p" <<<"$old_exp" | tail -n1)"
       exposure_valid "$_val" || {
         case "$_v" in
           www) _val=cloudflare-dns ;;
