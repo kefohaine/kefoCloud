@@ -13,8 +13,11 @@
 #
 # Conditional blocks are supported too: {{IF KEY}}…{{ELSE}}…{{END}} keeps the
 # first side when KEY is truthy (set and not false/0/no/off), the second side
-# otherwise — one skeleton, two variants. Blocks are resolved before token
-# substitution.
+# otherwise — one skeleton, two variants. {{IF KEY=value}}…{{ELSE}}…{{END}} is
+# the same block with an exact comparison, so a template can carry both
+# variants of a value (e.g. a gate that exists only for `tailnet-vpn`) without
+# a second file and without a boolean key per host. Blocks are resolved before
+# token substitution.
 #
 # Unknown tokens are left VERBATIM and reported on stderr — a missing value is
 # loud, never a silently empty string in a config that then fails at runtime.
@@ -97,17 +100,20 @@ if mode == "reverse":
         sys.stdout.write(data)
     sys.exit(0)
 # Conditional blocks: {{IF KEY}}…{{ELSE}}…{{END}} — the block survives when
-# KEY's value is TRUTHY (set and not false/0/no/off), the ELSE side otherwise.
-# Lets ONE tracked skeleton carry the normal and a fallback variant of a file
-# (today: the cloud vhost's optional notify_push route)
-# without either variant being a second file. Resolved before token
-# substitution, innermost-first, so a dropped branch's {{TOKENS}} never surface
-# as unresolved.
+# KEY's value is TRUTHY (set and not false/0/no/off), the ELSE side otherwise —
+# and {{IF KEY=value}}…{{ELSE}}…{{END}}, the same block with an exact
+# comparison against that value. Lets ONE tracked skeleton carry the normal and
+# a fallback variant of a file (the cloud vhost's optional notify_push route,
+# a vhost gate that exists only for `tailnet-vpn`) without either variant being
+# a second file. Resolved before token substitution, innermost-first, so a
+# dropped branch's {{TOKENS}} never surface as unresolved.
 def _truthy(k):
     return V.get(k, "").strip().lower() not in ("", "false", "0", "no", "off")
-_COND = re.compile(r"\{\{IF ([A-Z_][A-Z0-9_]*)\}\}(.*?)(?:\{\{ELSE\}\}(.*?))?\{\{END\}\}", re.S)
+_COND = re.compile(r"\{\{IF ([A-Z_][A-Z0-9_]*)(?:=([^}\n]*))?\}\}(.*?)(?:\{\{ELSE\}\}(.*?))?\{\{END\}\}", re.S)
 def _cond(m):
-    return (m.group(2) or "") if _truthy(m.group(1)) else (m.group(3) or "")
+    key, want, then, other = m.group(1), m.group(2), m.group(3) or "", m.group(4) or ""
+    ok = _truthy(key) if want is None else (V.get(key, "").strip() == want.strip())
+    return then if ok else other
 for _ in range(8):
     _next = _COND.sub(_cond, data)
     if _next == data: break

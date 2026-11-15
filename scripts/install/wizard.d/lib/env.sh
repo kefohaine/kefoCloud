@@ -13,6 +13,12 @@ REPO="$(cd "$WIZ_DIR/../.." && pwd)"
 ROOT="$REPO"
 DATA="$REPO/data"
 
+# The MODULE and ROUTE-EXPOSURE accessors (scripts/lib/modules.sh): the
+# installer asks the per-vhost exposure question from the same functions every
+# other script reads (mod_vhosts + scripts/lib/exposure.sh), so the offer list,
+# the answer store and the consumers can never disagree.
+. "$REPO/scripts/lib/modules.sh"
+
 # GITHUB_USER owns the repos. instance.conf wins (scripts/lib/instance.sh loaded
 # it above); otherwise the checkout's own origin remote is the truth. The
 # lib's placeholder fallback must never stand in for it — an install that used
