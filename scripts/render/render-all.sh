@@ -44,6 +44,7 @@ rm -rf "$TMP"; mkdir -p "$TMP/caddy" "$TMP/config"
 render_tree() {   # render_tree <src-dir> <dest-dir> [exclude-name...]
   local src="$1" dst="$2"; shift 2
   local -a skips=("$@"); local rel sk
+  local faillist="$TMP/.render-fail.$(basename "$dst")"
   ( cd "$src" && find . -type f ) | sed 's|^\./||' | while IFS= read -r rel; do
     # each exclude names a FILE or a whole SUBDIRECTORY
     for sk in "${skips[@]}"; do
@@ -53,13 +54,32 @@ render_tree() {   # render_tree <src-dir> <dest-dir> [exclude-name...]
     done
     mkdir -p "$dst/$(dirname "$rel")"
     chmod 0755 "$dst" "$dst/$(dirname "$rel")" 2>/dev/null || true
-    "$RENDER" "$src/$rel" "$dst/$rel" || exit 1
+    # Collect the failures instead of exiting on the first one: render.sh's own
+    # message is already on stderr, and one bad template must not hide the rest.
+    # The tree is then REJECTED as a whole below, before the rsync swaps it in.
+    "$RENDER" "$src/$rel" "$dst/$rel" || printf '%s\n' "$rel" >> "$faillist"
   done
+  [ -s "$faillist" ] || return 0
+  echo "render-all: REFUSED $src — $(grep -c . "$faillist") file(s) could not be rendered:" >&2
+  sed 's/^/render-all:   /' "$faillist" >&2
+  return 1
 }
 
-render_tree "$ROOT/modules/caddy" "$TMP/caddy" Dockerfile
-render_tree "$ROOT/modules/mailserver" "$TMP/mailserver" docker-compose.yml
-render_tree "$ROOT/config" "$TMP/config" instance.defaults
+# A half-rendered tree must never be swapped in: `make install-config` copies a
+# fixed list of files out of data/rendered/, so a silently skipped render shows
+# up much later as `cp: cannot stat …` and a host stage that "failed for no
+# reason" (2026-11-15). Each tree reports first, then the run stops.
+_rt_rc=0
+render_tree "$ROOT/modules/caddy" "$TMP/caddy" Dockerfile || _rt_rc=1
+render_tree "$ROOT/modules/mailserver" "$TMP/mailserver" docker-compose.yml || _rt_rc=1
+render_tree "$ROOT/config" "$TMP/config" instance.defaults || _rt_rc=1
+if [ "$_rt_rc" -ne 0 ]; then
+  echo "render-all: nothing was installed — the render must be complete before" >&2
+  echo "            data/rendered/ is refreshed. Fix the errors above (a missing" >&2
+  echo "            answer usually means data/instance.conf needs it recorded)." >&2
+  rm -rf "$TMP"
+  exit 1
+fi
 
 # Swap in place (keeps the mounted inode alive), then drop the scratch tree.
 mkdir -p "$OUT/caddy" "$OUT/config" "$OUT/mailserver"
