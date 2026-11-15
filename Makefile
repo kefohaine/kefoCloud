@@ -705,6 +705,20 @@ ocis-webdav:
 dns-sync:
 >@bash scripts/ops/dns-sync.sh
 
+# Change ONE door's exposure and make it true: the answer in data/instance.conf,
+# the render, the edge restart, the zone record, the dnsmasq split-DNS answer,
+# then a probe from both sides and `make smoke`. The door's own restart drops
+# every door for a second; leaving tailnet-vpn asks for the literal word `yes`.
+vhost-exposure:
+>@bash scripts/ops/vhost-exposure.sh
+
+# The exposure wiring, read-only (renders into a temp dir with a synthetic
+# instance.conf): every vhost is a target, the dnsmasq skeleton answers each
+# gated host, the gate renders only under tailnet-vpn, and it precedes the
+# limiter. No data/, no network, no live value.
+check-exposure:
+>@bash scripts/stack/check-exposure.sh
+
 # Generate the Matrix module's secrets and runtime config (idempotent):
 # modules/matrix/.env values and $DATA_DIR/matrix/{synapse,element} configs.
 # Re-running never rotates a key or rewrites an existing config.
@@ -920,6 +934,17 @@ sudo cp $(RENDER_DIR)/config/fail2ban/jail.d/sshd.conf /etc/fail2ban/jail.d/sshd
       sudo rm -f "/etc/fail2ban/jail.d/$$name"; \
       scripts/lib/mklog warn "fail2ban jail $$name skipped: log source $${logpath:-<unset>} is absent"; \
     fi; \
+  done
+# A jail removed or RENAMED in config/ must leave the host too: the old
+# web-element jail would otherwise keep watching element.log beside the new
+# web-element-client one, the same offender banned twice and a stale name live
+# in fail2ban's own configuration.
+>@for f in /etc/fail2ban/jail.d/web-*.conf; do \
+    [ -e "$$f" ] || continue; \
+    name=$$(basename "$$f"); \
+    [ -e "$(RENDER_DIR)/config/fail2ban/jail.d/$$name" ] && continue; \
+    sudo rm -f "$$f"; \
+    scripts/lib/mklog info "fail2ban jail $$name removed (no longer in config/)"; \
   done
 # Logging: ONE namespace ({{LOG_DIR}}) for every log this project writes,
 # bounded by ONE logrotate rule. Docker output is capped globally in

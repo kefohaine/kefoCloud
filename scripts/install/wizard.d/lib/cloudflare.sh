@@ -1,27 +1,18 @@
-# wizard.d/lib/cloudflare.sh — the Cloudflare API: A records (converging), SSL mode, mail MX/SPF/DMARC.
+# wizard.d/lib/cloudflare.sh — the Cloudflare API: A records (converging from the
+# recorded door exposure), mail MX/SPF/DMARC.
+#
+# The A records follow `scripts/lib/exposure.sh`: a `tailnet-vpn` door has NO
+# public record, a `cloudflare-dns` door is converged to this host's address.
+# Cloudflare PROXYING is not a repo value: a record is created DNS-only and an
+# update touches only its content and TTL, so an operator's orange cloud
+# survives every repair (Cloudflare's edge certificate and a proxied flag are
+# not health signals, and a proxied two-label name fails the edge handshake).
 #
 # DRYRUN=1 (set by scripts/ops/dns-sync.sh --dry-run) turns every writer below into a
 # printer: the same name/module table runs, one "would …" line per record lands on
 # stdout, and no request that changes the zone is sent. Reads (the zone id, the public
 # IP) still happen, so a plan never disagrees with a real run.
 . "$(dirname "${BASH_SOURCE[0]}")/../../../lib/dryrun.sh"
-
-ssl_mode_full() {
-  # API first (needs Zone Settings read on the token); fall back to a
-  # behavior probe — Flexible/Off makes CF reach the origin over HTTP and
-  # Caddy answers a 308 back to the same https URL (redirect loop).
-  local mode hdrs code loc
-  mode=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
-    "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/settings/ssl" 2>/dev/null \
-    | jq -r '.result.value // empty' 2>/dev/null)
-  case "$mode" in full|strict) return 0 ;; esac
-  [ -n "$mode" ] && return 1
-  hdrs=$(curl -sI --max-time 15 "https://cloud.$DOMAIN" 2>/dev/null | tr -d '\r')
-  code=$(echo "$hdrs" | awk 'NR==1{print $2}')
-  loc=$(echo "$hdrs" | awk 'tolower($1)=="location:"{print $2; exit}')
-  [ "$code" = "308" ] && [[ "$loc" == *"cloud.$DOMAIN"* ]] && return 1
-  return 0
-}
 
 cf_mail_record() { # $1=type(TXT/MX) $2=relative name (or apex) $3=content $4=priority(MX only)
   local type="$1" name="$2" content="$3" prio="${4:-0}" fqdn="$2" records rid current payload response
@@ -95,7 +86,58 @@ cf_mail_dns() {
   return 0
 }
 
-  cf_dns() {
+cf_record() { # cf_record <host relative name, '' for the apex>
+  # CONVERGES the record's content, not just "creates once": create-only (the
+  # old form) left a stale A record pointing at the machine's old public IP
+  # after an IP change, and a re-run reported success while the zone was wrong.
+  # `proxied` is written ONLY on create (DNS-only), never on update: the orange
+  # cloud is the operator's dashboard setting, not this repo's.
+  local rec rid cur fqdn
+  fqdn="${1:+$1.}$DOMAIN"
+  if [ "${DRYRUN:-0}" = 1 ]; then
+    dryrun_plan "converge A $fqdn -> $HOST_IP (proxied left untouched)"
+    return 0
+  fi
+  rec=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
+    "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$fqdn")
+  rid=$(printf '%s' "$rec" | jq -r '.result[0].id // empty')
+  cur=$(printf '%s' "$rec" | jq -r '.result[0].content // empty')
+  if [ -z "$rid" ]; then
+    curl -s -X POST -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
+      "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
+      -d "{\"type\":\"A\",\"name\":\"$fqdn\",\"content\":\"$HOST_IP\",\"ttl\":1,\"proxied\":false}" \
+      >>"$LOG" 2>&1 || fail "dns_${1:-apex}"
+    return 0
+  fi
+  [ "$cur" = "$HOST_IP" ] && return 0
+  detail "  A record $fqdn: $cur -> $HOST_IP (updating content only)"
+  curl -s -X PATCH -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
+    "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$rid" \
+    -d "{\"type\":\"A\",\"name\":\"$fqdn\",\"content\":\"$HOST_IP\",\"ttl\":1}" \
+    >>"$LOG" 2>&1 || fail "dns_${1:-apex}"
+}
+
+cf_a_del() { # cf_a_del <host relative name, '' for the apex> — a tailnet-vpn door
+  local fqdn rid
+  fqdn="${1:+$1.}$DOMAIN"
+  if [ "${DRYRUN:-0}" = 1 ]; then
+    dryrun_plan "remove the A record for $fqdn if present"
+    return 0
+  fi
+  rid=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
+    "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$fqdn" \
+    | jq -r '.result[0].id // empty')
+  [ -n "$rid" ] || return 0
+  curl -s -X DELETE -H "Authorization: Bearer $CF_API_TOKEN" \
+    "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$rid" >>"$LOG" 2>&1 || true
+  detail "  A record removed: $fqdn (door exposure is tailnet-vpn)"
+}
+
+# The zone, from the answers: one loop over every Caddy vhost FILE and every
+# hostname it declares (scripts/lib/exposure.sh) — never a hand-kept host list,
+# which is how a door added later ended up with no record, or a gated door with
+# a public one.
+cf_dns() {
   HOST_IP=$(curl -s4 ifconfig.me)
   ZONE_ID=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
     "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" | jq -r '.result[0].id // empty')
@@ -103,123 +145,18 @@ cf_mail_dns() {
     fail zone
     return
   fi
-  cf_record() { # $1=host $2=proxied(true/false)
-    # Idempotent = CONVERGES, not just "creates once": the record's content and
-    # proxied flag are driven to the wanted values on every run. Create-only
-    # (the old form) left a stale A record pointing at the machine's OLD public
-    # IP after an IP change — the re-run reported success while the zone was
-    # wrong. A record already carrying the wanted content+proxied is untouched.
-    local rec rid cur prox fqdn
-    # An empty host means the zone apex: "$DOMAIN", never ".$DOMAIN".
-    fqdn="${1:+$1.}$DOMAIN"
-    if [ "${DRYRUN:-0}" = 1 ]; then
-      dryrun_plan "converge A $fqdn -> $HOST_IP (proxied=$2)"
-      return 0
-    fi
-    rec=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
-      "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$fqdn")
-    rid=$(printf '%s' "$rec" | jq -r '.result[0].id // empty')
-    cur=$(printf '%s' "$rec" | jq -r '.result[0].content // empty')
-    prox=$(printf '%s' "$rec" | jq -r '.result[0].proxied // empty')
-    if [ -z "$rid" ]; then
-      curl -s -X POST -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
-        "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
-        -d "{\"type\":\"A\",\"name\":\"$fqdn\",\"content\":\"$HOST_IP\",\"ttl\":1,\"proxied\":$2}" \
-        >>"$LOG" 2>&1 || fail "dns_${1:-apex}"
-      return 0
-    fi
-    [ "$cur" = "$HOST_IP" ] && [ "$prox" = "$2" ] && return 0
-    detail "  A record $fqdn: $cur/$prox -> $HOST_IP/$2 (updating)"
-    curl -s -X PUT -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
-      "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$rid" \
-      -d "{\"type\":\"A\",\"name\":\"$fqdn\",\"content\":\"$HOST_IP\",\"ttl\":1,\"proxied\":$2}" \
-      >>"$LOG" 2>&1 || fail "dns_${1:-apex}"
-  }
-  cf_a_del() { # cf_a_del <host> — remove an A record whose door was disabled
-    local fqdn rid
-    fqdn="${1:+$1.}$DOMAIN"
-    if [ "${DRYRUN:-0}" = 1 ]; then
-      dryrun_plan "remove the A record for $fqdn if present"
-      return 0
-    fi
-    rid=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
-      "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$fqdn" \
-      | jq -r '.result[0].id // empty')
-    [ -n "$rid" ] || return 0
-    curl -s -X DELETE -H "Authorization: Bearer $CF_API_TOKEN" \
-      "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$rid" >>"$LOG" 2>&1 || true
-    detail "  A record removed: $fqdn (disabled in wizard.state)"
-  }
-  # proxied (orange cloud): the apex + kuma/www.
-  for h in "" cloud kuma www; do
-    case "$h" in
-      "")    cf_record "" true;;
-      cloud) mod_on ocis && cf_record "$h" true || cf_a_del cloud;;
-      kuma)  mod_on monitor && cf_record "$h" true || cf_a_del kuma;;
-      www)   cf_record "$h" true;;
-    esac
+  local v host rel
+  for v in $(exposure_targets); do
+    for host in $(exposure_hosts "$v"); do
+      # The API takes a name relative to the zone: '' for the apex.
+      rel="${host%."$DOMAIN"}"; [ "$rel" = "$host" ] && rel=""
+      case "$(exposure_of "$v")" in
+        tailnet-vpn)    cf_a_del "$rel" ;;
+        cloudflare-dns) cf_record "$rel" ;;
+        *)              fail "exposure_$v" ;;
+      esac
+    done
   done
-  # vault.$DOMAIN is TAILNET-ONLY (operator choice 2026-10-28): the name is
-  # answered by the machine dnsmasq and gated by @not_tailnet in the vhost, so
-  # the public zone must hold NO record for it. A leftover proxied record would
-  # hand every visitor a 403 page.
-  cf_a_del vault
-  # blog.$DOMAIN is WriteFreely on its own hostname (proxied like cloud/kuma).
-  mod_on blog && cf_record blog true || cf_a_del blog
-  mod_on home && cf_record home true || cf_a_del home
-  # chat.$DOMAIN is Element (module: chat) — a browser app, so it is proxied
-  # like the other public doors.
-  mod_on chat && cf_record chat true || cf_a_del chat
-  # matrix.$DOMAIN is Synapse. DNS-ONLY (grey cloud): federation and media
-  # transfers are long lived and large, and the origin holds its own LE cert
-  # via DNS-01. Element reaches it directly, so the name must resolve publicly.
-  mod_on chat && cf_record matrix false || cf_a_del matrix
-  # auth.matrix.$DOMAIN is the Matrix Authentication Service (ESS CE): a browser
-  # is redirected here mid-login, so the name must resolve publicly. DNS-ONLY
-  # (grey cloud): Cloudflare's universal SSL covers `$DOMAIN` and one label
-  # under it, so a two-label name has no edge certificate and a proxied record
-  # fails the TLS handshake — the origin serves its own LE cert instead.
-  mod_on chat && cf_record auth.matrix false || cf_a_del auth.matrix
-  # The call stack (module: chat): call.matrix, livekit.matrix and
-  # livekit-jwt.matrix are all TWO-LABEL names, so they are DNS-ONLY like
-  # auth.matrix — Cloudflare's universal certificate covers the apex and one
-  # label only, and a proxied record on a deeper name fails the edge handshake.
-  # call.matrix.$DOMAIN is the Element Call app (an iframe inside Element),
-  # livekit.matrix.$DOMAIN the SFU's WebSocket signalling, livekit-jwt.matrix
-  # the token service the browser calls cross-origin. The SFU's MEDIA is UDP
-  # 7882 / TCP 7881 straight off the host, so no record's proxied flag ever
-  # touches the audio and video itself.
-  mod_on chat && cf_record call.matrix false || cf_a_del call.matrix
-  mod_on chat && cf_record livekit.matrix false || cf_a_del livekit.matrix
-  mod_on chat && cf_record livekit-jwt.matrix false || cf_a_del livekit-jwt.matrix
-  # vault): dnsmasq answers it for tailnet clients, the vhost 403s everything
-  # else, and the public zone must hold NO record (DNS-01 only needs the TXT).
-  cf_a_del admin.matrix
-  # photos.$DOMAIN is Immich, DNS-ONLY (grey cloud): uploads and video streams
-  # must not pass through the CF proxy.
-  mod_on photos && cf_record photos false || cf_a_del photos
-  # home.$DOMAIN is Homarr (Next.js root-absolute assets, so it cannot live
-  # under a path); proxied like cloud/kuma.
-  # mail.$DOMAIN is the public mail door: Roundcube's web UI AND the name
-  # mailu-front publishes 25/465/587/993 on and serves the SMTP/IMAP cert for
-  # (the MX and SPF point at it). DNS-ONLY (grey cloud) — the CF proxy carries
-  # no SMTP/IMAP, so a proxied record would leave every mail client talking to
-  # Cloudflare instead of the origin. Caddy still gets its LE cert via DNS-01.
-  mod_on mail && cf_record mail false || cf_a_del mail
-  # admin.mail.$DOMAIN is Mailu's platform door (admin UI + SSO) and is TAILNET-ONLY
-  # (same model as vault): the name is answered by the machine dnsmasq and gated
-  # by @not_tailnet in the vhost, so the public zone must hold NO record for it
-  # (DNS-01 only needs the TXT record for the certificate).
-  cf_a_del admin.mail
+  # Non-A records are unaffected by exposure: the mail platform's MX/SPF/DMARC.
   mod_on mail && cf_mail_dns
-  if [ "${DRYRUN:-0}" = 1 ]; then
-    dryrun_plan "set the zone SSL mode to full"
-    return 0
-  fi
-  curl -s -X PATCH -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
-    "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/settings/ssl" -d '{"value":"full"}' >>"$LOG" 2>&1 || true
-  # DNS-only tokens can't set SSL mode; surface it as an expected manual step.
-  if ! ssl_mode_full; then
-    fail sslmode
-  fi
 }

@@ -125,14 +125,23 @@ prep_dirs_verify() {
   return 0
 }
 
-write_instance_conf() {
+# Write data/instance.conf ONLY (no render). Split out because the file must
+# exist complete before the FIRST template renders — see wizard.sh's call after
+# ask_inputs: the Host Services row (make install-config) renders the vhosts and
+# the dnsmasq conf, and both carry {{IF <VHOST>_EXPOSURE=…}} gates that a file
+# without the answers cannot resolve (2026-11-15).
+write_instance_conf_file() {
   # data/instance.conf is the ONE place this instance's values live: templates
   # are rendered from it (make render) and scripts read it (scripts/lib/instance.sh).
   # Values we do not own here (SERVER_IP, EMAIL, TIMEZONE) are PRESERVED from an
   # existing file — re-running the installer must never wipe them.
-  local f="$DATA/instance.conf" keep="" have_kopia=""
+  local f="$DATA/instance.conf" keep="" have_kopia="" old_exp="" _v _k _val
   mkdir -p "$DATA"
   [ -f "$f" ] && keep=$(grep -E '^(SERVER_IP|EMAIL|TIMEZONE|KOPIA_SFTP_[A-Z]+)=' "$f" || true)
+  # The recorded exposure answers, captured BEFORE the rewrite below truncates
+  # the file: a repair that did not re-ask (every door already valid) must keep
+  # what the operator chose, not fall back to a default.
+  [ -f "$f" ] && old_exp=$(grep -E '^[A-Z0-9_]+_EXPOSURE=' "$f" || true)
   grep -q '^KOPIA_SFTP_HOST=' <<<"$keep" && have_kopia=1
   {
     echo "# data/instance.conf — the values for THIS host (untracked, mode 0600)."
@@ -158,9 +167,32 @@ write_instance_conf() {
       printf 'KOPIA_SFTP_PATH=%s\n' "$KOPIA_SFTP_PATH"
     fi
     [ -n "$keep" ] && printf '%s\n' "$keep"
+    # One exposure answer per Caddy vhost FILE, so no template branch is ever
+    # driven by a missing key (scripts/lib/exposure.sh reads these). A vhost of
+    # a module this run does not install gets `tailnet-vpn`: there is no route
+    # to publish, cf_dns deletes its A record, and the gate stays — never an
+    # invented public door. The two fixed doors are recorded here too: ttyd is
+    # always tailnet-vpn, the core www/apex pages always cloudflare-dns.
+    for _v in $(exposure_all); do
+      _k="$(exposure_key "$_v")_EXPOSURE"
+      _val="${!_k:-}"
+      # Prompt answer first, then the answer already on disk, then the default.
+      exposure_valid "$_val" || _val="$(sed -n "s/^$_k=//p" <<<"$old_exp" | tail -n1)"
+      exposure_valid "$_val" || {
+        case "$_v" in
+          www) _val=cloudflare-dns ;;
+          *)   _val=tailnet-vpn ;;
+        esac
+      }
+      printf '%s=%s\n' "$_k" "$_val"
+    done
   } > "$f"
   chmod 600 "$f"
   detail "  instance.conf written ($f) — every template renders from it"
+}
+
+write_instance_conf() {
+  write_instance_conf_file
   # compose gets the same values through the marked block in each .env
   bash "$REPO/scripts/render/render-all.sh" >>"$LOG" 2>&1 || fail render
 }

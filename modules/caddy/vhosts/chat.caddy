@@ -10,7 +10,14 @@
 # TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
 
 https://chat.{{DOMAIN}} {
-    import ratelimit chat_rl
+    # Exposure (scripts/lib/exposure.sh): a tailnet-vpn door refuses every
+    # non-tailnet source here, ahead of the limiter — a refused flood must not
+    # spend the shared zone window; a cloudflare-dns door carries no gate.
+    route {
+        {{IF CHAT_EXPOSURE=tailnet-vpn}}@not_tailnet not remote_ip 100.64.0.0/10
+        respond @not_tailnet 403{{END}}
+        import ratelimit chat_rl
+    }
     # Access log for the fail2ban web-login jail (config/fail2ban): one file
     # per app so a jail bans on ITS login endpoint, not the whole edge.
     log {

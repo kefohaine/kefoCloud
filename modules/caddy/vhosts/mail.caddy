@@ -7,11 +7,18 @@
 # Roundcube is a web client only: it reaches the platform over STARTTLS at
 # tls://mail.{{DOMAIN}}:143/:587 (modules/mailserver/roundcube-tls.inc.php),
 # i.e. mailu-front, whose cert is this same mail.{{DOMAIN}} pair. The Mailu
-# platform/admin UI has its own tailnet-only name (./admin.mail.caddy).
+# platform/admin UI has its own door with its own exposure (./admin.mail.caddy).
 # TLS: fallback ACME issuer chain, DNS-01 via Cloudflare (same as every vhost).
 
 https://mail.{{DOMAIN}} {
-    import ratelimit mail_rl
+    # Exposure (scripts/lib/exposure.sh): a tailnet-vpn door refuses every
+    # non-tailnet source here, ahead of the limiter — a refused flood must not
+    # spend the shared zone window; a cloudflare-dns door carries no gate.
+    route {
+        {{IF MAIL_EXPOSURE=tailnet-vpn}}@not_tailnet not remote_ip 100.64.0.0/10
+        respond @not_tailnet 403{{END}}
+        import ratelimit mail_rl
+    }
     # Access log for the fail2ban web-login jail (config/fail2ban): one file
     # per app so a jail bans on ITS login endpoint, not the whole edge.
     log {

@@ -8,8 +8,12 @@
 #
 # THE VOCABULARY (kept deliberately literal):
 #   mod_state   -> `installed` | `not installed`   (from wizard.state)
-#   exposure    -> `public` | `tailnet-only`       (a *route* property)
-# A `not installed` module has NO route at all: it is absent, not tailnet-only.
+#   exposure    -> `tailnet-vpn` | `cloudflare-dns` (a *route* property, chosen
+#                  per vhost at install time and recorded in instance.conf)
+# A `not installed` module has NO route at all: it is absent, not tailnet-vpn.
+# Module STATE (is it installed?) and route EXPOSURE (who reaches a door that
+# exists?) are orthogonal facts; the one accessor for exposure is
+# scripts/lib/exposure.sh, sourced below.
 #
 # The installed set is the `enabled_modules` field of data/wizard.state — the
 # file the installer is the SOLE writer of. This module is the ONE accessor for
@@ -24,13 +28,14 @@
 #   mod_by_dir <dir>        module name for a modules/<dir>/ ('' when undeclared)
 #   mod_host <m>            public host label ('' when the module has no vhost)
 #   mod_containers <m>      container names, space-separated
+#   mod_vhosts <m>          vhost files this module owns (derived, no roster)
 #   mod_installed <m>       exit 0/1 (from wizard.state `enabled_modules`)
 #   mod_state <m>           `installed` | `not installed`  (always printed)
 #   mod_note <m>            '' when installed, else `(not installed)` — for rows
 #   mod_roster              every repo container (edge + every declared module)
 #   mod_finished            `true` | `false` | `absent`  (wizard.state checkpoint)
 #   state_get <key>         one raw wizard.state field ('' when absent)
-#   exposure <host>         `tailnet-only` for ttyd/vault/admin.mail/admin.matrix.$DOMAIN, else `public`
+#   exposure <host>         `tailnet-vpn` | `cloudflare-dns` ('' when unrecorded)
 
 MODULES_CONF="${MODULES_CONF:-${REPO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}/config/modules.conf}"
 INSTALL_STATE="${INSTALL_STATE:-${DATA_DIR:-${REPO_DIR:-.}/data}/wizard.state}"
@@ -44,6 +49,30 @@ mod_dir()      { _mod_decl "$1" | awk '{print $1}'; }
 mod_by_dir()   { local m; for m in $(mod_all); do [ "$(mod_dir "$m")" = "$1" ] && { printf '%s' "$m"; return 0; }; done; return 1; }
 mod_host()     { local h; h="$(_mod_decl "$1" | awk '{print $2}')"; [ "$h" = "-" ] && h=""; printf '%s' "$h"; }
 mod_containers() { _mod_decl "$1" | awk '{for(i=3;i<=NF;i++) printf "%s%s", $i, (i<NF?" ":"")}'; }
+
+# ── the per-vhost exposure answers (scripts/lib/exposure.sh) ────────────────
+# One key per vhost FILE in data/instance.conf; this file is sourced here so
+# every consumer goes through the one accessor and never re-parses the conf.
+. "$(dirname "${BASH_SOURCE[0]}")/exposure.sh"
+
+# mod_vhosts <m> — the vhost files a module owns. Derived, never a roster: a
+# vhost belongs to the module whose declared host label (chat -> chat.caddy) or
+# whose module DIRECTORY (chat's dir is `matrix`, so matrix/auth.matrix/
+# call.matrix/... belong to it) appears as one of its dot-separated labels.
+# The core doors (ttyd, www) belong to no module and are never listed.
+_vhost_has_label() { case ".$1." in *".$2."*) return 0 ;; esac; return 1; }
+mod_vhosts() {
+  local dir host v
+  dir="$(mod_dir "$1")"; host="$(mod_host "$1")"
+  while IFS= read -r v; do
+    case "$v" in ttyd|www) continue ;; esac
+    if [ -n "$host" ] && { [ "$v" = "$host" ] || _vhost_has_label "$v" "$host"; }; then
+      printf '%s\n' "$v"
+    elif [ -n "$dir" ] && { [ "$v" = "$dir" ] || _vhost_has_label "$v" "$dir"; }; then
+      printf '%s\n' "$v"
+    fi
+  done < <(exposure_all)
+}
 
 # Read one field from wizard.state in a subshell: the file is printf-%q'd and
 # contains secrets, so it is sourced (never interpolated) and only the requested
@@ -70,7 +99,7 @@ mod_finished() {
   local f; f="$(_mod_read finished)"
   printf '%s' "${f:-absent}"
 }
-exposure()     { case "$1" in ttyd|ttyd.*|vault|vault.*|admin.mail|admin.mail.*|admin.matrix|admin.matrix.*) printf 'tailnet-only' ;; *) printf 'public' ;; esac; }
+exposure()     { exposure_of_host "$1"; }
 
 # mod_roster — every container the REPO declares, in declaration order: the
 # Caddy edge (always present) then each declared module's containers. It is a

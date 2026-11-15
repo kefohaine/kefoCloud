@@ -44,7 +44,9 @@ make fetch|one screen — os, uptime, disk, memory, swap, ip, install checkpoint
 make render|skeleton → live: render data/rendered/ + refresh each service .env
 make fetch-more|deep dive — per-core cpu, mem breakdown, processes, sockets, all units+timers+cron, docker caps/stats/log sizes, disk+inodes, data/ growth, tailnet prefs, DNS probes, TLS expiry
 make smoke|live edge test — every vhost, tailnet edge, tls, mail (pre-push hook runs it; records its verdict only when the installer asks)
-make dns-sync|converge the Cloudflare zone from wizard.state (A records for every enabled module + SSL mode)
+make dns-sync|converge the Cloudflare zone from the recorded door exposures (A records; proxying is left as the dashboard has it)
+make vhost-exposure TARGET=<vhost> VALUE=<exposure>|move one door between the tailnet and the public zone — tailnet-vpn or cloudflare-dns (record, render, edge restart, record in the zone, dnsmasq, probe); DRYRUN=1 prints the plan
+make check-exposure|the exposure wiring, read-only — every vhost is a target, the dnsmasq skeleton answers each gated host, the gate renders only for tailnet-vpn, ahead of the limiter
 EOF
 
   sec "maintain"
@@ -118,7 +120,7 @@ make goose-secret|rotate GOOSE_SERVER__SECRET_KEY in data/goose/.env, restart go
 make install-ttyd|ttyd.service → /etc/systemd/system (refuses to run from inside ttyd)
 make install-ssh|50-cloud-init.conf → sshd_config.d (validates with sshd -t, then restarts)
 make install-dnsmasq-conf|10-tailnet.conf → /etc/dnsmasq.d
-make install-resolv|resolv.conf → /etc/resolv.conf via Tailscale (split-DNS works for tailnet-only names; run AFTER tailscale)
+make install-resolv|resolv.conf → /etc/resolv.conf via Tailscale (split-DNS works for the tailnet-vpn doors; run AFTER tailscale)
 make install-dnsmasq-override|dnsmasq drop-in override → /etc/systemd/system/dnsmasq.service.d
 make install-docker|daemon.json → /etc/docker (docker daemon restart needed to apply)
 make install-sysctl|99-kefo.conf → /etc/sysctl.d

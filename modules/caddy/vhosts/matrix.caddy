@@ -18,7 +18,6 @@ https://matrix.{{DOMAIN}} {
     log {
         output file /var/log/caddy/matrix.log
     }
-    import ratelimit matrix_rl
     tls {
         # Fallback issuer chain: Let's Encrypt first, then Buypass Go SSL and
         # ZeroSSL — free providers tried in order, so a per-issuer rate limit
@@ -38,6 +37,11 @@ https://matrix.{{DOMAIN}} {
     }
     import compress
     route {
+        # Exposure (scripts/lib/exposure.sh): a tailnet-vpn door refuses every
+        # non-tailnet source here, ahead of the limiter; cloudflare-dns drops it.
+        {{IF MATRIX_EXPOSURE=tailnet-vpn}}@not_tailnet not remote_ip 100.64.0.0/10
+        respond @not_tailnet 403{{END}}
+        import ratelimit matrix_rl
         header {
             import security_headers
         }

@@ -34,6 +34,18 @@
 #                8 weekly, 12 monthly)
 #
 # Written by the installer:
+# <VHOST>_EXPOSURE — the door's reach, one key per Caddy vhost FILE: either
+#                 tailnet-vpn (no public A record, answered by the machine
+#                 dnsmasq, the vhost 403s every other source) or
+#                 cloudflare-dns (a public A record, no gate — reachable from
+#                 the internet). The key is the file's basename, upper-cased,
+#                 with every non-alphanumeric a `_` (livekit-jwt.matrix ->
+#                 LIVEKIT_JWT_MATRIX_EXPOSURE); a file that declares two hosts
+#                 (www carries the apex and www) answers for both. The two
+#                 fixed doors are not configurable: ttyd is always tailnet-vpn
+#                 (an unauthenticated root shell) and the core www/apex pages
+#                 are always cloudflare-dns. Read by scripts/lib/exposure.sh;
+#                 one vhost changes with `make vhost-exposure`.
 # VIDEO_CALLING — "true" to run Talk (spreed + signaling + coturn); the talk
 #                 vhost and its cert are rendered only when true.
 # CLIENT_PUSH   — "true" to run notify_push and route cloud.$DOMAIN/push to it.

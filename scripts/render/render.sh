@@ -13,8 +13,11 @@
 #
 # Conditional blocks are supported too: {{IF KEY}}…{{ELSE}}…{{END}} keeps the
 # first side when KEY is truthy (set and not false/0/no/off), the second side
-# otherwise — one skeleton, two variants. Blocks are resolved before token
-# substitution.
+# otherwise — one skeleton, two variants. {{IF KEY=value}}…{{ELSE}}…{{END}} is
+# the same block with an exact comparison, so a template can carry both
+# variants of a value (e.g. a gate that exists only for `tailnet-vpn`) without
+# a second file and without a boolean key per host. Blocks are resolved before
+# token substitution.
 #
 # Unknown tokens are left VERBATIM and reported on stderr — a missing value is
 # loud, never a silently empty string in a config that then fails at runtime.
@@ -97,21 +100,40 @@ if mode == "reverse":
         sys.stdout.write(data)
     sys.exit(0)
 # Conditional blocks: {{IF KEY}}…{{ELSE}}…{{END}} — the block survives when
-# KEY's value is TRUTHY (set and not false/0/no/off), the ELSE side otherwise.
-# Lets ONE tracked skeleton carry the normal and a fallback variant of a file
-# (today: the cloud vhost's optional notify_push route)
-# without either variant being a second file. Resolved before token
-# substitution, innermost-first, so a dropped branch's {{TOKENS}} never surface
-# as unresolved.
+# KEY's value is TRUTHY (set and not false/0/no/off), the ELSE side otherwise —
+# and {{IF KEY=value}}…{{ELSE}}…{{END}}, the same block with an exact
+# comparison against that value. Lets ONE tracked skeleton carry the normal and
+# a fallback variant of a file (the cloud vhost's optional notify_push route,
+# a vhost gate that exists only for `tailnet-vpn`) without either variant being
+# a second file. Resolved before token substitution, innermost-first, so a
+# dropped branch's {{TOKENS}} never surface as unresolved.
 def _truthy(k):
     return V.get(k, "").strip().lower() not in ("", "false", "0", "no", "off")
-_COND = re.compile(r"\{\{IF ([A-Z_][A-Z0-9_]*)\}\}(.*?)(?:\{\{ELSE\}\}(.*?))?\{\{END\}\}", re.S)
+_COND = re.compile(r"\{\{IF ([A-Z_][A-Z0-9_]*)(?:=([^}\n]*))?\}\}(.*?)(?:\{\{ELSE\}\}(.*?))?\{\{END\}\}", re.S)
+# The comparison form is STRICT: a key that is not recorded is an error, never
+# a silent `false`. The gate it wraps is the only thing standing between a
+# tailnet-only door and the internet, so a missing answer must stop the render
+# instead of publishing the door. (The truthy form keeps its lenient behaviour —
+# there an absent value means the optional feature is off.)
+_MISSING_COND = []
 def _cond(m):
-    return (m.group(2) or "") if _truthy(m.group(1)) else (m.group(3) or "")
+    key, want, then, other = m.group(1), m.group(2), m.group(3) or "", m.group(4) or ""
+    if want is not None and key not in V:
+        _MISSING_COND.append(key)
+    ok = _truthy(key) if want is None else (V.get(key, "").strip() == want.strip())
+    return then if ok else other
 for _ in range(8):
     _next = _COND.sub(_cond, data)
     if _next == data: break
     data = _next
+if _MISSING_COND:
+    uniq = sorted(set(_MISSING_COND))
+    print(f"render.sh: ERROR {inp} — conditional key(s) missing from {conf}: {', '.join(uniq)}", file=sys.stderr)
+    print("render.sh:       the answer decides whether this vhost is gated; refusing to "
+          "render an unguarded edge.", file=sys.stderr)
+    print("render.sh:       record them (installer repair, or make vhost-exposure), then render again.",
+          file=sys.stderr)
+    sys.exit(1)
 
 missing = []
 def sub(m):

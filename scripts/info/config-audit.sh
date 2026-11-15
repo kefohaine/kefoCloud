@@ -42,8 +42,10 @@ fi
 # lines of config/instance.defaults, which is the single token list.
 declared=$(grep -oP '^# \K[A-Z_]+(?= —)' config/instance.defaults | sort -u)
 # {{TOKENS}} is the meta-token: this file's own prose says "deployable files
-# carry {{TOKENS}}", so it is a word about tokens, not a token.
-used=$(git grep -oh '{{[A-Z_]*}}' -- modules config | sed 's/[{}]//g' | sort -u | grep -vx 'TOKENS')
+# carry {{TOKENS}}", so it is a word about tokens, not a token. {{END}} and
+# {{ELSE}} are the renderer's block syntax ({{IF KEY}}…{{ELSE}}…{{END}}), never
+# substituted and so never declared.
+used=$(git grep -oh '{{[A-Z_]*}}' -- modules config | sed 's/[{}]//g' | sort -u | grep -vxE 'TOKENS|END|ELSE')
 while IFS= read -r tok; do
   [ -n "$tok" ] || continue
   grep -qx "$tok" <<<"$declared" || fail "{{${tok}}} is used but not declared in config/instance.defaults"
