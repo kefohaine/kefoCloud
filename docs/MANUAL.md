@@ -168,7 +168,7 @@ Three mechanisms, one table:
 
 | Kind of file | Mechanism | Where the value comes from |
 |---|---|---|
-| Templates: `config/**`, `modules/caddy/**` | `{{TOKEN}}` + `scripts/render/render.sh` | `data/instance.conf` |
+| Templates: `config/**`, `modules/caddy/**` | `{{TOKEN}}` + `scripts/render/render.sh`, plus block conditionals (`{{IF KEY}}`/`{{IF KEY=value}}` … `{{ELSE}}` … `{{END}}`) for a branch that would be invalid if it rendered empty | `data/instance.conf` |
 | Compose files (`modules/*/docker-compose*.yml`) | `${VAR}` (docker compose substitution) | the instance block `make render` writes into `modules/*/.env` |
 | Scripts (`scripts/**`) | plain shell variables, never tokens | `scripts/lib/instance.sh`, sourced from `data/instance.conf` |
 | Filenames | domain-free by construction (`vhosts/cloud.caddy`, `kefo-stack.service`, `config/logrotate/instance`) | — |
