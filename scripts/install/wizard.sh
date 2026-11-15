@@ -7,10 +7,15 @@
 # exists: repair reuses every saved answer, fresh moves them to <state>.prev and
 # asks again), locale country, GitHub collaborator opt-in (+ commit identity +
 # automatic key verification), device SSH key, Tailscale auth key, Cloudflare API
-# token, domain, modules (one space-separated line), and the kopia backup target
-# when that module is on. Every affirmation takes only the
+# token, domain, one module question per module in config/modules.conf, and one
+# exposure question per door those modules open. Every affirmation takes only the
 # literal words `yes`/`no` (no shortcut, no default); the answer is recorded as
-# the boolean true/false. Then it runs unattended as a fixed 19-row checklist
+# the boolean true/false, and each question and its answer share one line. A
+# value this machine can read for itself is never asked (the host timezone, the
+# checkout's git identity, an already-joined tailnet, a domain the token names
+# alone). The kopia backup target is NOT collected: the disk belongs to another
+# machine, so the install leaves it as an operator follow-up. Then it runs
+# unattended as a fixed 19-row checklist
 # (grey [WAIT] -> animated orange [EXEC] -> green [DONE] / red [FAIL]; a failed
 # task pauses the run on its row and hands the error to the operator, and the
 # errors are reported after): host services, docker, tailscale, every module

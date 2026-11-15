@@ -91,8 +91,13 @@ success_block() {
         printf '  %sImmich%s       https://photos.%s    %s(first account created in the UI becomes the admin)%s\n' \
           "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "$C_RST" ;;
       kopia)
-        printf '  %sKopia%s        snapshots → %s   %s(authorize %s/kopia/ssh/id_ed25519.pub there, then: make kopia-init)%s\n' \
-          "$C_PURPLE" "$C_RST" "${KOPIA_SFTP_USER:-kopia}@${KOPIA_SFTP_HOST:-<backup machine>}:${KOPIA_SFTP_PATH:-<path>}" "$C_GREY" "$DATA" "$C_RST" ;;
+        if [ -n "${KOPIA_SFTP_HOST:-}" ]; then
+          printf '  %sKopia%s        snapshots → %s@%s:%s\n' \
+            "$C_PURPLE" "$C_RST" "${KOPIA_SFTP_USER:-kopia}" "$KOPIA_SFTP_HOST" "${KOPIA_SFTP_PATH:-<path>}"
+        else
+          printf '  %sKopia%s        client + timer up   %s(no backup target yet — see the follow-ups)%s\n' \
+            "$C_PURPLE" "$C_RST" "$C_GREY" "$C_RST"
+        fi ;;
       vault)
         printf '  %sVaultwarden%s  https://vault.%s    %s%s / %s%s\n' \
           "$C_PURPLE" "$C_RST" "$DOMAIN" "$C_GREY" "${VAULTWARDEN_ADMIN_USER:-admin@$DOMAIN}" "${VAULTWARDEN_ADMIN_PASSWORD:-<see modules/vaultwarden/.env>}" "$C_RST" ;;
@@ -150,6 +155,13 @@ success_block() {
   fi
   if mod_on chat; then
     n=$((n+1)); printf '   %d. %s(optional)%s open federation from the Matrix admin room if you want other servers to reach this one\n' "$n" "$C_GREY" "$C_RST"
+  fi
+  # The backup target is the one input the wizard no longer collects: the disk
+  # belongs to another machine, so it stays a later operator task.
+  if mod_on kopia; then
+    n=$((n+1)); printf '   %d. Kopia backup target (later task): add KOPIA_SFTP_HOST / KOPIA_SFTP_USER / KOPIA_SFTP_PATH to %s/instance.conf, authorize %s/kopia/ssh/id_ed25519.pub on that machine, then run make kopia-init\n' \
+      "$n" "$DATA" "$DATA"
+    printf '      %suntil then the client and kefocloud.timer run but no snapshot reaches a repository%s\n' "$C_GREY" "$C_RST"
   fi
   n=$((n+1)); if [ "${GH_REMOTE:-false}" = "true" ]; then
     printf '   %d. GitHub remote access: origin is git@github.com:%s/%s.git, key /root/.ssh/github_key\n' "$n" "$GITHUB_USER" "$REPO_NAME"
