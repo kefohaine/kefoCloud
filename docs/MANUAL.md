@@ -67,8 +67,8 @@ Beside the containers run host services: `ttyd` (web terminal on a single `tmux`
 
 | Hostname | Module | Default exposure | Reachable by | Serves |
 |---|---|---|---|---|
-| `cloud.` | `ocis` | cloudflare-dns (proxied at CF) | anyone | oCIS |
-| `chat.` | `chat` | cloudflare-dns (proxied at CF) | anyone | Element web client |
+| `cloud.` | `ocis` | cloudflare-dns | anyone | oCIS |
+| `chat.` | `chat` | cloudflare-dns | anyone | Element web client |
 | `matrix.` | `chat` | cloudflare-dns | anyone | Synapse homeserver (client-server + federation API) + `/.well-known/matrix/*` |
 | `auth.matrix.` | `chat` | cloudflare-dns | anyone | Matrix Authentication Service (login, OAuth2, admin API) |
 | `admin.matrix.` | `chat` | tailnet-vpn | tailnet only | Element Admin panel |
@@ -76,10 +76,10 @@ Beside the containers run host services: `ttyd` (web terminal on a single `tmux`
 | `livekit.matrix.` | `chat` | cloudflare-dns | anyone | LiveKit SFU signalling; media is UDP 7882 / TCP 7881 |
 | `livekit-jwt.matrix.` | `chat` | cloudflare-dns | anyone | SFU token service (Matrix OpenID → LiveKit token) |
 | `vault.` | `vault` | tailnet-vpn | tailnet only | Vaultwarden |
-| `kuma.` | `monitor` | cloudflare-dns (proxied at CF) | anyone | Uptime Kuma |
-| `www.` | — | cloudflare-dns (fixed; proxied at CF) | anyone | instance pages in `$DATA_DIR/pages/www` (`/welcome`, …), `/download` drop folder |
-| `home.` | `home` | cloudflare-dns (proxied at CF) | anyone | Homarr |
-| `blog.` | `blog` | cloudflare-dns (proxied at CF) | anyone | WriteFreely |
+| `kuma.` | `monitor` | cloudflare-dns | anyone | Uptime Kuma |
+| `www.` | — | cloudflare-dns (fixed) | anyone | instance pages in `$DATA_DIR/pages/www` (`/welcome`, …), `/download` drop folder |
+| `home.` | `home` | cloudflare-dns | anyone | Homarr |
+| `blog.` | `blog` | cloudflare-dns | anyone | WriteFreely |
 | `photos.` | `photos` | cloudflare-dns | anyone | Immich |
 | `mail.` | `mail` | cloudflare-dns | anyone | Roundcube webmail + the SMTP/IMAP name (MX/SPF point here) |
 | `admin.mail.` | `mail` | tailnet-vpn | tailnet only | Mailu admin (`/admin`) |
@@ -388,7 +388,7 @@ clone + `docker network create net --subnet=172.22.0.0/16` + `make install-confi
 | Stop or recreate the whole stack | `make dok-stop-all CONFIRM=yes`, `make dok-recreate-all CONFIRM=yes` — both refuse without `CONFIRM=yes` |
 | Restart / log one host unit | `make systemd-restart-<svc>`, `systemd-log-<svc>` |
 | Config in the repo → live | `make render`, `make install-config`, `make deploy` |
-| Move one door between the tailnet and the public zone (or back) | `make vhost-exposure TARGET=<vhost> VALUE=<cloudflare-dns|tailnet-vpn>` (plan: `DRYRUN=1`) |
+| Move one door between the tailnet and the public zone (or back) | `make vhost-exposure TARGET=<vhost> VALUE=<exposure>` — `tailnet-vpn` or `cloudflare-dns` (plan: `DRYRUN=1`) |
 | Re-converge the Cloudflare A records | `make dns-sync` (plan: `DRYRUN=1`) |
 | Assert the exposure wiring, read-only | `make check-exposure` |
 | Backup, restore, verify | `make backup`, `make kopia-status`, `make kopia-snapshots`, `make kopia-policy`, `make kopia-verify` |
