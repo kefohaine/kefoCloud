@@ -712,6 +712,13 @@ dns-sync:
 vhost-exposure:
 >@bash scripts/ops/vhost-exposure.sh
 
+# The exposure wiring, read-only (renders into a temp dir with a synthetic
+# instance.conf): every vhost is a target, the dnsmasq skeleton answers each
+# gated host, the gate renders only under tailnet-vpn, and it precedes the
+# limiter. No data/, no network, no live value.
+check-exposure:
+>@bash scripts/stack/check-exposure.sh
+
 # Generate the Matrix module's secrets and runtime config (idempotent):
 # modules/matrix/.env values and $DATA_DIR/matrix/{synapse,element} configs.
 # Re-running never rotates a key or rewrites an existing config.
