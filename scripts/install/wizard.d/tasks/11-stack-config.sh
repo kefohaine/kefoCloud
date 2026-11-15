@@ -125,7 +125,12 @@ prep_dirs_verify() {
   return 0
 }
 
-write_instance_conf() {
+# Write data/instance.conf ONLY (no render). Split out because the file must
+# exist complete before the FIRST template renders — see wizard.sh's call after
+# ask_inputs: the Host Services row (make install-config) renders the vhosts and
+# the dnsmasq conf, and both carry {{IF <VHOST>_EXPOSURE=…}} gates that a file
+# without the answers cannot resolve (2026-11-15).
+write_instance_conf_file() {
   # data/instance.conf is the ONE place this instance's values live: templates
   # are rendered from it (make render) and scripts read it (scripts/lib/instance.sh).
   # Values we do not own here (SERVER_IP, EMAIL, TIMEZONE) are PRESERVED from an
@@ -184,6 +189,10 @@ write_instance_conf() {
   } > "$f"
   chmod 600 "$f"
   detail "  instance.conf written ($f) — every template renders from it"
+}
+
+write_instance_conf() {
+  write_instance_conf_file
   # compose gets the same values through the marked block in each .env
   bash "$REPO/scripts/render/render-all.sh" >>"$LOG" 2>&1 || fail render
 }

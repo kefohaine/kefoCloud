@@ -206,6 +206,14 @@ main() {
           VIDEO_CALLING CLIENT_PUSH
   fi
   ask_inputs
+  # The exposure answers are stored ONLY in data/instance.conf, and the row that
+  # used to write it (Stack Config) runs AFTER the one that already renders from
+  # it (Host Services → make install-config). On a repair of a pre-exposure
+  # install.conf the first render therefore met {{IF <VHOST>_EXPOSURE=…}} with no
+  # answer, refused the file, and install-config died on the first `cp` of a unit
+  # that was never rendered (2026-11-15, "Host Services" FAIL). Persist the file
+  # as soon as the prompts are done — same writer, still one store, idempotent.
+  write_instance_conf_file
   # The decisions this run is built on — recorded so the log explains itself
   # without re-reading wizard.state (never the token/key VALUES).
   detail "  answers: domain=$DOMAIN modules=$(enabled_modules_list || true)"
