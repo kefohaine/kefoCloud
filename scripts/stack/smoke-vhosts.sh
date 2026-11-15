@@ -471,6 +471,20 @@ check_tls "ttyd.$DOMAIN"
 end_sec
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Doors — every gated vhost, not only the four the sections above name. The
+# list is derived (scripts/lib/exposure.sh reads each vhost file and the
+# recorded answer), so a door added later cannot slip through untested, and a
+# recorded `tailnet-vpn` that answers a public source is a failure.
+# ─────────────────────────────────────────────────────────────────────────────
+hdr core "Doors — recorded exposure, one probe per tailnet-vpn vhost"
+for _v in $(exposure_targets); do
+  [ "$(exposure_of "$_v")" = tailnet-vpn ] || continue
+  _h="$(exposure_hosts "$_v" | head -n1)"
+  [ -n "$_h" ] && check "$_v-door" "$_h" "/" "403" "" "public sources refused (tailnet-vpn)"
+done
+end_sec
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Core — host services, firewall, storage and headroom. Always expected.
 # ─────────────────────────────────────────────────────────────────────────────
 hdr core "Host — units · firewall · storage · disk (core)"

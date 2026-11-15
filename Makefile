@@ -705,6 +705,13 @@ ocis-webdav:
 dns-sync:
 >@bash scripts/ops/dns-sync.sh
 
+# Change ONE door's exposure and make it true: the answer in data/instance.conf,
+# the render, the edge restart, the zone record, the dnsmasq split-DNS answer,
+# then a probe from both sides and `make smoke`. The door's own restart drops
+# every door for a second; leaving tailnet-vpn asks for the literal word `yes`.
+vhost-exposure:
+>@bash scripts/ops/vhost-exposure.sh
+
 # Generate the Matrix module's secrets and runtime config (idempotent):
 # modules/matrix/.env values and $DATA_DIR/matrix/{synapse,element} configs.
 # Re-running never rotates a key or rewrites an existing config.
