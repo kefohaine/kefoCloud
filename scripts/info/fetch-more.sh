@@ -236,7 +236,7 @@ row modules "$mstr"
 
 # Per module: the state in WORDS, its route exposure, and the containers that
 # are actually running. `not installed` means ABSENT — no container, no route.
-# `tailnet-only` is a property of a route that EXISTS (ttyd.$DOMAIN), never of
+# `tailnet-vpn` is a property of a route that EXISTS (ttyd.$DOMAIN), never of
 # a missing module. This row is the answer to "why is vault.$DOMAIN 502?".
 RUNNING_D="$(docker ps --format '{{.Names}}' 2>/dev/null)"
 while read -r m; do
@@ -255,9 +255,11 @@ while read -r m; do
   fi
 done < <(mod_all)
 
-# Every vhost the edge actually loads, classified. A route is either public or
-# tailnet-only; a vhost whose module is NOT INSTALLED is neither — it is dead
-# (502), and is printed as such, so it can never be misread as tailnet-only.
+# Every vhost the edge actually loads, classified from its RECORDED exposure
+# (scripts/lib/exposure.sh), never from a hardcoded name list: a door moved with
+# `make vhost-exposure` shows up on the side it was moved to. A vhost whose
+# module is NOT INSTALLED is neither — it is dead (502) and printed as such, so
+# it can never be misread as a gated door.
 # Prefer the RENDERED vhosts (what the edge actually loads, real hostnames);
 # fall back to the tracked skeleton when nothing has been rendered yet.
 VDIR="$DATA/rendered/caddy/vhosts"
@@ -268,16 +270,21 @@ for f in "${VDIR:-$ROOT/modules/caddy/vhosts}"/*.caddy; do
   h="$(sed -n 's|^https://\([A-Za-z0-9.-]*\)[[:space:]]*{.*|\1|p' "$f" | head -1)"
   [ -n "$h" ] || continue
   label="${h%%.*}"
-  case "$label" in ttyd|vault|mail) tn+="$h  "; continue ;; esac
   owner=""
   while read -r m; do
     [ -n "$m" ] || continue
     [ "$(mod_host "$m")" = "$label" ] && owner="$m"
   done < <(mod_all)
-  if [ -n "$owner" ] && ! mod_installed "$owner"; then gone+="$h (module $owner not installed)  "
-  else pub+="$h  "; fi
+  if [ -n "$owner" ] && ! mod_installed "$owner"; then
+    gone+="$h (module $owner not installed)  "; continue
+  fi
+  case "$(exposure_of_host "$h")" in
+    tailnet-vpn)    tn+="$h  " ;;
+    cloudflare-dns) pub+="$h  " ;;
+    *)              tn+="$h (no recorded exposure)  " ;;
+  esac
 done
-row routes "public: ${pub}· tailnet-only: ${tn}"
+row routes "cloudflare-dns: ${pub}· tailnet-vpn: ${tn}"
 [ -n "$gone" ] && row "!dead" "${R}${gone}${N}"
 if [ -d "$DATA/caddy_data" ]; then
   certs="$(find "$DATA/caddy_data" -name '*.crt' 2>/dev/null | wc -l)"

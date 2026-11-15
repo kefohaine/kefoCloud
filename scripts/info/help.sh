@@ -119,7 +119,7 @@ make goose-secret|rotate GOOSE_SERVER__SECRET_KEY in data/goose/.env, restart go
 make install-ttyd|ttyd.service → /etc/systemd/system (refuses to run from inside ttyd)
 make install-ssh|50-cloud-init.conf → sshd_config.d (validates with sshd -t, then restarts)
 make install-dnsmasq-conf|10-tailnet.conf → /etc/dnsmasq.d
-make install-resolv|resolv.conf → /etc/resolv.conf via Tailscale (split-DNS works for tailnet-only names; run AFTER tailscale)
+make install-resolv|resolv.conf → /etc/resolv.conf via Tailscale (split-DNS works for the tailnet-vpn doors; run AFTER tailscale)
 make install-dnsmasq-override|dnsmasq drop-in override → /etc/systemd/system/dnsmasq.service.d
 make install-docker|daemon.json → /etc/docker (docker daemon restart needed to apply)
 make install-sysctl|99-kefo.conf → /etc/sysctl.d
