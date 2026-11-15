@@ -97,7 +97,6 @@ problem() {
     dns_*)          echo "DNS record for ${1#dns_}.$DOMAIN is missing" ;;
     cert_*)         echo "cert for ${1#cert_}.$DOMAIN is not issued by Let's Encrypt" ;;
     sweep)          echo "old project name is still referenced in the repo tree" ;;
-    sslmode)        echo "Cloudflare SSL/TLS mode is not Full (or strict)" ;;
     matrix_setup)   echo "Matrix wiring incomplete (homeserver health, admin account, Element reachable)" ;;
     dkim_setup)      echo "DKIM key / dkim._domainkey TXT record not published" ;;
     dns_mail_txt)   echo "one or more mail records (MX, SPF, DMARC) are missing" ;;
@@ -142,10 +141,9 @@ hint() {
     kuma_admin)     echo "create the admin account at https://kuma.$DOMAIN in the UI, then re-check" ;;
     kuma_seed)      echo "run: make dok-recreate-uptimekuma (UPTIME_KUMA_DB_TYPE=sqlite makes Kuma create its schema), wait for /app/data/kuma.db to have tables, then: docker exec -i uptimekuma sqlite3 /app/data/kuma.db < modules/uptimekuma/seed-monitors.sql" ;;
     zone)           echo "add $DOMAIN as a zone in the Cloudflare dashboard, then re-check" ;;
-    dns_*)          echo "create an A record ${1#dns_}.$DOMAIN -> ${HOST_IP:-<machine IP>} in Cloudflare (matrix must be DNS-only/grey-cloud; the rest proxied), then re-check" ;;
+    dns_*)          echo "give that door the cloudflare-dns exposure (make vhost-exposure TARGET=<vhost> VALUE=cloudflare-dns) or fix the token's Zone > DNS > Edit permission, then re-check" ;;
     cert_*)         echo "hit https://${1#cert_}.$DOMAIN once to trigger ACME, wait a few seconds, then re-check" ;;
     sweep)          echo "rename or remove the files listed by: grep -rlI $GITHUB_USER $REPO --exclude-dir=.git --exclude-dir=docs --exclude-dir=archives --exclude-dir=scripts, then re-check" ;;
-    sslmode)        echo "Cloudflare dashboard -> SSL/TLS -> Overview -> set mode to Full (or Full strict), then re-check" ;;
     matrix_setup)   echo "the setup is re-applied automatically on each re-check; if it still fails, check the homeserver log (make matrix-logs) and that SYNAPSE_ADMIN_USER/PASSWORD exist in modules/matrix/.env, then re-check" ;;
     dkim_setup)      echo "re-run the wizard (dkim_setup generates the key through Mailu's ORM when the domain has none), verify the CF token has Zone > DNS > Edit, then dig @<zone NS> TXT dkim._domainkey.$DOMAIN" ;;
     dns_mail_txt)   echo "the installer retries the MX, SPF and DMARC records on re-check; verify the token has Zone > DNS > Edit and inspect Cloudflare DNS for $DOMAIN (MX -> mail.$DOMAIN, TXT v=spf1 a:mail.$DOMAIN mx -all, _dmarc)" ;;
@@ -193,7 +191,6 @@ recheck() {
     dns_*) local h=${1#dns_}; [ -n "$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$h.$DOMAIN" | jq -r '.result[0].id // empty')" ] ;;
     cert_*) local h=${1#cert_}; echo | timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$h.$DOMAIN" 2>/dev/null | openssl x509 -noout -issuer 2>/dev/null | grep -q "Let's Encrypt" ;;
     sweep) [ -z "$(sweep_hits)" ] ;;
-    sslmode) ssl_mode_full ;;
     matrix_setup) docker exec matrix-synapse python3 -c 'import urllib.request,sys; sys.exit(0 if urllib.request.urlopen("http://127.0.0.1:8008/health").status == 200 else 1)' >/dev/null 2>&1 && curl -sk --max-time 15 "https://chat.$DOMAIN/" | grep -qi '<title>' ;;
     kopia_setup) docker ps --format '{{.Names}}' | grep -qx kopia ;;
     # Generated artefacts: the make target writes these, so their presence IS the
@@ -211,7 +208,7 @@ recheck() {
 
 is_expected() {
   case "$1" in
-    zone|clone|sslmode|github_auth) return 0 ;;  # input prerequisites / dashboard steps the script can't do
+    zone|clone|github_auth) return 0 ;;  # input prerequisites / dashboard steps the script can't do
     *) return 1 ;;
   esac
 }
