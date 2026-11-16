@@ -708,7 +708,9 @@ dns-sync:
 # Change ONE door's exposure and make it true: the answer in data/instance.conf,
 # the render, the edge restart, the zone record, the dnsmasq split-DNS answer,
 # then a probe from both sides and `make smoke`. The door's own restart drops
-# every door for a second; leaving tailnet-vpn asks for the literal word `yes`.
+# every door for a second; leaving tailnet-vpn asks for the literal word `yes`
+# (CONFIRM=yes answers it for an unattended run, and the target says so when the
+# change landed but the smoke suite failed elsewhere).
 vhost-exposure:
 >@bash scripts/ops/vhost-exposure.sh
 

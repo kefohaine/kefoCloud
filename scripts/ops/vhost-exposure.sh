@@ -19,11 +19,16 @@
 #      certificates live in caddy_data and are not re-issued;
 #   4. the zone record (created for cloudflare-dns, removed for tailnet-vpn) and
 #      the dnsmasq split-DNS answer — both rendered from the same value;
-#   5. a probe from both sides, then `make smoke`.
+#   5. a probe from both sides, then `make smoke`. A failing probe stops the run
+#      (the change is NOT applied); a failing smoke suite is reported as a
+#      separate verdict — the five steps above are already on the host.
 #
 # TARGET is a vhost FILE basename (vault, admin.mail, livekit-jwt.matrix …).
 # ttyd is refused (an unauthenticated root shell is never published) and so is
-# www (the core pages, always cloudflare-dns).
+# www (the core pages, always cloudflare-dns). Publishing a door
+# (tailnet-vpn -> cloudflare-dns) asks for the literal word `yes`;
+# `CONFIRM=yes` answers it, so an unattended run fails on a missing answer
+# instead of hanging.
 
 set -uo pipefail
 
@@ -106,16 +111,26 @@ if dryrun_wanted "$@"; then
   dryrun_plan "install the dnsmasq answers (make install-dnsmasq-conf) and reload dnsmasq"
   dryrun_plan "probe the door from a public source and from the tailnet, then make smoke"
   [ "$CUR" = tailnet-vpn ] && [ "$VALUE" = cloudflare-dns ] \
-    && dryrun_note "a real run asks for the literal word 'yes' before publishing this door"
+    && dryrun_note "a real run asks for the literal word 'yes' before publishing this door (CONFIRM=yes answers it)"
   dryrun_end "nothing changed"
 fi
 
 # Leaving tailnet-vpn is the one direction that publishes a door: the literal
 # word `yes` is required (no shortcut, no default — a typo aborts).
 if [ "$CUR" = tailnet-vpn ] && [ "$VALUE" = cloudflare-dns ]; then
-  printf '  Type yes to publish %s at this machine: ' "$TARGET"
-  read -r _reply || exit 1
-  [ "$_reply" = yes ] || { echo "  not confirmed — nothing changed."; exit 1; }
+  case "${CONFIRM:-no}" in
+    yes) detail "  publishing $TARGET at this machine — CONFIRM=yes" ;;
+    *)
+      printf '  Type yes to publish %s at this machine: ' "$TARGET"
+      # A closed stdin is not a `no` answer: say so, or a scripted run dies
+      # here with no explanation at all.
+      if ! read -r _reply; then
+        echo ""
+        die "no answer to the publish prompt (stdin closed) — nothing changed; run interactively or pass CONFIRM=yes"
+      fi
+      [ "$_reply" = yes ] || die "not confirmed — nothing changed."
+      ;;
+  esac
 fi
 
 # 1 — the answer, in place: the other keys keep their order.
@@ -178,5 +193,11 @@ done
 
 [ "$fails" = 0 ] || die "$fails probe(s) failed — the change is NOT applied; inspect $LOG and 'make dok-logs TARGET=caddy'"
 echo ""
-echo "  $TARGET is $VALUE. Running the full smoke test:"
-make -C "$REPO" --no-print-directory smoke
+echo "  $TARGET is $VALUE — recorded, rendered, the edge restarted, the zone record and the"
+echo "  dnsmasq answer converged, both sides probed. Running the full smoke test:"
+# The suite's verdict is the SUITE's: a check that fails elsewhere on this host
+# does not undo a change already applied above, and saying so is the difference
+# between "the flip failed" and "the flip landed, something else is red".
+if ! make -C "$REPO" --no-print-directory smoke; then
+  die "$TARGET IS $VALUE — the change above is applied; the smoke suite failed on other check(s), see its report"
+fi
