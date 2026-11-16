@@ -142,7 +142,11 @@ def build_row(email, password, name):
         "private_key": enc_str(priv, uek, umk),
         "public_key": b64(pub),
         "security_stamp": str(uuid.uuid4()),
-        "equivalent_domains": "", "excluded_globals": "",
+        # Empty JSON ARRAYS, not empty strings: get_eq_domains deserializes
+        # these with unwrap(), so "" panics the thread and /api/sync 500s for
+        # every client that does not send ?excludeDomains=true (mobile app,
+        # browser extension) — the web vault and desktop app hide it.
+        "equivalent_domains": "[]", "excluded_globals": "[]",
         "client_kdf_type": KDF_TYPE, "client_kdf_iter": DEFAULT_ITER,
         "verified_at": ts, "enabled": 1,
     }
