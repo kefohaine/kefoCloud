@@ -721,6 +721,14 @@ vhost-exposure:
 check-exposure:
 >@bash scripts/stack/check-exposure.sh
 
+# Every vhost, read-only: the hostnames it answers, the module it belongs to,
+# whether that module is installed, the exposure recorded for it and what the
+# RENDERED edge actually does (gate / open). TARGET=<substring> narrows the list.
+# Exits 1 if a recorded answer and the rendered door disagree — a half-applied
+# vhost-exposure.
+vhost-list:
+>@bash scripts/ops/vhost-list.sh "$(TARGET)"
+
 # Generate the Matrix module's secrets and runtime config (idempotent):
 # modules/matrix/.env values and $DATA_DIR/matrix/{synapse,element} configs.
 # Re-running never rotates a key or rewrites an existing config.
