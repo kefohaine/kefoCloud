@@ -708,7 +708,9 @@ dns-sync:
 # Change ONE door's exposure and make it true: the answer in data/instance.conf,
 # the render, the edge restart, the zone record, the dnsmasq split-DNS answer,
 # then a probe from both sides and `make smoke`. The door's own restart drops
-# every door for a second; leaving tailnet-vpn asks for the literal word `yes`.
+# every door for a second; leaving tailnet-vpn asks for the literal word `yes`
+# (CONFIRM=yes answers it for an unattended run, and the target says so when the
+# change landed but the smoke suite failed elsewhere).
 vhost-exposure:
 >@bash scripts/ops/vhost-exposure.sh
 
@@ -718,6 +720,14 @@ vhost-exposure:
 # limiter. No data/, no network, no live value.
 check-exposure:
 >@bash scripts/stack/check-exposure.sh
+
+# Every vhost, read-only: the hostnames it answers, the module it belongs to,
+# whether that module is installed, the exposure recorded for it and what the
+# RENDERED edge actually does (gate / open). TARGET=<substring> narrows the list.
+# Exits 1 if a recorded answer and the rendered door disagree — a half-applied
+# vhost-exposure.
+vhost-list:
+>@bash scripts/ops/vhost-list.sh "$(TARGET)"
 
 # Generate the Matrix module's secrets and runtime config (idempotent):
 # modules/matrix/.env values and $DATA_DIR/matrix/{synapse,element} configs.

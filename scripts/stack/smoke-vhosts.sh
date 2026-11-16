@@ -136,8 +136,11 @@ door_exposure() {
   [ -n "$e" ] && { printf '%s' "$e"; return; }
   for v in $(exposure_targets 2>/dev/null); do
     exposure_hosts "$v" 2>/dev/null | grep -qx "$host" || continue
-    if [ -f "$DATA_DIR/rendered/caddy/$v.caddy" ]; then
-      if grep -q 'respond @not_tailnet 403' "$DATA_DIR/rendered/caddy/$v.caddy"; then
+    # render-all.sh writes the edge tree the container mounts
+    # (rendered/caddy/vhosts/*.caddy), not rendered/caddy/*.caddy — reading the
+    # wrong path made this fallback silently unreachable.
+    if [ -f "$DATA_DIR/rendered/caddy/vhosts/$v.caddy" ]; then
+      if grep -q 'respond @not_tailnet 403' "$DATA_DIR/rendered/caddy/vhosts/$v.caddy"; then
         printf '%s' tailnet-vpn
       else
         printf '%s' cloudflare-dns
@@ -171,6 +174,10 @@ check_door() {
   local name="$1" host="$2" path="$3" codes="$4" want_html="${5:-}" desc="${6:-}"
   case "$(door_exposure "$host")" in
     tailnet-vpn)
+      if [ -z "$TS_IP" ]; then
+        say "FAIL $name: no Tailscale IPv4 — cannot probe a tailnet-only door"; bad
+        return
+      fi
       check    "$name-public" "$host" "$path" "403" "" "$desc (public source refused)"
       check_tn "$name"        "$host" "$path" "$codes" "$want_html" "$desc (tailnet)" ;;
     *)
@@ -326,8 +333,9 @@ end_sec
 # Module: chat — Matrix (Synapse + Element + MAS + the Element Admin panel).
 # chat.$DOMAIN serves Element (a static browser app), matrix.$DOMAIN the
 # homeserver's client-server API, auth.matrix.$DOMAIN the identity provider and
-# admin.matrix.$DOMAIN the tailnet-only panel. Chat/Matrix are public (Element
-# proxied, Synapse DNS-only); admin.matrix is never in the public zone.
+# admin.matrix.$DOMAIN the Element Admin panel. Every door here is probed from
+# its recorded exposure; admin.matrix is tailnet-vpn by default because it can
+# read every account, room and session.
 # ─────────────────────────────────────────────────────────────────────────────
 hdr chat "Chat — ESS CE (module: chat) · chat.$DOMAIN + matrix.$DOMAIN + auth.matrix.$DOMAIN + admin.matrix.$DOMAIN + call.matrix.$DOMAIN"
 check_door chat "chat.$DOMAIN" "/" "200 301 302 307 308" html "Element answers"
@@ -357,15 +365,10 @@ check_body matrix-login "matrix.$DOMAIN" "/_matrix/client/v3/login" "\"flows\"" 
 check_door mas-discovery "auth.matrix.$DOMAIN" "/.well-known/openid-configuration" "200" "" "MAS discovery answers"
 check_sec_headers auth "auth.matrix.$DOMAIN" "/.well-known/openid-configuration" "one of each"
 check_tls "auth.matrix.$DOMAIN"
-# admin.matrix.$DOMAIN is the Element Admin panel, TAILNET-ONLY: it can read
-# every account, room and session, so both halves are asserted (a public source
-# gets 403, a tailnet source gets the app).
-if [ -z "$TS_IP" ]; then
-  say "FAIL admin: no Tailscale IPv4 — cannot probe the tailnet-only door"; bad
-else
-  check_tn admin "admin.matrix.$DOMAIN" "/" "200 301 302 307 308" html "Element Admin answers on the tailnet"
-fi
-check admin-public "admin.matrix.$DOMAIN" "/" "403" "" "public sources are refused"
+# admin.matrix.$DOMAIN is the Element Admin panel: it can read every account,
+# room and session, so its recorded answer is asserted from both sides — a
+# tailnet-vpn door refuses a public source and serves a tailnet one.
+check_door admin "admin.matrix.$DOMAIN" "/" "200 301 302 307 308" html "Element Admin web UI"
 check_tls "admin.matrix.$DOMAIN"
 # The call stack. call.matrix.$DOMAIN is the Element Call app (an iframe inside
 # Element), livekit.matrix.$DOMAIN the SFU's signalling door and
@@ -406,16 +409,13 @@ end_sec
 # Module: vault — Vaultwarden.
 # ─────────────────────────────────────────────────────────────────────────────
 hdr vault "Vault — Vaultwarden (module: vault)"
-# Tailnet-only since 2026-10-28 — and both halves are asserted, so a
-# half-applied change (gate added, route gone, or the reverse) fails here
-# instead of passing on one side: a public source gets 403, a tailnet source
-# gets Vaultwarden itself.
-if [ -z "$TS_IP" ]; then
-  say "FAIL vault: no Tailscale IPv4 — cannot probe a tailnet-only door"; bad
-else
-  check_tn vault "vault.$DOMAIN" "/" "200 301 302 307 308" html "Vaultwarden answers on the tailnet"
-  check vault-public "vault.$DOMAIN" "/" "403" "" "public sources are refused"
-fi
+# The door is probed from its RECORDED exposure, like every other module door:
+# a tailnet-vpn answer fails a served public source and asserts a tailnet one, a
+# cloudflare-dns answer asserts the public side. Tailnet-only was a FACT here
+# until 2026-10-28 made it an answer the operator can flip; the hardcoded 403
+# left behind turned "the gate is gone, as recorded" into the suite's one red
+# check and made `make vhost-exposure` fail at its last step every time.
+check_door vault "vault.$DOMAIN" "/" "200 301 302 307 308" html "Vaultwarden web UI"
 check_sec_headers vault "vault.$DOMAIN" "/" "one of each"
 check_tls "vault.$DOMAIN"
 check_ctns vault vaultwarden
@@ -472,18 +472,12 @@ end_sec
 hdr mail "Mail — Mailu platform + Roundcube webmail (module: mail)"
 # mail.$DOMAIN is the PUBLIC mail door (Roundcube's web UI, and the name
 # mailu-front publishes 25/465/587/993 on). admin.mail.$DOMAIN is the platform
-# door and TAILNET-ONLY (same model as vault): no public A record, and the vhost
-# 403s every source outside 100.64.0.0/10. Both halves are asserted, so a
-# half-applied change fails here instead of passing.
+# door, probed from its recorded exposure like every other module door. Both
+# halves are asserted, so a half-applied change fails here instead of passing.
 check_door mail "mail.$DOMAIN" "/" "200 301 302 307 308" html "Roundcube webmail"
 check_sec_headers mail "mail.$DOMAIN" "/" "one of each"
 check_tls "mail.$DOMAIN"
-if [ -z "$TS_IP" ]; then
-  say "FAIL mailu: no Tailscale IPv4 — cannot probe a tailnet-only door"; bad
-else
-  check_tn mailu "admin.mail.$DOMAIN" "/" "200 301 302 307 308" html "Mailu platform door answers on the tailnet"
-fi
-check mailu-public "admin.mail.$DOMAIN" "/" "403" "" "public sources are refused"
+check_door mailu "admin.mail.$DOMAIN" "/" "200 301 302 307 308" html "Mailu platform door"
 check_sec_headers mailu "admin.mail.$DOMAIN" "/" "one of each"
 check_tls "admin.mail.$DOMAIN"
 
@@ -550,7 +544,7 @@ for _v in $(exposure_targets); do
   # so: the installer repair records the answer, and from then on this asserts
   # the recorded value instead of the render.
   if [ -z "$_e" ]; then
-    _r="$DATA_DIR/rendered/caddy/$_v.caddy"
+    _r="$DATA_DIR/rendered/caddy/vhosts/$_v.caddy"
     if [ -f "$_r" ] && grep -q 'respond @not_tailnet 403' "$_r"; then _e=tailnet-vpn
     elif [ -f "$_r" ]; then _e=cloudflare-dns
     else say "note  $_v: exposure not recorded and no rendered vhost — run the installer (repair)"; continue; fi

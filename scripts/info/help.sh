@@ -47,6 +47,7 @@ make smoke|live edge test — every vhost, tailnet edge, tls, mail (pre-push hoo
 make dns-sync|converge the Cloudflare zone from the recorded door exposures (A records; proxying is left as the dashboard has it)
 make vhost-exposure TARGET=<vhost> VALUE=<exposure>|move one door between the tailnet and the public zone — tailnet-vpn or cloudflare-dns (record, render, edge restart, record in the zone, dnsmasq, probe); DRYRUN=1 prints the plan
 make check-exposure|the exposure wiring, read-only — every vhost is a target, the dnsmasq skeleton answers each gated host, the gate renders only for tailnet-vpn, ahead of the limiter
+make vhost-list|every vhost, read-only — names, owning module, installed or not, recorded exposure, and what the rendered edge does (gate/open); TARGET=<substring> narrows it, a recorded-vs-rendered drift exits 1
 EOF
 
   sec "maintain"
