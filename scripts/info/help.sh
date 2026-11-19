@@ -136,7 +136,6 @@ make matrix-gen|generate Matrix secrets + Synapse/Element configs (idempotent)
 make matrix-update|dump the MAS database, then recreate MAS and Synapse (CONFIRM=yes)
 make kopia-gen|generate the kopia repository password + SFTP key, then print the public key to authorize (idempotent)
 make kopia-snapshot|take a snapshot now — SOURCE=<path in the container>, default: the container’s read-only source mount
-make kuma-import|import an adapted Uptime Kuma db (KUMA_DB=<path>)
 make gh-web-health|check the GitHub web git-data endpoints (after a history rewrite)
 EOF
 

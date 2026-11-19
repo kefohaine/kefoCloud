@@ -1,4 +1,4 @@
-# wizard.d/modules/uptimekuma/setup.sh — the monitor module: the Kuma admin account seed.
+# wizard.d/modules/uptimekuma/setup.sh — the monitor module: the Kuma admin account.
 
 kuma_seed() {
   # Wait for the SCHEMA, not for the file. Kuma 2.5+ serves its "Setup
@@ -6,8 +6,8 @@ kuma_seed() {
   # it can neither read db-config.json nor find a kuma.db — the compose file
   # now sets UPTIME_KUMA_DB_TYPE=sqlite so the main server starts and creates
   # the tables. Polling `test -f` was a trap: the poll timed out, sqlite3 then
-  # CREATED an empty kuma.db and every seed statement failed with "no such
-  # table" (2026-09-25).
+  # CREATED an empty kuma.db and the admin insert failed with "no such table"
+  # (2026-09-25).
   local i=0 ready=""
   while [ $i -lt 150 ]; do
     if docker exec uptimekuma sqlite3 /app/data/kuma.db \
@@ -37,6 +37,4 @@ kuma_seed() {
         >>"$LOG" 2>&1 || fail kuma_admin
     fi
   fi
-  docker exec -i uptimekuma sqlite3 /app/data/kuma.db < modules/uptimekuma/seed-monitors.sql \
-    >>"$LOG" 2>&1 || fail kuma_seed
 }

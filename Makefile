@@ -215,7 +215,7 @@ systemd-action:
 # ─────────────────────────────────────────────────────────────────────────────
 
 .PHONY: fetch fetch-more render smoke gh-web-health install-hooks update apt-upgrade install-config help matrix-gen matrix-update matrix-add-admin matrix-users matrix-add matrix-passwd matrix-flag-admin matrix-del matrix-status matrix-logs matrix-reset kopia-gen kopia-status kopia-init kopia-snapshot kopia-snapshots kopia-restore kopia-policy kopia-stats kopia-maint-info kopia-maint kopia-maint-owner kopia-expire kopia-delete kopia kopia-ignore-add kopia-ignore-rm kopia-verify kopia-logs
-.PHONY: kuma-import kuma-list-users kuma-add-user kuma-passwd kuma-del-user
+.PHONY: kuma-list-users kuma-add-user kuma-passwd kuma-del-user
 .PHONY: vaultwarden-list-users vaultwarden-add-user vaultwarden-del-user
 .PHONY: writefreely-users writefreely-add-user writefreely-passwd writefreely-del-user
 .PHONY: immich-users immich-admin-pass immich-grant-admin ocis-status ocis-admin-pass ocis-logs ocis-webdav dns-sync
@@ -616,10 +616,6 @@ kuma-del-user:
 >@[ -n "$(USER)" ] || { scripts/lib/mklog error "usage: make kuma-del-user USER=<name>"; exit 1; }
 >@bash scripts/modules/kuma-user.sh del "$(USER)"
 
-# Import an adapted Uptime Kuma db from another host (KUMA_DB=/path).
-kuma-import:
->@[ -n "$(KUMA_DB)" ] || { scripts/lib/mklog error "usage: make kuma-import KUMA_DB=<path>"; exit 1; }
->@sudo scripts/modules/kuma-import.sh "$(KUMA_DB)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Vaultwarden accounts (no CLI — scripts/modules/vaultwarden-user.sh recreates
