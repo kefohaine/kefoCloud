@@ -92,7 +92,7 @@ problem() {
     kopia_setup)    echo "the kopia container is not running" ;;
     kopia_timer)    echo "the nightly kefocloud window is not enabled (no snapshots)" ;;
     kuma_admin)     echo "uptime kuma admin user is missing" ;;
-    kuma_seed)      echo "uptime kuma monitors are not seeded" ;;
+    kuma_seed)      echo "uptime kuma database schema never appeared (Kuma still in Setup Database)" ;;
     zone)           echo "Cloudflare zone '$DOMAIN' not found" ;;
     dns_*)          echo "DNS record for ${1#dns_}.$DOMAIN is missing" ;;
     cert_*)         echo "cert for ${1#cert_}.$DOMAIN is not issued by Let's Encrypt" ;;
@@ -139,7 +139,7 @@ hint() {
     immich)         echo "run: make dok-recreate-immich-server (then make dok-logs-immich-server), then re-check" ;;
     homarr)         echo "run: make dok-recreate-homarr, then re-check (SECRET_ENCRYPTION_KEY must be set in modules/homarr/.env)" ;;
     kuma_admin)     echo "create the admin account at https://kuma.$DOMAIN in the UI, then re-check" ;;
-    kuma_seed)      echo "run: make dok-recreate-uptimekuma (UPTIME_KUMA_DB_TYPE=sqlite makes Kuma create its schema), wait for /app/data/kuma.db to have tables, then: docker exec -i uptimekuma sqlite3 /app/data/kuma.db < modules/uptimekuma/seed-monitors.sql" ;;
+    kuma_seed)      echo "run: make dok-recreate-uptimekuma (UPTIME_KUMA_DB_TYPE=sqlite makes Kuma create its schema), wait for /app/data/kuma.db to have tables, then re-check" ;;
     zone)           echo "add $DOMAIN as a zone in the Cloudflare dashboard, then re-check" ;;
     dns_*)          echo "give that door the cloudflare-dns exposure (make vhost-exposure TARGET=<vhost> VALUE=cloudflare-dns) or fix the token's Zone > DNS > Edit permission, then re-check" ;;
     cert_*)         echo "hit https://${1#cert_}.$DOMAIN once to trigger ACME, wait a few seconds, then re-check" ;;
@@ -186,7 +186,7 @@ recheck() {
     writefreely) docker ps --format '{{.Names}}' | grep -qx writefreely ;;
     immich) for _c in immich-server immich-db immich-redis; do docker ps --format '{{.Names}}' | grep -qx "$_c" || return 1; done ;;
     kuma_admin) [ "$(docker exec uptimekuma sqlite3 /app/data/kuma.db "SELECT COUNT(*) FROM user WHERE username='admin';" 2>/dev/null | tr -d '\n')" = "1" ] ;;
-    kuma_seed) [ "$(docker exec uptimekuma sqlite3 /app/data/kuma.db "SELECT COUNT(*) FROM monitor;" 2>/dev/null | tr -d '\n')" -gt 0 ] ;;
+    kuma_seed) docker exec uptimekuma sqlite3 /app/data/kuma.db "SELECT 1 FROM sqlite_master WHERE type='table' AND name='user';" 2>/dev/null | grep -q 1 ;;
     zone) [ -n "$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" | jq -r '.result[0].id // empty')" ] ;;
     dns_*) local h=${1#dns_}; [ -n "$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$h.$DOMAIN" | jq -r '.result[0].id // empty')" ] ;;
     cert_*) local h=${1#cert_}; echo | timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$h.$DOMAIN" 2>/dev/null | openssl x509 -noout -issuer 2>/dev/null | grep -q "Let's Encrypt" ;;
