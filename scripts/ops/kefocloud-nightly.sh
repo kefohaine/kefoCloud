@@ -26,6 +26,14 @@ say() { printf 'kefocloud: %s\n' "$*"; }
 dryrun_wanted "$@" && DRY=1
 dryrun_args "$@"
 
+# systemd starts a system unit with no HOME, and gh looks for its hosts file
+# under it: an authenticated login then reads as "not logged in" and the prune
+# is skipped every night. Take the identity's home from the passwd database.
+if [ -z "${HOME:-}" ]; then
+  HOME=$(getent passwd "$(id -u)" | cut -d: -f6)
+  export HOME
+fi
+
 # github_ok — 0 when a credential the git recipes can actually use is present.
 # `gh auth status` is the only honest test for a gh login; the token variables
 # are what the REST fallback in scripts/ops/git-pr.sh reads.
