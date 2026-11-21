@@ -27,6 +27,14 @@ SYN="$DATA_DIR/matrix/synapse"
 ELM="$DATA_DIR/matrix/element"
 MAS="$DATA_DIR/matrix/mas"
 
+# The room version every NEW room is created on. Synapse inherits it from the
+# image (1.164 defaults to 12), and a room version is permanent: a client that
+# does not know the version shows an upgrade prompt on every room, and a room
+# cannot be moved back down. Pinned to 11 — the highest version the deployed
+# clients (Element Web, Element X) are built against. Raise it only after both
+# clients handle the next one; existing rooms stay where they are.
+ROOM_VERSION="11"
+
 if [ "${DRY:-0}" = 1 ]; then
   dryrun_plan "create the directories $SYN, $ELM, $MAS/keys, $DATA_DIR/matrix/pgdata and $DATA_DIR/matrix/mas-pgdata"
   [ -f "$ENV" ] || dryrun_plan "create $ENV (mode 0600)"
@@ -72,6 +80,8 @@ if [ "${DRY:-0}" = 1 ]; then
       && dryrun_plan "append$_plan_missing to the experimental_features block of $SYN/homeserver.yaml (or warn if it has its own)"
     grep -qE '^matrix_rtc:' "$SYN/homeserver.yaml" \
       || dryrun_plan "append the matrix_rtc LiveKit transports to $SYN/homeserver.yaml"
+    grep -qE '^default_room_version:' "$SYN/homeserver.yaml" \
+      || dryrun_plan "pin default_room_version: \"$ROOM_VERSION\" in $SYN/homeserver.yaml"
   fi
   [ -s "$DATA_DIR/call/livekit.yaml" ] || dryrun_plan "write $DATA_DIR/call/livekit.yaml (mode 0600, keys LIVEKIT_KEY/LIVEKIT_SECRET from the .env)"
   [ -s "$DATA_DIR/call/element-call/config.json" ] || dryrun_plan "write $DATA_DIR/call/element-call/config.json (homeserver https://matrix.$DOMAIN)"
@@ -158,6 +168,8 @@ uploads_path: "/data/uploads"
 enable_registration: false
 registration_shared_secret: "$SYNAPSE_REGISTRATION_SHARED_SECRET"
 report_stats: false
+# Pinned, not inherited from the image: see ROOM_VERSION at the top of this script.
+default_room_version: "$ROOM_VERSION"
 macaroon_secret_key: "$SYNAPSE_MACAROON_SECRET"
 form_secret: "$SYNAPSE_FORM_SECRET"
 signing_key_path: "/data/matrix.$DOMAIN.signing.key"
@@ -333,6 +345,14 @@ if [ -s "$SYN/homeserver.yaml" ]; then
   if ! grep -qE '^matrix_rtc:' "$SYN/homeserver.yaml"; then
     printf '\n# The SFU clients are told to use (the module livekit service).\nmatrix_rtc:\n  transports:\n    - type: livekit\n      url: "wss://livekit.matrix.%s"\n      livekit_service_url: "https://livekit-jwt.matrix.%s"\n' "$DOMAIN" "$DOMAIN" >>"$SYN/homeserver.yaml"
     echo "matrix-gen: added matrix_rtc transports to $SYN/homeserver.yaml — restart matrix-synapse to apply" >&2
+  fi
+  # A file written before the pin inherits Synapse's default, which follows the
+  # image: the night a new Synapse picked a newer version, every new room landed
+  # on it and the clients that do not know it prompt to upgrade. Never rewritten
+  # when the operator chose a value of their own.
+  if ! grep -qE '^default_room_version:' "$SYN/homeserver.yaml"; then
+    printf '\n# Pinned, not inherited from the image: a room version is permanent.\ndefault_room_version: "%s"\n' "$ROOM_VERSION" >>"$SYN/homeserver.yaml"
+    echo "matrix-gen: pinned default_room_version: \"$ROOM_VERSION\" in $SYN/homeserver.yaml — restart matrix-synapse to apply" >&2
   fi
 fi
 

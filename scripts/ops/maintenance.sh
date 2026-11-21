@@ -78,9 +78,24 @@ fi
 # 1. Package index and upgrade. --force-confold keeps a locally edited config
 #    instead of prompting: nothing here may stop on a question.
 step "packages: update + full upgrade"
-run "apt-get update" env DEBIAN_FRONTEND=noninteractive \
+# apt's download helper drops to APT::Sandbox::User and mkstemps there; when the
+# host's /tmp is not writable by that user every index is discarded with a `W:`
+# line and apt still exits 0, so the night upgrades from yesterday's lists. A
+# private temp dir owned by the sandbox user leaves /tmp's mode alone.
+apt_env=(env DEBIAN_FRONTEND=noninteractive)
+apt_tmp=
+if [ "${DRY:-0}" != 1 ]; then
+  apt_tmp=$(mktemp -d /var/tmp/kefocloud-apt.XXXXXX) || apt_tmp=
+  if [ -n "$apt_tmp" ]; then
+    apt_user=$(apt-config dump 2>/dev/null | sed -n 's/^APT::Sandbox::User "\(.*\)";/\1/p')
+    [ -n "$apt_user" ] && chown "$apt_user" "$apt_tmp" 2>/dev/null
+    trap 'rm -rf "$apt_tmp"' EXIT
+    apt_env+=(TMPDIR="$apt_tmp")
+  fi
+fi
+run "apt-get update" "${apt_env[@]}" \
     apt-get -y -o Dpkg::Options::=--force-confold update
-run "apt-get full-upgrade" env DEBIAN_FRONTEND=noninteractive \
+run "apt-get full-upgrade" "${apt_env[@]}" \
     apt-get -y -o Dpkg::Options::=--force-confold full-upgrade
 if [ -e /var/run/reboot-required ] && [ "${DRY:-0}" != 1 ]; then
   say "$(cat /var/run/reboot-required 2>/dev/null || echo 'a reboot is required') — rebooting is the operator's decision, nothing reboots here"
