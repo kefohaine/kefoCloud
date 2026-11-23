@@ -289,32 +289,64 @@ verify_modules_gone() {
   return $bad
 }
 
-# The host files the installer rendered out of config/ — DERIVED from the
-# tracked tree one file at a time, never a hand-kept roster: a unit, jail,
+# Where the installer renders one tracked config/ file on the host. DERIVED
+# from the tracked tree file by file, never a hand-kept roster: a unit, jail,
 # filter or logrotate rule added to config/ is removed by the same edit that
 # installs it. sshd's 50-cloud-init.conf is deliberately NOT here (kept).
+host_path_of() {
+  local rel="${1#"$REPO"/config/}"
+  case "$rel" in
+    ssh/*) return 0 ;;   # hardening drop-in: deliberately kept
+    systemd/*) printf '/etc/systemd/system/%s\n' "$(basename "$rel")" ;;
+    goose/goose.service|ttyd/ttyd.service)
+      printf '/etc/systemd/system/%s\n' "$(basename "$rel")" ;;
+    fail2ban/*) printf '/etc/fail2ban/%s\n' "${rel#fail2ban/}" ;;
+    dnsmasq/10-tailnet.conf) printf '/etc/dnsmasq.d/10-tailnet.conf\n' ;;
+    dnsmasq/dnsmasq.service.conf)
+      printf '/etc/systemd/system/dnsmasq.service.d/override.conf\n' ;;
+    sysctl/99-kefo.conf) printf '/etc/sysctl.d/99-kefo.conf\n' ;;
+    logrotate/instance) printf '/etc/logrotate.d/instance\n' ;;
+    bash/banner.sh) printf '/etc/kefo-banner.sh\n' ;;
+    docker/daemon.json) printf '/etc/docker/daemon.json\n' ;;
+    # everything else is an input/template, not a file of its own on the host
+  esac
+}
+
+# The host files the installer rendered out of config/ (plus the legacy goose
+# env the installer migrated from).
 system_files() {
   local f
   while IFS= read -r f; do
-    printf '/etc/systemd/system/%s\n' "$(basename "$f")"
-  done < <(find "$REPO/config" -type f \( -name '*.service' -o -name '*.timer' \) | sort)
-  printf '%s\n' '/etc/systemd/system/dnsmasq.service.d/override.conf'
+    host_path_of "$f"
+  done < <(find "$REPO/config" -type f | sort)
+  printf '%s\n' /etc/goose/goose.env
+}
+
+# The /usr/local/bin binaries the rendered units' own ExecStart names — no
+# roster, so a unit added to config/ brings its binary into the teardown.
+host_binaries() {
+  local f
   while IFS= read -r f; do
-    printf '/etc/fail2ban/%s\n' "${f#"$REPO/config/fail2ban/"}"
-  done < <(find "$REPO/config/fail2ban" -type f -name '*.conf' | sort)
-  printf '%s\n' /etc/dnsmasq.d/10-tailnet.conf /etc/sysctl.d/99-kefo.conf \
-    /etc/logrotate.d/instance /etc/kefo-banner.sh /etc/docker/daemon.json \
-    /etc/goose/goose.env
+    sed -n 's/^ExecStart=//p' "$f"
+  done < <(find "$REPO/config" -type f \( -name '*.service' -o -name '*.timer' \) | sort) \
+    | awk '{print $1}' | sed 's/^-//' | grep '^/usr/local/bin/' | sort -u
 }
 
 # After the whole-framework scope: no project file may be left in a system path.
 verify_host_gone() {
-  local f bad=0
+  local f b bad=0
   while IFS= read -r f; do
     [ -e "$f" ] || continue
     ERR_TAGS+=("sysfile_$(basename "$f")"); bad=1
   done < <(system_files)
-  [ "$bad" -eq 0 ] && echo " Host files verified gone: no project file left in a system path."
+  while IFS= read -r b; do
+    [ -e "$b" ] || continue
+    ERR_TAGS+=("hostbin_$(basename "$b")"); bad=1
+  done < <(host_binaries)
+  if grep -qxF '. /etc/kefo-banner.sh' "${HOME:-/root}/.bashrc" 2>/dev/null; then
+    ERR_TAGS+=("banner_line"); bad=1
+  fi
+  [ "$bad" -eq 0 ] && echo " Host files verified gone: no project file, binary or banner line is left."
   return $bad
 }
 
@@ -569,10 +601,9 @@ remove_host() {
   # the binaries named by the rendered units' own ExecStart — no roster
   local bin
   while IFS= read -r bin; do
-    [ -n "$bin" ] && rm -f "$bin" >>"$LOG" 2>&1
-  done < <(grep -h '^ExecStart=' "$REPO"/config/goose/goose.service \
-             "$REPO"/config/ttyd/ttyd.service 2>/dev/null \
-           | sed 's/^ExecStart=//' | awk '{print $1}' | grep '^/usr/local/bin/')
+    [ -e "$bin" ] || continue
+    rm -f "$bin" >>"$LOG" 2>&1 || fail "hostbin_$(basename "$bin")" "still present: $bin"
+  done < <(host_binaries)
   # the banner line install-config appended (root's shell only)
   [ -f "$HOME/.bashrc" ] && \
     sed -i '\|^\. /etc/kefo-banner\.sh$|d' "$HOME/.bashrc" 2>/dev/null || true
@@ -644,6 +675,8 @@ problem() {
     host_ttyd)   echo "host service 'ttyd' not removed (or was skipped — inside-ttyd guard)" ;;
     host_dnsmasq) echo "host service 'dnsmasq' not removed" ;;
     sysfile_*) echo "${1#sysfile_} is still in a system path" ;;
+    hostbin_*) echo "the ${1#hostbin_} binary is still in /usr/local/bin" ;;
+    banner_line) echo "the banner line is still in ~/.bashrc" ;;
     pkgs)     echo "installed packages not purged" ;;
     user)     echo "operator account is never deleted" ;;
     tailnet)  echo "still on the tailnet" ;;
@@ -662,6 +695,8 @@ hint() {
     host_goose|host_dnsmasq) echo "run: systemctl disable --now ${1#host_}; rm -f /etc/systemd/system/${1#host_}.service; systemctl daemon-reload, then re-check" ;;
     host_ttyd) echo "run scripts/install/uninstall.sh from SSH or a local terminal (not the ttyd web shell), then re-check" ;;
     sysfile_*) echo "run: rm -f <the path>; systemctl daemon-reload; check $LOG, then re-check" ;;
+    hostbin_*) echo "run: rm -f /usr/local/bin/${1#hostbin_}; check $LOG, then re-check" ;;
+    banner_line) echo "run: sed -i '\\|^\\. /etc/kefo-banner\\.sh$|d' ~/.bashrc, then re-check" ;;
     pkgs)     echo "run: apt-get purge docker.io docker-ce docker-ce-cli containerd.io docker-compose-plugin dnsmasq fail2ban apache2-utils sqlite3, then re-check" ;;
     user)     echo "no action — root is the sole entry point and is never deleted" ;;
     tailnet)  echo "run: tailscale logout, then re-check" ;;
@@ -702,6 +737,13 @@ recheck() {
             [ "$(basename "$p")" = "$b" ] && { printf '%s' "$p"; break; }
           done)
       [ -z "$p" ] || [ ! -e "$p" ];;
+    hostbin_*)
+      local b="${1#hostbin_}" p
+      p=$(host_binaries | while IFS= read -r p; do
+            [ "$(basename "$p")" = "$b" ] && { printf '%s' "$p"; break; }
+          done)
+      [ -z "$p" ] || [ ! -e "$p" ];;
+    banner_line) ! grep -qxF '. /etc/kefo-banner.sh' "${HOME:-/root}/.bashrc" 2>/dev/null;;
     pkgs)
       local q
       for q in docker.io docker-ce docker-ce-cli containerd.io \
