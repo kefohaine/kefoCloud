@@ -1,20 +1,27 @@
 #!/bin/bash
 # This script performs the reverse of the installer, in the same style.
 #
-# TWO OPERATOR SCOPES (--interactive picks one):
-#   1) specific modules only — the operator names the modules; only their
-#      containers, compose stacks and (on one explicit yes) their own data
-#      dirs go. data/ of every other module, the edge, the host files, the
-#      packages and the tailnet are untouched. wizard.state drops those
-#      modules from enabled_modules and sets finished=false (the documented
-#      teardown exception to the installer's sole-writer rule); the prompted
-#      secrets are kept.
-#   2) the whole framework — every module, data/ WHOLE, every kefoCloud file
-#      in the other system paths the installer wrote (systemd units/timers,
-#      dnsmasq, sysctl, fail2ban jails+filters, logrotate, banner, docker
-#      daemon config, goose env, the /usr/local/bin binaries), the stack's ufw
-#      rules, the installed packages and the tailnet membership (always LAST,
-#      so the session survives).
+# TWO MODES, ASKED FIRST: the menu is the operator's first question — before
+# the log is opened, before any module prompt and before a single removal.
+#   full     — the whole framework: every module, the edge (Caddy), data/
+#              WHOLE (no folder picks), every kefoCloud file in the other
+#              system paths (systemd units/timers, dnsmasq, sysctl, fail2ban
+#              jails+filters, logrotate, banner, docker daemon config, goose
+#              env, the /usr/local/bin binaries), the stack's ufw rules, the
+#              installed packages and the tailnet (ALWAYS LAST, so the
+#              session survives). No module pick: full means all. The repo
+#              clone, root and the sshd hardening stay.
+#   granular — only the modules the operator picks: their containers, compose
+#              stacks and (on one explicit yes) their own data dirs. data/ of
+#              every other module, the edge, the host files, the packages and
+#              the tailnet are untouched.
+#
+# wizard.state is NEVER read or rewritten here: what goes is what the operator
+# named (or, for full, the whole stack), never what a state file claims. The
+# installer stays its sole writer. --modules=a,b --data make the granular
+# teardown non-interactive for the installer's repair hand-off (no prompts),
+# and that path also drops the disabled doors' Cloudflare A records using the
+# credentials the installer already exported.
 #
 # Idempotent by construction: every removal tolerates an absent target (rm -f,
 # a docker that is not installed, an already-off tailnet, a data/ that is
@@ -25,33 +32,22 @@
 # system and the tracked config/ tree (compose files, rendered units, dpkg) —
 # never a hardcoded roster — and operator data is never deleted without an
 # explicit per-category yes (no defaults; only the words yes/no are accepted):
-#   - data/ (whole-framework scope) — removed WHOLE, no folder picks
+#   - data/ (full mode) — removed WHOLE, no folder picks
 #   - a removed module's own data dirs — one explicit confirm
-#   - the repo clone — prompt, explicit yes required
+#   - the repo clone — always KEPT
 #   - sshd hardening — deliberately KEPT (removing the drop-in would
 #     re-enable password auth; weakening is never the uninstall's job)
 #
 # Errors are collected with tags, each shown as a "problem" plus a "hint",
 # and re-checked on Enter until all are green — then SUCCESS.
 #
-# MODES (UNINSTALL_MODE, picked by argument — granular is NOT an operator mode):
-#   full (default, no argument)
-#     the production stack and data/ whole, verified gone. Host files,
-#     packages and the tailnet are kept (the box stays reachable and
-#     re-installable). The three consequence confirmations always apply.
-#   interactive (--interactive)
-#     scope menu (specific modules / the whole framework / cancel), then the
-#     consequence confirmations worded for that scope.
-#   granular (--granular)
-#     RESERVED for wizard.sh repair mode (requires WIZARD_REPAIR=1). wizard.state
-#     is the source of truth: ONLY disabled modules are torn down (containers,
-#     compose stacks, data dirs, stale .svc hashes) and only disabled doors'
-#     Cloudflare A records are deleted. wizard.state, .cred-*.sha and enabled
-#     modules are untouched — the repair run converges the rest itself.
+# Both operator modes go through the three consequence confirmations before
+# anything is touched.
 #
 # Usage (root on the box, from the repo checkout):
-#   sudo bash scripts/install/uninstall.sh               # full teardown (warned)
-#   sudo bash scripts/install/uninstall.sh --interactive # pick the scope
+#   sudo bash scripts/install/uninstall.sh             # ask full or granular
+#   sudo bash scripts/install/uninstall.sh --full      # skip the menu
+#   sudo bash scripts/install/uninstall.sh --granular  # skip the menu, pick modules
 #
 # Full log: $LOG_DIR/uninstall.log
 
@@ -65,7 +61,6 @@ OP_USER=root
 # ($NODE_NAME -> kefoCloud) without editing any script.
 REPO="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
 PROJECT_DIR="$REPO/data"
-INSTALL_STATE="${INSTALL_STATE:-$PROJECT_DIR/wizard.state}"
 # The log lives with EVERY other log this project writes — $DATA_DIR/logs, the
 # one namespace covered by config/logrotate/instance — instead of next to this
 # script, so no repo directory and no instance directory are ever confused.
@@ -98,13 +93,13 @@ cat <<'EOF'
  ╚══╝╚══╝  ╚═════╝ ╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝
 
   One-shot teardown for the homelab stack: reverses the installer.
-  --interactive picks the scope — specific modules only (their containers,
-  compose stacks and, on one explicit yes, their own data dirs) or the whole
-  framework (every module, data/ whole, every kefoCloud file in the system
-  paths, the stack's ufw rules, the packages, the tailnet last). Destructive
-  by design: no prompt has a default — only the words yes/no are accepted —
-  and data is never touched without an explicit confirm. Idempotent: a re-run
-  converges. Errors are listed with a hint each, re-checked on Enter, and
+  First question: full or granular. full takes the whole framework apart
+  (every module, the edge, data/ whole, the host files, the packages, the
+  tailnet last); granular lets you pick the modules (their containers, compose
+  stacks and, on one explicit yes, their own data dirs) and leaves the rest.
+  Destructive by design: no prompt has a default — only the words yes/no are
+  accepted — and data is never touched without an explicit confirm.
+  Idempotent: a re-run converges. Errors are listed with a hint each, re-checked on Enter, and
   SUCCESS prints only when every remaining item is resolved.
 
 WARNING: removes containers, config and (on explicit confirm) operator
@@ -128,9 +123,9 @@ ask() { # ask <var> <question> [ignored]  (ONLY the words yes/no; recorded as tr
 }
 
 # Three consecutive consequence confirmations before ANYTHING is touched,
-# worded for the scope the operator picked. Nothing skips them: a teardown is
+# worded for the mode the operator picked. Nothing skips them: a teardown is
 # only ever a manual operator run.
-confirm_consequences() { # $1 = full|all|modules
+confirm_consequences() { # $1 = full|modules
   local scope="${1:-full}" a
   echo ""
   echo " ── CONFIRMATION 1/3 — what dies ─────────────────────────────────────────"
@@ -138,12 +133,10 @@ confirm_consequences() { # $1 = full|all|modules
     modules)
       echo "    ONLY the modules you named: their containers, compose stacks and"
       echo "    (if you answered yes) their own data dirs. Everything else stays." ;;
-    all)
-      echo "    Every module, data/ WHOLE, every kefoCloud file in the other system"
-      echo "    paths, the stack's ufw rules, the packages and the tailnet." ;;
     *)
-      echo "    Every module container and config are removed; data/ is wiped"
-      echo "    WHOLE (no folder picks). The repo, host files and packages stay." ;;
+      echo "    Every module, data/ WHOLE, every kefoCloud file in the other"
+      echo "    system paths, the stack's ufw rules, the packages and the tailnet."
+      echo "    The repo clone, root and sshd hardening stay." ;;
   esac
   read -rp "    Understand and want to proceed? (yes/no): " a || return 1
   [ "${a,,}" = yes ] || return 1
@@ -164,21 +157,25 @@ confirm_consequences() { # $1 = full|all|modules
 # the literal words yes/no are accepted, and nothing is removed unless the
 # operator answers yes.
 
-# ─────────────── modes: full / granular / interactive ─────────────────────
-# SCOPE is the operator's choice INSIDE --interactive (modules|all|cancel); it
-# is empty until the menu (or --scope=) sets it, so `--interactive` always
-# shows the menu instead of silently falling through to one of the scopes.
-UNINSTALL_MODE=full
-SCOPE="${SCOPE:-}"
+# ──────────────────────── modes: full / granular ───────────────────────────
+# The menu (ask_mode) is asked FIRST in main(): before the log is opened,
+# before any module prompt and before a single removal. --full / --granular
+# answer it up front. --modules=a,b (with --data) makes granular
+# non-interactive for the installer's repair hand-off: the caller names the
+# modules it turned off, so nothing here reads wizard.state.
+UNINSTALL_MODE=""
+MODULE_PICK=""
+PICK_DATA=false
 for _a in "$@"; do
   case "$_a" in
-    --granular)         UNINSTALL_MODE=granular ;;
-    --interactive)      UNINSTALL_MODE=interactive ;;
-    --mode=*)           UNINSTALL_MODE="${_a#--mode=}" ;;
-    --scope=*)          SCOPE="${_a#--scope=}" ;;
+    --full|--mode=full)         UNINSTALL_MODE=full ;;
+    --granular|--mode=granular) UNINSTALL_MODE=granular ;;
+    --modules=*)                MODULE_PICK="${_a#--modules=}" ;;
+    --data)                     PICK_DATA=true ;;
   esac
 done
 unset _a
+[ -n "$MODULE_PICK" ] && UNINSTALL_MODE=granular
 
 # The stack scope, used by BOTH the removal and the verification so a check can
 # never disagree with what was removed. DERIVED from the catalog
@@ -249,9 +246,9 @@ verify_stack_gone() {
   # data/ itself counts, whole: the stack owns everything inside it, so any
   # leftover (a module dir, rendered/, pages/, a stray file) is a live stack.
   [ -e "$PROJECT_DIR" ] && t+="data "
-  [ -f "$INSTALL_STATE" ] && t+="state "
   # module compose files are repo-TRACKED and deliberately kept — they are the
-  # framework, not stack state.
+  # framework, not stack state. wizard.state is not checked or touched: the
+  # teardown removes what the operator named, never what a state file claims.
 
   # Append, never reset: an earlier removal failure must stay in the report.
   local tag
@@ -263,12 +260,12 @@ verify_stack_gone() {
     return 1
   fi
   echo ""
-  echo " Stack verified gone: containers, network, data/ and wizard.state are all clear."
+  echo " Stack verified gone: containers, network and data/ are all clear."
   log "  teardown verification passed — nothing of the stack is left"
   return 0
 }
 
-# After --interactive's module scope: every chosen module must have no
+# After a granular teardown: every chosen module must have no
 # container (and, when its data was confirmed, no data dir) left.
 verify_modules_gone() {
   local m c d bad=0
@@ -350,12 +347,52 @@ verify_host_gone() {
   return $bad
 }
 
+ask_mode() {
+  # The FIRST question: which teardown. Nothing else — no log, no module
+  # prompt, no removal — happens before this answer. Each option prints what
+  # it removes in plain words.
+  case "${UNINSTALL_MODE:-}" in
+    full|granular) return 0 ;;
+    "") ;;
+    *) echo "   unknown mode '${UNINSTALL_MODE}' — pick full or granular."; UNINSTALL_MODE="" ;;
+  esac
+  local m
+  echo ""
+  echo " Teardown mode:"
+  echo "   [1] full — remove the whole framework: every module, the edge"
+  echo "       (Caddy), data/ WHOLE (no folder picks), the host files, the"
+  echo "       packages and the tailnet (last). The repo clone and root stay."
+  echo "   [2] granular — remove ONLY the modules you pick next: their"
+  echo "       containers, compose stacks and (on one explicit yes) their own"
+  echo "       data dirs. Other modules' data, the edge, host files, packages"
+  echo "       and the tailnet stay."
+  while :; do
+    read -rp " enter 1 (full) or 2 (granular): " m \
+      || { echo "   no answer — nothing was touched."; return 1; }
+    case "${m,,}" in
+      1|full)     UNINSTALL_MODE=full;     return 0 ;;
+      2|granular) UNINSTALL_MODE=granular; return 0 ;;
+      *) echo "   enter 1 or 2." ;;
+    esac
+  done
+}
+
 ask_modules() {
-  # Reverse of the installer's ask_modules: nothing removed unless explicitly
-  # confirmed —
-  # removing a module destroys its containers and (on data-confirm) its
-  # data; the operator opts in per module.
-  local k answer
+  # Show the roster ONCE, then one yes/no per module: nothing removed unless
+  # explicitly confirmed — removing a module destroys its containers and (on
+  # the data confirm) its data; the operator opts in per module.
+  local k answer h any=false
+  echo ""
+  echo " Modules in this stack (from config/modules.conf):"
+  for k in $STACK_MODULES; do
+    h="$(module_host_of "$k")"
+    if [ -n "$h" ] && [ "$h" != "-" ]; then
+      printf '   %-8s — public vhost: %s\n' "$k" "$h"
+    else
+      printf '   %-8s — no vhost of its own\n' "$k"
+    fi
+  done
+  echo ""
   for k in $STACK_MODULES; do
     local var="RM_MOD_${k^^}"
     if [ -z "${!var:-}" ]; then
@@ -368,115 +405,21 @@ ask_modules() {
         esac
       done
     fi
+    [ "${!var:-false}" = true ] && any=true
   done
+  [ "$any" = true ] && ask RM_MOD_DATA "Delete the data dirs of the removed modules?"
 }
 
-ask_scope() {
-  # the scope selector: specific modules, the whole framework, or cancel.
-  # SCOPE=modules|all|cancel (env or --scope=) skips the prompt; an invalid
-  # value is cleared and re-prompted. Each option prints its one-line
-  # description.
-  case "${SCOPE:-}" in
-    modules|all|cancel) return 0 ;;
-    "") ;;
-    *) echo "   unknown scope '${SCOPE}' — pick 1, 2 or 3."; SCOPE="" ;;
-  esac
-  local m
-  echo ""
-  echo " Teardown scope:"
-  echo "   [1] specific modules only — remove the modules you pick (containers,"
-  echo "       compose stacks, and their data dirs on one explicit yes); data/ of"
-  echo "       the others, the edge, host files, packages and tailnet stay"
-  echo "   [2] the whole framework — every module, data/ whole, every kefoCloud"
-  echo "       file in the other system paths, the stack's ufw rules, packages,"
-  echo "       tailnet membership (last)"
-  echo "   [3] cancel — remove nothing"
-  while :; do
-    read -rp " enter 1, 2 or 3: " m || return 1
-    case "${m:-}" in
-      1|modules) SCOPE=modules; return 0 ;;
-      2|all)     SCOPE=all;     return 0 ;;
-      3|cancel)  SCOPE=cancel;  return 0 ;;
-      *) echo "   enter 1, 2 or 3." ;;
-    esac
-  done
-}
-
-ask_inputs() {
-  ask_scope
-  local k
-  case "$SCOPE" in
-    cancel)
-      echo "Cancelled — nothing was removed."
-      exit 0
-      ;;
-    all)
-      # the whole framework: every phase preselected; data/ is part of the
-      # scope, the three confirmations below still gate everything
-      for k in $STACK_MODULES; do
-        eval "RM_MOD_${k^^}=true"
-      done
-      RM_EDGE=true; RM_HOST=true; RM_PKGS=true; RM_TAILNET=true; RM_MOD_DATA=true
-      echo ""
-      echo "Whole-framework teardown preselected: every module, data/ whole, the"
-      echo "edge, the host files, the packages and the tailnet membership."
-      ask RM_REPO "Delete the repo clone at $REPO (scheduled after this script exits)?"
-      ;;
-    modules)
-      # only the named modules; the rest of the framework is never touched
-      ask_modules
-      # the removed modules' own data dirs need ONE explicit confirm — no
-      # default, and data/ of the modules that stay is never touched
-      local any=false
-      for k in $STACK_MODULES; do mod_rm "$k" && any=true; done
-      [ "$any" = true ] && ask RM_MOD_DATA "Delete the data dirs of the removed modules?"
-      ;;
-  esac
-  local ml=""
-  for k in $STACK_MODULES; do
-    mod_rm "$k" && ml+="$k "
-  done
+ask_pick_summary() { # $1... = the modules selected
   echo ""
   echo "Rebuild the stack later with: bash $REPO/scripts/install/wizard.sh"
-  case "$SCOPE" in
-    modules) echo "Teardown summary — modules removed: ${ml:-none} · their data: ${RM_MOD_DATA:-false} · repo: kept" ;;
-    *)       echo "Teardown summary — modules: ${ml:-none} · data/ whole · edge: ${RM_EDGE:-false} · host files: ${RM_HOST:-false} · pkgs: ${RM_PKGS:-false} · tailnet: ${RM_TAILNET:-false} · repo: ${RM_REPO:-false}" ;;
-  esac
+  echo "Teardown summary — modules removed: ${*:-none} · their data: ${RM_MOD_DATA:-false} · repo: kept"
   echo "Full log: $LOG"
 }
 
 mod_rm() { # indirection: is module $1 selected for removal?
   local v="RM_MOD_${1^^}"
   [ "${!v:-false}" = true ]
-}
-
-# ────────────── wizard.state teardown update (the one exception) ──────────
-# The installer is the state's sole writer; a module teardown is the ONE
-# documented exception. Only `enabled_modules` and `finished` are rewritten
-# (finished=false so `make smoke` never trusts a torn-down host); every other
-# line — the prompted secrets — is copied through byte for byte.
-state_drop_modules() { # $1... = removed module names
-  [ -f "$INSTALL_STATE" ] || { log "  no wizard.state — nothing to update"; return 0; }
-  local drop=" $* " m line raw kept="" tmp
-  raw="$(sed -n 's/^enabled_modules=//p' "$INSTALL_STATE" | head -1)"
-  [ -n "$raw" ] && eval "raw=$raw"
-  for m in $raw; do
-    case "$drop" in *" $m "*) ;; *) kept+="$m " ;; esac
-  done
-  kept="${kept% }"
-  tmp="$INSTALL_STATE.tmp.$$"
-  while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in
-      enabled_modules=*) printf 'enabled_modules=%q\n' "$kept" ;;
-      finished=*)        printf 'finished=%q\n' false ;;
-      *)                 printf '%s\n' "$line" ;;
-    esac
-  done < "$INSTALL_STATE" > "$tmp" && chmod 600 "$tmp" && chown root:root "$tmp" 2>/dev/null
-  if mv -f "$tmp" "$INSTALL_STATE" 2>/dev/null; then
-    log "  wizard.state: enabled_modules='${kept}' finished=false"
-  else
-    rm -f "$tmp"; fail state "wizard.state not updated"
-  fi
 }
 
 # ─────────────────────── phase: containers (reverse) ───────────────────────
@@ -669,7 +612,6 @@ problem() {
     network)  echo "the stack's docker network 'net' is still there" ;;
     data)     echo "data/ is still there" ;;
     data_*)   echo "data/${1#data_} is still there" ;;
-    state)    echo "wizard.state is still there" ;;
     edge)     echo "the edge (Caddy) is not fully removed" ;;
     host_goose)  echo "host service 'goose' not removed" ;;
     host_ttyd)   echo "host service 'ttyd' not removed (or was skipped — inside-ttyd guard)" ;;
@@ -690,7 +632,6 @@ hint() {
     container_*) echo "run: docker rm -f ${1#container_}, then re-run: bash scripts/install/uninstall.sh" ;;
     network)  echo "run: docker network rm net, then re-run: bash scripts/install/uninstall.sh" ;;
     data*)    echo "run: rm -rf $PROJECT_DIR, then re-run: bash scripts/install/uninstall.sh" ;;
-    state)    echo "run: rm -f $INSTALL_STATE, then re-run: bash scripts/install/uninstall.sh" ;;
     edge)     echo "run: docker rm -f <edge container>; docker network rm net; check $LOG, then re-check" ;;
     host_goose|host_dnsmasq) echo "run: systemctl disable --now ${1#host_}; rm -f /etc/systemd/system/${1#host_}.service; systemctl daemon-reload, then re-check" ;;
     host_ttyd) echo "run scripts/install/uninstall.sh from SSH or a local terminal (not the ttyd web shell), then re-check" ;;
@@ -758,7 +699,6 @@ recheck() {
     network)  ! docker network inspect net >/dev/null 2>&1;;
     data)     [ ! -e "$PROJECT_DIR" ];;
     data_*)   [ ! -e "$PROJECT_DIR/${1#data_}" ];;
-    state)    [ ! -f "$INSTALL_STATE" ];;
     user)     true ;;   # root is never removed
     tailnet)  ! tailscale status >/dev/null 2>&1;;
     *)        false ;;
@@ -776,7 +716,7 @@ is_expected() {
     # full-mode verification failures are UNEXPECTED: the teardown's own
     # removal is supposed to have left nothing behind, so a leftover is a bug in
     # it, not a manual step for the operator.
-    container_*|network|data_*|state) return 1 ;;
+    container_*|network|data_*) return 1 ;;
     *)        return 1 ;;
   esac
 }
@@ -830,30 +770,25 @@ success_block() {
   local m
   echo ""
   echo "=============================================================="
-  echo " SUCCESS — teardown complete:"
+  echo " SUCCESS — full teardown complete:"
   for m in $STACK_MODULES; do
     mod_rm "$m" && echo "   removed    $m"
   done
-  [ "${RM_EDGE:-false}"    = true ] && echo "   removed    edge (Caddy)"
-  if [ "${SCOPE:-}" = modules ]; then
-    [ "${RM_MOD_DATA:-false}" = true ] && echo "   removed    the removed modules' data dirs"
-  else
-    echo "   removed    data/ (whole)"
-  fi
-  [ "${RM_HOST:-false}"    = true ] && echo "   removed    host files (units, dnsmasq, sysctl, fail2ban, logrotate, banner, binaries) + stack ufw ports"
-  [ "${RM_PKGS:-false}"    = true ] && echo "   removed    packages (docker, dnsmasq, fail2ban, …)"
-  [ "${RM_TAILNET:-false}" = true ] && echo "   removed    tailnet membership"
-  [ "${RM_REPO:-false}"    = true ] && echo "   removed    the repo clone (scheduled after this exit)"
+  echo "   removed    edge (Caddy)"
+  echo "   removed    data/ (whole)"
+  echo "   removed    the host files + the stack's ufw ports"
+  echo "   removed    the packages (docker, dnsmasq, fail2ban, …)"
+  echo "   removed    the tailnet membership"
   echo ""
   echo " Kept:"
+  echo "   - the repo clone: $REPO"
+  echo "   - the root account"
   echo "   - sshd hardening (removing it would re-enable password auth)"
-  [ "${RM_REPO:-false}" = true ] || echo "   - $REPO"
   echo ""
   echo " Follow-ups (manual, none block):"
   echo "   1. Cloudflare: the DNS records for this host remain — delete them in"
   echo "      the dashboard if this machine is being decommissioned"
-  [ "${RM_TAILNET:-false}" = true ] && echo "   2. Re-join the tailnet after a re-install: tailscale up"
-  echo "   3. Re-install any time with: bash $REPO/scripts/install/wizard.sh"
+  echo "   2. Re-install any time with: bash $REPO/scripts/install/wizard.sh"
   echo "=============================================================="
 }
 
@@ -885,13 +820,17 @@ summary() {
 }
 trap summary EXIT
 
-# ─────────────────────── full: stack and data ─────────────────────────────
-# The default mode. Removes the production stack and its data, verifies the box
-# is clean, and returns the verdict as its exit code (0 = gone, 1 = something is left).
+# ───────────────────── full: the whole framework ──────────────────────────
+# No module pick: every module goes. Then the edge, every kefoCloud file the
+# installer wrote into the system paths (with the stack's ufw ports), the
+# installed packages and — ALWAYS LAST, so this session survives — the tailnet.
+# data/ goes whole. The repo clone, root and the sshd hardening stay.
+# Verifies the box is clean and returns the verdict as its exit code
+# (0 = gone, 1 = something is left).
 full_teardown() {
   local k
-  log "=== uninstall.sh — full teardown (production stack and data)"
-  # The stack scope is preselected explicitly, otherwise the mod_rm guards
+  log "=== uninstall.sh — full teardown (whole framework)"
+  # The module scope is preselected explicitly, otherwise the mod_rm guards
   # below skip every module, leaving the containers attached to 'net' so the
   # network rm fails and the verification reports a live stack
   # (2026-10-19 uninstall.log bug).
@@ -900,13 +839,16 @@ full_teardown() {
   done
   RM_MOD_DATA=true
   echo ""
-  echo "Uninstalling the production stack:"
+  echo "Uninstalling the whole framework:"
   for k in $STACK_MODULES; do
     mod_rm "$k" && { echo "   remove     $k"; }
   done
   echo "   remove     edge (Caddy)"
   echo "   remove     data/ whole (module data, rendered config, logs, wizard.state)"
-  echo "   keep       the repo clone, host services, packages, root account, tailnet"
+  echo "   remove     the host files + the stack's ufw ports"
+  echo "   remove     the installed packages"
+  echo "   remove     tailnet membership (last — SSH stays alive)"
+  echo "   keep       the repo clone, the root account, sshd hardening"
   echo ""
 
   # Containers first (their bind mounts are about to disappear), then the edge,
@@ -915,88 +857,125 @@ full_teardown() {
     mod_rm "$k" && remove_module "$k"
   done
   remove_edge
-
-  # data/ goes whole — one wipe, no folder picks; wizard.state lives inside it
-  # and dies with it (the installer is its sole writer and recreates everything
-  # fresh on the rebuild).
+  remove_host
+  remove_pkgs
+  remove_user          # a documented no-op: root is the sole entry point
+  remove_tailnet       # ALWAYS last, so the session survives
   wipe_data
 
   # Verify FIRST, then resolve: a verification that runs after the success
   # block would print SUCCESS for a stack that is still there.
   verify_stack_gone
+  verify_host_gone
   resolve_errors || return 1
   return 0
 }
 
-# ─────────────── --granular: wizard repair's teardown hand-off ────────────
-# RESERVED for wizard.sh repair mode: wizard.sh calls this with WIZARD_REPAIR=1
-# instead of tearing down inline. wizard.state (sourced here) is the source of
-# truth — ONLY what the state says is disabled is removed:
-#   • disabled modules: compose down + containers, data dirs, stale .svc hashes
-#   • disabled doors' Cloudflare A records (creds read from wizard.state)
-# Enabled modules, wizard.state, .cred-*.sha and the edge are untouched; the
-# repair run converges everything else itself.
-granular_stack_only() {
-  if [ ! -f "$INSTALL_STATE" ]; then
-    echo "granular mode needs $INSTALL_STATE — wizard.state is the source of truth."
-    return 1
+# ───────────────────────────--granular: pick modules ──────────────────────
+# The operator sees the roster (ask_modules), answers yes/no per module and
+# then the consequence confirmations; only the picked modules lose their
+# containers, compose stacks and (on the data confirm) their own data dirs.
+# Everything else — the edge, data/ of the modules that stay, the host files,
+# the packages and the tailnet — is untouched.
+#
+# Hand-off path (--modules=a,b --data): the installer's repair run names the
+# modules it turned off, so nothing here prompts or reads wizard.state. Each
+# named door's Cloudflare A record is dropped with the credentials the
+# installer exported; absent creds or jq skip the DNS step, never fail it.
+granular_teardown() {
+  local k removed=()
+  if [ -n "$MODULE_PICK" ]; then
+    local IFS=, n0=${#ERR_TAGS[@]}
+    for k in $MODULE_PICK; do
+      case " $STACK_MODULES " in
+        *" $k "*) eval "RM_MOD_${k^^}=true"; removed+=("$k") ;;
+        *) fail "rmmod_$k" "not a module in $MODULES_CONF" ;;
+      esac
+    done
+    unset IFS
+    [ "$PICK_DATA" = true ] && RM_MOD_DATA=true
+    if [ ${#removed[@]} -eq 0 ]; then
+      log "  no known module named — nothing to remove"
+      ERR_TAGS=()   # the hand-off has no resolve loop; keep the exit summary quiet
+      return 1
+    fi
+    echo "   teardown   ${removed[*]} (named by the repair hand-off)"
+  else
+    ask_modules
+    for k in $STACK_MODULES; do
+      mod_rm "$k" && removed+=("$k")
+    done
+    if [ ${#removed[@]} -eq 0 ]; then
+      echo "   nothing selected — every prompt answered keep. Nothing was removed."
+      return 0
+    fi
+    ask_pick_summary "${removed[@]}"
+    confirm_consequences modules || { echo "   aborted — nothing was touched."; return 1; }
   fi
-  if [ "${WIZARD_REPAIR:-}" != "1" ]; then
-    echo "granular mode is reserved for wizard.sh repair mode."
-    echo "For a manual teardown run: bash scripts/install/uninstall.sh   (full mode)"
-    return 1
-  fi
-  # wizard.state is written by the wizard with printf %q — safe to source
-  . "$INSTALL_STATE"
-  mod_on() { local n="MOD_${1^^}"; [ "${!n:-true}" = "true" ]; }
-  log "=== uninstall.sh --granular — wizard repair hand-off (wizard.state-driven)"
 
-  local k h
-  for k in $STACK_MODULES; do
-    mod_on "$k" && continue
-    echo "   teardown   $k (disabled in wizard.state)"
-    RM_MOD_DATA=true remove_module "$k"
-    # drop the stale service hash so a later re-enable re-applies from scratch
-    rm -f "$PROJECT_DIR/.svc-$(svc_group_of "$k").sha"
+  for k in "${removed[@]}"; do
+    remove_module "$k"
+    # a wiped data dir invalidates the installer's repair-skip hash, so a later
+    # reinstall re-applies the module's services from scratch
+    if [ "${RM_MOD_DATA:-false}" = true ]; then
+      rm -f "$PROJECT_DIR/.svc-$(svc_group_of "$k").sha"
+    fi
   done
 
-  # disabled doors lose their Cloudflare A records (needs the wizard.state creds)
-  cf_a_del() { # cf_a_del <host> — remove the A record of a disabled door
-    command -v jq >/dev/null 2>&1 || return 0
-    [ -n "${CF_API_TOKEN:-}" ] && [ -n "${DOMAIN:-}" ] || return 0
-    local zid fqdn rid
-    zid=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
-      "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" 2>>"$LOG" \
-      | jq -r '.result[0].id // empty')
-    [ -n "$zid" ] || { fail dns "zone id for $DOMAIN not resolved"; return 0; }
-    fqdn="${1:+$1.}$DOMAIN"
-    rid=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
-      "https://api.cloudflare.com/client/v4/zones/$zid/dns_records?type=A&name=$fqdn" 2>>"$LOG" \
-      | jq -r '.result[0].id // empty')
-    [ -n "$rid" ] || return 0
-    curl -s -X DELETE -H "Authorization: Bearer $CF_API_TOKEN" \
-      "https://api.cloudflare.com/client/v4/zones/$zid/dns_records/$rid" >>"$LOG" 2>&1 || true
-    log "  A record removed: $fqdn (disabled in wizard.state)"
-  }
-  for k in $STACK_MODULES; do
-    mod_on "$k" && continue
-    h="$(module_host_of "$k")"
-    [ -n "$h" ] && [ "$h" != "-" ] && cf_a_del "$h"
-    # doors that live on a second hostname of the same module
-    case "$k" in
-      chat) cf_a_del matrix; cf_a_del auth.matrix ;;
-      mail) cf_a_del admin.mail ;;
-    esac
-  done
+  if [ -n "$MODULE_PICK" ]; then
+    # repair hand-off only: a disabled door must not keep a public record
+    for k in "${removed[@]}"; do
+      cf_a_del "$(module_host_of "$k")"
+      # doors that live on a second hostname of the same module
+      case "$k" in
+        chat) cf_a_del matrix; cf_a_del auth.matrix ;;
+        mail) cf_a_del admin.mail ;;
+      esac
+    done
+    # no verification loop here: the repair run converges the rest. Failures
+    # still set the exit code so the caller logs them, but the EXIT summary is
+    # cleared — an operator error block is for an operator run, not a hand-off.
+    local rc=0
+    [ ${#ERR_TAGS[@]} -gt "$n0" ] && rc=1
+    [ "$rc" -eq 1 ] && { log "  some removals failed — see $LOG"; ERR_TAGS=(); }
+    return $rc
+  fi
+
+  verify_modules_gone "${removed[@]}"
+  resolve_errors || return 1
   return 0
+}
+
+cf_a_del() { # cf_a_del <host-label> — drop that door's A record (repair only)
+  [ -n "${1:-}" ] && [ "$1" != "-" ] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  [ -n "${CF_API_TOKEN:-}" ] && [ -n "${DOMAIN:-}" ] || return 0
+  local zid fqdn rid
+  zid=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
+    "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" 2>>"$LOG" \
+    | jq -r '.result[0].id // empty')
+  [ -n "$zid" ] || return 0
+  fqdn="$1.$DOMAIN"
+  rid=$(curl -s -H "Authorization: Bearer $CF_API_TOKEN" \
+    "https://api.cloudflare.com/client/v4/zones/$zid/dns_records?type=A&name=$fqdn" 2>>"$LOG" \
+    | jq -r '.result[0].id // empty')
+  [ -n "$rid" ] || return 0
+  curl -s -X DELETE -H "Authorization: Bearer $CF_API_TOKEN" \
+    "https://api.cloudflare.com/client/v4/zones/$zid/dns_records/$rid" >>"$LOG" 2>&1 || true
+  log "  A record removed: $fqdn"
 }
 
 # ─────────────────────────────── main ──────────────────────────────────────
 
 main() {
   [ "$(id -u)" -eq 0 ] || { echo "Run as root: sudo bash scripts/install/uninstall.sh"; exit 1; }
-  # A modules-only teardown on a host with no data/ must not CREATE data/ just
-  # to hold the log: fall back to /var/tmp (full mode wipes data/ anyway).
+  banner
+  # The mode menu is the FIRST question — before the log exists, before any
+  # module prompt and before a single removal. --modules= is the installer's
+  # repair hand-off and answers it on the caller's behalf.
+  [ -z "$MODULE_PICK" ] && { ask_mode || exit 1; }
+  # A granular teardown on a host with no data/ must not CREATE data/ just to
+  # hold the log: fall back to /var/tmp (full mode wipes data/ anyway).
   if [ ! -d "$PROJECT_DIR" ] && [ "${UNINSTALL_MODE:-full}" != full ]; then
     LOG_DIR=/var/tmp
     LOG="$LOG_DIR/uninstall-$(date +%Y%m%d-%H%M%S).log"
@@ -1004,19 +983,14 @@ main() {
   install -d -m 0755 "$LOG_DIR"
   # clear the log at the start of EVERY run — each teardown logs from scratch
   : > "$LOG" && chmod 640 "$LOG"
-  banner
   case "${UNINSTALL_MODE:-full}" in
     granular)
-      # wizard repair hand-off — wizard.state-driven, no operator prompts
-      granular_stack_only
-      exit $?
-      ;;
-    interactive)
-      interactive_teardown
+      granular_teardown
       exit $?
       ;;
     *)
-      # full mode: the three confirmations always apply
+      # full mode: no module pick — everything, gated by the three
+      # confirmations
       confirm_consequences full || { echo "   aborted — nothing was touched."; exit 1; }
       full_teardown
       exit $?
@@ -1024,61 +998,4 @@ main() {
   esac
 }
 
-interactive_teardown() {
-  ask_inputs
-  local k m removed=() went=false
-  # all inputs are collected (ask_inputs) before ANY removal; the confirmation
-  # is worded for the scope that was picked.
-  confirm_consequences "$SCOPE" || { echo "   aborted — nothing was touched."; exit 1; }
-
-  for k in $STACK_MODULES; do
-    mod_rm "$k" && removed+=("$k")
-  done
-  if [ ${#removed[@]} -eq 0 ]; then
-    log "nothing selected — every prompt answered keep. Nothing was removed."
-    exit 0
-  fi
-
-  case "$SCOPE" in
-    modules)
-      # ONLY the named modules: no edge, no host files, no packages, no
-      # tailnet, and data/ of the modules that stay is never touched.
-      for m in "${removed[@]}"; do
-        remove_module "$m"
-        # a wiped data dir invalidates the installer's repair-skip hash, so a
-        # later reinstall re-applies the module's services from scratch
-        if [ "${RM_MOD_DATA:-false}" = true ]; then
-          rm -f "$PROJECT_DIR/.svc-$(svc_group_of "$m").sha"
-        fi
-      done
-      state_drop_modules "${removed[@]}"
-      verify_modules_gone "${removed[@]}"
-      resolve_errors || return 1
-      ;;
-    all)
-      for m in "${removed[@]}"; do
-        remove_module "$m"
-        went=true
-      done
-      [ "$went" = true ] && remove_edge
-      remove_host
-      remove_pkgs
-      remove_user          # a documented no-op: root is the sole entry point
-      remove_tailnet       # ALWAYS last, so the session survives
-      [ "$went" = true ] && wipe_data
-      verify_stack_gone
-      verify_host_gone
-      resolve_errors || return 1
-      ;;
-  esac
-
-  # the repo clone LAST and only after this script exits — bash reads the
-  # script from disk; deleting it mid-run can truncate execution
-  if [ "${SCOPE:-}" = all ] && [ "${RM_REPO:-false}" = true ]; then
-    ( sleep 3; rm -rf "$REPO" ) >/dev/null 2>&1 &
-    log "  repo deletion scheduled in 3s (after this script exits): $REPO"
-  fi
-}
-
 main "$@"
-
