@@ -70,16 +70,22 @@ cred_changed() { # cred_changed <name> <value> -> 0 when changed (or never recor
 }
 cred_note() { cred_hash "$2" > "$DATA/.cred-$1.sha" 2>/dev/null || true; }
 
-# Toggling a module OFF in wizard.state (repair) hands the granular teardown to
-# uninstall.sh (--granular, WIZARD_REPAIR=1) — that mode is RESERVED for this
-# call: it removes only the disabled modules' containers, compose stacks, data
-# dirs and stale .svc hashes, and deletes disabled doors' CF A records.
-# true->false applies just like false->true; enabled modules are untouched and
-# the repair run below converges the rest itself.
+# Toggling a module OFF in wizard.state (repair) hands the teardown to
+# uninstall.sh with the disabled module NAMES (--granular --modules=… --data).
+# uninstall.sh never reads or rewrites wizard.state: the names are the whole
+# input. Its hand-off path removes those modules' containers, compose stacks,
+# data dirs and stale .svc hashes, and drops the disabled doors' Cloudflare A
+# records with the credentials exported here. enabled modules are untouched
+# and the repair run below converges the rest itself.
 module_off_teardown() {
   [ "${REPAIR:-false}" = true ] || return 0
-  log "  hand-off: granular teardown (uninstall.sh --granular)"
-  WIZARD_REPAIR=1 bash "$REPO/scripts/install/uninstall.sh" --granular >>"$LOG" 2>&1 \
-    || log "  granular teardown reported errors — see uninstall.log"
+  local m off=()
+  for m in $(_state_modules); do mod_on "$m" || off+=("$m"); done
+  [ ${#off[@]} -gt 0 ] || return 0
+  log "  hand-off: teardown of disabled modules (${off[*]})"
+  CF_API_TOKEN="${CF_API_TOKEN:-}" DOMAIN="${DOMAIN:-}" \
+    bash "$REPO/scripts/install/uninstall.sh" --granular --data \
+      --modules="$(IFS=,; echo "${off[*]}")" >>"$LOG" 2>&1 \
+    || log "  module teardown reported errors — see uninstall.log"
   return 0
 }
