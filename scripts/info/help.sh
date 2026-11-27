@@ -55,6 +55,7 @@ EOF
 make update|pull + recreate every deployed unit via stack-up.sh — edge last, gated, auto-rollback
 make apt-upgrade|apt-get update + upgrade (deliberately separate from the container work)
 make backup|take one Kopia snapshot of every module's data and the rendered config into the repository on external backup storage
+make module-remove MODULE=<m>|stop one module and record it as not installed (data kept) — fetch/smoke/update stop counting it, the next installer run folds the record into wizard.state
 EOF
 
   sec "migrate / restore"
