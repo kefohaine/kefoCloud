@@ -134,6 +134,11 @@ main() {
   migrate_state             # one-time legacy setup.state import (before load)
   banner
   load_state
+  # Fold any removal a script made into the installed set BEFORE anything reads
+  # it: the gates and the module prompts below (and every step after) then see
+  # the true roster, so a module the operator just uninstalled is not re-enabled
+  # from its saved answer and never reads as installed again.
+  apply_uninstalled_record
 
   # Decide fresh-vs-installed BEFORE the save_state below: save_state CREATES
   # wizard.state, so asking previous_install afterwards always said "installed"
