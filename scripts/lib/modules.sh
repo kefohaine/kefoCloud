@@ -16,10 +16,14 @@
 # scripts/lib/exposure.sh, sourced below.
 #
 # The installed set is the `enabled_modules` field of data/wizard.state — the
-# file the installer is the SOLE writer of. This module is the ONE accessor for
-# it: every reader (smoke, fetch, fetch-more) goes through here. A MISSING
-# state file means NOTHING is installed (never "all assumed") — a fresh clone
-# has no install until the installer records one.
+# file the installer is the SOLE writer of — MINUS the modules recorded in
+# data/uninstalled-modules.conf, which a script that removed a module writes
+# (uninstall.sh granular, `make module-remove`). That record is a hand-off, not
+# a second state store: it is subtracted here from the moment the removal is
+# made, so nothing recreates the module or asserts its door, and the next
+# installer run folds it into wizard.state and consumes it. A MISSING state
+# file means NOTHING is installed (never "all assumed") — a fresh clone has no
+# install until the installer records one.
 #
 # Requires instance.sh to have been sourced first (REPO_DIR, DATA_DIR, INSTALL_STATE).
 # Functions:
@@ -29,7 +33,8 @@
 #   mod_host <m>            public host label ('' when the module has no vhost)
 #   mod_containers <m>      container names, space-separated
 #   mod_vhosts <m>          vhost files this module owns (derived, no roster)
-#   mod_installed <m>       exit 0/1 (from wizard.state `enabled_modules`)
+#   mod_removed <m>         exit 0/1 (a script recorded its removal)
+#   mod_installed <m>       exit 0/1 (wizard.state `enabled_modules`, minus removals)
 #   mod_state <m>           `installed` | `not installed`  (always printed)
 #   mod_note <m>            '' when installed, else `(not installed)` — for rows
 #   mod_roster              every repo container (edge + every declared module)
@@ -39,6 +44,9 @@
 
 MODULES_CONF="${MODULES_CONF:-${REPO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}/config/modules.conf}"
 INSTALL_STATE="${INSTALL_STATE:-${DATA_DIR:-${REPO_DIR:-.}/data}/wizard.state}"
+# The removal hand-off (written only by scripts/ops/module-record.sh), beside
+# the state file it is folded into.
+REMOVED_CONF="${REMOVED_CONF:-$(dirname "$INSTALL_STATE")/uninstalled-modules.conf}"
 
 _mod_decl() {   # _mod_decl <m> -> "<dir> <host> <containers...>"
   awk -v m="$1" '$1 !~ /^#/ && $1 == m { $1=""; sub(/^ +/,""); print; exit }' "$MODULES_CONF" 2>/dev/null
@@ -83,7 +91,16 @@ _mod_read() {
 }
 
 # A missing state file means NOTHING is installed (not "all assumed").
+# A module a script uninstalled reads `not installed` even while wizard.state
+# still names it: the installer has not folded the hand-off in yet, and until it
+# does nothing may recreate the module (boot, `make update`) or assert its door
+# (smoke, whose failure blocks every push).
+mod_removed() {
+  [ -f "$REMOVED_CONF" ] || return 1
+  grep -qxF -- "$1" "$REMOVED_CONF" 2>/dev/null
+}
 mod_installed() {
+  mod_removed "$1" && return 1
   local em; em="$(_mod_read enabled_modules)" || return 1
   [ -n "$em" ] || return 1
   case " $em " in *" $1 "*) return 0 ;; esac

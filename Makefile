@@ -219,7 +219,7 @@ systemd-action:
 .PHONY: vaultwarden-list-users vaultwarden-add-user vaultwarden-del-user
 .PHONY: writefreely-users writefreely-add-user writefreely-passwd writefreely-del-user
 .PHONY: immich-users immich-admin-pass immich-grant-admin ocis-status ocis-admin-pass ocis-logs ocis-webdav dns-sync
-.PHONY: deploy backup
+.PHONY: deploy backup module-remove
 
 # The web terminal is ONE page and ONE shell: ttyd.$DOMAIN (the shell IS the
 # homepage) attaches the single `main` tmux session (created by tmux-main.service at boot, or on first
@@ -268,6 +268,18 @@ apt-upgrade:
 update:
 >@scripts/stack/stack-up.sh --update
 >@bash scripts/stack/smoke-vhosts.sh || scripts/lib/mklog warn "smoke reported failures — see above (smoke runs only on a finished install)"
+
+# Take ONE module out of the stack and record it as not installed
+# (scripts/ops/module-remove.sh): its compose project is stopped (orphans
+# included) and its name goes into data/uninstalled-modules.conf, so fetch,
+# smoke, vhost-list, boot and `make update` stop counting it and the next
+# installer run folds the record into wizard.state. Idempotent, so it also
+# accepts a module a script already took down. Data dirs are KEPT — a confirmed
+# data removal is scripts/install/uninstall.sh --granular.
+module-remove:
+>@[ -n "$(MODULE)" ] || { scripts/lib/mklog error "usage: make module-remove MODULE=<$(filter-out edge,$(MODULES))>"; exit 1; }
+>@$(call guard_confirm,make module-remove)
+>@bash scripts/ops/module-remove.sh "$(MODULE)"
 
 # Live edge smoke test — every vhost must serve its real app. Runs ONLY on a finished install (wizard.state
 # finished=true) and has no bypass. Run after any modules/caddy/ change or

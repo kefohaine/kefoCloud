@@ -180,3 +180,37 @@ write_state() {
     log "  WARNING: declared modules != detected modules — see $rep"
   fi
 }
+
+# Fold what a SCRIPT uninstalled into the installed set and consume the record.
+# The removal was made by uninstall.sh's granular teardown or `make
+# module-remove` (data/uninstalled-modules.conf, written only by
+# scripts/ops/module-record.sh); this installer stays wizard.state's sole
+# writer, so the fold happens here, first thing in main() — before any prompt
+# reads MOD_* or any step decides a module is installed. Without it the next
+# repair would re-enable a module the operator just removed (its saved MOD_*
+# answer still said true) and every reader would disagree with the live host.
+apply_uninstalled_record() {
+  local m _rec="$REPO/scripts/ops/module-record.sh"
+  local -a gone=()
+  [ -f "$REMOVED_CONF" ] || return 0
+  while IFS= read -r m; do
+    [ -n "$m" ] || continue
+    printf -v "MOD_${m^^}" '%s' false
+    gone+=("$m")
+  done < <(bash "$_rec" list 2>/dev/null)
+  [ ${#gone[@]} -gt 0 ] || return 0
+  detail "  removal record applied: ${gone[*]} — recorded as not installed"
+  # Only an EXISTING state is rewritten: a missing one already means nothing is
+  # installed, and creating it here would turn a fresh run into a "previous
+  # install" (the fresh/repair gate in main()).
+  if [ -f "$INSTALL_STATE" ]; then
+    # save_state records `finished` from $FINISHED; the fold runs before main()
+    # clears the checkpoint, so carry the recorded one over — otherwise a
+    # reconcile alone downgraded a finished install to unfinished (smoke then
+    # refuses to run).
+    FINISHED="$(state_get finished)"; FINISHED="${FINISHED:-false}"
+    save_state
+  fi
+  bash "$_rec" clear "${gone[@]}" >>"$LOG" 2>&1 \
+    || detail "  removal record kept — it is applied again on the next run"
+}

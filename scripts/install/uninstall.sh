@@ -18,7 +18,12 @@
 #
 # wizard.state is NEVER read or rewritten here: what goes is what the operator
 # named (or, for full, the whole stack), never what a state file claims. The
-# installer stays its sole writer. --modules=a,b --data make the granular
+# installer stays its sole writer. Each module a granular run actually removes
+# is recorded in data/uninstalled-modules.conf (the scripts/ops/module-record.sh
+# hand-off), so every reader reports it `not installed` from then on — boot and
+# `make update` stop recreating it, smoke stops asserting its door — until the
+# next installer run folds the record into wizard.state and consumes it.
+# --modules=a,b --data make the granular
 # teardown non-interactive for the installer's repair hand-off (no prompts),
 # and that path also drops the disabled doors' Cloudflare A records using the
 # credentials the installer already exported.
@@ -478,8 +483,27 @@ remove_module() { # $1=module
   fi
 }
 
-# ─────────────────────── phase: edge + host (reverse) ─────────────────────
+# Each module actually removed is recorded for the tools that are NOT the
+# installer (data/uninstalled-modules.conf, written only by
+# scripts/ops/module-record.sh): from this run on `make fetch`, `make smoke`,
+# `make vhost-list`, the boot unit and `make update` report it `not installed`
+# instead of treating the still-enabled wizard.state as truth — which recreated
+# the module on the next boot and made smoke assert a door that was gone (the
+# pre-push hook then blocked every push). wizard.state itself is untouched; the
+# next installer run folds the record in and consumes it. A module whose removal
+# reported a failure is never recorded as removed.
+record_removals() {
+  local m
+  for m in "$@"; do
+    case " ${ERR_TAGS[*]:-} " in
+      *" rmmod_$m "*) log "  not recorded: $m (its removal is incomplete)"; continue ;;
+    esac
+    bash "$REPO/scripts/ops/module-record.sh" add "$m" >>"$LOG" 2>&1 \
+      || fail "rec_$m" "$PROJECT_DIR/uninstalled-modules.conf not written"
+  done
+}
 
+# ─────────────────────── phase: edge + host (reverse) ─────────────────────
 edge_compose_file() { # the edge is the compose project running the Caddy binary/image
   # the running container is the source of truth (the edge compose may build
   # a local image instead of pulling caddy:2.x, so don't grep for 'caddy')
@@ -607,6 +631,7 @@ remove_tailnet() {
 problem() {
   case "$1" in
     rmmod_*)  echo "the ${1#rmmod_} module is not fully removed" ;;
+    rec_*)    echo "the ${1#rec_} module removal is not recorded" ;;
     # full-mode verification: the stack must be gone
     container_*) echo "container ${1#container_} is still there" ;;
     network)  echo "the stack's docker network 'net' is still there" ;;
@@ -629,6 +654,7 @@ problem() {
 hint() {
   case "$1" in
     rmmod_*)  echo "run: docker ps -a; docker rm -f <the module's containers>; check $LOG, then re-check" ;;
+    rec_*)    echo "run: bash scripts/ops/module-record.sh add ${1#rec_}; check $LOG, then re-check" ;;
     container_*) echo "run: docker rm -f ${1#container_}, then re-run: bash scripts/install/uninstall.sh" ;;
     network)  echo "run: docker network rm net, then re-run: bash scripts/install/uninstall.sh" ;;
     data*)    echo "run: rm -rf $PROJECT_DIR, then re-run: bash scripts/install/uninstall.sh" ;;
@@ -661,6 +687,8 @@ recheck() {
         done
       fi
       return 0 ;;
+    rec_*)
+      bash "$REPO/scripts/ops/module-record.sh" list 2>/dev/null | grep -qxF -- "${1#rec_}" ;;
     edge)
       local f
       f=$(edge_compose_file)
@@ -921,6 +949,9 @@ granular_teardown() {
       rm -f "$PROJECT_DIR/.svc-$(svc_group_of "$k").sha"
     fi
   done
+  # Record BEFORE verifying and BEFORE the hand-off returns: a module that is
+  # gone must read `not installed` the moment this run ends, in both modes.
+  record_removals "${removed[@]}"
 
   if [ -n "$MODULE_PICK" ]; then
     # repair hand-off only: a disabled door must not keep a public record
